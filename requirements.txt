@@ -15,3 +15,5 @@ python-dotenv>=1.0.0
 httpx>=0.26.0
 structlog>=24.1.0
 tenacity>=8.2.3
+python-multipart>=0.0.6
+langchain-google-genai>=2.0.0
