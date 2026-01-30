@@ -1,0 +1,62 @@
+You are a knowledge synthesis expert. Your task is to compare newly extracted concepts against existing concepts in the knowledge graph to detect duplicates, conflicts, and determine appropriate merge strategies.
+
+## Input:
+- **New Concepts**: Concepts extracted from a new note
+- **Existing Concepts**: Similar concepts already in the knowledge graph (found via embedding similarity)
+
+## Your Tasks:
+1. **Duplicate Detection**: Identify if a new concept is essentially the same as an existing one
+2. **Conflict Detection**: Identify if a new concept contradicts existing information
+3. **Complementary Information**: Identify if new info enhances/extends existing concepts
+4. **New Knowledge**: Identify truly new concepts not present in the graph
+
+## Decision Criteria:
+- **DUPLICATE** (confidence > 0.9): Same concept, same meaning, possibly different wording
+- **CONFLICT** (score > 0.7): Contradictory information about the same concept
+- **ENHANCE** (score > 0.5): New information that adds to existing concept
+- **NEW** (score < 0.3): Genuinely new concept
+
+## Output Format:
+{
+  "decisions": [
+    {
+      "new_concept_name": "Concept from new note",
+      "decision": "DUPLICATE | CONFLICT | ENHANCE | NEW",
+      "confidence": 0.85,
+      "matched_concept_id": "existing-concept-uuid or null",
+      "reasoning": "Brief explanation of the decision",
+      "merge_strategy": "SKIP | MERGE | FLAG_FOR_REVIEW | CREATE_NEW",
+      "updated_definition": "If ENHANCE, provide merged definition"
+    }
+  ]
+}
+
+## Examples:
+
+### Duplicate Example:
+New: "Machine Learning - A subset of AI where systems learn from data"
+Existing: "Machine Learning - AI systems that improve through experience with data"
+Decision: DUPLICATE, confidence: 0.95, merge_strategy: SKIP
+
+### Conflict Example:
+New: "Gradient Descent always converges to global minimum"
+Existing: "Gradient Descent may converge to local minima in non-convex functions"
+Decision: CONFLICT, confidence: 0.85, merge_strategy: FLAG_FOR_REVIEW
+
+### Enhance Example:
+New: "Backpropagation uses the chain rule to compute gradients layer by layer"
+Existing: "Backpropagation is an algorithm to train neural networks"
+Decision: ENHANCE, confidence: 0.75, merge_strategy: MERGE
+Updated definition: "Backpropagation is an algorithm to train neural networks by using the chain rule to compute gradients layer by layer"
+
+---
+
+## Current Analysis:
+
+**New Concepts:**
+{new_concepts}
+
+**Existing Similar Concepts:**
+{existing_concepts}
+
+Analyze and provide your decisions:

@@ -1,0 +1,104 @@
+-- GraphRecall PostgreSQL Schema Initialization
+-- This file runs automatically when the PostgreSQL container starts
+
+-- Enable required extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "vector";
+
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    settings_json JSONB DEFAULT '{}'::jsonb
+);
+
+-- Notes table (source of truth for all content)
+CREATE TABLE IF NOT EXISTS notes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content_type VARCHAR(50) NOT NULL DEFAULT 'markdown',
+    content_text TEXT NOT NULL,
+    source_url VARCHAR(2048),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    embedding_vector vector(1536),  -- OpenAI text-embedding-3-small dimension
+    
+    CONSTRAINT valid_content_type CHECK (content_type IN ('text', 'markdown', 'pdf', 'handwriting'))
+);
+
+-- Proficiency scores (tracking user knowledge per concept)
+CREATE TABLE IF NOT EXISTS proficiency_scores (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    concept_id VARCHAR(255) NOT NULL,  -- References Neo4j Concept.id
+    score DECIMAL(3,2) NOT NULL DEFAULT 0.10 CHECK (score >= 0.0 AND score <= 1.0),
+    last_reviewed TIMESTAMP WITH TIME ZONE,
+    next_review_due TIMESTAMP WITH TIME ZONE,
+    streak_count INTEGER DEFAULT 0,
+    difficulty_rating DECIMAL(3,2) DEFAULT 0.50,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(user_id, concept_id)
+);
+
+-- Flashcards (generated study materials)
+CREATE TABLE IF NOT EXISTS flashcards (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    concept_id VARCHAR(255) NOT NULL,
+    front_content TEXT NOT NULL,
+    back_content TEXT NOT NULL,
+    difficulty DECIMAL(3,2) DEFAULT 0.50,
+    source_note_ids UUID[] DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    times_reviewed INTEGER DEFAULT 0,
+    times_correct INTEGER DEFAULT 0
+);
+
+-- Quizzes (generated questions)
+CREATE TABLE IF NOT EXISTS quizzes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    concept_id VARCHAR(255) NOT NULL,
+    question_text TEXT NOT NULL,
+    question_type VARCHAR(50) NOT NULL DEFAULT 'mcq',
+    options_json JSONB,
+    correct_answer TEXT NOT NULL,
+    explanation TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT valid_question_type CHECK (question_type IN ('mcq', 'open_ended', 'code'))
+);
+
+-- Study sessions (tracking learning activity)
+CREATE TABLE IF NOT EXISTS study_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_type VARCHAR(50) NOT NULL,
+    start_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    end_time TIMESTAMP WITH TIME ZONE,
+    concepts_covered VARCHAR(255)[] DEFAULT '{}',
+    performance_summary JSONB,
+    
+    CONSTRAINT valid_session_type CHECK (session_type IN ('quiz', 'flashcard', 'teaching'))
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id);
+CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_proficiency_user_concept ON proficiency_scores(user_id, concept_id);
+CREATE INDEX IF NOT EXISTS idx_proficiency_next_review ON proficiency_scores(next_review_due);
+CREATE INDEX IF NOT EXISTS idx_flashcards_user_concept ON flashcards(user_id, concept_id);
+CREATE INDEX IF NOT EXISTS idx_quizzes_user_concept ON quizzes(user_id, concept_id);
+CREATE INDEX IF NOT EXISTS idx_study_sessions_user ON study_sessions(user_id);
+
+-- Vector similarity index for semantic search on notes
+CREATE INDEX IF NOT EXISTS idx_notes_embedding ON notes 
+    USING ivfflat (embedding_vector vector_cosine_ops)
+    WITH (lists = 100);
+
+-- Insert a default test user for development
+INSERT INTO users (id, email) 
+VALUES ('00000000-0000-0000-0000-000000000001', 'test@graphrecall.dev')
+ON CONFLICT (email) DO NOTHING;

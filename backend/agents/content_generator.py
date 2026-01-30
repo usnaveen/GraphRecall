@@ -1,0 +1,417 @@
+"""Agent for generating study content: MCQs, flashcards, fill-in-blank, mermaid diagrams."""
+
+import json
+from pathlib import Path
+from typing import Optional
+
+import structlog
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+from backend.models.feed_schemas import (
+    MCQQuestion,
+    MCQOption,
+    FillBlankQuestion,
+    Flashcard,
+    MermaidDiagram,
+)
+from backend.agents.mermaid_agent import MermaidAgent
+
+logger = structlog.get_logger()
+
+# Load prompts
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+
+
+class ContentGeneratorAgent:
+    """
+    Agent for generating various types of study content.
+    
+    Uses GPT-4o-mini for cost-effective, high-quality content generation.
+    """
+    
+    def __init__(
+        self,
+        model: str = "gpt-4o-mini",
+        temperature: float = 0.7,  # Slightly creative for varied questions
+    ):
+        self.model_name = model
+        self.llm = ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            model_kwargs={"response_format": {"type": "json_object"}},
+        )
+        self.mermaid_agent = MermaidAgent()
+    
+    # =========================================================================
+    # MCQ Generation
+    # =========================================================================
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
+    async def generate_mcq(
+        self,
+        concept_name: str,
+        concept_definition: str,
+        related_concepts: list[str],
+        difficulty: int = 5,
+        num_options: int = 4,
+    ) -> MCQQuestion:
+        """
+        Generate a multiple choice question for a concept.
+        
+        Args:
+            concept_name: Name of the concept
+            concept_definition: Definition of the concept
+            related_concepts: Related concepts for context/distractors
+            difficulty: Difficulty level 1-10
+            num_options: Number of answer options (default 4)
+            
+        Returns:
+            MCQQuestion object
+        """
+        prompt = f"""Generate a multiple choice question to test understanding of this concept.
+
+CONCEPT: {concept_name}
+DEFINITION: {concept_definition}
+RELATED CONCEPTS: {', '.join(related_concepts[:5])}
+DIFFICULTY LEVEL: {difficulty}/10 (1=very easy, 10=very hard)
+
+Requirements:
+1. Create a clear, unambiguous question
+2. Provide exactly {num_options} options (A, B, C, D)
+3. Only ONE option should be correct
+4. Distractors should be plausible but clearly wrong if you understand the concept
+5. For higher difficulty: use application/analysis questions instead of recall
+6. Include a brief explanation of why the correct answer is right
+
+Output JSON format:
+{{
+    "question": "The question text",
+    "options": [
+        {{"id": "A", "text": "Option A text", "is_correct": false}},
+        {{"id": "B", "text": "Option B text", "is_correct": true}},
+        {{"id": "C", "text": "Option C text", "is_correct": false}},
+        {{"id": "D", "text": "Option D text", "is_correct": false}}
+    ],
+    "explanation": "Explanation of the correct answer",
+    "difficulty": {difficulty}
+}}"""
+        
+        try:
+            response = await self.llm.ainvoke(prompt)
+            parsed = json.loads(response.content)
+            
+            options = [
+                MCQOption(
+                    id=opt["id"],
+                    text=opt["text"],
+                    is_correct=opt["is_correct"],
+                )
+                for opt in parsed["options"]
+            ]
+            
+            return MCQQuestion(
+                concept_id="",  # To be set by caller
+                question=parsed["question"],
+                options=options,
+                explanation=parsed.get("explanation", ""),
+                difficulty=parsed.get("difficulty", difficulty),
+            )
+            
+        except Exception as e:
+            logger.error("ContentGenerator: MCQ generation failed", error=str(e))
+            raise
+    
+    async def generate_mcq_batch(
+        self,
+        concepts: list[dict],
+        num_per_concept: int = 2,
+    ) -> list[MCQQuestion]:
+        """
+        Generate multiple MCQs for a batch of concepts.
+        
+        Args:
+            concepts: List of concept dictionaries with name, definition, etc.
+            num_per_concept: Number of MCQs to generate per concept
+            
+        Returns:
+            List of MCQQuestion objects
+        """
+        all_mcqs = []
+        
+        for concept in concepts:
+            for _ in range(num_per_concept):
+                try:
+                    mcq = await self.generate_mcq(
+                        concept_name=concept["name"],
+                        concept_definition=concept["definition"],
+                        related_concepts=concept.get("related_concepts", []),
+                        difficulty=int(concept.get("complexity_score", 5)),
+                    )
+                    mcq.concept_id = concept.get("id", "")
+                    all_mcqs.append(mcq)
+                except Exception as e:
+                    logger.warning(
+                        "ContentGenerator: Failed to generate MCQ for concept",
+                        concept=concept["name"],
+                        error=str(e),
+                    )
+        
+        return all_mcqs
+    
+    # =========================================================================
+    # Fill-in-the-Blank Generation
+    # =========================================================================
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
+    async def generate_fill_blank(
+        self,
+        concept_name: str,
+        concept_definition: str,
+        difficulty: int = 5,
+    ) -> FillBlankQuestion:
+        """
+        Generate a fill-in-the-blank question for a concept.
+        
+        Args:
+            concept_name: Name of the concept
+            concept_definition: Definition of the concept
+            difficulty: Difficulty level 1-10
+            
+        Returns:
+            FillBlankQuestion object
+        """
+        prompt = f"""Generate a fill-in-the-blank sentence to test understanding of this concept.
+
+CONCEPT: {concept_name}
+DEFINITION: {concept_definition}
+DIFFICULTY LEVEL: {difficulty}/10
+
+Requirements:
+1. Create a meaningful sentence where the blank tests key understanding
+2. Use _____ (5 underscores) to mark the blank
+3. The answer should be a single word or short phrase
+4. For higher difficulty: test application, not just definition recall
+5. Provide a helpful hint that doesn't give away the answer
+
+Output JSON format:
+{{
+    "sentence": "The sentence with _____ for the blank",
+    "answers": ["correct answer", "alternative acceptable answer"],
+    "hint": "A helpful hint",
+    "difficulty": {difficulty}
+}}"""
+        
+        try:
+            response = await self.llm.ainvoke(prompt)
+            parsed = json.loads(response.content)
+            
+            return FillBlankQuestion(
+                concept_id="",  # To be set by caller
+                sentence=parsed["sentence"],
+                answers=parsed["answers"],
+                hint=parsed.get("hint"),
+                difficulty=parsed.get("difficulty", difficulty),
+            )
+            
+        except Exception as e:
+            logger.error("ContentGenerator: Fill-blank generation failed", error=str(e))
+            raise
+    
+    # =========================================================================
+    # Flashcard Generation
+    # =========================================================================
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
+    async def generate_flashcards(
+        self,
+        concept_name: str,
+        concept_definition: str,
+        related_concepts: list[str],
+        num_cards: int = 3,
+    ) -> list[dict]:
+        """
+        Generate flashcards for a concept.
+        
+        Creates different types of cards:
+        - Basic: term → definition
+        - Reverse: definition → term
+        - Application: scenario → concept
+        
+        Args:
+            concept_name: Name of the concept
+            concept_definition: Definition of the concept
+            related_concepts: Related concepts for context
+            num_cards: Number of cards to generate
+            
+        Returns:
+            List of flashcard dictionaries
+        """
+        prompt = f"""Generate {num_cards} flashcards to help learn this concept.
+
+CONCEPT: {concept_name}
+DEFINITION: {concept_definition}
+RELATED CONCEPTS: {', '.join(related_concepts[:5])}
+
+Create varied card types:
+1. Basic (term → definition)
+2. Reverse (definition hint → term)
+3. Application (real-world example → concept)
+4. Comparison (how it differs from related concept)
+
+Output JSON format:
+{{
+    "flashcards": [
+        {{
+            "front": "Front of card (question/prompt)",
+            "back": "Back of card (answer)",
+            "card_type": "basic|reverse|application|comparison"
+        }}
+    ]
+}}"""
+        
+        try:
+            response = await self.llm.ainvoke(prompt)
+            parsed = json.loads(response.content)
+            
+            return parsed.get("flashcards", [])
+            
+        except Exception as e:
+            logger.error("ContentGenerator: Flashcard generation failed", error=str(e))
+            raise
+    
+    # =========================================================================
+    # Mermaid Diagram Generation
+    # =========================================================================
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
+    async def generate_mermaid_diagram(
+        self,
+        concepts: list[dict],
+        diagram_type: str = "flowchart",
+        title: Optional[str] = None,
+    ) -> MermaidDiagram:
+        """
+        Generate a mermaid diagram showing relationships between concepts.
+        
+        Delegates to specialized MermaidAgent for 'sniper precision'.
+        """
+        try:
+            # Delegate to specialized agent
+            if diagram_type == "mindmap":
+                # Use the first concept as root if not specified
+                root_concept = concepts[0]["name"] if concepts else "System"
+                result = await self.mermaid_agent.generate_mindmap(root_concept, concepts[1:])
+                chart_type = "mindmap"
+            else:
+                # Flowchart default
+                steps = [f"Understand {c['name']}: {c['definition'][:50]}" for c in concepts]
+                result = await self.mermaid_agent.generate_flowchart(title or "Concept Flow", steps)
+                chart_type = "flowchart"
+            
+            return MermaidDiagram(
+                diagram_type=chart_type,
+                mermaid_code=result.code,
+                title=title or result.explanation[:50],
+                source_concepts=[c.get("id", "") for c in concepts],
+            )
+            
+        except Exception as e:
+            logger.error("ContentGenerator: Mermaid generation failed", error=str(e))
+            raise
+    
+    # =========================================================================
+    # Concept Showcase Generation
+    # =========================================================================
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
+    async def generate_concept_showcase(
+        self,
+        concept_name: str,
+        concept_definition: str,
+        domain: str,
+        complexity_score: float,
+        prerequisites: list[str],
+        related_concepts: list[str],
+    ) -> dict:
+        """
+        Generate a rich concept showcase card for the feed.
+        
+        This creates an engaging, Instagram-style presentation of a concept
+        with visual metaphor, key points, and connections.
+        
+        Returns:
+            Dictionary with showcase content
+        """
+        prompt = f"""Create an engaging concept showcase for a learning app.
+
+CONCEPT: {concept_name}
+DEFINITION: {concept_definition}
+DOMAIN: {domain}
+COMPLEXITY: {complexity_score}/10
+PREREQUISITES: {', '.join(prerequisites[:5])}
+RELATED: {', '.join(related_concepts[:5])}
+
+Create content for a visually appealing "concept card" that:
+1. Has a memorable visual metaphor/analogy
+2. Highlights 3-4 key points
+3. Suggests a real-world application
+4. Notes important connections
+
+Output JSON format:
+{{
+    "tagline": "A catchy one-liner about the concept",
+    "visual_metaphor": "A visual/everyday analogy to understand the concept",
+    "key_points": ["point 1", "point 2", "point 3"],
+    "real_world_example": "A practical application or example",
+    "connections_note": "How this connects to prerequisites/related concepts",
+    "emoji_icon": "A single emoji that represents this concept"
+}}"""
+        
+        try:
+            response = await self.llm.ainvoke(prompt)
+            parsed = json.loads(response.content)
+            
+            return {
+                "concept_name": concept_name,
+                "definition": concept_definition,
+                "domain": domain,
+                "complexity_score": complexity_score,
+                "prerequisites": prerequisites,
+                "related_concepts": related_concepts,
+                **parsed,
+            }
+            
+        except Exception as e:
+            logger.error("ContentGenerator: Showcase generation failed", error=str(e))
+            # Return basic showcase on failure
+            return {
+                "concept_name": concept_name,
+                "definition": concept_definition,
+                "domain": domain,
+                "complexity_score": complexity_score,
+                "prerequisites": prerequisites,
+                "related_concepts": related_concepts,
+                "tagline": concept_definition[:50] + "...",
+                "visual_metaphor": "",
+                "key_points": [],
+                "real_world_example": "",
+                "connections_note": "",
+                "emoji_icon": "📚",
+            }
