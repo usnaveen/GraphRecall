@@ -1,0 +1,17 @@
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+langgraph>=0.0.40
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-community>=0.0.20
+asyncpg>=0.29.0
+sqlalchemy[asyncio]>=2.0.25
+pgvector>=0.2.4
+alembic>=1.13.1
+neo4j>=5.15.0
+pydantic>=2.5.3
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+httpx>=0.26.0
+structlog>=24.1.0
+tenacity>=8.2.3
