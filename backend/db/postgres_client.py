@@ -124,6 +124,48 @@ class PostgresClient:
             return str(row[0]) if row else None
 
 
+
+    async def initialize_schema(self) -> None:
+        """Initialize the database schema from SQL files."""
+        import os
+        
+        async with self.session() as session:
+            try:
+                # Base directory for SQL files
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                
+                # 1. Run init.sql
+                init_sql_path = os.path.join(base_dir, "init.sql")
+                if os.path.exists(init_sql_path):
+                    logger.info("Running schema initialization...")
+                    with open(init_sql_path, "r") as f:
+                        sql_content = f.read()
+                        # Split by semicolon to execute statements individually if needed, 
+                        # but SQLAlchemy execute() can often handle blocks.
+                        # However, for extensions/multiple statements, text() is better.
+                        await session.execute(text(sql_content))
+                    logger.info("Schema initialization completed")
+                
+                # 2. Run migrations
+                migrations_dir = os.path.join(base_dir, "migrations")
+                if os.path.exists(migrations_dir):
+                    migration_files = sorted([f for f in os.listdir(migrations_dir) if f.endswith(".sql")])
+                    for migration_file in migration_files:
+                        logger.info(f"Running migration: {migration_file}")
+                        with open(os.path.join(migrations_dir, migration_file), "r") as f:
+                            migration_sql = f.read()
+                            await session.execute(text(migration_sql))
+                    logger.info("Migrations completed")
+                    
+                await session.commit()
+                
+            except Exception as e:
+                logger.error("Schema initialization failed", error=str(e))
+                await session.rollback()
+                # Don't raise here to allow app to start even if schema init fails (e.g. read-only user)
+                # But for this use case, we probably want to know.
+                logger.warning("Continuing application startup despite schema error")
+
 # Global client instance
 _postgres_client: Optional[PostgresClient] = None
 _client_lock = asyncio.Lock()

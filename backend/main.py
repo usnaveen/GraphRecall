@@ -56,7 +56,8 @@ async def lifespan(app: FastAPI):
     logger.info("Starting GraphRecall API")
     try:
         # Initialize database clients
-        await get_postgres_client()
+        pg_client = await get_postgres_client()
+        await pg_client.initialize_schema()
         await get_neo4j_client()
         logger.info("Database connections established")
     except Exception as e:
