@@ -51,6 +51,7 @@ class PostgresClient:
             pool_pre_ping=True,
             pool_recycle=3600,
             echo=False,
+            connect_args={"statement_cache_size": 0},
         )
 
         self._session_factory = async_sessionmaker(
