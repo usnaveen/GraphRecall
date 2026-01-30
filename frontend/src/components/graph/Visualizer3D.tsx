@@ -25,7 +25,7 @@ interface Visualizer3DProps {
 }
 
 export default function Visualizer3D({ data }: Visualizer3DProps) {
-    const fgRef = useRef<any>();
+    const fgRef = useRef<any>(null);
     const { setSelectedConcept, graphSearchQuery } = useStore();
 
     // Focus on node if searched
@@ -51,8 +51,7 @@ export default function Visualizer3D({ data }: Visualizer3DProps) {
             name: node.name,
             definition: node.definition,
             domain: node.domain,
-            complexity_score: node.complexity_score,
-            mastery_level: node.mastery_level
+            complexity_score: node.complexity_score
         });
     }, [setSelectedConcept]);
 

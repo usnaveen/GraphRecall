@@ -67,29 +67,6 @@ export default function ConceptPanel() {
             </div>
           </div>
 
-          {/* Relationships */}
-          {selectedConcept.relationships && selectedConcept.relationships.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2 mb-2">
-                <Link2 className="h-4 w-4" />
-                Related Concepts
-              </h4>
-              <div className="space-y-1">
-                {selectedConcept.relationships.map((rel, index) => (
-                  <div
-                    key={index}
-                    className="text-sm text-slate-400 bg-slate-700/50 px-2 py-1 rounded flex items-center justify-between"
-                  >
-                    <span>{rel.target}</span>
-                    <span className="text-xs text-slate-500">
-                      {rel.type.replace(/_/g, " ")}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Actions */}
           <div className="pt-4 border-t border-slate-700 space-y-2">
             <Button
