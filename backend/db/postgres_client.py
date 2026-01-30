@@ -147,9 +147,6 @@ class PostgresClient:
                     statements = [s.strip() for s in sql_content.split(";") if s.strip()]
                     
                     for statement in statements:
-                        # Skip comments only lines if splitting left them dangling
-                        if statement.startswith("--"):
-                            continue
                         await session.execute(text(statement))
                         
                     logger.info("Schema initialization completed")
@@ -166,8 +163,6 @@ class PostgresClient:
                         # Split by semicolon for migrations too
                         statements = [s.strip() for s in migration_sql.split(";") if s.strip()]
                         for statement in statements:
-                            if statement.startswith("--"):
-                                continue
                             await session.execute(text(statement))
                             
                     logger.info("Migrations completed")
