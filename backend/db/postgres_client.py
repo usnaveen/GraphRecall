@@ -140,10 +140,17 @@ class PostgresClient:
                     logger.info("Running schema initialization...")
                     with open(init_sql_path, "r") as f:
                         sql_content = f.read()
-                        # Split by semicolon to execute statements individually if needed, 
-                        # but SQLAlchemy execute() can often handle blocks.
-                        # However, for extensions/multiple statements, text() is better.
-                        await session.execute(text(sql_content))
+                        
+                    # Split by semicolon to execute individually
+                    # asyncpg cannot handle multiple statements in one execute call
+                    statements = [s.strip() for s in sql_content.split(";") if s.strip()]
+                    
+                    for statement in statements:
+                        # Skip comments only lines if splitting left them dangling
+                        if statement.startswith("--"):
+                            continue
+                        await session.execute(text(statement))
+                        
                     logger.info("Schema initialization completed")
                 
                 # 2. Run migrations
@@ -154,7 +161,14 @@ class PostgresClient:
                         logger.info(f"Running migration: {migration_file}")
                         with open(os.path.join(migrations_dir, migration_file), "r") as f:
                             migration_sql = f.read()
-                            await session.execute(text(migration_sql))
+                            
+                        # Split by semicolon for migrations too
+                        statements = [s.strip() for s in migration_sql.split(";") if s.strip()]
+                        for statement in statements:
+                            if statement.startswith("--"):
+                                continue
+                            await session.execute(text(statement))
+                            
                     logger.info("Migrations completed")
                     
                 await session.commit()
