@@ -56,35 +56,31 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting GraphRecall API")
     
-    # Run Alembic migrations automatically
-    try:
-        from alembic.config import Config
-        from alembic import command
-        import os
-        
-        # Find alembic.ini relative to this file
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        alembic_cfg = Config(os.path.join(base_dir, "alembic.ini"))
-        
-        # Override the database URL from environment
-        db_url = os.getenv("DATABASE_URL", "")
-        if db_url:
-            if db_url.startswith("postgres://"):
-                db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
-            elif db_url.startswith("postgresql://"):
-                db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-            alembic_cfg.set_main_option("sqlalchemy.url", db_url)
-        
-        logger.info("Running database migrations...")
-        command.upgrade(alembic_cfg, "head")
-        logger.info("Database migrations complete")
-    except Exception as e:
-        logger.warning("Alembic migrations skipped or failed", error=str(e))
-        # Continue anyway - migrations might not be needed or DB isn't ready
-    
     try:
         # Initialize database clients
         pg_client = await get_postgres_client()
+        
+        # Fix missing columns BEFORE running init.sql (which creates indexes)
+        try:
+            logger.info("Applying schema fixes...")
+            async with pg_client.session() as session:
+                # Add resource_type column if it doesn't exist
+                await session.execute(text("""
+                    DO $$ 
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name = 'notes' AND column_name = 'resource_type'
+                        ) THEN
+                            ALTER TABLE notes ADD COLUMN resource_type VARCHAR(50) DEFAULT 'notes';
+                        END IF;
+                    END $$;
+                """))
+                await session.commit()
+            logger.info("Schema fixes applied")
+        except Exception as e:
+            logger.warning("Schema fixes skipped", error=str(e))
+        
         await pg_client.initialize_schema()
         await get_neo4j_client()
         logger.info("Database connections established")
