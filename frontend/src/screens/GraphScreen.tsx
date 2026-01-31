@@ -37,10 +37,10 @@ export function GraphScreen() {
   const [quizResearched, setQuizResearched] = useState(false);
 
   const filteredNodes = searchQuery
-    ? mockGraphNodes.filter(n => n.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? (mockGraphNodes as GraphNode[]).filter((n: GraphNode) => n.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : mockGraphNodes;
 
-  const selectedNodeData = mockGraphNodes.find(n => n.id === selectedNode);
+  const selectedNodeData = (mockGraphNodes as GraphNode[]).find((n: GraphNode) => n.id === selectedNode);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.target === containerRef.current) {
@@ -188,8 +188,8 @@ export function GraphScreen() {
           <svg width="600" height="400" className="overflow-visible">
             {/* Edges */}
             {mockGraphEdges.map((edge: GraphEdge, i: number) => {
-              const source = mockGraphNodes.find(n => n.id === edge.source);
-              const target = mockGraphNodes.find(n => n.id === edge.target);
+              const source = (mockGraphNodes as GraphNode[]).find((n: GraphNode) => n.id === edge.source);
+              const target = (mockGraphNodes as GraphNode[]).find((n: GraphNode) => n.id === edge.target);
               if (!source || !target) return null;
 
               const sx = 300 + source.x * 30;

@@ -9,7 +9,7 @@ import { ingestService } from '../services/api';
 type CreateStep = 'upload' | 'processing' | 'review' | 'success';
 
 interface ExtractedConcept {
-  id?: string;
+  id: string;
   name: string;
   definition: string;
   domain?: string;
