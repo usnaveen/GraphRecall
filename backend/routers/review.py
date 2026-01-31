@@ -14,7 +14,7 @@ from backend.models.feed_schemas import (
     ConceptReviewSession,
 )
 from backend.services.concept_review import ConceptReviewService
-from backend.graph.workflow import run_ingestion_pipeline
+from backend.graphs import run_ingestion, get_ingestion_status, resume_ingestion
 
 logger = structlog.get_logger()
 
