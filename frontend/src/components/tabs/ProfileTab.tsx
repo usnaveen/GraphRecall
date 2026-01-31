@@ -7,11 +7,7 @@ import {
   Target,
   BookOpen,
   Network,
-  Trophy,
   Calendar,
-  ChevronRight,
-  Settings,
-  Info,
   RefreshCw,
   TrendingUp,
 } from "lucide-react";
@@ -91,8 +87,6 @@ export default function ProfileTab() {
 
   useEffect(() => {
     loadStats();
-    // Mock activity data for now
-    generateMockActivityData();
   }, []);
 
   const loadStats = async () => {
@@ -105,24 +99,6 @@ export default function ProfileTab() {
     } finally {
       setIsRefreshing(false);
     }
-  };
-
-  const generateMockActivityData = () => {
-    // Generate some mock activity data for the heatmap
-    const data: Record<string, number> = {};
-    const today = new Date();
-    
-    for (let i = 0; i < 84; i++) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split("T")[0];
-      // Random activity with some days more active
-      if (Math.random() > 0.3) {
-        data[dateStr] = Math.floor(Math.random() * 25);
-      }
-    }
-    
-    setActivityData(data);
   };
 
   const stats = [
@@ -154,11 +130,6 @@ export default function ProfileTab() {
       suffix: "",
       color: "text-cyan-400",
     },
-  ];
-
-  const menuItems = [
-    { icon: Settings, label: "Settings", action: () => {} },
-    { icon: Info, label: "About GraphRecall", action: () => {} },
   ];
 
   return (
@@ -273,22 +244,6 @@ export default function ProfileTab() {
           </div>
         )}
 
-        {/* Menu items */}
-        <div className="space-y-2">
-          {menuItems.map((item) => (
-            <button
-              key={item.label}
-              onClick={item.action}
-              className="w-full p-4 bg-[#1A1A1C] rounded-xl border border-[#27272A] flex items-center justify-between hover:bg-[#27272A] transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <item.icon className="h-5 w-5 text-slate-400" />
-                <span className="text-white">{item.label}</span>
-              </div>
-              <ChevronRight className="h-5 w-5 text-slate-500" />
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );

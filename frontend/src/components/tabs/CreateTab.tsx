@@ -18,6 +18,8 @@ import {
   ArrowRightLeft,
   ArrowRight,
   Copy,
+  ImagePlus,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +48,14 @@ export default function CreateTab() {
   } | null>(null);
   const [editingConcept, setEditingConcept] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<ConceptReviewItem>>({});
+
+  // Upload state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [uploadType, setUploadType] = useState<"screenshot" | "infographic" | "diagram">("screenshot");
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // Check for pending review sessions on mount
   useEffect(() => {
@@ -159,7 +169,7 @@ export default function CreateTab() {
   const getExistingConceptDetails = (conceptName: string) => {
     if (!reviewSession?.conflicts) return null;
     // Search case-insensitive
-    const conflict = reviewSession.conflicts.find((c: any) =>
+    const conflict = reviewSession.conflicts.find((c) =>
       c.new_concept_name.toLowerCase() === conceptName.toLowerCase()
     );
     return conflict ? conflict.existing_concept : null;
@@ -240,6 +250,41 @@ export default function CreateTab() {
     setError(null);
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setSelectedFile(file);
+    setUploadSuccess(false);
+    if (file) {
+      setPreviewUrl(URL.createObjectURL(file));
+    } else {
+      setPreviewUrl(null);
+    }
+  };
+
+  const handleClearFile = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setUploadTitle("");
+    setUploadSuccess(false);
+  };
+
+  const handleFileUpload = async () => {
+    if (!selectedFile) return;
+    setIsUploading(true);
+    setError(null);
+    try {
+      await api.uploadFile(selectedFile, uploadType, uploadTitle || undefined);
+      setUploadSuccess(true);
+      setSelectedFile(null);
+      setPreviewUrl(null);
+      setUploadTitle("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   // Input Step
   const renderInputStep = () => (
     <div className="h-full flex flex-col p-4">
@@ -293,6 +338,97 @@ The backpropagation algorithm is used to train neural networks..."
           </>
         )}
       </Button>
+
+      {/* Divider */}
+      <div className="flex items-center gap-3 my-5">
+        <div className="flex-1 h-px bg-[#27272A]" />
+        <span className="text-xs text-slate-500 uppercase tracking-wider">or upload an image</span>
+        <div className="flex-1 h-px bg-[#27272A]" />
+      </div>
+
+      {/* File Upload */}
+      <div className="p-4 bg-[#1A1A1C] rounded-xl border border-dashed border-[#3f3f46]">
+        {!selectedFile ? (
+          <label
+            htmlFor="file-upload"
+            className="flex flex-col items-center justify-center py-6 cursor-pointer hover:bg-[#27272A]/50 rounded-lg transition-colors"
+          >
+            <ImagePlus className="h-8 w-8 text-slate-500 mb-2" />
+            <span className="text-sm text-slate-400">Click to select an image</span>
+            <span className="text-xs text-slate-600 mt-1">JPEG, PNG, GIF, WebP (max 10MB)</span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              onChange={handleFileSelect}
+              className="hidden"
+              id="file-upload"
+            />
+          </label>
+        ) : (
+          <div className="space-y-3">
+            {/* Preview */}
+            <div className="relative">
+              <img
+                src={previewUrl || ""}
+                alt="Preview"
+                className="w-full max-h-48 object-contain rounded-lg bg-black/20"
+              />
+              <button
+                onClick={handleClearFile}
+                className="absolute top-2 right-2 p-1 bg-black/60 rounded-full text-white hover:bg-black/80"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Title input */}
+            <input
+              type="text"
+              value={uploadTitle}
+              onChange={(e) => setUploadTitle(e.target.value)}
+              placeholder="Title (optional)"
+              className="w-full p-2 bg-[#27272A] border border-[#3f3f46] rounded-lg text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+            />
+
+            {/* Upload type */}
+            <select
+              value={uploadType}
+              onChange={(e) => setUploadType(e.target.value as typeof uploadType)}
+              className="w-full p-2 bg-[#27272A] border border-[#3f3f46] rounded-lg text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+            >
+              <option value="screenshot">Screenshot</option>
+              <option value="infographic">Infographic</option>
+              <option value="diagram">Diagram</option>
+            </select>
+
+            {/* Upload button */}
+            <Button
+              onClick={handleFileUpload}
+              disabled={isUploading}
+              className="w-full bg-purple-600 hover:bg-purple-700"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload to Library
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {uploadSuccess && (
+          <div className="mt-3 p-3 rounded-lg bg-green-500/10 border border-green-500/30 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            <span className="text-sm text-green-400">Image uploaded! It will appear in your feed.</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 

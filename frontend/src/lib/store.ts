@@ -4,11 +4,11 @@
  */
 
 import { create } from 'zustand';
-import { 
-  Concept, 
-  GraphData, 
-  Note, 
-  FeedItem, 
+import {
+  Concept,
+  GraphData,
+  Note,
+  FeedItem,
   FeedResponse,
   ConceptReviewSession,
   ConceptReviewItem,
@@ -18,6 +18,12 @@ import {
   Graph3DResponse,
   UserStats,
 } from './api';
+import type { ForceGraphNode, ForceGraphLink } from '@/components/graph/Visualizer3D';
+
+export interface ForceGraphData {
+  nodes: ForceGraphNode[];
+  links: ForceGraphLink[];
+}
 
 // ============================================================================
 // Navigation
@@ -45,6 +51,8 @@ interface GraphRecallState {
   // 3D Graph
   graph3DData: Graph3DResponse | null;
   setGraph3DData: (data: Graph3DResponse | null) => void;
+  forceGraphData: ForceGraphData | null;
+  setForceGraphData: (data: ForceGraphData | null) => void;
   focusedConcept: Graph3DNode | null;
   setFocusedConcept: (concept: Graph3DNode | null) => void;
   graphSearchQuery: string;
@@ -133,6 +141,8 @@ export const useStore = create<GraphRecallState>((set, get) => ({
   // 3D Graph
   graph3DData: null,
   setGraph3DData: (data) => set({ graph3DData: data }),
+  forceGraphData: null,
+  setForceGraphData: (data) => set({ forceGraphData: data }),
   focusedConcept: null,
   setFocusedConcept: (concept) => set({ focusedConcept: concept }),
   graphSearchQuery: '',

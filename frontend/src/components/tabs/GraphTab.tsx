@@ -22,6 +22,8 @@ export default function GraphTab() {
   const {
     graph3DData,
     setGraph3DData,
+    forceGraphData,
+    setForceGraphData,
     graphSearchQuery,
     setGraphSearchQuery,
     setSelectedConcept,
@@ -45,20 +47,21 @@ export default function GraphTab() {
       const data = await api.get3DGraph({
         domains: selectedDomains.length > 0 ? selectedDomains : undefined,
       });
-      // Transform data for Visualizer3D
-      const vData = {
-        nodes: data.nodes.map((n: any) => ({
+      // Store raw API response for clusters/stats
+      setGraph3DData(data);
+      // Transform data for Visualizer3D force graph
+      setForceGraphData({
+        nodes: data.nodes.map((n) => ({
           ...n,
-          val: n.complexity_score || 1, // Force graph uses 'val' for size
+          val: n.complexity_score || 1,
         })),
-        links: data.edges.map((e: any) => ({
+        links: data.edges.map((e) => ({
           source: e.source,
           target: e.target,
-          ...e
-        }))
-      };
-      // @ts-ignore
-      setGraph3DData(vData);
+          relationship_type: e.relationship_type,
+          strength: e.strength,
+        })),
+      });
     } catch (error) {
       setGraphError(error instanceof Error ? error.message : "Failed to load graph");
     } finally {
@@ -80,22 +83,19 @@ export default function GraphTab() {
         // Focus on first result
         const focus = await api.focusOnConcept(results[0].id, 2);
 
-        // Transform for 3D
-        const vData = {
+        // Transform for 3D force graph
+        setForceGraphData({
           nodes: [focus.center, ...focus.connections.map(c => c.concept)].map(n => ({
             ...n,
-            val: n.complexity_score || 1
+            val: n.complexity_score || 1,
           })),
-          links: focus.connections.map((c, i) => ({
+          links: focus.connections.map((c) => ({
             source: c.direction === "outgoing" ? focus.center.id : c.concept.id,
             target: c.direction === "outgoing" ? c.concept.id : focus.center.id,
             relationship_type: c.relationship,
-            strength: c.strength
-          }))
-        };
-
-        // @ts-ignore
-        setGraph3DData(vData);
+            strength: c.strength,
+          })),
+        });
       }
     } catch (error) {
       console.error("Search failed:", error);
@@ -176,7 +176,7 @@ export default function GraphTab() {
         <div className="absolute top-16 left-4 right-4 z-10 p-4 bg-[#1A1A1C] border border-[#27272A] rounded-xl">
           <p className="text-sm text-slate-400 mb-3">Filter by domain:</p>
           <div className="flex flex-wrap gap-2">
-            {graph3DData.clusters?.map((cluster: any) => (
+            {graph3DData.clusters?.map((cluster) => (
               <button
                 key={cluster.domain}
                 onClick={() => toggleDomain(cluster.domain)}
@@ -204,7 +204,7 @@ export default function GraphTab() {
             {graph3DData.total_nodes || graph3DData.nodes?.length} concepts
           </div>
           <div className="px-3 py-1.5 bg-[#1A1A1C]/80 border border-[#27272A] rounded-lg text-xs text-slate-400 backdrop-blur-sm">
-            {graph3DData.total_edges || graph3DData.links?.length} connections
+            {graph3DData.total_edges || graph3DData.edges?.length} connections
           </div>
         </div>
       )}
@@ -214,7 +214,7 @@ export default function GraphTab() {
         <div className="absolute bottom-4 right-4 z-10 p-3 bg-[#1A1A1C]/80 border border-[#27272A] rounded-xl backdrop-blur-sm">
           <p className="text-xs text-slate-500 mb-2">Domains</p>
           <div className="space-y-1">
-            {graph3DData.clusters.slice(0, 5).map((cluster: any) => (
+            {graph3DData.clusters.slice(0, 5).map((cluster) => (
               <div key={cluster.domain} className="flex items-center gap-2">
                 <div
                   className="w-3 h-3 rounded-full"
@@ -228,7 +228,7 @@ export default function GraphTab() {
       )}
 
       {/* 3D Graph */}
-      {(!graph3DData || !graph3DData.nodes || graph3DData.nodes.length === 0) ? (
+      {(!forceGraphData || !forceGraphData.nodes || forceGraphData.nodes.length === 0) ? (
         <div className="h-full flex items-center justify-center bg-[#0A0A0B]">
           <div className="text-center">
             <p className="text-slate-400 mb-4">No concepts in your knowledge graph yet</p>
@@ -239,8 +239,7 @@ export default function GraphTab() {
           </div>
         </div>
       ) : (
-        // @ts-ignore
-        <Visualizer3D data={graph3DData} />
+        <Visualizer3D data={forceGraphData} />
       )}
     </div>
   );

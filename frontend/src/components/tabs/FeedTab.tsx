@@ -420,7 +420,6 @@ export default function FeedTab() {
       case "infographic":
         return <ScreenshotCard item={item} />;
       case "mermaid_diagram":
-        // @ts-ignore - type missmatch in library vs app
         return <MermaidCard item={item} />;
       default:
         return <ConceptShowcaseCard item={item} />;

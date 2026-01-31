@@ -77,13 +77,24 @@ export interface ConceptReviewItem {
   user_modified: boolean;
 }
 
+export interface ConceptConflict {
+  new_concept_name: string;
+  existing_concept: {
+    id: string;
+    name: string;
+    definition: string;
+    domain: string;
+    complexity_score: number;
+  };
+}
+
 export interface ConceptReviewSession {
   session_id: string;
   user_id: string;
   note_id: string;
   original_content: string;
   concepts: ConceptReviewItem[];
-  conflicts: unknown[];
+  conflicts: ConceptConflict[];
   status: string;
   created_at: string;
   expires_at: string;
@@ -500,10 +511,40 @@ class ApiClient {
     });
   }
 
+  async uploadFile(
+    file: File,
+    uploadType: 'screenshot' | 'infographic' | 'diagram' = 'screenshot',
+    title?: string,
+    description?: string,
+    linkedConcepts?: string[]
+  ): Promise<{ id: string; file_url: string; status: string; message: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('user_id', this.userId);
+    formData.append('upload_type', uploadType);
+    if (title) formData.append('title', title);
+    if (description) formData.append('description', description);
+    if (linkedConcepts) formData.append('linked_concepts', linkedConcepts.join(','));
+
+    // Use fetch directly — FormData needs browser-set Content-Type with boundary
+    const url = `${this.baseUrl}/api/uploads`;
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Upload failed (${response.status}): ${error}`);
+    }
+
+    return response.json();
+  }
+
   async getUploads(uploadType?: string): Promise<{ uploads: unknown[]; total: number }> {
     const params = new URLSearchParams({ user_id: this.userId });
     if (uploadType) params.set('upload_type', uploadType);
-    
+
     return this.request(`/api/uploads?${params}`);
   }
 }

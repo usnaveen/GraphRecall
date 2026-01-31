@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useStore } from '@/lib/store';
 import { Graph3DNode } from '@/lib/api';
@@ -17,32 +17,43 @@ const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), {
     )
 });
 
+export interface ForceGraphNode extends Graph3DNode {
+    val?: number;
+}
+
+export interface ForceGraphLink {
+    source: string;
+    target: string;
+    relationship_type?: string;
+    strength?: number;
+}
+
 interface Visualizer3DProps {
     data: {
-        nodes: any[];
-        links: any[];
+        nodes: ForceGraphNode[];
+        links: ForceGraphLink[];
     };
 }
 
+// The library uses a loose node type internally; we cast in callbacks
+type NodeObject = Record<string, any>;
+
 export default function Visualizer3D({ data }: Visualizer3DProps) {
+    // ForceGraph3D is dynamically imported, no exported ref type available
     const fgRef = useRef<any>(null);
-    const { setSelectedConcept, graphSearchQuery } = useStore();
+    const { setSelectedConcept } = useStore();
 
-    // Focus on node if searched
-    useEffect(() => {
-        // Logic to focus camera would go here if we tracked a "focusTarget" in store
-    }, [graphSearchQuery]);
-
-    const handleNodeClick = useCallback((node: any) => {
+    const handleNodeClick = useCallback((raw: NodeObject) => {
+        const node = raw as ForceGraphNode;
         // Aim at node from outside it
         const distance = 40;
-        const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
+        const distRatio = 1 + distance / Math.hypot(node.x || 0, node.y || 0, node.z || 0);
 
         if (fgRef.current) {
             fgRef.current.cameraPosition(
-                { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio }, // new position
-                node, // lookAt ({ x, y, z })
-                3000  // ms transition duration
+                { x: (node.x || 0) * distRatio, y: (node.y || 0) * distRatio, z: (node.z || 0) * distRatio },
+                node,
+                3000
             );
         }
 
@@ -61,11 +72,11 @@ export default function Visualizer3D({ data }: Visualizer3DProps) {
                 ref={fgRef}
                 graphData={data}
                 nodeLabel="name"
-                nodeColor={(node: any) => node.color || "#8b5cf6"}
-                nodeVal={(node: any) => Math.pow((node.complexity_score || 5), 1.5)} // Size based on complexity
+                nodeColor={(raw: NodeObject) => (raw as ForceGraphNode).color || "#8b5cf6"}
+                nodeVal={(raw: NodeObject) => Math.pow(((raw as ForceGraphNode).complexity_score || 5), 1.5)}
                 nodeResolution={32}
                 nodeOpacity={0.9}
-                linkWidth={link => (link as any).strength ? (link as any).strength * 1.5 : 1}
+                linkWidth={(raw: Record<string, any>) => { const l = raw as ForceGraphLink; return l.strength ? l.strength * 1.5 : 1; }}
                 linkColor={() => "rgba(255, 255, 255, 0.2)"}
                 linkOpacity={0.3}
                 backgroundColor="#0A0A0B"
@@ -73,7 +84,8 @@ export default function Visualizer3D({ data }: Visualizer3DProps) {
                 onNodeClick={handleNodeClick}
 
                 // Custom Node Object (Glowing spheres)
-                nodeThreeObject={(node: any) => {
+                nodeThreeObject={(raw: NodeObject) => {
+                    const node = raw as ForceGraphNode;
                     const group = new THREE.Group();
 
                     // Sphere
@@ -102,7 +114,7 @@ export default function Visualizer3D({ data }: Visualizer3DProps) {
                 linkDirectionalParticles={2}
                 linkDirectionalParticleSpeed={0.005}
                 linkDirectionalParticleWidth={1.5}
-                linkDirectionalParticleColor={() => "#B6FF2E"} // Neon Green flow
+                linkDirectionalParticleColor={() => "#B6FF2E"}
             />
         </div>
     );

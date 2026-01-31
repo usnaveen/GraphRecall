@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { X, BookOpen, Brain, Link2, Clock } from "lucide-react";
+import { X, BookOpen, Brain } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/lib/store";
@@ -67,23 +67,6 @@ export default function ConceptPanel() {
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="pt-4 border-t border-slate-700 space-y-2">
-            <Button
-              variant="outline"
-              className="w-full border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
-            >
-              <Brain className="h-4 w-4 mr-2" />
-              Start Quiz
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full border-slate-600 text-slate-300 hover:bg-slate-700"
-            >
-              <Clock className="h-4 w-4 mr-2" />
-              Review Flashcards
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>

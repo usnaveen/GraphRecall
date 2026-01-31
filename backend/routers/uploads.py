@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from backend.db.postgres_client import get_postgres_client
 from backend.models.feed_schemas import FeedItemType, UserUpload, UserUploadCreate
+from backend.services.storage_service import get_storage_service
 
 logger = structlog.get_logger()
 
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/api/uploads", tags=["User Uploads"])
 
 class UploadResponse(BaseModel):
     """Response for upload operations."""
-    
+
     id: str
     file_url: str
     thumbnail_url: Optional[str] = None
@@ -26,7 +27,7 @@ class UploadResponse(BaseModel):
 
 class LinkConceptsRequest(BaseModel):
     """Request to link concepts to an upload."""
-    
+
     concept_ids: list[str]
 
 
@@ -36,68 +37,84 @@ async def create_upload(
     upload_type: str = Form(default="screenshot"),
     title: Optional[str] = Form(default=None),
     description: Optional[str] = Form(default=None),
-    file_url: str = Form(...),  # URL to the uploaded file
+    file_url: Optional[str] = Form(default=None),
+    file: Optional[UploadFile] = File(default=None),
     linked_concepts: Optional[str] = Form(default=None),  # Comma-separated IDs
 ):
     """
     Create a new user upload record.
-    
-    This endpoint creates a record for user-uploaded content like:
-    - Screenshots from online resources
-    - Infographics
-    - Diagrams
-    
-    Note: Actual file upload should be handled separately (e.g., to S3).
-    This endpoint just creates the database record with the file URL.
-    
-    Future: Add OCR processing to extract text from images.
+
+    Accepts either:
+    - A `file` (multipart upload) which is uploaded to S3
+    - A `file_url` string pointing to an existing file
+
+    Upload types: screenshot, infographic, diagram
     """
     try:
+        # Resolve file URL: either upload to S3 or use provided URL
+        resolved_url: str
+        if file is not None:
+            storage = get_storage_service()
+            file_data = await file.read()
+            is_valid, error_msg = storage.validate_file(file.content_type, len(file_data))
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=error_msg)
+            resolved_url = await storage.upload_file(
+                file_data, file.filename or "upload", file.content_type or "application/octet-stream", user_id
+            )
+        elif file_url:
+            resolved_url = file_url
+        else:
+            raise HTTPException(status_code=400, detail="Either 'file' or 'file_url' must be provided")
+
         pg_client = await get_postgres_client()
-        
+
         # Parse linked concepts
         concept_list = []
         if linked_concepts:
             concept_list = [c.strip() for c in linked_concepts.split(",") if c.strip()]
-        
+
         # Validate upload type
         try:
             FeedItemType(upload_type)
         except ValueError:
             upload_type = "screenshot"
-        
+
         # Insert upload record
         upload_id = await pg_client.execute_insert(
             """
-            INSERT INTO user_uploads 
+            INSERT INTO user_uploads
                 (user_id, upload_type, file_url, title, description, linked_concepts)
-            VALUES 
+            VALUES
                 (:user_id, :upload_type, :file_url, :title, :description, :linked_concepts)
             RETURNING id
             """,
             {
                 "user_id": user_id,
                 "upload_type": upload_type,
-                "file_url": file_url,
+                "file_url": resolved_url,
                 "title": title,
                 "description": description,
                 "linked_concepts": concept_list,
             },
         )
-        
+
         logger.info(
             "Uploads: Created upload",
             upload_id=upload_id,
             upload_type=upload_type,
+            has_file=file is not None,
         )
-        
+
         return UploadResponse(
             id=str(upload_id),
-            file_url=file_url,
+            file_url=resolved_url,
             status="created",
-            message="Upload record created successfully",
+            message="Upload created successfully",
         )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Uploads: Error creating upload", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -112,25 +129,25 @@ async def list_uploads(
 ):
     """
     List user uploads.
-    
+
     Can filter by upload_type: screenshot, infographic, diagram
     """
     try:
         pg_client = await get_postgres_client()
-        
+
         # Build query
         where_clauses = ["user_id = :user_id"]
         params = {"user_id": user_id, "limit": limit, "offset": offset}
-        
+
         if upload_type:
             where_clauses.append("upload_type = :upload_type")
             params["upload_type"] = upload_type
-        
+
         where_clause = " AND ".join(where_clauses)
-        
+
         result = await pg_client.execute_query(
             f"""
-            SELECT 
+            SELECT
                 id, user_id, upload_type, file_url, thumbnail_url,
                 title, description, linked_concepts, created_at,
                 show_count
@@ -141,7 +158,7 @@ async def list_uploads(
             """,
             params,
         )
-        
+
         # Get total count
         count_result = await pg_client.execute_query(
             f"""
@@ -151,16 +168,16 @@ async def list_uploads(
             """,
             params,
         )
-        
+
         total = count_result[0]["count"] if count_result else 0
-        
+
         return {
             "uploads": result,
             "total": total,
             "limit": limit,
             "offset": offset,
         }
-        
+
     except Exception as e:
         logger.error("Uploads: Error listing uploads", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -171,10 +188,10 @@ async def get_upload(upload_id: str):
     """Get a specific upload by ID."""
     try:
         pg_client = await get_postgres_client()
-        
+
         result = await pg_client.execute_query(
             """
-            SELECT 
+            SELECT
                 id, user_id, upload_type, file_url, thumbnail_url,
                 title, description, linked_concepts, ocr_text,
                 created_at, last_shown_at, show_count
@@ -183,12 +200,12 @@ async def get_upload(upload_id: str):
             """,
             {"upload_id": upload_id},
         )
-        
+
         if not result:
             raise HTTPException(status_code=404, detail="Upload not found")
-        
+
         return result[0]
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -205,24 +222,24 @@ async def update_upload(
     """Update upload metadata."""
     try:
         pg_client = await get_postgres_client()
-        
+
         # Build update
         updates = []
         params = {"upload_id": upload_id}
-        
+
         if title is not None:
             updates.append("title = :title")
             params["title"] = title
-        
+
         if description is not None:
             updates.append("description = :description")
             params["description"] = description
-        
+
         if not updates:
             raise HTTPException(status_code=400, detail="No updates provided")
-        
+
         update_clause = ", ".join(updates)
-        
+
         await pg_client.execute_insert(
             f"""
             UPDATE user_uploads
@@ -231,9 +248,9 @@ async def update_upload(
             """,
             params,
         )
-        
+
         return {"status": "updated", "upload_id": upload_id}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -248,13 +265,13 @@ async def link_concepts_to_upload(
 ):
     """
     Link concepts to an upload.
-    
+
     This connects the upload to specific concepts in the knowledge graph,
     allowing it to appear in the feed when those concepts are due for review.
     """
     try:
         pg_client = await get_postgres_client()
-        
+
         # Get current linked concepts
         result = await pg_client.execute_query(
             """
@@ -264,15 +281,15 @@ async def link_concepts_to_upload(
             """,
             {"upload_id": upload_id},
         )
-        
+
         if not result:
             raise HTTPException(status_code=404, detail="Upload not found")
-        
+
         current = result[0].get("linked_concepts") or []
-        
+
         # Merge with new concepts
         updated = list(set(current + request.concept_ids))
-        
+
         # Update
         await pg_client.execute_insert(
             """
@@ -282,13 +299,13 @@ async def link_concepts_to_upload(
             """,
             {"upload_id": upload_id, "concepts": updated},
         )
-        
+
         return {
             "status": "linked",
             "upload_id": upload_id,
             "linked_concepts": updated,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -304,7 +321,7 @@ async def unlink_concept_from_upload(
     """Remove a concept link from an upload."""
     try:
         pg_client = await get_postgres_client()
-        
+
         # Get current linked concepts
         result = await pg_client.execute_query(
             """
@@ -314,16 +331,16 @@ async def unlink_concept_from_upload(
             """,
             {"upload_id": upload_id},
         )
-        
+
         if not result:
             raise HTTPException(status_code=404, detail="Upload not found")
-        
+
         current = result[0].get("linked_concepts") or []
-        
+
         # Remove the concept
         if concept_id in current:
             current.remove(concept_id)
-        
+
         # Update
         await pg_client.execute_insert(
             """
@@ -333,13 +350,13 @@ async def unlink_concept_from_upload(
             """,
             {"upload_id": upload_id, "concepts": current},
         )
-        
+
         return {
             "status": "unlinked",
             "upload_id": upload_id,
             "linked_concepts": current,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -347,47 +364,52 @@ async def unlink_concept_from_upload(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Note: Actual file deletion would need to happen at the storage layer (S3, etc.)
-# This endpoint only marks the record - actual file deletion is a TODO
 @router.delete("/{upload_id}")
 async def delete_upload(upload_id: str):
     """
-    Delete an upload record.
-    
-    Note: This deletes the database record. The actual file at file_url
-    needs to be deleted separately from your storage service.
+    Delete an upload record and its file from storage.
     """
-    # Note: Respecting user rule - asking before destructive action
-    # In production, this would need user confirmation
     try:
         pg_client = await get_postgres_client()
-        
-        # Check if exists
+
+        # Get the upload record to find the file URL
         result = await pg_client.execute_query(
-            "SELECT id FROM user_uploads WHERE id = :upload_id",
+            "SELECT id, file_url FROM user_uploads WHERE id = :upload_id",
             {"upload_id": upload_id},
         )
-        
+
         if not result:
             raise HTTPException(status_code=404, detail="Upload not found")
-        
-        # Note: Not actually deleting per user's rule about destructive actions
-        # Instead, we'll mark it as deleted (soft delete)
-        # In a real implementation, you'd want to confirm with the user first
-        
-        logger.warning(
-            "Uploads: Delete requested - requires user confirmation",
-            upload_id=upload_id,
+
+        file_url = result[0].get("file_url")
+
+        # Delete from S3 (best-effort)
+        if file_url:
+            try:
+                storage = get_storage_service()
+                await storage.delete_file(file_url)
+            except Exception as e:
+                logger.warning(
+                    "Uploads: Failed to delete file from storage",
+                    file_url=file_url,
+                    error=str(e),
+                )
+
+        # Delete database record
+        await pg_client.execute_insert(
+            "DELETE FROM user_uploads WHERE id = :upload_id",
+            {"upload_id": upload_id},
         )
-        
+
+        logger.info("Uploads: Deleted upload", upload_id=upload_id)
+
         return {
-            "status": "pending_confirmation",
+            "status": "deleted",
             "upload_id": upload_id,
-            "message": "Please confirm deletion. This action cannot be undone.",
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Uploads: Error in delete", error=str(e))
+        logger.error("Uploads: Error deleting upload", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
