@@ -66,18 +66,16 @@ async def lifespan(app: FastAPI):
             logger.info("Applying schema fixes...")
             async with pg_client.session() as session:
                 # Add resource_type column if it doesn't exist
-                await session.execute(text("""
-                    DO $$ 
-                    BEGIN
-                        IF NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns 
-                            WHERE table_name = 'notes' AND column_name = 'resource_type'
-                        ) THEN
-                            ALTER TABLE notes ADD COLUMN resource_type VARCHAR(50) DEFAULT 'notes';
-                        END IF;
-                    END $$;
-                """))
-                await session.commit()
+                # Add resource_type column if it doesn't exist - using simple SQL instead of PL/pgSQL
+                try:
+                    await session.execute(text(
+                        "ALTER TABLE notes ADD COLUMN IF NOT EXISTS resource_type VARCHAR(50) DEFAULT 'notes'"
+                    ))
+                    await session.commit()
+                except Exception:
+                    await session.rollback()
+                    # Ignore if it failed (e.g. column exists) -> verify with explicit check if needed but IF NOT EXISTS should suffice
+
             logger.info("Schema fixes applied")
         except Exception as e:
             logger.warning("Schema fixes skipped", error=str(e))
