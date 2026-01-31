@@ -55,6 +55,33 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown."""
     # Startup
     logger.info("Starting GraphRecall API")
+    
+    # Run Alembic migrations automatically
+    try:
+        from alembic.config import Config
+        from alembic import command
+        import os
+        
+        # Find alembic.ini relative to this file
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        alembic_cfg = Config(os.path.join(base_dir, "alembic.ini"))
+        
+        # Override the database URL from environment
+        db_url = os.getenv("DATABASE_URL", "")
+        if db_url:
+            if db_url.startswith("postgres://"):
+                db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif db_url.startswith("postgresql://"):
+                db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+        
+        logger.info("Running database migrations...")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Database migrations complete")
+    except Exception as e:
+        logger.warning("Alembic migrations skipped or failed", error=str(e))
+        # Continue anyway - migrations might not be needed or DB isn't ready
+    
     try:
         # Initialize database clients
         pg_client = await get_postgres_client()
