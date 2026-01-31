@@ -174,10 +174,13 @@ async def ingest_note(request: IngestRequest):
             raise HTTPException(status_code=500, detail="Failed to save note")
 
         # Run the ingestion pipeline
-        result = await run_ingestion_pipeline(
-            user_id=request.user_id,
+        # V2 Migration: Use run_ingestion with skip_review=True to mimic old auto-approve behavior
+        result = await run_ingestion(
             content=request.content,
+            user_id=request.user_id,
+            title=None, # V1 didn't have title in request
             note_id=note_id,
+            skip_review=True, 
         )
 
         processing_time = (time.time() - start_time) * 1000

@@ -21,6 +21,7 @@ from typing import Optional, Literal
 import structlog
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
+from langgraph.types import interrupt, Command
 
 from backend.agents.states import IngestionState
 from backend.db.neo4j_client import get_neo4j_client
@@ -292,16 +293,9 @@ async def user_review_node(state: IngestionState) -> dict:
     """
     Node 4b: Wait for user review (interrupt point).
     
-    This node is where the workflow pauses for human-in-the-loop.
-    The workflow resumes when the user provides their decisions.
-    
-    Input: synthesis_decisions
-    Output: user_approved_concepts
+    Uses LangGraph 1.0 `interrupt()` function to pause execution.
     """
-    logger.info("user_review_node: Awaiting user decision")
-    
-    # This node is an interrupt point
-    # The actual user decisions are provided when resuming the workflow
+    logger.info("user_review_node: Checking review requirement")
     
     # For auto-approval mode (if skip_review is set), approve all
     if state.get("skip_review", False):
@@ -314,8 +308,25 @@ async def user_review_node(state: IngestionState) -> dict:
             "awaiting_user_approval": False,
         }
     
-    # Otherwise, workflow will pause here and resume with user input
-    return {"awaiting_user_approval": True}
+    # Pause for user input
+    logger.info("user_review_node: Interrupting for user review")
+    
+    user_response = interrupt({
+        "type": "review_concepts",
+        "synthesis_decisions": state.get("synthesis_decisions", []),
+        "message": "Please review the extracted concepts",
+    })
+    
+    # Resume logic (runs when Command(resume=...) is sent)
+    logger.info("user_review_node: Resumed with user response")
+    
+    if user_response.get("cancelled"):
+        return {"user_cancelled": True, "awaiting_user_approval": False}
+    
+    return {
+        "user_approved_concepts": user_response.get("approved_concepts", []),
+        "awaiting_user_approval": False,
+    }
 
 
 async def create_concepts_node(state: IngestionState) -> dict:
@@ -659,21 +670,15 @@ def create_ingestion_graph(enable_interrupts: bool = True):
     # Get checkpointer (MemorySaver for dev, PostgresSaver for prod)
     checkpointer = get_checkpointer()
     
-    # Compile with optional interrupt for human-in-the-loop
-    if enable_interrupts:
-        return builder.compile(
-            checkpointer=checkpointer,
-            interrupt_before=["user_review"],  # Pause before user review
-        )
-    else:
-        return builder.compile(checkpointer=checkpointer)
+    # Compile (interrupt() function handles pausing now, so no interrupt_before needed)
+    return builder.compile(checkpointer=checkpointer)
 
 
-# Global graph instance (with interrupts enabled)
-ingestion_graph = create_ingestion_graph(enable_interrupts=True)
+# Global graph instance
+ingestion_graph = create_ingestion_graph()
 
-# Non-interrupt version for skip_review mode
-ingestion_graph_auto = create_ingestion_graph(enable_interrupts=False)
+# ingestion_graph_auto is deprecated as single graph handles both modes now but keeping alias for safety
+ingestion_graph_auto = ingestion_graph
 
 
 # ============================================================================
@@ -802,20 +807,13 @@ async def resume_ingestion(
     )
     
     try:
-        # Get current state
-        state = ingestion_graph.get_state(config)
-        current_values = state.values if state else {}
-        
-        # Update state with user decisions
-        updated_state = {
-            **current_values,
-            "user_approved_concepts": user_approved_concepts or [],
-            "user_cancelled": user_cancelled,
-            "awaiting_user_approval": False,
+        # Resume using Command pattern
+        resume_value = {
+            "approved_concepts": user_approved_concepts or [],
+            "cancelled": user_cancelled
         }
         
-        # Resume the workflow
-        result = await ingestion_graph.ainvoke(updated_state, config)
+        result = await ingestion_graph.ainvoke(Command(resume=resume_value), config)
         
         logger.info(
             "resume_ingestion: Complete",

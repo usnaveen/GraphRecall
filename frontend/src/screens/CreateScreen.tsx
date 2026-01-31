@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Upload, Image, FileText, Link2, Check, 
+import {
+  Upload, Image, FileText, Link2, Check,
   Save
 } from 'lucide-react';
+import { ingestService } from '../services/api';
 
 type CreateStep = 'upload' | 'processing' | 'review' | 'success';
 
 interface ExtractedConcept {
-  id: string;
+  id?: string;
   name: string;
   definition: string;
-  domain: string;
-  complexity: number;
+  domain?: string;
+  complexity?: number;
   selected: boolean;
   exists?: boolean;
 }
@@ -21,41 +22,8 @@ export function CreateScreen() {
   const [step, setStep] = useState<CreateStep>('upload');
   const [isDragging, setIsDragging] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [extractedConcepts, setExtractedConcepts] = useState<ExtractedConcept[]>([
-    {
-      id: '1',
-      name: 'Neural Network',
-      definition: 'A computing system inspired by biological neural networks that can learn patterns from data.',
-      domain: 'Machine Learning',
-      complexity: 7,
-      selected: true,
-    },
-    {
-      id: '2',
-      name: 'Backpropagation',
-      definition: 'Algorithm for calculating gradients by propagating errors backwards through layers.',
-      domain: 'Machine Learning',
-      complexity: 8,
-      selected: true,
-      exists: true,
-    },
-    {
-      id: '3',
-      name: 'Input Layer',
-      definition: 'First layer that receives raw data in a neural network.',
-      domain: 'Machine Learning',
-      complexity: 3,
-      selected: true,
-    },
-    {
-      id: '4',
-      name: 'Gradient',
-      definition: 'A vector of partial derivatives indicating the direction of steepest ascent.',
-      domain: 'Mathematics',
-      complexity: 6,
-      selected: false,
-    },
-  ]);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [extractedConcepts, setExtractedConcepts] = useState<ExtractedConcept[]>([]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -69,32 +37,67 @@ export function CreateScreen() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    startProcessing();
+    startProcessing("Uploaded document content here..."); // In real app, read file
   };
 
-  const startProcessing = () => {
+  const startProcessing = async (content: string) => {
     setStep('processing');
-    setProgress(0);
-    
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setStep('review');
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 300);
+    setProgress(10);
+
+    try {
+      const response = await ingestService.ingest(content, "New Knowledge");
+      setThreadId(response.thread_id);
+      setProgress(100);
+
+      if (response.status === 'awaiting_review') {
+        const decisions = response.synthesis_decisions || [];
+        const concepts = decisions.map((d: any, i: number) => ({
+          id: i.toString(),
+          name: d.new_concept.name,
+          definition: d.new_concept.definition,
+          domain: d.new_concept.domain || 'General',
+          complexity: d.new_concept.complexity_score || 5,
+          selected: d.recommended_action !== 'skip',
+          exists: d.matches && d.matches.length > 0,
+          original: d.new_concept
+        }));
+        setExtractedConcepts(concepts);
+        setStep('review');
+      } else {
+        setStep('success');
+      }
+    } catch (error) {
+      console.error('Ingestion failed:', error);
+      setStep('upload');
+    }
+  };
+
+  const handleSaveToGraph = async () => {
+    if (!threadId) return;
+
+    setStep('processing');
+    setProgress(50);
+
+    try {
+      const approved = extractedConcepts
+        .filter((c: ExtractedConcept) => c.selected)
+        .map((c: ExtractedConcept) => (c as any).original);
+
+      await ingestService.resume(threadId, approved);
+      setStep('success');
+    } catch (error) {
+      console.error('Resume failed:', error);
+      setStep('upload');
+    }
   };
 
   const toggleConcept = (id: string) => {
-    setExtractedConcepts(prev => 
-      prev.map(c => c.id === id ? { ...c, selected: !c.selected } : c)
+    setExtractedConcepts((prev: ExtractedConcept[]) =>
+      prev.map((c: ExtractedConcept) => c.id === id ? { ...c, selected: !c.selected } : c)
     );
   };
 
-  const selectedCount = extractedConcepts.filter(c => c.selected).length;
+  const selectedCount = extractedConcepts.filter((c: ExtractedConcept) => c.selected).length;
 
   return (
     <div className="h-[calc(100vh-180px)] flex flex-col">
@@ -120,8 +123,8 @@ export function CreateScreen() {
               onDrop={handleDrop}
               className={`
                 flex-1 min-h-[200px] rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-6 transition-all duration-300
-                ${isDragging 
-                  ? 'border-[#B6FF2E] bg-[#B6FF2E]/5' 
+                ${isDragging
+                  ? 'border-[#B6FF2E] bg-[#B6FF2E]/5'
                   : 'border-white/20 bg-white/[0.02] hover:border-white/30'
                 }
               `}
@@ -134,11 +137,11 @@ export function CreateScreen() {
               </motion.div>
               <p className="text-white font-medium mb-2">Drag & drop files here</p>
               <p className="text-white/50 text-sm mb-4">or tap to browse</p>
-              
+
               {/* Format Pills */}
               <div className="flex gap-2">
                 {['.md', '.txt', '.pdf', '.jpg'].map((format) => (
-                  <span 
+                  <span
                     key={format}
                     className="px-2 py-1 rounded-full text-xs font-mono bg-white/5 text-white/50"
                   >
@@ -155,17 +158,17 @@ export function CreateScreen() {
                 <QuickActionButton
                   icon={Image}
                   label="Screenshot"
-                  onClick={startProcessing}
+                  onClick={() => startProcessing("Context: Screenshot of a neural network diagram showing backpropagation flow.")}
                 />
                 <QuickActionButton
                   icon={FileText}
                   label="Write Notes"
-                  onClick={startProcessing}
+                  onClick={() => startProcessing("Concept: Transformer Architecture. Transformers use self-attention mechanisms to process sequential data in parallel...")}
                 />
                 <QuickActionButton
                   icon={Link2}
                   label="Import URL"
-                  onClick={startProcessing}
+                  onClick={() => startProcessing("Source: Wikipedia Article on Graph Neural Networks (GNNs). GNNs are a class of artificial neural networks for processing data that can be represented as graphs.")}
                 />
               </div>
             </div>
@@ -195,7 +198,7 @@ export function CreateScreen() {
                 animate={{ width: `${progress}%` }}
               />
             </div>
-            
+
             {/* Steps */}
             <div className="space-y-2 text-sm">
               <ProcessingStep label="Document parsed" completed={progress >= 20} />
@@ -227,7 +230,7 @@ export function CreateScreen() {
 
             {/* Concepts List */}
             <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-              {extractedConcepts.map((concept, i: number) => (
+              {extractedConcepts.map((concept: ExtractedConcept, i: number) => (
                 <motion.div
                   key={concept.id}
                   initial={{ opacity: 0, x: -10 }}
@@ -235,8 +238,8 @@ export function CreateScreen() {
                   transition={{ delay: i * 0.05 }}
                   className={`
                     p-4 rounded-2xl border transition-all
-                    ${concept.selected 
-                      ? 'bg-white/5 border-white/20' 
+                    ${concept.selected
+                      ? 'bg-white/5 border-white/20'
                       : 'bg-transparent border-white/5 opacity-60'
                     }
                   `}
@@ -246,15 +249,15 @@ export function CreateScreen() {
                       onClick={() => toggleConcept(concept.id)}
                       className={`
                         w-5 h-5 rounded-md flex items-center justify-center transition-colors mt-0.5
-                        ${concept.selected 
-                          ? 'bg-[#B6FF2E] text-[#07070A]' 
+                        ${concept.selected
+                          ? 'bg-[#B6FF2E] text-[#07070A]'
                           : 'bg-white/10 text-transparent'
                         }
                       `}
                     >
                       <Check className="w-3 h-3" />
                     </button>
-                    
+
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <h4 className="font-medium text-white">{concept.name}</h4>
@@ -291,7 +294,7 @@ export function CreateScreen() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => setStep('success')}
+                  onClick={handleSaveToGraph}
                   disabled={selectedCount === 0}
                   className="flex-1 py-3 rounded-xl bg-[#B6FF2E] text-[#07070A] font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#c5ff4d] transition-colors flex items-center justify-center gap-2"
                 >
@@ -318,10 +321,10 @@ export function CreateScreen() {
             >
               <Check className="w-10 h-10 text-green-400" />
             </motion.div>
-            
+
             <h2 className="font-heading text-2xl font-bold text-white mb-2">Success!</h2>
             <p className="text-white/60 mb-6">Added to your knowledge graph:</p>
-            
+
             <div className="space-y-2 text-sm mb-8">
               <div className="flex items-center gap-2 text-white/80">
                 <div className="w-4 h-4 rounded-full bg-[#B6FF2E]/20 flex items-center justify-center">
@@ -365,13 +368,13 @@ export function CreateScreen() {
 }
 
 // Quick Action Button
-function QuickActionButton({ 
-  icon: Icon, 
-  label, 
-  onClick 
-}: { 
-  icon: React.ElementType; 
-  label: string; 
+function QuickActionButton({
+  icon: Icon,
+  label,
+  onClick
+}: {
+  icon: React.ElementType;
+  label: string;
   onClick: () => void;
 }) {
   return (
@@ -388,12 +391,12 @@ function QuickActionButton({
 }
 
 // Processing Step
-function ProcessingStep({ 
-  label, 
-  completed, 
-  active 
-}: { 
-  label: string; 
+function ProcessingStep({
+  label,
+  completed,
+  active
+}: {
+  label: string;
   completed: boolean;
   active?: boolean;
 }) {

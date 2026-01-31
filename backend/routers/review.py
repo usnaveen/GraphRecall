@@ -78,9 +78,13 @@ async def ingest_with_review(request: IngestWithReviewRequest):
         
         # If skip_review, use old behavior
         if request.skip_review:
-            result = await run_ingestion_pipeline(
-                user_id=request.user_id,
+            # V2 Migration: Use run_ingestion directly
+            result = await run_ingestion(
                 content=request.content,
+                user_id=request.user_id,
+                title=None,
+                source_url=request.source_url,
+                skip_review=True,
                 note_id=note_id,
             )
             

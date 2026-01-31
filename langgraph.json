@@ -1,0 +1,12 @@
+{
+    "graphs": {
+        "supervisor": "./backend/graphs/supervisor_graph.py:supervisor_graph",
+        "ingestion": "./backend/graphs/ingestion_graph.py:ingestion_graph",
+        "chat": "./backend/graphs/chat_graph.py:chat_graph",
+        "research": "./backend/graphs/research_graph.py:research_agent",
+        "mermaid": "./backend/graphs/mermaid_graph.py:mermaid_graph",
+        "content": "./backend/graphs/content_graph.py:content_graph",
+        "verify": "./backend/graphs/mcp_graph.py:mcp_graph"
+    },
+    "env": ".env"
+}

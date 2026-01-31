@@ -122,13 +122,17 @@ export function AssistantScreen() {
     setInputValue('');
     setIsTyping(true);
 
-    try {
-      // Create or use existing conversation
-      if (!conversationId) {
-        const convRes = await api.post('/api/chat/conversations', {});
-        setConversationId(convRes.data.id);
-      }
+    // Initial placeholder for assistant message
+    const assistantMessageId = (Date.now() + 1).toString();
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      status: 'Initialising...',
+    };
+    addChatMessage(assistantMessage);
 
+    try {
       // Use streaming endpoint
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
@@ -136,7 +140,6 @@ export function AssistantScreen() {
         body: JSON.stringify({
           message: inputValue,
           user_id: '00000000-0000-0000-0000-000000000001',
-          conversation_history: chatMessages.slice(-10),
         }),
       });
 
@@ -147,8 +150,7 @@ export function AssistantScreen() {
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let fullContent = '';
-      let sources: string[] = [];
-      let relatedConcepts: string[] = [];
+      let currentStatus = 'Thinking...';
 
       if (reader) {
         while (true) {
@@ -162,11 +164,25 @@ export function AssistantScreen() {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                if (data.type === 'chunk') {
+
+                if (data.type === 'status') {
+                  currentStatus = data.content;
+                  // Update message status in store
+                  const updatedMsg = { ...assistantMessage, content: fullContent, status: currentStatus };
+                  addChatMessage(updatedMsg); // Store should handle update if ID matches, else we'd need an update method
+                } else if (data.type === 'chunk') {
                   fullContent += data.content;
+                  const updatedMsg = { ...assistantMessage, content: fullContent, status: currentStatus };
+                  addChatMessage(updatedMsg);
                 } else if (data.type === 'done') {
-                  sources = data.sources || [];
-                  relatedConcepts = data.related_concepts || [];
+                  const finalMsg: ChatMessage = {
+                    ...assistantMessage,
+                    content: fullContent,
+                    status: undefined,
+                    sources: data.sources || [],
+                    relatedConcepts: data.related_concepts || [],
+                  };
+                  addChatMessage(finalMsg);
                 }
               } catch (e) {
                 // Ignore parse errors
@@ -176,40 +192,14 @@ export function AssistantScreen() {
         }
       }
 
-      const assistantMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: fullContent || 'I couldn\'t process that request.',
-        sources,
-        relatedConcepts,
-      };
-      addChatMessage(assistantMessage);
-
     } catch (error) {
       console.error('Chat error:', error);
-      // Fallback to regular endpoint
-      try {
-        const res = await api.post('/api/chat', {
-          message: inputValue,
-          user_id: '00000000-0000-0000-0000-000000000001',
-        });
-
-        const assistantMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: res.data.response || 'I\'m here to help!',
-          sources: res.data.sources,
-          relatedConcepts: res.data.related_concepts,
-        };
-        addChatMessage(assistantMessage);
-      } catch (fallbackError) {
-        const errorMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: 'Sorry, I encountered an error. Please try again.',
-        };
-        addChatMessage(errorMessage);
-      }
+      const errorMessage: ChatMessage = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again.',
+      };
+      addChatMessage(errorMessage);
     } finally {
       setIsTyping(false);
     }
@@ -411,6 +401,16 @@ export function AssistantScreen() {
               {/* Content */}
               <div className="text-sm whitespace-pre-line leading-relaxed">
                 {message.content}
+                {message.status && (
+                  <div className="mt-2 flex items-center gap-2 text-[10px] text-[#B6FF2E]/60 italic animate-pulse">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                      className="w-2 h-2 border-t border-[#B6FF2E] rounded-full"
+                    />
+                    {message.status}
+                  </div>
+                )}
               </div>
 
               {/* Sources */}

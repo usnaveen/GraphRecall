@@ -8,7 +8,7 @@ Following LangGraph 1.0.7 best practices:
 - Minimal, typed state objects
 """
 
-from typing import Optional
+from typing import Annotated, Any, Dict, List, Optional, Union, Sequence, Literal
 from typing_extensions import TypedDict
 
 
@@ -82,23 +82,150 @@ class ReviewSessionState(TypedDict, total=False):
 
 class ChatState(TypedDict, total=False):
     """
-    State for the GraphRAG chat workflow.
+    State for the GraphRAG chat workflow (LangGraph refactor).
     
-    Used for knowledge-aware conversation with graph traversal.
+    Uses MessagesState pattern with add_messages reducer for
+    automatic message history management.
+    
+    Interview-ready patterns:
+    - Annotated list with add_messages for message accumulation
+    - Proper message types (SystemMessage, HumanMessage, AIMessage)
     """
-    user_id: str
-    query: str
-    conversation_history: list[dict]  # [{role, content}]
+    from typing import Annotated
+    from langchain_core.messages import BaseMessage
+    from langgraph.graph.message import add_messages
     
-    # Analysis
-    query_intent: str
-    extracted_entities: list[str]
+    # Core message history with add_messages reducer
+    messages: Annotated[list[BaseMessage], add_messages]
+    
+    # User context
+    user_id: str
+    
+    # Query analysis
+    intent: str
+    entities: list[str]
     
     # Context retrieval
     graph_context: dict
     rag_context: list[dict]
     
-    # Response
-    response: str
+    # Response metadata
+    sources: list[dict]
+    related_concepts: list[dict]
+
+
+class QuizState(TypedDict, total=False):
+    """
+    State for quiz generation workflow.
+    
+    Demonstrates conditional routing based on resource sufficiency.
+    """
+    # Input
+    topic: str
+    user_id: str
+    num_questions: int
+    
+    # Resources
+    resources: list[dict]
+    resource_count: int
+    
+    # Routing decision
+    needs_research: bool
+    research_results: list[dict]
+    payload: dict      # Input arguments for the subgraph
+    result: dict       # Output from the subgraph
+    error: Optional[str]
+
+
+class MCPState(TypedDict, total=False):
+    """
+    State for the MCP (Model Context Protocol) Verification Graph.
+    """
+    # Input
+    claim: str
+    
+    # Internal
+    mcp_server_response: dict
+    
+    # Output
+    verdict: Literal["verified", "incorrect", "ambiguous"]
+    explanation: str
     sources: list[str]
-    related_concepts: list[str]
+
+
+class ResearchState(TypedDict, total=False):
+    """
+    State for research agent (ReAct pattern).
+    
+    Used with create_react_agent prebuilt.
+    """
+    from typing import Annotated
+    from langchain_core.messages import BaseMessage
+    from langgraph.graph.message import add_messages
+    
+    # Message history for ReAct loop
+    messages: Annotated[list[BaseMessage], add_messages]
+    
+    # Research context
+    topic: str
+    user_id: str
+    
+class MermaidState(TypedDict, total=False):
+    """
+    State for Mermaid diagram generation (Self-Correction pattern).
+    
+    Flow: generate -> validate -> (invalid) -> fix -> validate ...
+    """
+    # Input
+    description: str
+    chart_type: str
+    
+    # Processing
+    current_code: str
+    validation_error: Optional[str]
+    attempt_count: int
+    
+    # Output
+    final_code: str
+    explanation: str
+
+
+class ContentState(TypedDict, total=False):
+    """
+    State for parallel content generation (Parallel/Map-Reduce pattern).
+    
+    Flow: plan -> [mcq, flashcards, diagram] -> aggregate
+    """
+    # Input
+    topic: str
+    user_id: str
+    
+    # Internal Resources
+    concepts: list[dict]
+    
+    # Parallel Outputs
+    mcqs: list[dict]
+    flashcards: list[dict]
+    diagram: dict  # {code, explanation}
+    
+    # Final Output
+    final_pack: dict
+
+
+class SupervisorState(TypedDict, total=False):
+    """
+    State for the Supervisor (Orchestrator) Graph.
+    Methods: Classify -> Route -> Aggregate
+    """
+    # Input
+    request_type: str # ingest | chat | research | mermaid | content | verify
+    user_id: str
+    payload: dict     # Original request payload
+    
+    # Internal
+    next_node: str    # Routing decision
+    
+    # Output
+    result: dict      # Result from subgraph
+    error: Optional[str]
+
