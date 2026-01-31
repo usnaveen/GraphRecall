@@ -20,8 +20,8 @@ export function FeedScreen() {
   } = useAppStore();
 
   const currentItem = feedItems[currentFeedIndex];
-  const isLiked = likedItems.has(currentItem.id);
-  const isSaved = savedItems.has(currentItem.id);
+  const isLiked = currentItem && likedItems.has(currentItem.id);
+  const isSaved = currentItem && savedItems.has(currentItem.id);
 
   const handleSwipe = (direction: 'up' | 'down') => {
     if (direction === 'up') {
@@ -30,6 +30,18 @@ export function FeedScreen() {
       prevFeedItem();
     }
   };
+
+  // Empty state
+  if (!feedItems.length) {
+    return (
+      <div className="h-[calc(100vh-180px)] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-white/60 text-lg mb-2">No items in your feed</p>
+          <p className="text-white/40 text-sm">Start by adding some notes to your knowledge graph!</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-180px)] flex flex-col">
@@ -67,8 +79,8 @@ export function FeedScreen() {
                       >
                         <Heart
                           className={`w-6 h-6 transition-all duration-200 ${isLiked
-                              ? 'fill-red-500 text-red-500'
-                              : 'text-white/60 group-hover:text-white'
+                            ? 'fill-red-500 text-red-500'
+                            : 'text-white/60 group-hover:text-white'
                             }`}
                         />
                       </motion.div>
@@ -85,8 +97,8 @@ export function FeedScreen() {
                     >
                       <Bookmark
                         className={`w-6 h-6 transition-all duration-200 ${isSaved
-                            ? 'fill-[#B6FF2E] text-[#B6FF2E]'
-                            : 'text-white/60 group-hover:text-white'
+                          ? 'fill-[#B6FF2E] text-[#B6FF2E]'
+                          : 'text-white/60 group-hover:text-white'
                           }`}
                       />
                       <span className={`text-sm ${isSaved ? 'text-[#B6FF2E]' : 'text-white/60'}`}>
