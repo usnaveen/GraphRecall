@@ -37,6 +37,7 @@ from backend.routers.review import router as review_router
 from backend.routers.chat import router as chat_router
 from backend.routers.graph3d import router as graph3d_router
 from backend.routers.uploads import router as uploads_router
+from backend.routers.ingest_v2 import router as ingest_v2_router
 
 # Configure structured logging
 structlog.configure(
@@ -94,6 +95,7 @@ app.include_router(review_router)    # /api/review - Human-in-the-loop concept r
 app.include_router(chat_router)      # /api/chat - GraphRAG assistant
 app.include_router(graph3d_router)   # /api/graph3d - 3D visualization data
 app.include_router(uploads_router)   # /api/uploads - User screenshots/infographics
+app.include_router(ingest_v2_router) # /api/v2 - LangGraph-powered ingestion
 
 
 # ============================================================================

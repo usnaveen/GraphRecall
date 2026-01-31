@@ -53,7 +53,9 @@ CREATE TABLE IF NOT EXISTS flashcards (
     source_note_ids UUID[] DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     times_reviewed INTEGER DEFAULT 0,
-    times_correct INTEGER DEFAULT 0
+    times_correct INTEGER DEFAULT 0,
+    is_liked BOOLEAN DEFAULT FALSE,
+    is_saved BOOLEAN DEFAULT FALSE
 );
 
 -- Quizzes (generated questions)
@@ -68,7 +70,9 @@ CREATE TABLE IF NOT EXISTS quizzes (
     explanation TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     
-    CONSTRAINT valid_question_type CHECK (question_type IN ('mcq', 'open_ended', 'code'))
+    CONSTRAINT valid_question_type CHECK (question_type IN ('mcq', 'open_ended', 'code')),
+    is_liked BOOLEAN DEFAULT FALSE,
+    is_saved BOOLEAN DEFAULT FALSE
 );
 
 -- Study sessions (tracking learning activity)

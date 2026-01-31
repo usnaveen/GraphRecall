@@ -224,3 +224,61 @@ async def get_due_count(
     except Exception as e:
         logger.error("Feed: Error getting due count", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+@router.post("/{item_id}/like")
+async def toggle_like(
+    item_id: str,
+    item_type: str,
+    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+):
+    """Toggle like status for a feed item (flashcard or quiz)."""
+    try:
+        pg_client = await get_postgres_client()
+        table = "flashcards" if item_type == "flashcard" else "quizzes"
+        
+        # Toggle the boolean
+        await pg_client.execute_query(
+            f"UPDATE {table} SET is_liked = NOT is_liked WHERE id = :item_id AND user_id = :user_id",
+            {"item_id": item_id, "user_id": user_id}
+        )
+        
+        # Return new status
+        result = await pg_client.execute_query(
+            f"SELECT is_liked FROM {table} WHERE id = :item_id AND user_id = :user_id",
+            {"item_id": item_id, "user_id": user_id}
+        )
+        
+        return {"id": item_id, "is_liked": result[0]["is_liked"] if result else False}
+        
+    except Exception as e:
+        logger.error("Feed: Error toggling like", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{item_id}/save")
+async def toggle_save(
+    item_id: str,
+    item_type: str,
+    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+):
+    """Toggle save status for a feed item (flashcard or quiz)."""
+    try:
+        pg_client = await get_postgres_client()
+        table = "flashcards" if item_type == "flashcard" else "quizzes"
+        
+        # Toggle the boolean
+        await pg_client.execute_query(
+            f"UPDATE {table} SET is_saved = NOT is_saved WHERE id = :item_id AND user_id = :user_id",
+            {"item_id": item_id, "user_id": user_id}
+        )
+        
+        # Return new status
+        result = await pg_client.execute_query(
+            f"SELECT is_saved FROM {table} WHERE id = :item_id AND user_id = :user_id",
+            {"item_id": item_id, "user_id": user_id}
+        )
+        
+        return {"id": item_id, "is_saved": result[0]["is_saved"] if result else False}
+        
+    except Exception as e:
+        logger.error("Feed: Error toggling save", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
