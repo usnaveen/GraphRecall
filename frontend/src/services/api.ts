@@ -3,7 +3,8 @@
  * Connects the Vite frontend to the FastAPI backend endpoints.
  */
 
-const API_BASE = '/api'; // Proxied or absolute URL
+// Use environment variable if available, otherwise default to local backend
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export const feedService = {
     /** Get the personalized active recall feed */
