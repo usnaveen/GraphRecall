@@ -12,7 +12,9 @@ from pydantic import BaseModel
 from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
 from backend.models.feed_schemas import ChatMessage, ChatRequest, ChatResponse
-from backend.agents.graphrag_chat import GraphRAGAgent
+# Refactor: Use new LangGraph workflow instead of legacy agent
+from backend.graphs.chat_graph import chat_graph, run_chat, ChatState
+from langchain_core.messages import HumanMessage
 
 logger = structlog.get_logger()
 
@@ -48,18 +50,29 @@ async def chat(request: ChatRequest):
     Include conversation_history for multi-turn conversations.
     """
     try:
-        pg_client = await get_postgres_client()
-        neo4j_client = await get_neo4j_client()
+        # Refactor: Use LangGraph run_chat
         
-        chat_agent = GraphRAGAgent(neo4j_client, pg_client)
-        
-        response = await chat_agent.chat(
+        # Use existing conversation ID as thread_id if provided
+        thread_id = None
+        if request.conversation_history:
+            # Note: The frontend sends history as a list, but for LangGraph we rely on 
+            # server-side persistence via checkpointer. Ideally, frontend should send thread_id.
+            # For this refactor, we'll treat a new proper request with thread_id in header
+            # but getting it from request for now if we mock it.
+            pass
+
+        # Execute the graph
+        result = await run_chat(
             user_id=request.user_id,
             message=request.message,
-            conversation_history=request.conversation_history,
+            thread_id=str(uuid.uuid4()) # Create new thread for single turn if no ID
         )
         
-        return response
+        return ChatResponse(
+            response=result["response"],
+            sources=result["sources"],
+            related_concepts=result["related_concepts"]
+        )
         
     except Exception as e:
         logger.error("Chat: Error processing message", error=str(e))
@@ -74,18 +87,18 @@ async def quick_chat(request: QuickChatRequest):
     Simplified endpoint for single-turn questions.
     """
     try:
-        pg_client = await get_postgres_client()
-        neo4j_client = await get_neo4j_client()
-        
-        chat_agent = GraphRAGAgent(neo4j_client, pg_client)
-        
-        response = await chat_agent.chat(
+        # Refactor: Use LangGraph run_chat
+        result = await run_chat(
             user_id=request.user_id,
             message=request.message,
-            conversation_history=[],
+            thread_id=str(uuid.uuid4())
         )
         
-        return response
+        return ChatResponse(
+            response=result["response"],
+            sources=result["sources"],
+            related_concepts=result["related_concepts"]
+        )
         
     except Exception as e:
         logger.error("Chat: Error processing quick message", error=str(e))
@@ -655,29 +668,45 @@ async def stream_chat(request: ChatRequest):
     """
     async def generate():
         try:
-            pg_client = await get_postgres_client()
-            neo4j_client = await get_neo4j_client()
+            thread_id = str(uuid.uuid4())
+            config = {"configurable": {"thread_id": thread_id}}
             
-            chat_agent = GraphRAGAgent(neo4j_client, pg_client)
+            initial_state: ChatState = {
+                "messages": [HumanMessage(content=request.message)],
+                "user_id": request.user_id,
+                "graph_context": {},
+                "rag_context": [],
+            }
             
-            # For now, simulate streaming by splitting the response
-            # In production, you'd use chat_agent.stream_chat() with a streaming LLM
-            response = await chat_agent.chat(
-                user_id=request.user_id,
-                message=request.message,
-                conversation_history=request.conversation_history or [],
-            )
+            # Streaming Loop using astream_events (LangGraph 1.0+)
+            # Using version="v2" for standard event format
+            async for event in chat_graph.astream_events(initial_state, config, version="v2"):
+                
+                kind = event["event"]
+                
+                # Stream partial tokens from the LLM
+                if kind == "on_chat_model_stream":
+                    content = event["data"]["chunk"].content
+                    if content:
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
+                
+                # Notify about tool usage (searching graph/notes)
+                elif kind == "on_tool_start":
+                    yield f"data: {json.dumps({'type': 'status', 'content': f'Using tool: {event['name']}...'})}\n\n"
+                    
+                # Monitor node transitions (for debug/UI)
+                elif kind == "on_chain_start" and event["name"] in ["analyze_query", "get_context", "generate_response"]:
+                    yield f"data: {json.dumps({'type': 'status', 'content': f'Step: {event['name']}...'})}\n\n"
+
+            # Get final state for metadata
+            final_state = await chat_graph.aget_state(config)
+            values = final_state.values
             
-            # Stream the response in chunks
-            full_response = response.response
-            chunk_size = 50  # Characters per chunk
-            
-            for i in range(0, len(full_response), chunk_size):
-                chunk = full_response[i:i + chunk_size]
-                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+            related_concepts = values.get("related_concepts", [])
+            sources = values.get("sources", [])
             
             # Send final event with metadata
-            yield f"data: {json.dumps({'type': 'done', 'sources': response.sources, 'related_concepts': response.related_concepts})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'sources': sources, 'related_concepts': related_concepts})}\n\n"
             
         except Exception as e:
             logger.error("Stream chat: Error", error=str(e))

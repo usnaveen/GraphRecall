@@ -210,9 +210,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addChatMessage: (message: ChatMessage) => {
-    set((state: AppState) => ({
-      chatMessages: [...state.chatMessages, message],
-    }));
+    set((state: AppState) => {
+      const existingIndex = state.chatMessages.findIndex((m: ChatMessage) => m.id === message.id);
+      if (existingIndex > -1) {
+        const newMessages = [...state.chatMessages];
+        newMessages[existingIndex] = message;
+        return { chatMessages: newMessages };
+      }
+      return { chatMessages: [...state.chatMessages, message] };
+    });
   },
 
   clearChatMessages: () => {

@@ -92,6 +92,21 @@ export const ingestService = {
         });
         if (!response.ok) throw new Error('Ingestion failed');
         return response.json();
+    },
+
+    /** Resume ingestion after user review */
+    resume: async (threadId: string, approvedConcepts: any[], cancelled: boolean = false) => {
+        const response = await fetch(`${API_BASE}/v2/ingest/resume`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                thread_id: threadId,
+                user_approved_concepts: approvedConcepts,
+                user_cancelled: cancelled
+            })
+        });
+        if (!response.ok) throw new Error('Resume ingestion failed');
+        return response.json();
     }
 };
 
