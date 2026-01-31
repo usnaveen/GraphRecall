@@ -20,7 +20,7 @@ from backend.db.postgres_client import (
     close_postgres_client,
     get_postgres_client,
 )
-from backend.graph.workflow import run_ingestion_pipeline
+from backend.graphs import run_ingestion
 from backend.models.schemas import (
     ConceptResponse,
     GraphResponse,

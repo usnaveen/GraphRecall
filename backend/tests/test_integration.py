@@ -5,14 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.graph.state import GraphState, create_initial_state
-from backend.graph.workflow import (
-    check_conflicts_node,
-    extract_concepts_node,
-    parse_input_node,
-    run_ingestion_pipeline,
-    update_graph_node,
-)
+# Legacy imports commented out - these modules were deleted in the LangGraph refactor
+# from backend.graph.state import GraphState, create_initial_state
+# from backend.graph.workflow import (
+#     check_conflicts_node,
+#     extract_concepts_node,
+#     parse_input_node,
+#     run_ingestion_pipeline,
+#     update_graph_node,
+# )
 
 
 class TestIngestionPipeline:
