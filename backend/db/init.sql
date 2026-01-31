@@ -17,14 +17,18 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS notes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(500),
     content_type VARCHAR(50) NOT NULL DEFAULT 'markdown',
     content_text TEXT NOT NULL,
     source_url VARCHAR(2048),
+    resource_type VARCHAR(50) NOT NULL DEFAULT 'notes',
+    tags TEXT[] DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     embedding_vector vector(1536),  -- OpenAI text-embedding-3-small dimension
     
-    CONSTRAINT valid_content_type CHECK (content_type IN ('text', 'markdown', 'pdf', 'handwriting'))
+    CONSTRAINT valid_content_type CHECK (content_type IN ('text', 'markdown', 'pdf', 'handwriting')),
+    CONSTRAINT valid_resource_type CHECK (resource_type IN ('notes', 'lecture_slides', 'youtube', 'article', 'chat_conversation', 'documentation', 'research'))
 );
 
 -- Proficiency scores (tracking user knowledge per concept)
@@ -91,11 +95,50 @@ CREATE TABLE IF NOT EXISTS study_sessions (
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id);
 CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_resource_type ON notes(resource_type);
 CREATE INDEX IF NOT EXISTS idx_proficiency_user_concept ON proficiency_scores(user_id, concept_id);
 CREATE INDEX IF NOT EXISTS idx_proficiency_next_review ON proficiency_scores(next_review_due);
 CREATE INDEX IF NOT EXISTS idx_flashcards_user_concept ON flashcards(user_id, concept_id);
 CREATE INDEX IF NOT EXISTS idx_quizzes_user_concept ON quizzes(user_id, concept_id);
 CREATE INDEX IF NOT EXISTS idx_study_sessions_user ON study_sessions(user_id);
+
+-- Chat conversations table
+CREATE TABLE IF NOT EXISTS chat_conversations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(255) DEFAULT 'New Chat',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    is_saved_to_knowledge BOOLEAN DEFAULT FALSE,
+    summary TEXT
+);
+
+-- Chat messages table
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    conversation_id UUID NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+    role VARCHAR(20) NOT NULL,
+    content TEXT NOT NULL,
+    sources_json JSONB DEFAULT '[]',
+    is_saved_for_quiz BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Saved responses for quiz generation
+CREATE TABLE IF NOT EXISTS saved_responses (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message_id UUID REFERENCES chat_messages(id) ON DELETE SET NULL,
+    topic VARCHAR(255),
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Chat indexes
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_user ON chat_conversations(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_updated ON chat_conversations(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_saved_responses_user ON saved_responses(user_id);
 
 -- Vector similarity index for semantic search on notes
 CREATE INDEX IF NOT EXISTS idx_notes_embedding ON notes 

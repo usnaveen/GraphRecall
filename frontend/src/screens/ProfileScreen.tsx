@@ -15,8 +15,17 @@ export function ProfileScreen() {
     return <SettingsScreen onBack={() => setShowSettings(false)} />;
   }
 
-  // Simplified heatmap data generation if not provided by backend yet
-  const heatmapDots = Array.from({ length: 80 }).map((_, i) => Math.floor(Math.random() * 5));
+  // Mock domain progress data (will be replaced with real API data)
+  const mockDomainProgress = [
+    { name: 'Machine Learning', progress: 68, color: '#B6FF2E' },
+    { name: 'Deep Learning', progress: 45, color: '#2EFFE6' },
+    { name: 'NLP', progress: 32, color: '#FF6B6B' },
+    { name: 'Computer Vision', progress: 25, color: '#9B59B6' },
+  ];
+
+  // Simplified heatmap data generation
+  const heatmapDots = Array.from({ length: 80 }).map(() => Math.floor(Math.random() * 5));
+
 
   return (
     <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1 pb-10">
@@ -102,8 +111,8 @@ export function ProfileScreen() {
                     animate={{ scaleX: 1 }}
                     transition={{ delay: i * 0.1 + j * 0.02, duration: 0.3 }}
                     className={`flex-1 h-2 rounded-full ${j < Math.ceil(domain.progress / 10)
-                        ? ''
-                        : 'bg-white/10'
+                      ? ''
+                      : 'bg-white/10'
                       }`}
                     style={
                       j < Math.ceil(domain.progress / 10)

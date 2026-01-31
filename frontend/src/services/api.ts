@@ -94,3 +94,32 @@ export const ingestService = {
         return response.json();
     }
 };
+
+/**
+ * Generic API helper for direct endpoint access
+ * Similar to axios for convenience
+ */
+export const api = {
+    get: async (url: string) => {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`GET ${url} failed`);
+        return { data: await response.json() };
+    },
+
+    post: async (url: string, data?: object) => {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: data ? JSON.stringify(data) : undefined,
+        });
+        if (!response.ok) throw new Error(`POST ${url} failed`);
+        return { data: await response.json() };
+    },
+
+    delete: async (url: string) => {
+        const response = await fetch(url, { method: 'DELETE' });
+        if (!response.ok) throw new Error(`DELETE ${url} failed`);
+        return { data: await response.json() };
+    },
+};
+

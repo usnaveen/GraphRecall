@@ -1,22 +1,22 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Heart, Bookmark, Share2, ChevronRight, Lightbulb, 
-  CheckCircle, XCircle, Edit3, Image as ImageIcon, Map 
+import {
+  Heart, Bookmark, Share2, ChevronRight, Lightbulb,
+  CheckCircle, XCircle, Edit3, Image as ImageIcon, Map
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import type { FeedItem, QuizOption } from '../types';
 
 export function FeedScreen() {
-  const { 
-    feedItems, 
-    currentFeedIndex, 
-    likedItems, 
+  const {
+    feedItems,
+    currentFeedIndex,
+    likedItems,
     savedItems,
     nextFeedItem,
     prevFeedItem,
     toggleLike,
-    toggleSave 
+    toggleSave
   } = useAppStore();
 
   const currentItem = feedItems[currentFeedIndex];
@@ -58,19 +58,18 @@ export function FeedScreen() {
                     {/* Like Button */}
                     <motion.button
                       whileTap={{ scale: 0.85 }}
-                      onClick={() => toggleLike(currentItem.id)}
+                      onClick={() => toggleLike(currentItem.id, currentItem.type)}
                       className="flex items-center gap-1.5 group"
                     >
                       <motion.div
                         animate={isLiked ? { scale: [1, 1.3, 1] } : {}}
                         transition={{ duration: 0.3 }}
                       >
-                        <Heart 
-                          className={`w-6 h-6 transition-all duration-200 ${
-                            isLiked 
-                              ? 'fill-red-500 text-red-500' 
+                        <Heart
+                          className={`w-6 h-6 transition-all duration-200 ${isLiked
+                              ? 'fill-red-500 text-red-500'
                               : 'text-white/60 group-hover:text-white'
-                          }`}
+                            }`}
                         />
                       </motion.div>
                       <span className={`text-sm ${isLiked ? 'text-red-400' : 'text-white/60'}`}>
@@ -81,15 +80,14 @@ export function FeedScreen() {
                     {/* Save Button */}
                     <motion.button
                       whileTap={{ scale: 0.85 }}
-                      onClick={() => toggleSave(currentItem.id)}
+                      onClick={() => toggleSave(currentItem.id, currentItem.type)}
                       className="flex items-center gap-1.5 group"
                     >
-                      <Bookmark 
-                        className={`w-6 h-6 transition-all duration-200 ${
-                          isSaved 
-                            ? 'fill-[#B6FF2E] text-[#B6FF2E]' 
+                      <Bookmark
+                        className={`w-6 h-6 transition-all duration-200 ${isSaved
+                            ? 'fill-[#B6FF2E] text-[#B6FF2E]'
                             : 'text-white/60 group-hover:text-white'
-                        }`}
+                          }`}
                       />
                       <span className={`text-sm ${isSaved ? 'text-[#B6FF2E]' : 'text-white/60'}`}>
                         {isSaved ? 'Saved' : 'Save'}
@@ -127,7 +125,7 @@ export function FeedScreen() {
 
       {/* Swipe Hints */}
       <div className="flex justify-between items-center px-4 mt-4 text-white/40 text-xs">
-        <button 
+        <button
           onClick={() => handleSwipe('down')}
           disabled={currentFeedIndex === 0}
           className="disabled:opacity-30 hover:text-white/60 transition-colors"
@@ -137,7 +135,7 @@ export function FeedScreen() {
         <span className="font-mono">
           {currentFeedIndex + 1} / {feedItems.length}
         </span>
-        <button 
+        <button
           onClick={() => handleSwipe('up')}
           disabled={currentFeedIndex === feedItems.length - 1}
           className="disabled:opacity-30 hover:text-white/60 transition-colors"
@@ -214,9 +212,8 @@ function FlashcardContent({ concept }: { concept: any }) {
             {Array.from({ length: 10 }).map((_, i) => (
               <div
                 key={i}
-                className={`w-1.5 h-3 rounded-sm ${
-                  i < concept.complexity ? 'bg-[#B6FF2E]' : 'bg-white/10'
-                }`}
+                className={`w-1.5 h-3 rounded-sm ${i < concept.complexity ? 'bg-[#B6FF2E]' : 'bg-white/10'
+                  }`}
               />
             ))}
           </div>
@@ -276,11 +273,11 @@ function QuizContent({ quiz }: { quiz: any }) {
               disabled={showResult}
               className={`
                 w-full p-3 rounded-xl text-left text-sm transition-all duration-200
-                ${showCorrect 
-                  ? 'bg-green-500/20 border border-green-500/50 text-green-400' 
-                  : showWrong 
+                ${showCorrect
+                  ? 'bg-green-500/20 border border-green-500/50 text-green-400'
+                  : showWrong
                     ? 'bg-red-500/20 border border-red-500/50 text-red-400'
-                    : isSelected 
+                    : isSelected
                       ? 'bg-[#B6FF2E]/20 border border-[#B6FF2E]/50 text-[#B6FF2E]'
                       : 'bg-white/5 border border-white/10 text-white/80 hover:bg-white/10'
                 }
@@ -437,12 +434,12 @@ function ScreenshotContent({ card }: { card: any }) {
               {concept}
             </span>
           )) || (
-            <>
-              <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#B6FF2E]/10 border border-[#B6FF2E]/30 text-[#B6FF2E]">CNNs</span>
-              <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#2EFFE6]/10 border border-[#2EFFE6]/30 text-[#2EFFE6]">Pooling</span>
-              <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#FF6B6B]/10 border border-[#FF6B6B]/30 text-[#FF6B6B]">Filters</span>
-            </>
-          )}
+              <>
+                <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#B6FF2E]/10 border border-[#B6FF2E]/30 text-[#B6FF2E]">CNNs</span>
+                <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#2EFFE6]/10 border border-[#2EFFE6]/30 text-[#2EFFE6]">Pooling</span>
+                <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#FF6B6B]/10 border border-[#FF6B6B]/30 text-[#FF6B6B]">Filters</span>
+              </>
+            )}
         </div>
       </div>
 

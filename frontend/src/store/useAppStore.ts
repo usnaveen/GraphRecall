@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { FeedItem, ChatMessage, UserStats } from '../types';
-import { feedService, chatService, graphService } from '../services/api';
+import { feedService, chatService } from '../services/api';
 
 interface AppState {
   // Feed State
@@ -26,6 +26,7 @@ interface AppState {
   toggleLike: (itemId: string, itemType: string) => Promise<void>;
   toggleSave: (itemId: string, itemType: string) => Promise<void>;
   addChatMessage: (message: ChatMessage) => void;
+  clearChatMessages: () => void;
   sendMessage: (text: string) => Promise<void>;
   resetFeed: () => void;
 }
@@ -212,6 +213,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state: AppState) => ({
       chatMessages: [...state.chatMessages, message],
     }));
+  },
+
+  clearChatMessages: () => {
+    set({ chatMessages: [] });
   },
 
   sendMessage: async (text: string) => {

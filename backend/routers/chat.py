@@ -1,9 +1,12 @@
 """Chat Router - GraphRAG Assistant Endpoints."""
 
+import json
+import uuid
 from typing import Optional
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.db.neo4j_client import get_neo4j_client
@@ -12,6 +15,7 @@ from backend.models.feed_schemas import ChatMessage, ChatRequest, ChatResponse
 from backend.agents.graphrag_chat import GraphRAGAgent
 
 logger = structlog.get_logger()
+
 
 router = APIRouter(prefix="/api/chat", tags=["Chat Assistant"])
 
@@ -351,3 +355,340 @@ async def add_message_to_conversation(
     except Exception as e:
         logger.error("Chat: Error adding message", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Save Message for Quiz & Add to Knowledge Base
+# ============================================================================
+
+
+class SaveMessageRequest(BaseModel):
+    """Request to save a message for quiz generation."""
+    topic: Optional[str] = None
+
+
+@router.post("/messages/{message_id}/save")
+async def save_message_for_quiz(
+    message_id: str,
+    request: SaveMessageRequest,
+    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+):
+    """
+    Save a chat response for future quiz generation.
+    
+    Use this when long-pressing a message in the chat UI.
+    The saved content can be used to generate quiz questions.
+    """
+    try:
+        pg_client = await get_postgres_client()
+        
+        # Get the message content
+        message = await pg_client.execute_query(
+            """
+            SELECT cm.content, cm.role, cc.title as conversation_title
+            FROM chat_messages cm
+            JOIN chat_conversations cc ON cc.id = cm.conversation_id
+            WHERE cm.id = :message_id
+            """,
+            {"message_id": message_id}
+        )
+        
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        msg = message[0]
+        
+        # Mark as saved in chat_messages
+        await pg_client.execute_query(
+            "UPDATE chat_messages SET is_saved_for_quiz = TRUE WHERE id = :message_id",
+            {"message_id": message_id}
+        )
+        
+        # Create saved_response entry
+        saved_id = str(uuid.uuid4())
+        topic = request.topic or msg.get("conversation_title") or "Chat Response"
+        
+        await pg_client.execute(
+            """
+            INSERT INTO saved_responses (id, user_id, message_id, topic, content)
+            VALUES ($1, $2, $3, $4, $5)
+            """,
+            uuid.UUID(saved_id),
+            user_id,
+            uuid.UUID(message_id),
+            topic,
+            msg.get("content", ""),
+        )
+        
+        logger.info("save_message_for_quiz", message_id=message_id, saved_id=saved_id)
+        
+        return {
+            "saved_id": saved_id,
+            "message_id": message_id,
+            "topic": topic,
+            "status": "saved",
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Chat: Error saving message", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AddToKnowledgeRequest(BaseModel):
+    """Request to add conversation to knowledge base."""
+    title: Optional[str] = None
+
+
+@router.post("/conversations/{conversation_id}/to-knowledge")
+async def add_conversation_to_knowledge(
+    conversation_id: str,
+    request: AddToKnowledgeRequest,
+    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+):
+    """
+    Add a chat conversation to the knowledge base.
+    
+    This:
+    1. Summarizes the conversation
+    2. Creates a note with resource_type='chat_conversation'
+    3. Extracts and links key concepts
+    4. Marks the conversation as saved
+    
+    Use this from the three-dot menu in the chat UI.
+    """
+    try:
+        pg_client = await get_postgres_client()
+        neo4j_client = await get_neo4j_client()
+        
+        # Get conversation messages
+        messages = await pg_client.execute_query(
+            """
+            SELECT role, content, created_at
+            FROM chat_messages
+            WHERE conversation_id = :conversation_id
+            ORDER BY created_at ASC
+            """,
+            {"conversation_id": conversation_id}
+        )
+        
+        if not messages:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        
+        # Get conversation details
+        conv = await pg_client.execute_query(
+            "SELECT title FROM chat_conversations WHERE id = :id",
+            {"id": conversation_id}
+        )
+        
+        conv_title = request.title or (conv[0].get("title") if conv else "Chat Conversation")
+        
+        # Build conversation transcript
+        transcript = f"# {conv_title}\n\n"
+        for msg in messages:
+            role = "**You**" if msg["role"] == "user" else "**Assistant**"
+            transcript += f"{role}: {msg['content']}\n\n"
+        
+        # Create note
+        note_id = str(uuid.uuid4())
+        
+        await pg_client.execute(
+            """
+            INSERT INTO notes (id, user_id, title, content_text, resource_type, content_type)
+            VALUES ($1, $2, $3, $4, 'chat_conversation', 'markdown')
+            """,
+            uuid.UUID(note_id),
+            user_id,
+            conv_title,
+            transcript,
+        )
+        
+        # Mark conversation as saved
+        summary = f"Conversation with {len(messages)} messages about {conv_title}"
+        
+        await pg_client.execute_query(
+            """
+            UPDATE chat_conversations 
+            SET is_saved_to_knowledge = TRUE, summary = :summary
+            WHERE id = :id
+            """,
+            {"id": conversation_id, "summary": summary}
+        )
+        
+        # Extract key topics for Neo4j linking (simple keyword extraction)
+        from langchain_openai import ChatOpenAI
+        
+        try:
+            llm = ChatOpenAI(model="gpt-3.5-turbo-1106", temperature=0)
+            
+            # Quick topic extraction
+            resp = await llm.ainvoke(
+                f"Extract 3-5 key topic names from this conversation. Return only comma-separated topic names:\n\n{transcript[:2000]}"
+            )
+            topics = [t.strip() for t in resp.content.split(",")][:5]
+            
+            # Link to concepts in Neo4j
+            for topic in topics:
+                await neo4j_client.execute_query(
+                    """
+                    MATCH (c:Concept)
+                    WHERE toLower(c.name) CONTAINS toLower($topic)
+                    MERGE (n:NoteSource {id: $note_id})
+                    SET n.note_id = $note_id, n.summary = $summary
+                    MERGE (n)-[:EXPLAINS {relevance: 0.7}]->(c)
+                    """,
+                    {"note_id": note_id, "topic": topic, "summary": summary}
+                )
+        except:
+            pass  # Topic extraction is optional
+        
+        logger.info(
+            "add_conversation_to_knowledge",
+            conversation_id=conversation_id,
+            note_id=note_id,
+        )
+        
+        return {
+            "note_id": note_id,
+            "conversation_id": conversation_id,
+            "title": conv_title,
+            "message_count": len(messages),
+            "status": "saved_to_knowledge",
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Chat: Error adding to knowledge", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Chat History
+# ============================================================================
+
+
+@router.get("/history")
+async def get_chat_history(
+    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    limit: int = Query(default=20, le=50),
+):
+    """
+    Get recent chat conversations with preview.
+    """
+    try:
+        pg_client = await get_postgres_client()
+        
+        result = await pg_client.execute_query(
+            """
+            SELECT 
+                c.id,
+                c.title,
+                c.created_at,
+                c.updated_at,
+                c.is_saved_to_knowledge,
+                c.summary,
+                (SELECT content FROM chat_messages 
+                 WHERE conversation_id = c.id 
+                 ORDER BY created_at DESC LIMIT 1) as last_message,
+                (SELECT COUNT(*) FROM chat_messages WHERE conversation_id = c.id) as message_count
+            FROM chat_conversations c
+            WHERE c.user_id = :user_id
+            ORDER BY c.updated_at DESC
+            LIMIT :limit
+            """,
+            {"user_id": user_id, "limit": limit}
+        )
+        
+        conversations = [
+            {
+                "id": str(row["id"]),
+                "title": row["title"],
+                "created_at": str(row["created_at"]),
+                "updated_at": str(row["updated_at"]),
+                "is_saved_to_knowledge": row["is_saved_to_knowledge"],
+                "summary": row.get("summary"),
+                "last_message": row.get("last_message", "")[:100] + "...",
+                "message_count": row.get("message_count", 0),
+            }
+            for row in result
+        ]
+        
+        return {"conversations": conversations, "total": len(conversations)}
+        
+    except Exception as e:
+        logger.error("Chat: Error getting history", error=str(e))
+        return {"conversations": [], "total": 0}
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a chat conversation and all its messages."""
+    try:
+        pg_client = await get_postgres_client()
+        
+        await pg_client.execute_query(
+            "DELETE FROM chat_conversations WHERE id = :id",
+            {"id": conversation_id}
+        )
+        
+        return {"status": "deleted", "conversation_id": conversation_id}
+        
+    except Exception as e:
+        logger.error("Chat: Error deleting conversation", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Streaming Chat (SSE)
+# ============================================================================
+
+
+@router.post("/stream")
+async def stream_chat(request: ChatRequest):
+    """
+    Stream chat responses using Server-Sent Events.
+    
+    The response is streamed in chunks as the AI generates it,
+    providing a more responsive user experience.
+    """
+    async def generate():
+        try:
+            pg_client = await get_postgres_client()
+            neo4j_client = await get_neo4j_client()
+            
+            chat_agent = GraphRAGAgent(neo4j_client, pg_client)
+            
+            # For now, simulate streaming by splitting the response
+            # In production, you'd use chat_agent.stream_chat() with a streaming LLM
+            response = await chat_agent.chat(
+                user_id=request.user_id,
+                message=request.message,
+                conversation_history=request.conversation_history or [],
+            )
+            
+            # Stream the response in chunks
+            full_response = response.response
+            chunk_size = 50  # Characters per chunk
+            
+            for i in range(0, len(full_response), chunk_size):
+                chunk = full_response[i:i + chunk_size]
+                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+            
+            # Send final event with metadata
+            yield f"data: {json.dumps({'type': 'done', 'sources': response.sources, 'related_concepts': response.related_concepts})}\n\n"
+            
+        except Exception as e:
+            logger.error("Stream chat: Error", error=str(e))
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
