@@ -79,6 +79,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  status?: string; // e.g. "Thinking...", "Searching..."
   sources?: string[];
   relatedConcepts?: string[];
 }
