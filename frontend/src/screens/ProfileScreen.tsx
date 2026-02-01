@@ -43,7 +43,6 @@ export function ProfileScreen() {
 
   // Heatmap generation from real activity
   const generateHeatmap = () => {
-    const days = 14 * 5; // ~2 months (14 cols x 5 rows? No, just a grid of ~70)
     // Actually, UI shows flex wrap. Let's generic last 90 days.
     const today = new Date();
     const dots = [];
