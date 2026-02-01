@@ -47,8 +47,7 @@ export function LiquidDock({ activeTab, onTabChange }: LiquidDockProps) {
               whileTap={{ scale: 0.95 }}
               className={`
                 relative flex items-center justify-center rounded-full transition-all duration-300
-                ${isCenter
-                  ? 'w-12 h-12 -mt-4 bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6]'
+                  ? 'w-11 h-11 bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6]'
                   : 'w-11 h-11'
                 }
                 ${isActive && !isCenter
