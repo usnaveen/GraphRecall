@@ -132,20 +132,22 @@ async def store_note_node(state: IngestionState) -> dict:
     try:
         pg_client = await get_postgres_client()
         
-        # Insert or update note
-        await pg_client.execute(
+        # Insert or update note using named params
+        await pg_client.execute_insert(
             """
-            INSERT INTO notes (id, user_id, title, content, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $5)
+            INSERT INTO notes (id, user_id, title, content_text, created_at, updated_at)
+            VALUES (:id, :user_id, :title, :content_text, :created_at, :created_at)
             ON CONFLICT (id) DO UPDATE SET
-                content = $4,
-                updated_at = $5
+                content_text = :content_text,
+                updated_at = :created_at
             """,
-            uuid.UUID(note_id),
-            user_id,
-            state.get("title") or "Untitled Note",
-            state.get("raw_content", ""),
-            datetime.utcnow(),
+            {
+                "id": note_id,
+                "user_id": user_id,
+                "title": state.get("title") or "Untitled Note",
+                "content_text": state.get("raw_content", ""),
+                "created_at": datetime.utcnow(),
+            }
         )
         
         logger.info("store_note_node: Complete", note_id=note_id)
@@ -530,21 +532,34 @@ Return ONLY valid JSON:
         
         for card in flashcards:
             card_id = str(uuid.uuid4())
+            concept_name = card.get("concept", "")
             
-            await pg_client.execute(
+            # Find concept_id from name (from our extracted concepts)
+            concept_id = None
+            for c in concepts:
+                if c.get("name", "").lower() == concept_name.lower():
+                    concept_id = c.get("id", concept_name)
+                    break
+            if not concept_id:
+                concept_id = concept_name  # Use name as fallback
+            
+            await pg_client.execute_insert(
                 """
-                INSERT INTO flashcards (id, user_id, note_id, question, answer, 
-                                        card_type, next_review, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                INSERT INTO flashcards (id, user_id, concept_id, front_content, back_content, 
+                                        difficulty, source_note_ids, created_at)
+                VALUES (:id, :user_id, :concept_id, :front_content, :back_content, 
+                        :difficulty, :source_note_ids, :created_at)
                 """,
-                uuid.UUID(card_id),
-                user_id,
-                uuid.UUID(note_id) if note_id else None,
-                card.get("question", ""),
-                card.get("answer", ""),
-                "cloze",
-                datetime.utcnow() + timedelta(days=1),
-                datetime.utcnow(),
+                {
+                    "id": card_id,
+                    "user_id": user_id,
+                    "concept_id": concept_id,
+                    "front_content": card.get("question", ""),
+                    "back_content": card.get("answer", ""),
+                    "difficulty": 0.5,
+                    "source_note_ids": [note_id] if note_id else [],
+                    "created_at": datetime.utcnow(),
+                }
             )
             
             card_ids.append(card_id)
