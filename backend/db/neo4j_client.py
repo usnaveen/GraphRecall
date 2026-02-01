@@ -152,11 +152,20 @@ class Neo4jClient:
 
     async def create_concept(
         self,
+        name: str,
+        definition: str,
+        domain: str,
         complexity_score: float,
         user_id: str,
+        concept_id: Optional[str] = None,
         embedding: Optional[list[float]] = None,
     ) -> dict:
         """Create a new Concept node."""
+        import uuid
+        
+        if not concept_id:
+            concept_id = str(uuid.uuid4())
+            
         query = """
         MERGE (c:Concept {id: $id, user_id: $user_id})
         ON CREATE SET

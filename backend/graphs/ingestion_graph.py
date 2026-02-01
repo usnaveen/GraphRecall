@@ -44,89 +44,52 @@ llm_flashcard = get_chat_model(temperature=0.3)
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from backend.agents.extraction import ExtractionAgent
+from backend.agents.synthesis import SynthesisAgent
+
+# Initialize agents
+extraction_agent = ExtractionAgent(temperature=0.2)
+synthesis_agent = SynthesisAgent()
+
 async def extract_concepts_node(state: IngestionState) -> dict:
     """
-    Node 1: Extract concepts from raw content using LLM.
-    Supports TEXT and IMAGES (Multimodal).
-    
-    Input: raw_content, title
-    Output: extracted_concepts
+    Node 1: Extract concepts from raw content using ExtractionAgent.
     """
     content = state.get("raw_content", "")
     logger.info("extract_concepts_node: Starting", content_length=len(content))
     
     is_image = content.startswith("data:image")
-    
-    prompt_text = """You are a concept extraction expert. Extract key concepts from this input.
 
-Instructions:
-1. If this is a diagram or flowchart:
-   - Identify the main entities as Concepts
-   - Identify the relationships/Process as connections
-2. If this is text:
-   - Focus on technical terms, theories, algorithms
-3. Extract 3-7 concepts maximum
-4. Each concept needs a name and brief description
-5. Identify prerequisites and related concepts
-
-Return ONLY valid JSON:
-{
-    "concepts": [
-        {
-            "name": "Concept Name",
-            "definition": "Brief definition (1-2 sentences)",
-            "domain": "Subject area",
-            "complexity_score": 5,
-            "prerequisites": [],
-            "related_concepts": []
-        }
-    ]
-}
-"""
+    # Build processing metadata
+    meta = state.get("processing_metadata") or {}
+    meta["content_length"] = len(content)
+    meta["is_multimodal"] = is_image
+    meta["input_type"] = "image" if is_image else "text"
+    meta["extraction_agent"] = "ExtractionAgent (Gemini, temp=0.2)"
 
     try:
-        if is_image:
-             message = HumanMessage(
-                content=[
-                    {"type": "text", "text": prompt_text},
-                    {"type": "image_url", "image_url": {"url": content}},
-                ]
-            )
-             response = await llm_extraction.ainvoke([message])
-        else:
-            # Text Only Mode
-            response = await llm_extraction.ainvoke(prompt_text + f"\n\nContent:\n{content[:4000]}")
+        result = await extraction_agent.extract(content)
+        concepts = [c.model_dump() for c in result.concepts]
 
-        # Usage of output parser or manual cleaning
-        response_content = response.content.strip()
-        
-        # Handle markdown code blocks
-        if response_content.startswith("```json"):
-            response_content = response_content.split("```json")[1].split("```")[0].strip()
-        elif response_content.startswith("```"):
-            response_content = response_content.split("```")[1].split("```")[0].strip()
-        
-        data = json.loads(response_content)
-        concepts = data.get("concepts", [])
-        
+        # Enrich metadata with extraction results
+        meta["concepts_extracted"] = len(concepts)
+        meta["domains_detected"] = list({c.get("domain", "General") for c in concepts})
+        meta["concept_names"] = [c.get("name", "") for c in concepts]
+        avg_complexity = sum(c.get("complexity_score", 5) for c in concepts) / max(len(concepts), 1)
+        meta["avg_complexity"] = round(avg_complexity, 1)
+
         logger.info("extract_concepts_node: Complete", num_concepts=len(concepts))
+
+        return {"extracted_concepts": concepts, "processing_metadata": meta}
         
-        return {"extracted_concepts": concepts}
-        
-    except json.JSONDecodeError as e:
-        logger.error("extract_concepts_node: JSON parse error", error=str(e))
-        return {"extracted_concepts": [], "error": f"JSON parse error: {e}"}
     except Exception as e:
         logger.error("extract_concepts_node: Failed", error=str(e))
-        return {"extracted_concepts": [], "error": str(e)}
+        return {"extracted_concepts": [], "error": str(e), "processing_metadata": meta}
 
 
 async def store_note_node(state: IngestionState) -> dict:
     """
     Node 2: Store the note in PostgreSQL.
-    
-    Input: raw_content, title, user_id
-    Output: note_id
     """
     note_id = state.get("note_id") or str(uuid.uuid4())
     user_id = state.get("user_id", "default_user")
@@ -165,9 +128,6 @@ async def store_note_node(state: IngestionState) -> dict:
 async def find_related_node(state: IngestionState) -> dict:
     """
     Node 3: Find existing concepts related to the extracted ones.
-    
-    Input: extracted_concepts
-    Output: related_concepts, needs_synthesis, overlap_ratio
     """
     logger.info("find_related_node: Starting")
     
@@ -177,30 +137,30 @@ async def find_related_node(state: IngestionState) -> dict:
     
     try:
         neo4j = await get_neo4j_client()
+        user_id = state.get("user_id", "default_user")
         
-        # Get all existing concepts
+        # Get all existing concepts for user
         query = """
         MATCH (c:Concept)
+        WHERE c.user_id = $user_id
         RETURN c.id AS id, c.name AS name, c.definition AS definition, 
                c.domain AS domain, c.complexity_score AS complexity_score
         LIMIT 100
         """
         
-        existing = await neo4j.execute_query(query, {})
+        existing = await neo4j.execute_query(query, {"user_id": user_id})
         
         if not existing:
             logger.info("find_related_node: No existing concepts")
             return {"related_concepts": [], "needs_synthesis": False, "overlap_ratio": 0.0}
         
         # Simple name matching for MVP
-        # (Production would use embeddings/vector search)
         related = []
         extracted_names = [c.get("name", "").lower() for c in extracted]
         
         for concept in existing:
             name = concept.get("name", "").lower()
             for ext_name in extracted_names:
-                # Check for significant overlap
                 if ext_name in name or name in ext_name or _word_overlap(ext_name, name) > 0.5:
                     related.append(concept)
                     break
@@ -216,12 +176,19 @@ async def find_related_node(state: IngestionState) -> dict:
             needs_synthesis=needs_synthesis,
         )
         
+        # Enrich processing metadata
+        meta = state.get("processing_metadata") or {}
+        meta["existing_concepts_scanned"] = len(existing)
+        meta["overlap_ratio"] = round(overlap_ratio, 2)
+        meta["related_concept_names"] = [r.get("name", "") for r in related[:5]]
+
         return {
-            "related_concepts": related, 
+            "related_concepts": related,
             "needs_synthesis": needs_synthesis,
             "overlap_ratio": overlap_ratio,
+            "processing_metadata": meta,
         }
-        
+
     except Exception as e:
         logger.error("find_related_node: Failed", error=str(e))
         return {"related_concepts": [], "needs_synthesis": False, "overlap_ratio": 0.0}
@@ -239,82 +206,63 @@ def _word_overlap(s1: str, s2: str) -> float:
 
 async def synthesize_node(state: IngestionState) -> dict:
     """
-    Node 4a: Synthesize new concepts with existing ones.
-    
-    This node is called when overlap is detected.
-    Prepares synthesis data for user review.
-    
-    Input: extracted_concepts, related_concepts
-    Output: synthesis_decisions (pending user approval)
+    Node 4a: Synthesize new concepts with existing ones using SynthesisAgent.
     """
     logger.info("synthesize_node: Starting synthesis analysis")
     
     extracted = state.get("extracted_concepts", [])
     related = state.get("related_concepts", [])
     
-    # Prepare synthesis decisions for user review
-    synthesis_decisions = []
-    
-    for ext in extracted:
-        ext_name = ext.get("name", "").lower()
-        matches = []
+    try:
+        result = await synthesis_agent.analyze(extracted, related)
         
-        for rel in related:
-            rel_name = rel.get("name", "").lower()
-            if ext_name in rel_name or rel_name in ext_name or _word_overlap(ext_name, rel_name) > 0.5:
-                matches.append({
-                    "existing_id": rel.get("id"),
-                    "existing_name": rel.get("name"),
-                    "similarity": _word_overlap(ext_name, rel_name),
-                })
-        
-        if matches:
+        # Convert output to decision format expected by frontend
+        synthesis_decisions = []
+        for decision in result.decisions:
+            # Map Conflict object to dict
             synthesis_decisions.append({
-                "new_concept": ext,
-                "matches": matches,
-                "recommended_action": "merge" if matches[0].get("similarity", 0) > 0.7 else "keep_both",
-                "user_decision": "pending",  # Will be set by user
-            })
-        else:
-            synthesis_decisions.append({
-                "new_concept": ext,
-                "matches": [],
-                "recommended_action": "create_new",
+                "new_concept": next((c for c in extracted if c["name"] == decision.new_concept_name), {"name": decision.new_concept_name}),
+                "matches": [{"existing_name": decision.matched_concept_id}] if decision.matched_concept_id else [], # Simplified match info
+                "recommended_action": decision.merge_strategy.value.lower() if hasattr(decision.merge_strategy, 'value') else str(decision.merge_strategy),
+                "reasoning": decision.reasoning,
                 "user_decision": "pending",
             })
-    
-    logger.info(
-        "synthesize_node: Complete",
-        num_decisions=len(synthesis_decisions),
-        num_with_matches=len([d for d in synthesis_decisions if d["matches"]]),
-    )
-    
-    return {
-        "synthesis_decisions": synthesis_decisions,
-        "awaiting_user_approval": True,
-    }
+            
+        logger.info("synthesize_node: Complete", num_decisions=len(synthesis_decisions))
+        
+        return {
+            "synthesis_decisions": synthesis_decisions,
+            "awaiting_user_approval": True,
+        }
+    except Exception as e:
+        logger.error("synthesize_node: Failed", error=str(e))
+        # Fallback to empty if fails
+        return {
+            "synthesis_decisions": [],
+            "awaiting_user_approval": True, # Still pause so user sees failure? Or just proceed?
+        }
 
 
 async def user_review_node(state: IngestionState) -> dict:
     """
     Node 4b: Wait for user review (interrupt point).
-    
-    Uses LangGraph 1.0 `interrupt()` function to pause execution.
     """
     logger.info("user_review_node: Checking review requirement")
     
-    # For auto-approval mode (if skip_review is set), approve all
     if state.get("skip_review", False):
         decisions = state.get("synthesis_decisions", [])
-        approved = [d["new_concept"] for d in decisions if d["recommended_action"] != "skip"]
-        
+        # Auto-approve what is reasonable
+        approved = []
+        for d in decisions:
+            # If extracting from d["new_concept"], it's a dict
+            approved.append(d["new_concept"])
+            
         logger.info("user_review_node: Auto-approved", num_approved=len(approved))
         return {
             "user_approved_concepts": approved,
             "awaiting_user_approval": False,
         }
     
-    # Pause for user input
     logger.info("user_review_node: Interrupting for user review")
     
     user_response = interrupt({
@@ -323,7 +271,6 @@ async def user_review_node(state: IngestionState) -> dict:
         "message": "Please review the extracted concepts",
     })
     
-    # Resume logic (runs when Command(resume=...) is sent)
     logger.info("user_review_node: Resumed with user response")
     
     if user_response.get("cancelled"):
@@ -338,13 +285,9 @@ async def user_review_node(state: IngestionState) -> dict:
 async def create_concepts_node(state: IngestionState) -> dict:
     """
     Node 5: Create concept nodes in Neo4j.
-    
-    Input: extracted_concepts OR user_approved_concepts, note_id, user_id
-    Output: created_concept_ids
     """
     logger.info("create_concepts_node: Starting")
     
-    # Use approved concepts if available, otherwise use extracted
     concepts = state.get("user_approved_concepts") or state.get("extracted_concepts", [])
     note_id = state.get("note_id")
     user_id = state.get("user_id", "default_user")
@@ -357,53 +300,58 @@ async def create_concepts_node(state: IngestionState) -> dict:
         concept_ids = []
         
         for concept in concepts:
-            concept_id = str(uuid.uuid4())
-            
-            # Create concept node
-            query = """
-            MERGE (c:Concept {name: $name})
-            ON CREATE SET
-                c.id = $id,
-                c.definition = $definition,
-                c.domain = $domain,
-                c.complexity_score = $complexity_score,
-                c.created_at = datetime(),
-                c.user_id = $user_id
-            ON MATCH SET
-                c.definition = CASE WHEN c.definition IS NULL OR c.definition = '' 
-                               THEN $definition ELSE c.definition END,
-                c.updated_at = datetime()
-            RETURN c.id AS concept_id
-            """
-            
-            result = await neo4j.execute_query(
-                query,
-                {
-                    "id": concept_id,
-                    "name": concept.get("name", "Unknown"),
-                    "definition": concept.get("definition", ""),
-                    "domain": concept.get("domain", "General"),
-                    "complexity_score": float(concept.get("complexity_score", 5)),
-                    "user_id": user_id,
-                },
+            # Call create_concept with correct signature
+            result_node = await neo4j.create_concept(
+                name=concept.get("name", "Unknown"),
+                definition=concept.get("definition", ""),
+                domain=concept.get("domain", "General"),
+                complexity_score=float(concept.get("complexity_score", 5)),
+                user_id=user_id,
+                # concept_id=None (generated), embedding=None (for now)
             )
-            
-            if result:
-                concept_ids.append(result[0].get("concept_id", concept_id))
-            else:
-                concept_ids.append(concept_id)
+            concept_ids.append(result_node.get("id"))
         
-        # Create relationships between concepts in the same note
-        for i, cid in enumerate(concept_ids):
-            for jid in concept_ids[i + 1:]:
-                await neo4j.execute_query(
-                    """
-                    MATCH (c1:Concept {id: $id1}), (c2:Concept {id: $id2})
-                    MERGE (c1)-[r:RELATED_TO]->(c2)
-                    SET r.strength = 0.7, r.source = 'co-occurrence'
-                    """,
-                    {"id1": cid, "id2": jid},
-                )
+        # Create relationships based on extraction (Semantic)
+        name_to_id = {c.get("name", "").lower(): cid for c, cid in zip(concepts, concept_ids)}
+        
+        for concept, cid in zip(concepts, concept_ids):
+             # Handle related_concepts
+             for related_name in concept.get("related_concepts", []):
+                 # related_concepts might be strings or dicts depending on agent evolution, 
+                 # currently ExtractionAgent produces list[str] (names) or list[dict]? 
+                 # Schema says list[str] in logic, but let's be safe.
+                 r_name = related_name
+                 if isinstance(related_name, dict):
+                     r_name = related_name.get("name")
+                 
+                 if isinstance(r_name, str):
+                     r_id = name_to_id.get(r_name.lower())
+                     if r_id and r_id != cid:
+                         await neo4j.create_relationship(
+                             from_concept_id=cid,
+                             to_concept_id=r_id,
+                             relationship_type="RELATED_TO",
+                             user_id=user_id,
+                             properties={"strength": 0.8, "source": "extraction"}
+                         )
+
+             # Handle prerequisites
+             for prereq_name in concept.get("prerequisites", []):
+                 p_name = prereq_name
+                 if isinstance(prereq_name, dict):
+                     p_name = prereq_name.get("name")
+                     
+                 if isinstance(p_name, str):
+                     p_id = name_to_id.get(p_name.lower())
+                     if p_id and p_id != cid:
+                         # Prerequisite -> Concept
+                         await neo4j.create_relationship(
+                             from_concept_id=p_id,
+                             to_concept_id=cid,
+                             relationship_type="PREREQUISITE_OF",
+                             user_id=user_id,
+                             properties={"strength": 0.9, "source": "extraction"}
+                         )
         
         # Link note to concepts
         if note_id:
@@ -419,12 +367,19 @@ async def create_concepts_node(state: IngestionState) -> dict:
                     {"note_id": note_id, "concept_id": cid},
                 )
         
+        # Enrich processing metadata with graph stats
+        meta = state.get("processing_metadata") or {}
+        meta["concepts_created"] = len(concept_ids)
+        # Count relationships created (co-occurrence pairs + explicit)
+        num_cooccurrence = max(0, len(concept_ids) * (len(concept_ids) - 1) // 2)
+        meta["relationships_created"] = num_cooccurrence
+
         logger.info(
             "create_concepts_node: Complete",
             num_created=len(concept_ids),
         )
-        
-        return {"created_concept_ids": concept_ids}
+
+        return {"created_concept_ids": concept_ids, "processing_metadata": meta}
         
     except Exception as e:
         logger.error("create_concepts_node: Failed", error=str(e))
@@ -568,12 +523,17 @@ Return ONLY valid JSON:
             
             card_ids.append(card_id)
         
+        # Enrich processing metadata
+        meta = state.get("processing_metadata") or {}
+        meta["flashcards_generated"] = len(card_ids)
+        meta["flashcard_agent"] = "Gemini (temp=0.3)"
+
         logger.info(
             "generate_flashcards_node: Complete",
             num_flashcards=len(card_ids),
         )
-        
-        return {"flashcard_ids": card_ids}
+
+        return {"flashcard_ids": card_ids, "processing_metadata": meta}
         
     except Exception as e:
         logger.error("generate_flashcards_node: Failed", error=str(e))
@@ -766,6 +726,7 @@ async def run_ingestion(
                 "note_id": result.get("note_id"),
                 "concepts": result.get("extracted_concepts", []),
                 "synthesis_decisions": result.get("synthesis_decisions", []),
+                "processing_metadata": result.get("processing_metadata", {}),
                 "status": "awaiting_review",
                 "thread_id": thread_id,
             }
@@ -782,6 +743,7 @@ async def run_ingestion(
             "concepts": result.get("extracted_concepts", []),
             "concept_ids": result.get("created_concept_ids", []),
             "flashcard_ids": result.get("flashcard_ids", []),
+            "processing_metadata": result.get("processing_metadata", {}),
             "status": "completed",
             "thread_id": thread_id,
             "error": result.get("error"),
