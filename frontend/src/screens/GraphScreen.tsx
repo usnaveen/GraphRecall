@@ -179,8 +179,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, cw: number, ch: number, panX: n
   ctx.lineWidth = 1;
 
   // Calculate the grid offset so it pans with the view
-  const offsetX = (panX % (gridSize * zoom)) / zoom;
-  const offsetY = (panY % (gridSize * zoom)) / zoom;
+
 
   const startX = -panX / zoom - gridSize;
   const startY = -panY / zoom - gridSize;
@@ -235,8 +234,7 @@ function drawNodes(
   ctx: CanvasRenderingContext2D,
   simNodes: SimNode[],
   selectedId: string | null,
-  filteredIds: Set<string>,
-  zoom: number
+  filteredIds: Set<string>
 ) {
   for (const node of simNodes) {
     const isSelected = node.id === selectedId;
@@ -475,7 +473,7 @@ export function GraphScreen() {
       }
 
       drawEdges(ctx, simNodesRef.current, simEdgesRef.current, selectedNode);
-      drawNodes(ctx, simNodesRef.current, selectedNode, filteredIds, zoomRef.current);
+      drawNodes(ctx, simNodesRef.current, selectedNode, filteredIds);
       drawLabels(ctx, simNodesRef.current, selectedNode, filteredIds, zoomRef.current);
     }
 
