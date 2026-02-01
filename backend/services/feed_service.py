@@ -98,11 +98,11 @@ class FeedService:
             # Get domains from Neo4j
             domains = await self.neo4j_client.execute_query(
                 """
-                MATCH (c:Concept)
+                MATCH (c:Concept {user_id: $user_id})
                 RETURN DISTINCT c.domain as domain
                 ORDER BY domain
                 """,
-                {},
+                {"user_id": user_id},
             )
             return [d["domain"] for d in domains if d.get("domain")]
         except Exception as e:
@@ -125,7 +125,7 @@ class FeedService:
                 concept_id = item["sm2_data"]["item_id"]
                 
                 # Get concept details
-                concept = await self.neo4j_client.get_concept(concept_id)
+                concept = await self.neo4j_client.get_concept(concept_id, user_id=user_id)
                 if concept:
                     enriched_concepts.append({
                         **concept,

@@ -6,10 +6,11 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 import structlog
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
+from backend.auth.middleware import get_current_user
 
 from backend.db.neo4j_client import (
     Neo4jClient,
@@ -39,6 +40,7 @@ from backend.routers.chat import router as chat_router
 from backend.routers.graph3d import router as graph3d_router
 from backend.routers.uploads import router as uploads_router
 from backend.routers.ingest_v2 import router as ingest_v2_router
+from backend.routers.auth import router as auth_router
 
 # Configure structured logging
 structlog.configure(
@@ -106,12 +108,7 @@ app = FastAPI(
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", 
-        "http://127.0.0.1:3000",
-        "https://graph-recall.vercel.app",
-        "https://graph-recall-git-main-naveen-uss-projects.vercel.app"
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -124,6 +121,7 @@ app.include_router(chat_router)      # /api/chat - GraphRAG assistant
 app.include_router(graph3d_router)   # /api/graph3d - 3D visualization data
 app.include_router(uploads_router)   # /api/uploads - User screenshots/infographics
 app.include_router(ingest_v2_router) # /api/v2 - LangGraph-powered ingestion
+app.include_router(auth_router)      # /auth - Google authentication
 
 
 # ============================================================================
@@ -164,7 +162,10 @@ async def health_check():
 
 
 @app.post("/api/ingest", response_model=IngestResponse, tags=["Ingestion"])
-async def ingest_note(request: IngestRequest):
+async def ingest_note(
+    request: IngestRequest,
+    current_user: dict = Depends(get_current_user)
+):
     """
     Ingest a markdown/text note into the knowledge graph.
 
@@ -183,6 +184,8 @@ async def ingest_note(request: IngestRequest):
     )
 
     try:
+        user_id = str(current_user["id"])
+        
         # First, save the note to PostgreSQL
         pg_client = await get_postgres_client()
         note_id = await pg_client.execute_insert(
@@ -192,20 +195,17 @@ async def ingest_note(request: IngestRequest):
             RETURNING id
             """,
             {
-                "user_id": request.user_id,
+                "user_id": user_id,
                 "content": request.content,
                 "source_url": request.source_url,
             },
         )
-
-        if not note_id:
-            raise HTTPException(status_code=500, detail="Failed to save note")
-
+        # ... rest of the function ...
         # Run the ingestion pipeline
         # V2 Migration: Use run_ingestion with skip_review=True to mimic old auto-approve behavior
         result = await run_ingestion(
             content=request.content,
-            user_id=request.user_id,
+            user_id=user_id,
             title=None, # V1 didn't have title in request
             note_id=note_id,
             skip_review=True, 
@@ -260,15 +260,13 @@ async def ingest_note(request: IngestRequest):
 
 @app.get("/api/notes", tags=["Notes"])
 async def list_notes(
-    user_id: str = Query(
-        default="00000000-0000-0000-0000-000000000001",
-        description="User ID to filter notes",
-    ),
+    current_user: dict = Depends(get_current_user),
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
 ):
     """List all notes for a user."""
     try:
+        user_id = str(current_user["id"])
         pg_client = await get_postgres_client()
         notes = await pg_client.execute_query(
             """
@@ -295,18 +293,22 @@ async def list_notes(
 
 
 @app.get("/api/notes/{note_id}", tags=["Notes"])
-async def get_note(note_id: str):
+async def get_note(
+    note_id: str,
+    current_user: dict = Depends(get_current_user)
+):
     """Get a specific note by ID."""
     try:
+        user_id = str(current_user["id"])
         pg_client = await get_postgres_client()
         notes = await pg_client.execute_query(
             """
             SELECT id, user_id, content_type, content_text, source_url,
                    created_at, updated_at
             FROM notes
-            WHERE id = :note_id
+            WHERE id = :note_id AND user_id = :user_id
             """,
-            {"note_id": note_id},
+            {"note_id": note_id, "user_id": user_id},
         )
 
         if not notes:
@@ -328,6 +330,7 @@ async def get_note(note_id: str):
 
 @app.get("/api/graph", response_model=GraphResponse, tags=["Graph"])
 async def get_knowledge_graph(
+    current_user: dict = Depends(get_current_user),
     concept_id: Optional[str] = Query(default=None, description="Filter by concept ID"),
     depth: int = Query(default=2, ge=1, le=5, description="Graph traversal depth"),
 ):
@@ -338,8 +341,9 @@ async def get_knowledge_graph(
     suitable for React Flow or similar graph visualization libraries.
     """
     try:
+        user_id = str(current_user["id"])
         neo4j_client = await get_neo4j_client()
-        graph_data = await neo4j_client.get_graph_for_user(depth=depth)
+        graph_data = await neo4j_client.get_graph_for_user(user_id=user_id, depth=depth)
 
         return GraphResponse(
             nodes=graph_data["nodes"],
@@ -354,22 +358,26 @@ async def get_knowledge_graph(
 
 
 @app.get("/api/graph/concept/{concept_id}", tags=["Graph"])
-async def get_concept_details(concept_id: str):
+async def get_concept_details(
+    concept_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """Get detailed information about a specific concept."""
     try:
+        user_id = str(current_user["id"])
         neo4j_client = await get_neo4j_client()
-        concept = await neo4j_client.get_concept(concept_id)
+        concept = await neo4j_client.get_concept(concept_id, user_id=user_id)
 
         if not concept:
             raise HTTPException(status_code=404, detail="Concept not found")
 
         # Get related notes
         notes_query = """
-        MATCH (n:NoteSource)-[:EXPLAINS]->(c:Concept {id: $concept_id})
+        MATCH (n:NoteSource {user_id: $user_id})-[:EXPLAINS]->(c:Concept {id: $concept_id, user_id: $user_id})
         RETURN n.note_id AS note_id
         """
         notes_result = await neo4j_client.execute_query(
-            notes_query, {"concept_id": concept_id}
+            notes_query, {"concept_id": concept_id, "user_id": user_id}
         )
         related_notes = [r["note_id"] for r in notes_result]
 
@@ -404,12 +412,14 @@ async def get_concept_details(concept_id: str):
 @app.get("/api/graph/search", tags=["Graph"])
 async def search_concepts(
     query: str = Query(..., min_length=1, description="Search query"),
+    current_user: dict = Depends(get_current_user),
     limit: int = Query(default=20, le=50),
 ):
     """Search for concepts by name."""
     try:
+        user_id = str(current_user["id"])
         neo4j_client = await get_neo4j_client()
-        concepts = await neo4j_client.get_concepts_by_name(query)
+        concepts = await neo4j_client.get_concepts_by_name(query, user_id=user_id)
 
         return {
             "concepts": concepts[:limit],

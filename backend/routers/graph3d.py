@@ -3,7 +3,8 @@
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from backend.auth.middleware import get_current_user
 
 from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
@@ -50,7 +51,7 @@ def calculate_node_size(complexity: float, relationship_count: int) -> float:
 
 @router.get("", response_model=Graph3DResponse)
 async def get_3d_graph(
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
     center_concept_id: Optional[str] = Query(
         default=None,
         description="Focus on this concept and show its neighborhood",
@@ -102,12 +103,16 @@ async def get_3d_graph(
         if domains:
             domain_list = [d.strip() for d in domains.split(",")]
         
+        user_id = str(current_user["id"])
+        
         # Build query based on filters
         if center_concept_id:
             # Get neighborhood around center concept
+            # Note: For now, we assume concepts in Neo4j will have user_id, 
+            # though current schema might not have it yet. We'll add it to queries.
             query = """
-            MATCH path = (center:Concept {id: $center_id})-[r*1..%d]-(related:Concept)
-            WHERE center <> related
+            MATCH path = (center:Concept {id: $center_id, user_id: $user_id})-[r*1..%d]-(related:Concept)
+            WHERE center <> related AND related.user_id = $user_id
             WITH DISTINCT related, center,
                  min(length(path)) as distance
             %s
@@ -119,14 +124,14 @@ async def get_3d_graph(
                 f"WHERE related.domain IN $domains" if domain_list else "",
             )
             
-            params = {"center_id": center_concept_id}
+            params = {"center_id": center_concept_id, "user_id": user_id}
             if domain_list:
                 params["domains"] = domain_list
             
             # Get center concept first
             center_result = await neo4j_client.execute_query(
-                "MATCH (c:Concept {id: $id}) RETURN c",
-                {"id": center_concept_id},
+                "MATCH (c:Concept {id: $id, user_id: $user_id}) RETURN c",
+                {"id": center_concept_id, "user_id": user_id},
             )
             
             if not center_result:
@@ -144,8 +149,8 @@ async def get_3d_graph(
                 
         else:
             # Get all concepts (with optional filtering)
-            where_clauses = []
-            params = {}
+            where_clauses = ["c.user_id = $user_id"]
+            params = {"user_id": user_id}
             
             if domain_list:
                 where_clauses.append("c.domain IN $domains")
@@ -170,10 +175,10 @@ async def get_3d_graph(
             concept_id = concept.get("id")
             count_result = await neo4j_client.execute_query(
                 """
-                MATCH (c:Concept {id: $id})-[r]-()
+                MATCH (c:Concept {id: $id, user_id: $user_id})-[r]-()
                 RETURN count(r) as count
                 """,
-                {"id": concept_id},
+                {"id": concept_id, "user_id": user_id},
             )
             relationship_counts[concept_id] = (
                 count_result[0]["count"] if count_result else 0
@@ -230,6 +235,7 @@ async def get_3d_graph(
         edges_query = """
         MATCH (c1:Concept)-[r]->(c2:Concept)
         WHERE c1.id IN $node_ids AND c2.id IN $node_ids
+          AND c1.user_id = $user_id AND c2.user_id = $user_id
         RETURN 
             c1.id as source,
             c2.id as target,
@@ -240,7 +246,7 @@ async def get_3d_graph(
         
         edges_result = await neo4j_client.execute_query(
             edges_query,
-            {"node_ids": node_ids},
+            {"node_ids": node_ids, "user_id": user_id},
         )
         
         edges = [
@@ -289,7 +295,7 @@ async def get_3d_graph(
 @router.get("/focus/{concept_id}")
 async def focus_on_concept(
     concept_id: str,
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
     depth: int = Query(default=2, ge=1, le=4),
 ):
     """
@@ -307,13 +313,14 @@ async def focus_on_concept(
         neo4j_client = await get_neo4j_client()
         pg_client = await get_postgres_client()
         
+        user_id = str(current_user["id"])
         # Get center concept
         center_result = await neo4j_client.execute_query(
             """
-            MATCH (c:Concept {id: $id})
+            MATCH (c:Concept {id: $id, user_id: $user_id})
             RETURN c
             """,
-            {"id": concept_id},
+            {"id": concept_id, "user_id": user_id},
         )
         
         if not center_result:
@@ -324,7 +331,8 @@ async def focus_on_concept(
         # Get connected concepts with relationship info
         connected_result = await neo4j_client.execute_query(
             """
-            MATCH (center:Concept {id: $id})-[r]-(connected:Concept)
+            MATCH (center:Concept {id: $id, user_id: $user_id})-[r]-(connected:Concept)
+            WHERE connected.user_id = $user_id
             RETURN 
                 connected,
                 type(r) as relationship,
@@ -333,19 +341,20 @@ async def focus_on_concept(
             ORDER BY strength DESC
             LIMIT 20
             """,
-            {"id": concept_id},
+            {"id": concept_id, "user_id": user_id},
         )
         
         # Get prerequisite path (what to learn first)
         prereq_path = await neo4j_client.execute_query(
             """
             MATCH path = (prereq:Concept)-[:PREREQUISITE_OF*1..3]->(center:Concept {id: $id})
+            WHERE prereq.user_id = $user_id AND center.user_id = $user_id
             WITH [n IN nodes(path) | {id: n.id, name: n.name}] as path_nodes
             RETURN path_nodes
             ORDER BY length(path_nodes) DESC
             LIMIT 1
             """,
-            {"id": concept_id},
+            {"id": concept_id, "user_id": user_id},
         )
         
         # Get mastery for all concepts
@@ -401,7 +410,9 @@ async def focus_on_concept(
 
 
 @router.get("/domains")
-async def get_domains():
+async def get_domains(
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get all domains with their colors and concept counts.
     
@@ -413,10 +424,11 @@ async def get_domains():
         result = await neo4j_client.execute_query(
             """
             MATCH (c:Concept)
+            WHERE c.user_id = $user_id
             RETURN c.domain as domain, count(*) as count
             ORDER BY count DESC
             """,
-            {},
+            {"user_id": str(current_user["id"])},
         )
         
         domains = [
@@ -438,6 +450,7 @@ async def get_domains():
 @router.get("/search")
 async def search_for_3d_navigation(
     query: str = Query(..., min_length=1),
+    current_user: dict = Depends(get_current_user),
     limit: int = Query(default=10, le=20),
 ):
     """
@@ -449,19 +462,22 @@ async def search_for_3d_navigation(
     try:
         neo4j_client = await get_neo4j_client()
         
-        result = await neo4j_client.execute_query(
-            """
-            MATCH (c:Concept)
-            WHERE toLower(c.name) CONTAINS toLower($query)
-               OR toLower(c.definition) CONTAINS toLower($query)
-            RETURN c.id as id, c.name as name, c.domain as domain
-            ORDER BY 
-                CASE WHEN toLower(c.name) STARTS WITH toLower($query) THEN 0 ELSE 1 END,
-                c.name
-            LIMIT $limit
-            """,
-            {"query": query, "limit": limit},
+        user_id = str(current_user["id"])
+        query_str = """
+        MATCH (c:Concept)
+        WHERE c.user_id = $user_id AND (
+            toLower(c.name) CONTAINS toLower($query)
+            OR toLower(c.definition) CONTAINS toLower($query)
         )
+        RETURN c.id as id, c.name as name, c.domain as domain
+        ORDER BY 
+            CASE WHEN toLower(c.name) STARTS WITH toLower($query) THEN 0 ELSE 1 END,
+            c.name
+        LIMIT $limit
+        """
+        params = {"query": query, "limit": limit, "user_id": user_id}
+        
+        result = await neo4j_client.execute_query(query_str, params)
         
         return {
             "results": [

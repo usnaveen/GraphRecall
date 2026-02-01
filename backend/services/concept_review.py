@@ -137,20 +137,27 @@ class ConceptReviewService:
         
         return session
     
-    async def get_session(self, session_id: str) -> Optional[ConceptReviewSession]:
+    async def get_session(
+        self, session_id: str, user_id: Optional[str] = None
+    ) -> Optional[ConceptReviewSession]:
         """
         Get a review session by ID.
         
         Args:
             session_id: Session ID
+            user_id: Optional user ID to verify ownership
             
         Returns:
-            ConceptReviewSession or None if not found/expired
+            ConceptReviewSession or None if not found/expired/wrong user
         """
         # Try in-memory first
         session = _review_sessions.get(session_id)
         
         if session:
+            # Check owner
+            if user_id and session.user_id != user_id:
+                return None
+            
             # Check expiration
             if session.expires_at < datetime.now(timezone.utc):
                 logger.info(
@@ -178,6 +185,11 @@ class ConceptReviewService:
                 import json
                 session_data = json.loads(result[0]["concepts_json"])
                 session = ConceptReviewSession(**session_data)
+                
+                # Check owner if provided
+                if user_id and session.user_id != user_id:
+                    return None
+                    
                 _review_sessions[session_id] = session  # Cache it
                 return session
                 
@@ -193,6 +205,7 @@ class ConceptReviewService:
         self,
         session_id: str,
         concepts: list[ConceptReviewItem],
+        user_id: Optional[str] = None,
     ) -> Optional[ConceptReviewSession]:
         """
         Update a review session with modified concepts.
@@ -204,7 +217,7 @@ class ConceptReviewService:
         Returns:
             Updated ConceptReviewSession or None
         """
-        session = await self.get_session(session_id)
+        session = await self.get_session(session_id, user_id=user_id)
         if not session:
             return None
         
@@ -239,6 +252,7 @@ class ConceptReviewService:
     async def approve_session(
         self,
         approval: ConceptReviewApproval,
+        user_id: Optional[str] = None,
     ) -> dict:
         """
         Approve a review session and commit concepts to the knowledge graph.
@@ -249,7 +263,7 @@ class ConceptReviewService:
         Returns:
             Result dictionary with counts
         """
-        session = await self.get_session(approval.session_id)
+        session = await self.get_session(approval.session_id, user_id=user_id)
         if not session:
             raise ValueError(f"Session not found: {approval.session_id}")
         
@@ -343,17 +357,18 @@ class ConceptReviewService:
             "status": "approved",
         }
     
-    async def cancel_session(self, session_id: str) -> bool:
+    async def cancel_session(self, session_id: str, user_id: Optional[str] = None) -> bool:
         """
         Cancel a review session without committing changes.
         
         Args:
             session_id: Session ID
+            user_id: Optional user ID to verify ownership
             
         Returns:
             True if cancelled, False if not found
         """
-        session = await self.get_session(session_id)
+        session = await self.get_session(session_id, user_id=user_id)
         if not session:
             return False
         

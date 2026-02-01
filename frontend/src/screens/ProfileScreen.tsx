@@ -3,16 +3,18 @@ import { motion } from 'framer-motion';
 import {
   Settings, ChevronRight, BookOpen, FileText, Target,
   Flame, Download, Upload, Trash2, HelpCircle, Moon,
-  Bell, Zap, Database
+  Bell, Zap, Database, LogOut
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useAuthStore } from '../store/useAuthStore';
 
 export function ProfileScreen() {
   const [showSettings, setShowSettings] = useState(false);
   const { userStats } = useAppStore();
+  const { user, logout } = useAuthStore();
 
   if (showSettings) {
-    return <SettingsScreen onBack={() => setShowSettings(false)} />;
+    return <SettingsScreen onBack={() => setShowSettings(false)} onLogout={logout} />;
   }
 
   // Mock domain progress data (will be replaced with real API data)
@@ -46,17 +48,27 @@ export function ProfileScreen() {
         {/* Avatar */}
         <div className="relative inline-block mb-3">
           <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6] p-[2px]">
-            <div className="w-full h-full rounded-full bg-[#07070A] flex items-center justify-center">
-              <span className="font-heading text-3xl font-bold text-white">L</span>
-            </div>
+            {user?.picture ? (
+              <img
+                src={user.picture}
+                alt={user.name}
+                className="w-full h-full rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full rounded-full bg-[#07070A] flex items-center justify-center">
+                <span className="font-heading text-3xl font-bold text-white">
+                  {user?.name?.charAt(0) || 'U'}
+                </span>
+              </div>
+            )}
           </div>
           <div className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-[#B6FF2E] flex items-center justify-center">
             <Flame className="w-4 h-4 text-[#07070A]" />
           </div>
         </div>
 
-        <h2 className="font-heading text-xl font-bold text-white">learner_01</h2>
-        <p className="text-sm text-white/50">Learning since Jan 2026</p>
+        <h2 className="font-heading text-xl font-bold text-white">{user?.name || 'User'}</h2>
+        <p className="text-sm text-white/50">{user?.email || 'Learning since Jan 2026'}</p>
       </motion.div>
 
       {/* Weekly Stats */}
@@ -211,7 +223,7 @@ function StatCard({
 }
 
 // Settings Screen
-function SettingsScreen({ onBack }: { onBack: () => void }) {
+function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) {
   return (
     <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
       {/* Header */}
@@ -325,6 +337,20 @@ function SettingsScreen({ onBack }: { onBack: () => void }) {
             label="Help & Support"
             action
           />
+        </SettingsGroup>
+
+        {/* Account */}
+        <SettingsGroup title="Account">
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center justify-between p-4 hover:bg-red-500/10 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <LogOut className="w-4 h-4 text-red-400" />
+              <span className="text-sm text-red-400">Sign Out</span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-red-400/50" />
+          </button>
         </SettingsGroup>
       </div>
     </div>

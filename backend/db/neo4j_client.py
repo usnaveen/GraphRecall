@@ -152,16 +152,13 @@ class Neo4jClient:
 
     async def create_concept(
         self,
-        concept_id: str,
-        name: str,
-        definition: str,
-        domain: str,
         complexity_score: float,
+        user_id: str,
         embedding: Optional[list[float]] = None,
     ) -> dict:
         """Create a new Concept node."""
         query = """
-        MERGE (c:Concept {id: $id})
+        MERGE (c:Concept {id: $id, user_id: $user_id})
         ON CREATE SET
             c.name = $name,
             c.definition = $definition,
@@ -178,6 +175,7 @@ class Neo4jClient:
         """
         params = {
             "id": concept_id,
+            "user_id": user_id,
             "name": name,
             "definition": definition,
             "domain": domain,
@@ -192,6 +190,7 @@ class Neo4jClient:
         from_concept_id: str,
         to_concept_id: str,
         relationship_type: str,
+        user_id: str,
         properties: Optional[dict] = None,
     ) -> dict:
         """Create a relationship between two concepts."""
@@ -199,8 +198,8 @@ class Neo4jClient:
         rel_type = relationship_type.upper().replace(" ", "_")
 
         query = f"""
-        MATCH (from:Concept {{id: $from_id}})
-        MATCH (to:Concept {{id: $to_id}})
+        MATCH (from:Concept {{id: $from_id, user_id: $user_id}})
+        MATCH (to:Concept {{id: $to_id, user_id: $user_id}})
         MERGE (from)-[r:{rel_type}]->(to)
         SET r += $properties
         RETURN from.name AS from_name, type(r) AS relationship, to.name AS to_name
@@ -208,37 +207,38 @@ class Neo4jClient:
         params = {
             "from_id": from_concept_id,
             "to_id": to_concept_id,
+            "user_id": user_id,
             "properties": properties or {},
         }
         result = await self.execute_query(query, params)
         return result[0] if result else {}
 
-    async def get_concept(self, concept_id: str) -> Optional[dict]:
+    async def get_concept(self, concept_id: str, user_id: str) -> Optional[dict]:
         """Get a concept by ID."""
         query = """
-        MATCH (c:Concept {id: $id})
+        MATCH (c:Concept {id: $id, user_id: $user_id})
         RETURN c
         """
-        result = await self.execute_query(query, {"id": concept_id})
+        result = await self.execute_query(query, {"id": concept_id, "user_id": user_id})
         return result[0]["c"] if result else None
 
-    async def get_concepts_by_name(self, name: str) -> list[dict]:
+    async def get_concepts_by_name(self, name: str, user_id: str) -> list[dict]:
         """Search concepts by name (case-insensitive partial match)."""
         query = """
         MATCH (c:Concept)
-        WHERE toLower(c.name) CONTAINS toLower($name)
+        WHERE c.user_id = $user_id AND toLower(c.name) CONTAINS toLower($name)
         RETURN c
         ORDER BY c.name
         LIMIT 20
         """
-        result = await self.execute_query(query, {"name": name})
+        result = await self.execute_query(query, {"name": name, "user_id": user_id})
         return [r["c"] for r in result]
 
-    async def get_graph_for_user(self, depth: int = 2) -> dict:
+    async def get_graph_for_user(self, user_id: str, depth: int = 2) -> dict:
         """Get the knowledge graph structure for visualization."""
         query = """
-        MATCH (c:Concept)
-        OPTIONAL MATCH (c)-[r]->(related:Concept)
+        MATCH (c:Concept {user_id: $user_id})
+        OPTIONAL MATCH (c)-[r]->(related:Concept {user_id: $user_id})
         WITH c, collect({
             target: related.id,
             type: type(r),
@@ -252,7 +252,7 @@ class Neo4jClient:
             relationships: [rel IN relationships WHERE rel.target IS NOT NULL]
         } AS node
         """
-        result = await self.execute_query(query)
+        result = await self.execute_query(query, {"user_id": user_id})
         nodes = [r["node"] for r in result]
 
         # Build edges from relationships
@@ -276,11 +276,12 @@ class Neo4jClient:
         note_id: str,
         concept_ids: list[str],
         summary: str,
+        user_id: str,
     ) -> dict:
         """Create a NoteSource node and link it to concepts."""
         # Create NoteSource
         create_query = """
-        MERGE (n:NoteSource {id: $note_id})
+        MERGE (n:NoteSource {id: $note_id, user_id: $user_id})
         ON CREATE SET
             n.note_id = $note_id,
             n.summary = $summary,
@@ -290,12 +291,14 @@ class Neo4jClient:
             n.updated_at = datetime()
         RETURN n
         """
-        await self.execute_query(create_query, {"note_id": note_id, "summary": summary})
+        await self.execute_query(
+            create_query, {"note_id": note_id, "summary": summary, "user_id": user_id}
+        )
 
         # Link to concepts
         link_query = """
-        MATCH (n:NoteSource {id: $note_id})
-        MATCH (c:Concept {id: $concept_id})
+        MATCH (n:NoteSource {id: $note_id, user_id: $user_id})
+        MATCH (c:Concept {id: $concept_id, user_id: $user_id})
         MERGE (n)-[r:EXPLAINS]->(c)
         SET r.relevance = 1.0
         RETURN n.id AS note_id, c.name AS concept_name
@@ -304,7 +307,8 @@ class Neo4jClient:
         links = []
         for concept_id in concept_ids:
             result = await self.execute_query(
-                link_query, {"note_id": note_id, "concept_id": concept_id}
+                link_query,
+                {"note_id": note_id, "concept_id": concept_id, "user_id": user_id},
             )
             if result:
                 links.append(result[0])

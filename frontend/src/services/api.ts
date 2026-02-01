@@ -1,49 +1,93 @@
 /**
  * GraphRecall API Service Layer
  * Connects the Vite frontend to the FastAPI backend endpoints.
+ * All requests include the Bearer token for authentication.
  */
+
+import { getAuthToken } from '../store/useAuthStore';
 
 // Use environment variable if available, otherwise default to local backend
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
+/**
+ * Helper to build headers with authentication
+ */
+const getHeaders = (includeContentType: boolean = false): HeadersInit => {
+    const token = getAuthToken();
+    const headers: HeadersInit = {};
+
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (includeContentType) {
+        headers['Content-Type'] = 'application/json';
+    }
+
+    return headers;
+};
+
+/**
+ * Generic fetch wrapper with auth
+ */
+const authFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
+    const response = await fetch(url, {
+        ...options,
+        headers: {
+            ...getHeaders(options.method === 'POST' || options.method === 'PUT'),
+            ...options.headers,
+        },
+    });
+
+    // Handle 401 Unauthorized - could trigger logout here
+    if (response.status === 401) {
+        console.warn('Unauthorized - token may be expired');
+        // Could dispatch logout action here
+    }
+
+    return response;
+};
+
 export const feedService = {
     /** Get the personalized active recall feed */
-    getFeed: async (userId: string = "00000000-0000-0000-0000-000000000001") => {
-        const response = await fetch(`${API_BASE}/feed?user_id=${userId}`);
+    getFeed: async () => {
+        const response = await authFetch(`${API_BASE}/feed`);
         if (!response.ok) throw new Error('Failed to fetch feed');
         return response.json();
     },
 
     /** Record a review for a card */
     recordReview: async (itemId: string, itemType: string, difficulty: string) => {
-        const response = await fetch(`${API_BASE}/feed/review?item_id=${itemId}&item_type=${itemType}&difficulty=${difficulty}`, {
-            method: 'POST'
-        });
+        const response = await authFetch(
+            `${API_BASE}/feed/review?item_id=${itemId}&item_type=${itemType}&difficulty=${difficulty}`,
+            { method: 'POST' }
+        );
         if (!response.ok) throw new Error('Failed to record review');
         return response.json();
     },
 
     /** Get user statistics */
-    getStats: async (userId: string = "00000000-0000-0000-0000-000000000001") => {
-        const response = await fetch(`${API_BASE}/feed/stats?user_id=${userId}`);
+    getStats: async () => {
+        const response = await authFetch(`${API_BASE}/feed/stats`);
         if (!response.ok) throw new Error('Failed to fetch stats');
         return response.json();
     },
 
     /** Toggle like status for a card */
-    likeItem: async (itemId: string, itemType: string, userId: string = "00000000-0000-0000-0000-000000000001") => {
-        const response = await fetch(`${API_BASE}/${itemId}/like?item_type=${itemType}&user_id=${userId}`, {
-            method: 'POST'
-        });
+    likeItem: async (itemId: string, itemType: string) => {
+        const response = await authFetch(
+            `${API_BASE}/${itemId}/like?item_type=${itemType}`,
+            { method: 'POST' }
+        );
         if (!response.ok) throw new Error('Failed to like item');
         return response.json();
     },
 
     /** Toggle save status for a card */
-    saveItem: async (itemId: string, itemType: string, userId: string = "00000000-0000-0000-0000-000000000001") => {
-        const response = await fetch(`${API_BASE}/${itemId}/save?item_type=${itemType}&user_id=${userId}`, {
-            method: 'POST'
-        });
+    saveItem: async (itemId: string, itemType: string) => {
+        const response = await authFetch(
+            `${API_BASE}/${itemId}/save?item_type=${itemType}`,
+            { method: 'POST' }
+        );
         if (!response.ok) throw new Error('Failed to save item');
         return response.json();
     }
@@ -51,15 +95,15 @@ export const feedService = {
 
 export const graphService = {
     /** Get 3D graph data */
-    getGraph: async (userId: string = "00000000-0000-0000-0000-000000000001") => {
-        const response = await fetch(`${API_BASE}/graph3d?user_id=${userId}`);
+    getGraph: async () => {
+        const response = await authFetch(`${API_BASE}/graph3d`);
         if (!response.ok) throw new Error('Failed to fetch graph data');
         return response.json();
     },
 
     /** Get focused neighborhood around a concept */
     focusConcept: async (conceptId: string) => {
-        const response = await fetch(`${API_BASE}/graph3d/focus/${conceptId}`);
+        const response = await authFetch(`${API_BASE}/graph3d/focus/${conceptId}`);
         if (!response.ok) throw new Error('Failed to focus concept');
         return response.json();
     }
@@ -67,11 +111,10 @@ export const graphService = {
 
 export const chatService = {
     /** Send message to GraphRAG chatbot */
-    sendMessage: async (message: string, userId: string = "00000000-0000-0000-0000-000000000001") => {
-        const response = await fetch(`${API_BASE}/chat`, {
+    sendMessage: async (message: string) => {
+        const response = await authFetch(`${API_BASE}/chat`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message, user_id: userId, conversation_history: [] })
+            body: JSON.stringify({ message, conversation_history: [] })
         });
         if (!response.ok) throw new Error('Chat failed');
         return response.json();
@@ -81,13 +124,11 @@ export const chatService = {
 export const ingestService = {
     /** Start ingestion workflow */
     ingest: async (content: string, title?: string, skipReview: boolean = false) => {
-        const response = await fetch(`${API_BASE}/v2/ingest`, {
+        const response = await authFetch(`${API_BASE}/v2/ingest`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 content,
                 title,
-                user_id: "00000000-0000-0000-0000-000000000001",
                 skip_review: skipReview
             })
         });
@@ -97,13 +138,11 @@ export const ingestService = {
 
     /** Resume ingestion after user review */
     resume: async (threadId: string, approvedConcepts: any[], cancelled: boolean = false) => {
-        const response = await fetch(`${API_BASE}/v2/ingest/resume`, {
+        const response = await authFetch(`${API_BASE}/v2/ingest/${threadId}/approve`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                thread_id: threadId,
-                user_approved_concepts: approvedConcepts,
-                user_cancelled: cancelled
+                approved_concepts: approvedConcepts,
+                cancelled: cancelled
             })
         });
         if (!response.ok) throw new Error('Resume ingestion failed');
@@ -113,19 +152,17 @@ export const ingestService = {
 
 /**
  * Generic API helper for direct endpoint access
- * Similar to axios for convenience
  */
 export const api = {
     get: async (url: string) => {
-        const response = await fetch(url);
+        const response = await authFetch(url);
         if (!response.ok) throw new Error(`GET ${url} failed`);
         return { data: await response.json() };
     },
 
     post: async (url: string, data?: object) => {
-        const response = await fetch(url, {
+        const response = await authFetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: data ? JSON.stringify(data) : undefined,
         });
         if (!response.ok) throw new Error(`POST ${url} failed`);
@@ -133,9 +170,8 @@ export const api = {
     },
 
     delete: async (url: string) => {
-        const response = await fetch(url, { method: 'DELETE' });
+        const response = await authFetch(url, { method: 'DELETE' });
         if (!response.ok) throw new Error(`DELETE ${url} failed`);
         return { data: await response.json() };
     },
 };
-
