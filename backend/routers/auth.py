@@ -88,13 +88,12 @@ async def update_profile(
             # Merge existing settings with new ones (simple JSON update)
             # In a real app, might want deep merge, but JSONB || operator works too
             # For now, just replacing/updating keys at top level
-            await pg_client.execute_query(
+            await pg_client.execute_update(
                 """
                 UPDATE users 
                 SET settings_json = COALESCE(settings_json, '{}'::jsonb) || :settings::jsonb,
                     last_login = NOW()
                 WHERE id = :id
-                RETURNING id
                 """,
                 {"settings": json.dumps(request.settings), "id": current_user["id"]}
             )

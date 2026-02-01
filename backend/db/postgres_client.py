@@ -138,6 +138,11 @@ class PostgresClient:
             row = result.fetchone()
             return str(row[0]) if row else None
 
+    async def execute_update(self, query: str, params: Optional[dict] = None) -> None:
+        """Execute an update/delete query without returning results."""
+        async with self.session() as session:
+            await session.execute(text(query), params or {})
+
 
 
     async def initialize_schema(self) -> None:
