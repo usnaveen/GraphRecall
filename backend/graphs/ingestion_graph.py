@@ -42,61 +42,74 @@ llm_flashcard = get_chat_model(temperature=0.3)
 # ============================================================================
 
 
+from langchain_core.messages import HumanMessage, SystemMessage
+
 async def extract_concepts_node(state: IngestionState) -> dict:
     """
     Node 1: Extract concepts from raw content using LLM.
+    Supports TEXT and IMAGES (Multimodal).
     
     Input: raw_content, title
     Output: extracted_concepts
     """
-    logger.info(
-        "extract_concepts_node: Starting",
-        content_length=len(state.get("raw_content", "")),
-    )
+    content = state.get("raw_content", "")
+    logger.info("extract_concepts_node: Starting", content_length=len(content))
     
-    prompt = f"""You are a concept extraction expert. Extract key concepts from this note.
-
-Content:
-{state.get("raw_content", "")[:4000]}
+    is_image = content.startswith("data:image")
+    
+    prompt_text = """You are a concept extraction expert. Extract key concepts from this input.
 
 Instructions:
-1. Focus on technical terms, theories, algorithms, or core ideas
-2. Extract 3-7 concepts maximum
-3. Each concept needs a name and brief description
-4. Identify prerequisites and related concepts
+1. If this is a diagram or flowchart:
+   - Identify the main entities as Concepts
+   - Identify the relationships/Process as connections
+2. If this is text:
+   - Focus on technical terms, theories, algorithms
+3. Extract 3-7 concepts maximum
+4. Each concept needs a name and brief description
+5. Identify prerequisites and related concepts
 
 Return ONLY valid JSON:
-{{
+{
     "concepts": [
-        {{
+        {
             "name": "Concept Name",
             "definition": "Brief definition (1-2 sentences)",
-            "domain": "Subject area like 'Machine Learning' or 'Biology'",
+            "domain": "Subject area",
             "complexity_score": 5,
             "prerequisites": [],
             "related_concepts": []
-        }}
+        }
     ]
-}}
+}
 """
-    
+
     try:
-        response = await llm_extraction.ainvoke(prompt)
-        content = response.content.strip()
+        if is_image:
+             message = HumanMessage(
+                content=[
+                    {"type": "text", "text": prompt_text},
+                    {"type": "image_url", "image_url": {"url": content}},
+                ]
+            )
+             response = await llm_extraction.ainvoke([message])
+        else:
+            # Text Only Mode
+            response = await llm_extraction.ainvoke(prompt_text + f"\n\nContent:\n{content[:4000]}")
+
+        # Usage of output parser or manual cleaning
+        response_content = response.content.strip()
         
         # Handle markdown code blocks
-        if content.startswith("```json"):
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif content.startswith("```"):
-            content = content.split("```")[1].split("```")[0].strip()
+        if response_content.startswith("```json"):
+            response_content = response_content.split("```json")[1].split("```")[0].strip()
+        elif response_content.startswith("```"):
+            response_content = response_content.split("```")[1].split("```")[0].strip()
         
-        data = json.loads(content)
+        data = json.loads(response_content)
         concepts = data.get("concepts", [])
         
-        logger.info(
-            "extract_concepts_node: Complete",
-            num_concepts=len(concepts),
-        )
+        logger.info("extract_concepts_node: Complete", num_concepts=len(concepts))
         
         return {"extracted_concepts": concepts}
         
