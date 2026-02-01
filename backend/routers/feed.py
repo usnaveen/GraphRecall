@@ -392,11 +392,22 @@ async def generate_topic_quiz(
             content_parts.append(research_result["summary"])
             content_parts.extend(research_result.get("key_points", []))
         
-        if not content_parts:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No content found for topic '{topic_name}'. Try adding some notes first."
+        if not content_parts or len(content_parts) < 2:
+            # Fallback: Content insufficient, trigger deep research
+            logger.info("generate_topic_quiz: Content insufficient, forcing research", topic=topic_name)
+            
+            research_result = await research_agent.research_topic(
+                topic=topic_name,
+                user_id=user_id,
+                force=True, # Force research since we need content
             )
+            
+            if research_result.get("summary"):
+                content_parts.append(research_result["summary"])
+                content_parts.extend(research_result.get("key_points", []))
+            else:
+                 # Last resort fallback if research fails
+                 content_parts.append(f"Generate general knowledge questions about {topic_name}.")
         
         # Step 3: Generate quiz questions using LLM (Gemini)
         llm = get_chat_model(temperature=0.5)
