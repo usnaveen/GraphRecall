@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, Image, FileText, Link2, Check,
@@ -24,6 +24,17 @@ export function CreateScreen() {
   const [progress, setProgress] = useState(0);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [extractedConcepts, setExtractedConcepts] = useState<ExtractedConcept[]>([]);
+  const [inputType, setInputType] = useState<'upload' | 'text'>('upload');
+  const [textInput, setTextInput] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      // For now, just taking the file name as a simulation of reading it
+      // In a real app, use FileReader
+      startProcessing(`File: ${e.target.files[0].name}\n(Content simulation)`);
+    }
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -113,64 +124,111 @@ export function CreateScreen() {
             {/* Header */}
             <div className="text-center mb-6">
               <h2 className="font-heading text-xl font-bold text-white mb-1">Add Knowledge</h2>
-              <p className="text-sm text-white/50">Upload your notes and we&apos;ll extract concepts</p>
+              <p className="text-sm text-white/50">Upload notes, images, or paste text</p>
             </div>
 
-            {/* Drop Zone */}
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`
-                flex-1 min-h-[200px] rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-6 transition-all duration-300
-                ${isDragging
-                  ? 'border-[#B6FF2E] bg-[#B6FF2E]/5'
-                  : 'border-white/20 bg-white/[0.02] hover:border-white/30'
-                }
-              `}
-            >
-              <motion.div
-                animate={isDragging ? { scale: 1.1 } : { scale: 1 }}
-                className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4"
-              >
-                <Upload className="w-8 h-8 text-[#B6FF2E]" />
-              </motion.div>
-              <p className="text-white font-medium mb-2">Drag & drop files here</p>
-              <p className="text-white/50 text-sm mb-4">or tap to browse</p>
+            {/* Main Input Area */}
+            <div className="flex-1 flex flex-col gap-4 min-h-0">
 
-              {/* Format Pills */}
-              <div className="flex gap-2">
-                {['.md', '.txt', '.pdf', '.jpg'].map((format) => (
-                  <span
-                    key={format}
-                    className="px-2 py-1 rounded-full text-xs font-mono bg-white/5 text-white/50"
+              {/* Toggle: Upload vs Text */}
+              {inputType === 'text' ? (
+                <div className="flex-1 rounded-3xl border border-white/20 bg-white/[0.02] p-4 flex flex-col relative group hover:border-white/30 transition-colors">
+                  <textarea
+                    value={textInput}
+                    onChange={(e) => setTextInput(e.target.value)}
+                    placeholder="Paste your notes, lecture transcript, or type something to remember..."
+                    className="w-full h-full bg-transparent border-none outline-none resize-none text-white/90 placeholder:text-white/20 font-mono text-sm leading-relaxed scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pr-2"
+                    autoFocus
+                  />
+                  <div className="absolute bottom-4 right-4 flex gap-2">
+                    <button
+                      onClick={() => setInputType('upload')}
+                      className="px-3 py-1.5 rounded-lg bg-white/5 text-xs text-white/50 hover:bg-white/10 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => startProcessing(textInput)}
+                      disabled={!textInput.trim()}
+                      className="px-3 py-1.5 rounded-lg bg-[#B6FF2E] text-[#07070A] text-xs font-bold hover:bg-[#c5ff4d] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+                    >
+                      <Upload className="w-3 h-3" />
+                      Analyze
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`
+                    flex-1 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-6 transition-all duration-300 cursor-pointer
+                    ${isDragging
+                      ? 'border-[#B6FF2E] bg-[#B6FF2E]/5'
+                      : 'border-white/20 bg-white/[0.02] hover:border-white/30 hover:bg-white/[0.04]'
+                    }
+                  `}
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    onChange={handleFileSelect}
+                    accept=".md,.txt,.pdf,.jpg,.png,.jpeg"
+                  />
+
+                  <motion.div
+                    animate={isDragging ? { scale: 1.1 } : { scale: 1 }}
+                    className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4 border border-white/5"
                   >
-                    {format}
-                  </span>
-                ))}
-              </div>
-            </div>
+                    <Upload className="w-8 h-8 text-[#B6FF2E]" />
+                  </motion.div>
+                  <p className="text-white font-medium mb-2">Drag & drop files here</p>
+                  <p className="text-white/50 text-sm mb-4">or click to browse</p>
 
-            {/* Quick Actions */}
-            <div className="mt-6">
-              <p className="text-xs text-white/40 text-center mb-4">— OR —</p>
-              <div className="grid grid-cols-3 gap-3">
-                <QuickActionButton
-                  icon={Image}
-                  label="Screenshot"
-                  onClick={() => startProcessing("Context: Screenshot of a neural network diagram showing backpropagation flow.")}
-                />
-                <QuickActionButton
-                  icon={FileText}
-                  label="Write Notes"
-                  onClick={() => startProcessing("Concept: Transformer Architecture. Transformers use self-attention mechanisms to process sequential data in parallel...")}
-                />
-                <QuickActionButton
-                  icon={Link2}
-                  label="Import URL"
-                  onClick={() => startProcessing("Source: Wikipedia Article on Graph Neural Networks (GNNs). GNNs are a class of artificial neural networks for processing data that can be represented as graphs.")}
-                />
-              </div>
+                  <div className="flex gap-2">
+                    {['.md', '.txt', '.pdf', 'Images'].map((format) => (
+                      <span
+                        key={format}
+                        className="px-2 py-1 rounded-full text-xs font-mono bg-white/5 text-white/50 border border-white/5"
+                      >
+                        {format}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Actions (Only show if not typing text) */}
+              {inputType !== 'text' && (
+                <div className="grid grid-cols-3 gap-3 h-24 shrink-0">
+                  <QuickActionButton
+                    icon={Image}
+                    label="Images"
+                    onClick={() => {
+                      if (fileInputRef.current) {
+                        fileInputRef.current.accept = "image/*";
+                        fileInputRef.current.click();
+                      }
+                    }}
+                  />
+                  <QuickActionButton
+                    icon={FileText}
+                    label="Write Notes"
+                    onClick={() => setInputType('text')}
+                  />
+                  <QuickActionButton
+                    icon={Link2}
+                    label="Import URL"
+                    onClick={() => {
+                      const url = prompt("Enter URL to analyze:");
+                      if (url) startProcessing(`Source URL: ${url}`);
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </motion.div>
         )}
