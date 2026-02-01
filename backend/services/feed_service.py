@@ -261,47 +261,103 @@ class FeedService:
             )
             return None
     
-    async def generate_cold_start_feed(self, request: FeedFilterRequest) -> FeedResponse:
-        """Generate a cold start feed for new users."""
-        feed_items = []
-        
-        # Default onboarding topics
-        topics = [
-            "Active Recall", 
-            "Spaced Repetition", 
-            "Knowledge Graphs", 
-            "Effective Learning",
-            "GraphRecall Features"
+    def _static_cold_start_items(self) -> list[FeedItem]:
+        """Return pre-built onboarding items that require no LLM calls."""
+        return [
+            FeedItem(
+                item_type=FeedItemType.CONCEPT_SHOWCASE,
+                content={
+                    "concept_name": "Welcome to GraphRecall",
+                    "definition": "Your personal knowledge graph for active recall learning.",
+                    "domain": "Meta-Learning",
+                    "complexity_score": 1,
+                    "tagline": "Build your second brain, one concept at a time.",
+                    "visual_metaphor": "Think of GraphRecall as a mind map that quizzes you.",
+                    "key_points": [
+                        "Upload notes, PDFs, or images to extract concepts",
+                        "Concepts are linked in a knowledge graph",
+                        "Spaced repetition keeps knowledge fresh",
+                    ],
+                    "real_world_example": "Upload your lecture notes and get flashcards automatically.",
+                    "connections_note": "",
+                    "emoji_icon": "🧠",
+                    "prerequisites": [],
+                    "related_concepts": [],
+                },
+                concept_id="cold_start_welcome",
+                concept_name="Welcome to GraphRecall",
+                domain="Meta-Learning",
+                priority_score=1.0,
+            ),
+            FeedItem(
+                item_type=FeedItemType.FLASHCARD,
+                content={
+                    "front": "What learning technique involves testing yourself on material rather than re-reading?",
+                    "back": "Active Recall - retrieving information from memory strengthens long-term retention far more than passive review.",
+                    "card_type": "basic",
+                },
+                concept_id="cold_start_active_recall",
+                concept_name="Active Recall",
+                domain="Meta-Learning",
+                priority_score=0.9,
+            ),
+            FeedItem(
+                item_type=FeedItemType.FLASHCARD,
+                content={
+                    "front": "What is Spaced Repetition?",
+                    "back": "A learning technique that reviews material at increasing intervals. Items you know well are shown less often; items you struggle with appear more frequently.",
+                    "card_type": "basic",
+                },
+                concept_id="cold_start_spaced_rep",
+                concept_name="Spaced Repetition",
+                domain="Meta-Learning",
+                priority_score=0.8,
+            ),
+            FeedItem(
+                item_type=FeedItemType.FLASHCARD,
+                content={
+                    "front": "How does a Knowledge Graph help learning?",
+                    "back": "A Knowledge Graph connects concepts through relationships, showing prerequisites and related ideas. This mirrors how the brain organizes information -- through associations, not isolation.",
+                    "card_type": "application",
+                },
+                concept_id="cold_start_kg",
+                concept_name="Knowledge Graphs",
+                domain="Meta-Learning",
+                priority_score=0.7,
+            ),
         ]
-        
-        for i, topic in enumerate(topics):
-            # Create a mock concept for the topic
+
+    async def generate_cold_start_feed(self, request: FeedFilterRequest) -> FeedResponse:
+        """Generate a cold start feed for new users.
+
+        Uses static pre-built items as a fast fallback, then attempts to
+        generate one LLM-powered item. If the LLM fails, the static items
+        are returned immediately so the app never blocks on boot.
+        """
+        feed_items = self._static_cold_start_items()
+
+        # Attempt to generate one dynamic item, but don't block on failure
+        try:
             concept = {
-                "id": f"cold_start_{i}",
-                "name": topic,
-                "definition": f"Core concept of {topic} for effective learning.",
+                "id": "cold_start_dynamic",
+                "name": "Active Recall",
+                "definition": "A learning strategy where you actively retrieve information from memory, rather than passively reviewing material.",
                 "domain": "Meta-Learning",
                 "complexity_score": 3,
-                "priority_score": 1.0
+                "priority_score": 0.6,
             }
-            
-            # Generate a flashcard
-            item = await self.generate_feed_item(concept, FeedItemType.FLASHCARD)
+            item = await self.generate_feed_item(concept, FeedItemType.MCQ)
             if item:
                 feed_items.append(item)
-                
-            # Add a welcome quiz
-            if i == 0:
-                item = await self.generate_feed_item(concept, FeedItemType.MCQ)
-                if item:
-                    feed_items.append(item)
+        except Exception as e:
+            logger.warning("FeedService: Cold start dynamic item failed, using static only", error=str(e))
 
         return FeedResponse(
             items=feed_items,
             total_due_today=len(feed_items),
             completed_today=0,
             streak_days=0,
-            domains=["Meta-Learning"]
+            domains=["Meta-Learning"],
         )
 
     async def get_feed(
