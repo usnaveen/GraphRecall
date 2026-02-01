@@ -27,7 +27,8 @@ const getHeaders = (includeContentType: boolean = false): HeadersInit => {
 };
 
 /**
- * Generic fetch wrapper with auth
+ * Generic fetch wrapper with auth.
+ * Automatically logs the user out on 401 (expired Google ID token).
  */
 const authFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
     const response = await fetch(url, {
@@ -38,10 +39,12 @@ const authFetch = async (url: string, options: RequestInit = {}): Promise<Respon
         },
     });
 
-    // Handle 401 Unauthorized - could trigger logout here
+    // Handle 401 Unauthorized — token expired, force re-login
     if (response.status === 401) {
-        console.warn('Unauthorized - token may be expired');
-        // Could dispatch logout action here
+        console.warn('Unauthorized - token expired, logging out');
+        // Dynamic import to avoid circular dependency
+        const { useAuthStore } = await import('../store/useAuthStore');
+        useAuthStore.getState().logout();
     }
 
     return response;
