@@ -261,24 +261,55 @@ class FeedService:
             )
             return None
     
+    async def generate_cold_start_feed(self, request: FeedFilterRequest) -> FeedResponse:
+        """Generate a cold start feed for new users."""
+        feed_items = []
+        
+        # Default onboarding topics
+        topics = [
+            "Active Recall", 
+            "Spaced Repetition", 
+            "Knowledge Graphs", 
+            "Effective Learning",
+            "GraphRecall Features"
+        ]
+        
+        for i, topic in enumerate(topics):
+            # Create a mock concept for the topic
+            concept = {
+                "id": f"cold_start_{i}",
+                "name": topic,
+                "definition": f"Core concept of {topic} for effective learning.",
+                "domain": "Meta-Learning",
+                "complexity_score": 3,
+                "priority_score": 1.0
+            }
+            
+            # Generate a flashcard
+            item = await self.generate_feed_item(concept, FeedItemType.FLASHCARD)
+            if item:
+                feed_items.append(item)
+                
+            # Add a welcome quiz
+            if i == 0:
+                item = await self.generate_feed_item(concept, FeedItemType.MCQ)
+                if item:
+                    feed_items.append(item)
+
+        return FeedResponse(
+            items=feed_items,
+            total_due_today=len(feed_items),
+            completed_today=0,
+            streak_days=0,
+            domains=["Meta-Learning"]
+        )
+
     async def get_feed(
         self,
         request: FeedFilterRequest,
     ) -> FeedResponse:
         """
         Generate the user's learning feed.
-        
-        The feed is a mix of:
-        - Due items based on spaced repetition
-        - Different content types (MCQ, flashcard, etc.)
-        - User uploads
-        - Concept showcases
-        
-        Args:
-            request: Filter request with user preferences
-            
-        Returns:
-            FeedResponse with items and metadata
         """
         logger.info(
             "FeedService: Generating feed",
@@ -286,13 +317,18 @@ class FeedService:
             max_items=request.max_items,
         )
         
-        feed_items: list[FeedItem] = []
-        
         # Get due concepts
         due_concepts = await self.get_due_concepts(
             user_id=request.user_id,
-            limit=request.max_items * 2,  # Get more to have variety
+            limit=request.max_items * 2,
         )
+        
+        # Cold Start: If no concepts, generate onboarding/general items
+        if not due_concepts:
+            logger.info("FeedService: Cold start - generating onboarding items")
+            return await self.generate_cold_start_feed(request)
+        
+        feed_items: list[FeedItem] = []
         
         # Filter by domains if specified
         if request.domains:
