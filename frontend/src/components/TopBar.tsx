@@ -2,10 +2,12 @@ import { motion } from 'framer-motion';
 import { Flame, Wifi, WifiOff } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useEffect, useState } from 'react';
+import { BackendStatusPanel } from './BackendStatusPanel';
 
 export function TopBar() {
   const { itemsReviewedToday, dailyItemLimit, userStats } = useAppStore();
   const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
+  const [statusPanelOpen, setStatusPanelOpen] = useState(false);
   const progressPercent = (itemsReviewedToday / dailyItemLimit) * 100;
 
   // Check backend connection on mount
@@ -51,9 +53,11 @@ export function TopBar() {
 
         {/* Progress Pill & Backend Status */}
         <div className="flex items-center gap-2">
-          {/* Backend Connection Indicator */}
-          <div
-            className="flex items-center gap-1.5 px-2 py-1 rounded-full glass-surface-highlight"
+          {/* Backend Connection Indicator — click to open status panel */}
+          <button
+            onClick={() => setStatusPanelOpen(true)}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-full glass-surface-highlight cursor-pointer hover:bg-white/15 transition-colors"
+            aria-label="Backend status"
             title={backendStatus === 'connected' ? 'Backend connected' : backendStatus === 'disconnected' ? 'Backend disconnected' : 'Checking...'}
           >
             {backendStatus === 'connected' ? (
@@ -68,7 +72,7 @@ export function TopBar() {
                 <Wifi className="w-3.5 h-3.5 text-yellow-400" />
               </motion.div>
             )}
-          </div>
+          </button>
 
           {/* Progress Pill */}
           <div className="glass-surface-highlight rounded-full px-4 py-1.5 flex items-center gap-3">
@@ -96,6 +100,9 @@ export function TopBar() {
           </span>
         </div>
       </div>
+
+      {/* Backend Status Panel */}
+      <BackendStatusPanel open={statusPanelOpen} onOpenChange={setStatusPanelOpen} />
     </motion.header>
   );
 }
