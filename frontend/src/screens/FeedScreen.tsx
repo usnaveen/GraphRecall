@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Heart, Bookmark, Share2, ChevronRight, Lightbulb,
-  CheckCircle, XCircle, Edit3, Image as ImageIcon, Map
+  CheckCircle, XCircle, Edit3, Image as ImageIcon, Map,
+  Sparkles, ArrowRight, Globe, Layers
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import type { FeedItem, QuizOption } from '../types';
+import type { FeedItem, QuizOption, ConceptShowcaseCard } from '../types';
 
 export function FeedScreen() {
   const {
@@ -172,6 +173,8 @@ function FeedCardContent({ item }: { item: FeedItem }) {
       return <ScreenshotContent card={item} />;
     case 'diagram':
       return <DiagramContent card={item} />;
+    case 'concept_showcase':
+      return <ConceptShowcaseContent card={item as ConceptShowcaseCard} />;
     default:
       return null;
   }
@@ -500,6 +503,125 @@ function DiagramContent({ card }: { card: any }) {
         <button className="flex-1 py-2 rounded-xl bg-[#9B59B6]/20 text-[#9B59B6] text-sm hover:bg-[#9B59B6]/30 transition-colors">
           Explore Graph
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Concept Showcase Content
+function ConceptShowcaseContent({ card }: { card: ConceptShowcaseCard }) {
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header with emoji + domain badge */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">{card.emojiIcon}</span>
+          <span className="text-xs font-mono text-[#B6FF2E] uppercase tracking-wider">Concept Showcase</span>
+        </div>
+        <span className="px-2.5 py-1 rounded-full text-[10px] font-medium bg-white/5 border border-white/10 text-white/60">
+          {card.domain}
+        </span>
+      </div>
+
+      {/* Concept Name */}
+      <h2 className="font-heading text-2xl font-bold text-white mb-1">
+        {card.conceptName}
+      </h2>
+
+      {/* Tagline */}
+      {card.tagline && (
+        <p className="text-sm text-[#B6FF2E]/80 italic mb-4">
+          "{card.tagline}"
+        </p>
+      )}
+
+      {/* Definition */}
+      <p className="text-white/70 text-sm leading-relaxed mb-4">
+        {card.definition}
+      </p>
+
+      {/* Visual Metaphor */}
+      {card.visualMetaphor && (
+        <div className="p-3 rounded-xl bg-gradient-to-r from-[#B6FF2E]/5 to-[#2EFFE6]/5 border border-[#B6FF2E]/10 mb-4">
+          <div className="flex items-start gap-2">
+            <Sparkles className="w-4 h-4 text-[#B6FF2E] mt-0.5 shrink-0" />
+            <p className="text-sm text-white/80">{card.visualMetaphor}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Key Points */}
+      {card.keyPoints.length > 0 && (
+        <div className="space-y-2 mb-4">
+          {card.keyPoints.map((point, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className="flex items-start gap-2"
+            >
+              <ArrowRight className="w-3.5 h-3.5 text-[#2EFFE6] mt-0.5 shrink-0" />
+              <p className="text-sm text-white/70">{point}</p>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {/* Real World Example */}
+      {card.realWorldExample && (
+        <div className="p-3 rounded-xl bg-white/5 border border-white/10 mb-4">
+          <div className="flex items-start gap-2">
+            <Globe className="w-4 h-4 text-white/40 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[10px] text-white/40 uppercase tracking-wider mb-1">Real-World Example</p>
+              <p className="text-sm text-white/70">{card.realWorldExample}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Footer: Prerequisites + Connections */}
+      <div className="mt-auto">
+        {/* Related Concepts */}
+        {(card.prerequisites.length > 0 || card.relatedConcepts.length > 0) && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {card.prerequisites.map((p, i) => (
+              <span
+                key={`prereq-${i}`}
+                className="px-2.5 py-1 rounded-full text-[10px] font-medium bg-[#2EFFE6]/10 border border-[#2EFFE6]/20 text-[#2EFFE6]"
+              >
+                {p}
+              </span>
+            ))}
+            {card.relatedConcepts.map((r, i) => (
+              <span
+                key={`related-${i}`}
+                className="px-2.5 py-1 rounded-full text-[10px] font-medium bg-white/5 border border-white/10 text-white/60"
+              >
+                {r}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Complexity bar */}
+        <div className="flex items-center justify-between pt-3 border-t border-white/5">
+          <div className="flex items-center gap-1.5">
+            <Layers className="w-3 h-3 text-white/40" />
+            <span className="text-xs text-white/40">Complexity</span>
+          </div>
+          <div className="flex gap-0.5">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div
+                key={i}
+                className={`w-1.5 h-3 rounded-sm ${
+                  i < card.complexityScore ? 'bg-[#B6FF2E]' : 'bg-white/10'
+                }`}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
