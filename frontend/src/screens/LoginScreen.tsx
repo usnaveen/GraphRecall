@@ -63,9 +63,9 @@ export function LoginScreen() {
                     initial={{ scale: 0.8 }}
                     animate={{ scale: 1 }}
                     transition={{ delay: 0.2, duration: 0.5 }}
-                    className="w-24 h-24 flex items-center justify-center mb-6 mx-auto"
+                    className="w-24 h-24 flex items-center justify-center mb-6 mx-auto rounded-3xl overflow-hidden"
                 >
-                    <img src="/logo.png" alt="GraphRecall Logo" className="w-full h-full object-contain drop-shadow-[0_0_15px_rgba(182,255,46,0.3)]" />
+                    <img src="/logo.png" alt="GraphRecall Logo" className="w-full h-full object-contain" />
                 </motion.div>
 
                 {/* Title */}
