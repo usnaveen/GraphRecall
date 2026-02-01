@@ -162,7 +162,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           conceptsLearned: data.total_concepts,
           notesAdded: data.total_notes,
           accuracy: data.accuracy_rate * 100,
-          streakDays: data.streak_days
+          streakDays: data.streak_days,
+          domainProgress: data.domain_progress,
+          dailyActivity: data.daily_activity
         }
       });
     } catch (error) {

@@ -109,6 +109,91 @@ class FeedService:
         except Exception as e:
             logger.warning("FeedService: Error getting domains", error=str(e))
             return []
+
+    async def get_domain_mastery(self, user_id: str) -> dict[str, float]:
+        """Calculate mastery percentage (0-100) for each domain."""
+        try:
+            # 1. Get concept -> domain mapping from Neo4j
+            concepts_result = await self.neo4j_client.execute_query(
+                """
+                MATCH (c:Concept {user_id: $user_id})
+                RETURN c.id as id, c.domain as domain
+                """,
+                {"user_id": user_id},
+            )
+            
+            domain_map = {c["id"]: c.get("domain", "General") for c in concepts_result}
+            
+            # 2. Get scores from Postgres
+            scores_result = await self.pg_client.execute_query(
+                """
+                SELECT concept_id, score 
+                FROM proficiency_scores 
+                WHERE user_id = :user_id
+                """,
+                {"user_id": user_id},
+            )
+            
+            score_map = {row["concept_id"]: row["score"] for row in scores_result}
+            
+            # 3. Aggregate
+            domain_totals = {}  # domain -> [total_score, count]
+            
+            for concept_id, domain in domain_map.items():
+                score = score_map.get(concept_id, 0.0)
+                if domain not in domain_totals:
+                    domain_totals[domain] = [0.0, 0]
+                
+                domain_totals[domain][0] += score
+                domain_totals[domain][1] += 1
+            
+            # 4. Calculate averages
+            mastery = {}
+            for domain, (total, count) in domain_totals.items():
+                if count > 0:
+                    mastery[domain] = round((total / count) * 100, 1)
+                else:
+                    mastery[domain] = 0.0
+                    
+            return mastery
+            
+        except Exception as e:
+            logger.error("FeedService: Error calculating domain mastery", error=str(e))
+            return {}
+
+    async def get_daily_activity(self, user_id: str, days: int = 90) -> list[dict]:
+        """Get daily activity stats for heatmap."""
+        try:
+            query = """
+            SELECT 
+                DATE(reviewed_at) as date,
+                COUNT(*) as reviews_completed,
+                COUNT(DISTINCT concept_id) as concepts_learned,
+                0 as notes_added, -- Placeholder, ideally join with notes table
+                AVG(CASE WHEN is_correct THEN 1 ELSE 0 END) as accuracy
+            FROM study_sessions
+            WHERE user_id = :user_id
+              AND reviewed_at >= CURRENT_DATE - INTERVAL '90 days'
+            GROUP BY DATE(reviewed_at)
+            ORDER BY date DESC
+            """
+            
+            result = await self.pg_client.execute_query(query, {"user_id": user_id})
+            
+            return [
+                {
+                    "date": row["date"].isoformat(),
+                    "reviews_completed": row["reviews_completed"],
+                    "concepts_learned": row["concepts_learned"],
+                    "notes_added": 0, # TODO: Separate query for notes if needed
+                    "accuracy": float(row["accuracy"] or 0),
+                }
+                for row in result
+            ]
+            
+        except Exception as e:
+            logger.error("FeedService: Error getting daily activity", error=str(e))
+            return []
     
     async def get_due_concepts(self, user_id: str, limit: int = 20) -> list[dict]:
         """Get concepts that are due for review."""

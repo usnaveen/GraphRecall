@@ -339,6 +339,11 @@ class UserStats(BaseModel):
     overdue: int = 0
 
     last_activity: Optional[datetime] = None
+    
+    # Activity history for heatmap
+    daily_activity: list[DailyActivity] = Field(
+        default_factory=list, description="Activity history for heatmap"
+    )
 
 
 class DailyActivity(BaseModel):

@@ -22,16 +22,60 @@ export function ProfileScreen() {
     return <SettingsScreen onBack={() => setShowSettings(false)} onLogout={logout} />;
   }
 
-  // Mock domain progress data (will be replaced with real API data)
-  const mockDomainProgress = [
-    { name: 'Machine Learning', progress: 68, color: '#B6FF2E' },
-    { name: 'Deep Learning', progress: 45, color: '#2EFFE6' },
-    { name: 'NLP', progress: 32, color: '#FF6B6B' },
-    { name: 'Computer Vision', progress: 25, color: '#9B59B6' },
-  ];
+  // Domain Progress from real data
+  const domainColors: Record<string, string> = {
+    "Machine Learning": "#7C3AED",
+    "Mathematics": "#3B82F6",
+    "Computer Science": "#10B981",
+    "Database Systems": "#F59E0B",
+    "System Design": "#EF4444",
+    "Programming": "#06B6D4",
+    "General": "#6B7280",
+  };
 
-  // Simplified heatmap data generation
-  const heatmapDots = Array.from({ length: 80 }).map(() => Math.floor(Math.random() * 5));
+  const domainProgress = userStats.domainProgress
+    ? Object.entries(userStats.domainProgress).map(([name, progress]) => ({
+      name,
+      progress: Math.round(progress), // Ensure integer
+      color: domainColors[name] || '#6B7280' // Default gray
+    })).sort((a, b) => b.progress - a.progress)
+    : [];
+
+  // Heatmap generation from real activity
+  const generateHeatmap = () => {
+    const days = 14 * 5; // ~2 months (14 cols x 5 rows? No, just a grid of ~70)
+    // Actually, UI shows flex wrap. Let's generic last 90 days.
+    const today = new Date();
+    const dots = [];
+
+    // Create map of date string -> activity level
+    const activityMap = new Map();
+    if (userStats.dailyActivity) {
+      userStats.dailyActivity.forEach(day => {
+        const count = day.reviews_completed;
+        let level = 0;
+        if (count > 0) level = 1;
+        if (count > 5) level = 2;
+        if (count > 15) level = 3;
+        if (count > 30) level = 4;
+        activityMap.set(day.date.split('T')[0], level); // Handle potential ISO timestamp
+      });
+    }
+
+    // Generate last 80 days to match UI grid
+    for (let i = 79; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      dots.push({
+        date: dateStr,
+        level: activityMap.get(dateStr) || 0
+      });
+    }
+    return dots;
+  };
+
+  const heatmapDots = generateHeatmap();
 
 
   return (
@@ -118,7 +162,7 @@ export function ProfileScreen() {
         />
       </motion.div>
 
-      {/* Domain Progress - Keeping mock for now as backend enrichment is Phase 6 */}
+      {/* Domain Progress */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -126,37 +170,44 @@ export function ProfileScreen() {
         className="mb-6"
       >
         <h3 className="font-heading font-semibold text-white mb-3 px-1">Learning Progress</h3>
-        <div className="space-y-3">
-          {mockDomainProgress.map((domain, i) => (
-            <div key={domain.name} className="glass-surface rounded-xl p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-white/80">{domain.name}</span>
-                <span className="text-sm font-mono" style={{ color: domain.color }}>
-                  {domain.progress}%
-                </span>
+
+        {domainProgress.length > 0 ? (
+          <div className="space-y-3">
+            {domainProgress.map((domain, i) => (
+              <div key={domain.name} className="glass-surface rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-white/80">{domain.name}</span>
+                  <span className="text-sm font-mono" style={{ color: domain.color }}>
+                    {domain.progress}%
+                  </span>
+                </div>
+                <div className="flex gap-1">
+                  {Array.from({ length: 10 }).map((_, j) => (
+                    <motion.div
+                      key={j}
+                      initial={{ scaleX: 0 }}
+                      animate={{ scaleX: 1 }}
+                      transition={{ delay: i * 0.1 + j * 0.02, duration: 0.3 }}
+                      className={`flex-1 h-2 rounded-full ${j < Math.ceil(domain.progress / 10)
+                        ? ''
+                        : 'bg-white/10'
+                        }`}
+                      style={
+                        j < Math.ceil(domain.progress / 10)
+                          ? { backgroundColor: domain.color }
+                          : {}
+                      }
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="flex gap-1">
-                {Array.from({ length: 10 }).map((_, j) => (
-                  <motion.div
-                    key={j}
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{ delay: i * 0.1 + j * 0.02, duration: 0.3 }}
-                    className={`flex-1 h-2 rounded-full ${j < Math.ceil(domain.progress / 10)
-                      ? ''
-                      : 'bg-white/10'
-                      }`}
-                    style={
-                      j < Math.ceil(domain.progress / 10)
-                        ? { backgroundColor: domain.color }
-                        : {}
-                    }
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="glass-surface rounded-xl p-6 text-center">
+            <p className="text-white/40 text-sm">No progress data yet. Start adding notes!</p>
+          </div>
+        )}
       </motion.div>
 
       {/* Activity Heatmap */}
@@ -169,17 +220,18 @@ export function ProfileScreen() {
         <h3 className="font-heading font-semibold text-white mb-3 px-1">Activity</h3>
         <div className="glass-surface rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-xs text-white/40">Recent History</span>
+            <span className="text-xs text-white/40">Last 80 Days</span>
           </div>
           {/* Fix: Use flex-wrap instead of non-standard grid-cols-16 */}
           <div className="flex flex-wrap gap-1">
-            {heatmapDots.map((level, i) => (
+            {heatmapDots.map((dot, i) => (
               <motion.div
                 key={i}
                 initial={{ opacity: 0, scale: 0 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: i * 0.005 }}
-                className={`w-[calc(6.25%-4px)] aspect-square rounded-sm heatmap-${level}`}
+                title={`${dot.date}: Level ${dot.level}`}
+                className={`w-[calc(6.25%-4px)] aspect-square rounded-sm heatmap-${dot.level}`}
               />
             ))}
           </div>
