@@ -1,10 +1,35 @@
 import { motion } from 'framer-motion';
-import { Flame } from 'lucide-react';
+import { Flame, Wifi, WifiOff } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useEffect, useState } from 'react';
 
 export function TopBar() {
   const { itemsReviewedToday, dailyItemLimit, userStats } = useAppStore();
+  const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
   const progressPercent = (itemsReviewedToday / dailyItemLimit) * 100;
+
+  // Check backend connection on mount
+  useEffect(() => {
+    const checkBackend = async () => {
+      try {
+        const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+        const healthUrl = API_BASE.replace('/api', '/health');
+        const response = await fetch(healthUrl, { method: 'GET' });
+        if (response.ok) {
+          setBackendStatus('connected');
+        } else {
+          setBackendStatus('disconnected');
+        }
+      } catch (error) {
+        setBackendStatus('disconnected');
+      }
+    };
+
+    checkBackend();
+    // Re-check every 30 seconds
+    const interval = setInterval(checkBackend, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <motion.header
@@ -24,21 +49,43 @@ export function TopBar() {
           </span>
         </div>
 
-        {/* Progress Pill */}
-        <div className="glass-surface-highlight rounded-full px-4 py-1.5 flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
+        {/* Progress Pill & Backend Status */}
+        <div className="flex items-center gap-2">
+          {/* Backend Connection Indicator */}
+          <div
+            className="flex items-center gap-1.5 px-2 py-1 rounded-full glass-surface-highlight"
+            title={backendStatus === 'connected' ? 'Backend connected' : backendStatus === 'disconnected' ? 'Backend disconnected' : 'Checking...'}
+          >
+            {backendStatus === 'connected' ? (
+              <Wifi className="w-3.5 h-3.5 text-green-400" />
+            ) : backendStatus === 'disconnected' ? (
+              <WifiOff className="w-3.5 h-3.5 text-red-400" />
+            ) : (
               <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${progressPercent}%` }}
-                transition={{ duration: 0.8, delay: 0.3 }}
-                className="h-full bg-gradient-to-r from-[#B6FF2E] to-[#2EFFE6] rounded-full"
-              />
-            </div>
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+              >
+                <Wifi className="w-3.5 h-3.5 text-yellow-400" />
+              </motion.div>
+            )}
           </div>
-          <span className="text-xs font-mono text-white/80">
-            {itemsReviewedToday}/{dailyItemLimit}
-          </span>
+
+          {/* Progress Pill */}
+          <div className="glass-surface-highlight rounded-full px-4 py-1.5 flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPercent}%` }}
+                  transition={{ duration: 0.8, delay: 0.3 }}
+                  className="h-full bg-gradient-to-r from-[#B6FF2E] to-[#2EFFE6] rounded-full"
+                />
+              </div>
+            </div>
+            <span className="text-xs font-mono text-white/80">
+              {itemsReviewedToday}/{dailyItemLimit}
+            </span>
+          </div>
         </div>
 
         {/* Streak */}
