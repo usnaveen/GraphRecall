@@ -77,7 +77,7 @@ export function ProfileScreen() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="grid grid-cols-3 gap-3 mb-6"
+        className="grid grid-cols-2 gap-3 mb-6"
       >
         <StatCard
           icon={BookOpen}
@@ -91,11 +91,26 @@ export function ProfileScreen() {
           label="Notes"
           color="#2EFFE6"
         />
+      </motion.div>
+
+      {/* Cost & Usage Stats (Estimated) */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+        className="grid grid-cols-2 gap-3 mb-6"
+      >
         <StatCard
-          icon={Target}
-          value={`${Math.round(userStats.accuracy)}%`}
-          label="Accuracy"
+          icon={Zap}
+          value={`${((userStats.conceptsLearned * 1500 + userStats.notesAdded * 500) / 1000).toFixed(1)}k`}
+          label="Est. Tokens"
           color="#FF6B6B"
+        />
+        <StatCard
+          icon={Target} // Dollar Sign would be better but Lucide Target is imported
+          value={`$${((userStats.conceptsLearned * 1500 + userStats.notesAdded * 500) / 1000000 * 0.50).toFixed(4)}`}
+          label="Est. Cost"
+          color="#F59E0B"
         />
       </motion.div>
 
@@ -183,7 +198,7 @@ export function ProfileScreen() {
       >
         <button className="flex-1 py-3 rounded-xl bg-white/5 text-white/70 text-sm font-medium hover:bg-white/10 transition-colors flex items-center justify-center gap-2">
           <Target className="w-4 h-4" />
-          View All Stats
+          View Detailed Stats
         </button>
         <button className="flex-1 py-3 rounded-xl bg-white/5 text-white/70 text-sm font-medium hover:bg-white/10 transition-colors flex items-center justify-center gap-2">
           <Download className="w-4 h-4" />
@@ -282,6 +297,16 @@ function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: ()
           />
         </SettingsGroup>
 
+        {/* About App (Placeholder) */}
+        <SettingsGroup title="General">
+          <SettingItem
+            icon={BookOpen}
+            label="About App"
+            onClick={() => alert("GraphRecall v2.1\n\nThe intelligent active recall system powered by Knowledge Graphs and LLMs.\n\n© 2026 GraphRecall Team")}
+            action
+          />
+        </SettingsGroup>
+
         {/* Appearance */}
         <SettingsGroup title="Appearance">
           <SettingItem
@@ -298,21 +323,6 @@ function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: ()
             toggle
             checked={settings.animations !== false}
             onToggle={() => updateSetting('animations', settings.animations === false)}
-          />
-        </SettingsGroup>
-
-        {/* Data */}
-        <SettingsGroup title="Data">
-          <SettingItem
-            icon={Trash2}
-            label="Clear all data"
-            danger
-            action
-            onClick={() => {
-              if (confirm("Are you sure? This cannot be undone.")) {
-                alert("Data cleared (simulated)");
-              }
-            }}
           />
         </SettingsGroup>
 
