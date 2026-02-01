@@ -285,6 +285,19 @@ async def get_3d_graph(
                 node.y = float(y)
                 node.z = float(z)
                 
+
+        
+        # Calculate clusters based on domains
+        unique_domains = {n.domain for n in nodes}
+        clusters = [
+            {
+                "id": d,
+                "label": d,
+                "color": get_domain_color(d)
+            }
+            for d in unique_domains
+        ]
+                
         return Graph3DResponse(
             nodes=nodes,
             edges=edges,
