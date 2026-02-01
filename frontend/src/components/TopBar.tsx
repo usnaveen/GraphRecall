@@ -41,8 +41,8 @@ export function TopBar() {
       <div className="max-w-lg mx-auto flex items-center justify-between">
         {/* Logo */}
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6] flex items-center justify-center">
-            <span className="text-sm font-bold text-[#07070A]">G</span>
+          <div className="w-8 h-8 flex items-center justify-center">
+            <img src="/logo.png" alt="GraphRecall Logo" className="w-full h-full object-contain" />
           </div>
           <span className="font-heading font-semibold text-white text-sm hidden sm:block">
             GraphRecall
