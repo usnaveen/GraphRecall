@@ -33,14 +33,14 @@ class ContentGeneratorAgent:
     
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        model: Optional[str] = None,
         temperature: float = 0.7,  # Slightly creative for varied questions
     ):
         self.model_name = model
         self.llm = get_chat_model(
             model=model,
             temperature=temperature,
-            model_kwargs={"response_format": {"type": "json_object"}},
+            json_mode=True,
         )
         self.mermaid_agent = MermaidAgent()
     

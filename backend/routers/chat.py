@@ -27,7 +27,7 @@ class QuickChatRequest(BaseModel):
     """Simple chat request without conversation history."""
     
     message: str
-    user_id: str = "00000000-0000-0000-0000-000000000001"
+    user_id: str
 
 
 @router.post("", response_model=ChatResponse)

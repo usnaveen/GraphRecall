@@ -15,7 +15,7 @@ class Neo4jSettings(BaseSettings):
 
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
-    neo4j_password: str = "graphrecall123"
+    neo4j_password: str
 
     model_config = {"env_prefix": "", "extra": "ignore"}
 
@@ -195,6 +195,10 @@ class Neo4jClient:
     ) -> dict:
         """Create a relationship between two concepts."""
         # Sanitize relationship type (must be valid Neo4j relationship type)
+        import re
+        if not re.match(r"^[A-Z0-9_]+$", relationship_type.upper()):
+             raise ValueError("Invalid relationship type")
+        
         rel_type = relationship_type.upper().replace(" ", "_")
 
         query = f"""

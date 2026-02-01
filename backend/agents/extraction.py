@@ -28,7 +28,7 @@ class ExtractionAgent:
 
     def __init__(
         self,
-        model: str = "gpt-3.5-turbo-1106",
+        model: Optional[str] = None,
         temperature: float = 0.1,
     ):
         self.model_name = model

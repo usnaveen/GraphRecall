@@ -35,7 +35,7 @@ class SynthesisAgent:
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        model: Optional[str] = None,
         embedding_model: str = "text-embedding-3-small",
         similarity_threshold: float = 0.8,
     ):

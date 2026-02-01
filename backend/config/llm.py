@@ -18,9 +18,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmb
 logger = structlog.get_logger()
 
 # Default models - using cheapest options
-DEFAULT_CHAT_MODEL = "gemini-2.0-flash-exp"  # Free tier, very fast
-DEFAULT_REASONING_MODEL = "gemini-1.5-flash"  # For complex tasks
-DEFAULT_EMBEDDING_MODEL = "models/text-embedding-004"  # 768 dimensions
+DEFAULT_CHAT_MODEL = "gemini-2.5-flash"  # Fast, efficient
+DEFAULT_REASONING_MODEL = "gemini-2.0-flash-thinking-exp-01-21"  # Thinking model
+DEFAULT_EMBEDDING_MODEL = "models/gemini-embedding-001"  # 3072 dimensions
 
 
 @lru_cache(maxsize=4)
@@ -50,6 +50,7 @@ def get_chat_model(
         google_api_key=os.getenv("GOOGLE_API_KEY"),
         temperature=temperature,
         convert_system_message_to_human=True,  # Gemini quirk
+        model_kwargs={"generation_config": generation_config},
     )
 
 

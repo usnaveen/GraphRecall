@@ -182,17 +182,19 @@ async def search_notes(query: str, user_id: str = "default") -> str:
         pg_client = await get_postgres_client()
         
         # Keyword-based search (fallback for when embeddings aren't available)
-        result = await pg_client.fetch(
+        result = await pg_client.execute_query(
             """
             SELECT id, title, content, created_at
             FROM notes
-            WHERE user_id = $1
-              AND (title ILIKE $2 OR content ILIKE $2)
+            WHERE user_id = :user_id
+              AND (title ILIKE :search_pattern OR content ILIKE :search_pattern)
             ORDER BY created_at DESC
             LIMIT 5
             """,
-            user_id,
-            f"%{query}%"
+            {
+                "user_id": user_id,
+                "search_pattern": f"%{query}%"
+            }
         )
         
         if not result:
@@ -251,7 +253,8 @@ Output only valid JSON."""),
     
     try:
         response = await llm.ainvoke(prompt.format_messages())
-        parsed = json.loads(response.content)
+        content = response.content.replace("```json", "").replace("```", "").strip()
+        parsed = json.loads(content)
         
         logger.info(
             "analyze_query_node: Complete",
@@ -313,16 +316,18 @@ async def get_context_node(state: ChatState) -> dict:
         try:
             pg_client = await get_postgres_client()
             
-            result = await pg_client.fetch(
+            result = await pg_client.execute_query(
                 """
                 SELECT id, title, content, created_at
                 FROM notes
-                WHERE user_id = $1
-                  AND (title ILIKE $2 OR content ILIKE $2)
+                WHERE user_id = :user_id
+                  AND (title ILIKE :search_pattern OR content ILIKE :search_pattern)
                 LIMIT 3
                 """,
-                user_id,
-                f"%{query[:50]}%"
+                {
+                    "user_id": user_id,
+                    "search_pattern": f"%{query[:50]}%"
+                }
             )
             rag_context = [dict(r) for r in result] if result else []
             

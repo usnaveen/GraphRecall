@@ -240,7 +240,12 @@ async def toggle_like(
     try:
         pg_client = await get_postgres_client()
         user_id = str(current_user["id"])
-        table = "flashcards" if item_type == "flashcard" else "quizzes"
+        if item_type == "flashcard":
+            table = "flashcards"
+        elif item_type in ["mcq", "fill_blank", "quiz"]:
+            table = "quizzes"
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid item_type: {item_type}")
         
         # Toggle the boolean
         await pg_client.execute_query(
@@ -271,7 +276,12 @@ async def toggle_save(
     try:
         pg_client = await get_postgres_client()
         user_id = str(current_user["id"])
-        table = "flashcards" if item_type == "flashcard" else "quizzes"
+        if item_type == "flashcard":
+            table = "flashcards"
+        elif item_type in ["mcq", "fill_blank", "quiz"]:
+            table = "quizzes"
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid item_type: {item_type}")
         
         # Toggle the boolean
         await pg_client.execute_query(
