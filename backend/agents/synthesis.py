@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import structlog
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from backend.config.llm import get_chat_model, get_embeddings
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from backend.models.schemas import (
@@ -42,15 +42,13 @@ class SynthesisAgent:
         self.model_name = model
         self.similarity_threshold = similarity_threshold
 
-        self.llm = ChatOpenAI(
+        self.llm = get_chat_model(
             model=model,
             temperature=0.1,
-            model_kwargs={"response_format": {"type": "json_object"}},
+            json_mode=True,
         )
 
-        self.embeddings = OpenAIEmbeddings(
-            model=embedding_model,
-        )
+        self.embeddings = get_embeddings()
 
         self._prompt_template = self._load_prompt()
 

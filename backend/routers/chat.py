@@ -563,10 +563,10 @@ async def add_conversation_to_knowledge(
         )
         
         # Extract key topics for Neo4j linking (simple keyword extraction)
-        from langchain_openai import ChatOpenAI
+        from backend.config.llm import get_chat_model
         
         try:
-            llm = ChatOpenAI(model="gpt-3.5-turbo-1106", temperature=0)
+            llm = get_chat_model(temperature=0)
             
             # Quick topic extraction
             resp = await llm.ainvoke(

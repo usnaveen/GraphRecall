@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Optional
 
 import structlog
-from langchain_openai import ChatOpenAI
+from backend.config.llm import get_chat_model
 from pydantic import BaseModel
 
 logger = structlog.get_logger()
@@ -57,16 +57,8 @@ class WebResearchAgent:
         self.pg_client = pg_client
         self.max_results = max_results
         
-        self.llm = ChatOpenAI(
-            model=model,
-            temperature=0.3,
-        )
-        
-        self.synthesizer = ChatOpenAI(
-            model=model,
-            temperature=0.2,
-            model_kwargs={"response_format": {"type": "json_object"}},
-        )
+        self.llm = get_chat_model(temperature=0.3)
+        self.synthesizer = get_chat_model(temperature=0.2)
         
         # Initialize search tool
         if TAVILY_AVAILABLE:

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 import structlog
-from langchain_openai import ChatOpenAI
+from backend.config.llm import get_chat_model
 from pydantic import BaseModel
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -32,10 +32,10 @@ class ExtractionAgent:
         temperature: float = 0.1,
     ):
         self.model_name = model
-        self.llm = ChatOpenAI(
+        self.llm = get_chat_model(
             model=model,
             temperature=temperature,
-            model_kwargs={"response_format": {"type": "json_object"}},
+            json_mode=True,
         )
         self._prompt_template = self._load_prompt()
 

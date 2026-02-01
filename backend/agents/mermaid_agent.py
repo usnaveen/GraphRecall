@@ -2,7 +2,7 @@
 
 import structlog
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
+from backend.config.llm import get_chat_model
 from pydantic import BaseModel, Field
 
 logger = structlog.get_logger()
@@ -26,7 +26,7 @@ class MermaidAgent:
     """
     
     def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
+        self.llm = get_chat_model(temperature=0.1)
         
     async def generate_mindmap(self, root_concept: str, related_concepts: list[dict]) -> MermaidOutput:
         """Generate a mindmap for a central concept and its relations."""
