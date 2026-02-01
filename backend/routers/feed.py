@@ -188,8 +188,9 @@ async def get_user_stats(
         except Exception as e:
             logger.warning("Failed to get note count", error=str(e))
         
-        # Calculate domain progress (placeholder - would need more data)
-        domain_progress = {domain: 0.5 for domain in domains}  # 50% as placeholder
+        # Get domain mastery and daily activity
+        domain_progress = await feed_service.get_domain_mastery(user_id)
+        daily_activity = await feed_service.get_daily_activity(user_id)
         
         return UserStats(
             user_id=user_id,
@@ -199,6 +200,7 @@ async def get_user_stats(
             streak_days=streak,
             accuracy_rate=sr_stats.get("average_mastery", 0),
             domain_progress=domain_progress,
+            daily_activity=daily_activity,
             due_today=sr_stats.get("due_today", 0),
             completed_today=completed_today,
             overdue=sr_stats.get("overdue", 0),

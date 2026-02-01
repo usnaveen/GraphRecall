@@ -62,11 +62,22 @@ export interface DiagramCard {
 
 export type FeedItem = Flashcard | QuizCard | FillBlankCard | ScreenshotCard | DiagramCard;
 
+export interface DailyActivity {
+  date: string;
+  reviews_completed: number;
+  concepts_learned: number;
+  accuracy: number;
+}
+
 export interface UserStats {
   conceptsLearned: number;
   notesAdded: number;
   accuracy: number;
   streakDays: number;
+
+  // Enriched data
+  domainProgress?: Record<string, number>; // Domain -> percentage
+  dailyActivity?: DailyActivity[];
 }
 
 export interface DomainProgress {
