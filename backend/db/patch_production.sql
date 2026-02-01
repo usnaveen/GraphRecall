@@ -14,4 +14,4 @@ CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Add embedding column with correct dimensions for Gemini (3072)
-ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding_vector vector(3072);
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding vector(3072);
