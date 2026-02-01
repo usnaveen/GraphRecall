@@ -22,7 +22,7 @@ class ExtractionAgent:
     """
     Agent 1: Concept Extraction Agent.
 
-    Uses GPT-3.5-turbo to extract concepts, definitions, and relationships
+    Uses Gemini to extract concepts, definitions, and relationships
     from markdown/text content. Optimized for cost and speed.
     """
 
