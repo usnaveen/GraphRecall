@@ -53,7 +53,10 @@ class IngestionState(TypedDict, total=False):
     # Output fields
     created_concept_ids: list[str]  # Neo4j concept IDs
     flashcard_ids: list[str]        # Generated flashcard IDs
-    
+
+    # Processing metadata (geekout facts for UI)
+    processing_metadata: dict  # Accumulated metadata from each node
+
     # Error handling
     error: Optional[str]
 

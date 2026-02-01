@@ -260,23 +260,31 @@ async def get_3d_graph(
             for e in edges_result
         ]
         
-        # Build clusters by domain
-        clusters = []
-        domain_counts = {}
+        # Build networkx graph for layout
+        import networkx as nx
+        G = nx.Graph()
+        
+        # Add nodes
         for node in nodes:
-            domain = node.domain
-            if domain not in domain_counts:
-                domain_counts[domain] = {
-                    "domain": domain,
-                    "color": get_domain_color(domain),
-                    "count": 0,
-                    "concept_ids": [],
-                }
-            domain_counts[domain]["count"] += 1
-            domain_counts[domain]["concept_ids"].append(node.id)
+            G.add_node(node.id)
+            
+        # Add edges
+        for edge in edges:
+            G.add_edge(edge.source, edge.target, weight=edge.strength)
+            
+        # Calculate layout
+        # usage of spring_layout for 3D
+        # k=None (default 1/sqrt(n)), iterations=50
+        pos = nx.spring_layout(G, dim=3, seed=42, iterations=50, scale=400)
         
-        clusters = list(domain_counts.values())
-        
+        # Assign positions back to nodes
+        for node in nodes:
+            if node.id in pos:
+                x, y, z = pos[node.id]
+                node.x = float(x)
+                node.y = float(y)
+                node.z = float(z)
+                
         return Graph3DResponse(
             nodes=nodes,
             edges=edges,

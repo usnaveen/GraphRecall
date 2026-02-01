@@ -41,12 +41,13 @@ class IngestRequest(BaseModel):
 
 class IngestResponse(BaseModel):
     """Response from note ingestion."""
-    
+
     note_id: Optional[str] = None
     concepts: list[dict] = []
     concept_ids: list[str] = []
     flashcard_ids: list[str] = []
     synthesis_decisions: Optional[list[dict]] = None
+    processing_metadata: Optional[dict] = None  # Geekout facts for UI
     status: str  # "completed", "awaiting_review", "error"
     thread_id: str  # For resuming workflow
     error: Optional[str] = None
@@ -139,6 +140,7 @@ async def ingest_note(
             concept_ids=result.get("concept_ids", []),
             flashcard_ids=result.get("flashcard_ids", []),
             synthesis_decisions=result.get("synthesis_decisions"),
+            processing_metadata=result.get("processing_metadata"),
             status=status,
             thread_id=result.get("thread_id", ""),
             error=result.get("error"),
@@ -188,7 +190,8 @@ async def ingest_url(
             concepts=ingestion_res.get("concepts", []),
             concept_ids=ingestion_res.get("concept_ids", []),
             flashcard_ids=ingestion_res.get("flashcard_ids", []),
-            status="completed", # Article graph auto-ingests
+            processing_metadata=ingestion_res.get("processing_metadata"),
+            status="completed",
             thread_id=ingestion_res.get("thread_id", ""),
             error=ingestion_res.get("error"),
         )
