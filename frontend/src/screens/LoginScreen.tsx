@@ -5,23 +5,38 @@
 import { GoogleLogin } from '@react-oauth/google';
 import type { CredentialResponse } from '@react-oauth/google';
 import { motion } from 'framer-motion';
+import { useState, useRef } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 
 export function LoginScreen() {
     const { login, isLoading } = useAuthStore();
+    const [loginError, setLoginError] = useState<string | null>(null);
+    const loginAttemptRef = useRef(false); // prevent One Tap re-triggering
 
     const handleSuccess = async (credentialResponse: CredentialResponse) => {
+        // Prevent duplicate attempts from One Tap auto-retry
+        if (loginAttemptRef.current) return;
+        loginAttemptRef.current = true;
+
         if (credentialResponse.credential) {
             try {
+                setLoginError(null);
                 await login(credentialResponse.credential);
             } catch (error) {
                 console.error('Login failed:', error);
+                setLoginError('Login failed. Please try again.');
+            } finally {
+                // Allow retry after a short delay to prevent rapid loops
+                setTimeout(() => { loginAttemptRef.current = false; }, 3000);
             }
+        } else {
+            loginAttemptRef.current = false;
         }
     };
 
     const handleError = () => {
         console.error('Google Sign-In failed');
+        setLoginError('Google Sign-In failed. Please try again.');
     };
 
     return (
@@ -80,10 +95,20 @@ export function LoginScreen() {
                             size="large"
                             shape="pill"
                             text="continue_with"
-                            useOneTap
                         />
                     )}
                 </div>
+
+                {/* Error Message */}
+                {loginError && (
+                    <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="text-red-400 text-sm mt-4"
+                    >
+                        {loginError}
+                    </motion.p>
+                )}
 
                 {/* Footer */}
                 <p className="text-[#5A5C66] text-xs mt-12">
