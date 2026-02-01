@@ -496,6 +496,7 @@ async def get_resources_for_concept(
         neo4j_client = await get_neo4j_client()
         
         user_id = str(current_user["id"])
+        resources = []
         
         # Get notes
         notes_query = """

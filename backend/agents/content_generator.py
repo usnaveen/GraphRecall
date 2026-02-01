@@ -44,7 +44,7 @@ class ContentGeneratorAgent:
     """
     Agent for generating various types of study content.
     
-    Uses GPT-4o-mini for cost-effective, high-quality content generation.
+    Uses Gemini for cost-effective, high-quality content generation.
     """
     
     def __init__(
