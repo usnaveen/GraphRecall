@@ -338,18 +338,15 @@ async def add_message_to_conversation(
             {"conversation_id": conversation_id},
         )
         
-        history = [
-            ChatMessage(role=m["role"], content=m["content"])
-            for m in existing_messages
-        ]
-        
-        # Process with GraphRAG
-        chat_agent = GraphRAGAgent(neo4j_client, pg_client)
-        response = await chat_agent.chat(
+        # Process with LangGraph
+        result = await run_chat(
             user_id=user_id,
             message=message,
-            conversation_history=history,
+            thread_id=conversation_id  # Use conversation_id as thread_id for persistence
         )
+        
+        response_text = result["response"]
+        sources = result.get("sources", [])
         
         # Save user message
         await pg_client.execute_insert(
@@ -371,8 +368,8 @@ async def add_message_to_conversation(
             """,
             {
                 "conversation_id": conversation_id,
-                "content": response.response,
-                "sources": json.dumps(response.sources),
+                "content": response_text,
+                "sources": json.dumps(sources),
             },
         )
         
@@ -386,7 +383,12 @@ async def add_message_to_conversation(
             {"conversation_id": conversation_id},
         )
         
-        return response
+        # Return compatible response format
+        return ChatResponse(
+            response=response_text,
+            sources=sources or [],
+            related_concepts=result.get("related_concepts", [])
+        )
         
     except Exception as e:
         logger.error("Chat: Error adding message", error=str(e))
