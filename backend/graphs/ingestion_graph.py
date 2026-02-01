@@ -107,6 +107,7 @@ async def store_note_node(state: IngestionState) -> dict:
             ON CONFLICT (id) DO UPDATE SET
                 content_text = :content_text,
                 updated_at = :created_at
+            RETURNING id
             """,
             {
                 "id": note_id,
