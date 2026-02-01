@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import structlog
 from backend.auth.google_oauth import verify_google_token
-from backend.db.postgres import get_postgres_client
+from backend.db.postgres_client import get_postgres_client
 
 logger = structlog.get_logger()
 security = HTTPBearer()
