@@ -52,7 +52,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   fetchFeed: async () => {
     set({ isLoading: true });
     try {
-      const data = await feedService.getFeed();
+      // Create a timeout promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timed out')), 10000);
+      });
+
+      // Race against the actual fetch
+      const data: any = await Promise.race([
+        feedService.getFeed(),
+        timeoutPromise
+      ]);
 
       // Transform backend items to frontend types
       const transformedItems: FeedItem[] = data.items.map((item: any) => {
@@ -140,6 +149,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     } catch (error) {
       console.error("Failed to fetch feed:", error);
+      // Ensure we stop loading even on error
       set({ isLoading: false });
     }
   },
