@@ -8,7 +8,7 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 class GoogleAuthRequest(BaseModel):
-    id_token: str
+    token: str
 
 @router.post("/google")
 async def google_login(request: GoogleAuthRequest):
@@ -18,7 +18,7 @@ async def google_login(request: GoogleAuthRequest):
     """
     try:
         # Verify the token
-        user_info = await verify_google_token(request.id_token)
+        user_info = await verify_google_token(request.token)
         
         # Get or Create User in Postgres
         pg_client = await get_postgres_client()
@@ -58,7 +58,7 @@ async def google_login(request: GoogleAuthRequest):
                 "profile_picture": user["profile_picture"],
                 "drive_folder_id": user.get("drive_folder_id")
             },
-            "token": request.id_token  # For simplicity, we use the ID token as the session token
+            "token": request.token  # For simplicity, we use the ID token as the session token
         }
         
     except HTTPException as e:
