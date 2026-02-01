@@ -8,6 +8,7 @@ Combines:
 """
 
 import random
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -265,6 +266,7 @@ class FeedService:
         """Return pre-built onboarding items that require no LLM calls."""
         return [
             FeedItem(
+                id=str(uuid.uuid4()),
                 item_type=FeedItemType.CONCEPT_SHOWCASE,
                 content={
                     "concept_name": "Welcome to GraphRecall",
@@ -290,6 +292,7 @@ class FeedService:
                 priority_score=1.0,
             ),
             FeedItem(
+                id=str(uuid.uuid4()),
                 item_type=FeedItemType.FLASHCARD,
                 content={
                     "front": "What learning technique involves testing yourself on material rather than re-reading?",
@@ -302,6 +305,7 @@ class FeedService:
                 priority_score=0.9,
             ),
             FeedItem(
+                id=str(uuid.uuid4()),
                 item_type=FeedItemType.FLASHCARD,
                 content={
                     "front": "What is Spaced Repetition?",
@@ -314,6 +318,7 @@ class FeedService:
                 priority_score=0.8,
             ),
             FeedItem(
+                id=str(uuid.uuid4()),
                 item_type=FeedItemType.FLASHCARD,
                 content={
                     "front": "How does a Knowledge Graph help learning?",

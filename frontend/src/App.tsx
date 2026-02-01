@@ -18,13 +18,16 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 function AuthenticatedApp() {
   const [activeTab, setActiveTab] = useState<TabType>('feed');
-  const { fetchFeed, fetchStats, isLoading } = useAppStore();
+  const { fetchFeed, fetchStats, isLoading, feedItems } = useAppStore();
 
   useEffect(() => {
     // Initial data fetch after authentication
-    fetchFeed();
-    fetchStats();
-  }, [fetchFeed, fetchStats]);
+    // Only fetch if we don't have items and aren't already loading
+    if (feedItems.length === 0 && !isLoading) {
+      fetchFeed();
+      fetchStats();
+    }
+  }, [fetchFeed, fetchStats]); // Removed feedItems/isLoading from deps to avoid re-triggering, or keep them but trust the check
 
   const renderScreen = () => {
     switch (activeTab) {
