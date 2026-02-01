@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, Image, FileText, Link2, Check,
-  Save, AlertCircle
+  Save, AlertCircle, Cpu, Database, Brain, Zap,
+  FileType, HardDrive, Layers, GitBranch
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { ingestService } from '../services/api';
@@ -22,6 +23,55 @@ interface ExtractedConcept {
   exists?: boolean;
 }
 
+interface FileMeta {
+  fileName: string;
+  fileSize: number;
+  fileFormat: string;
+  pageCount?: number;
+  inputSource: 'file' | 'text' | 'url';
+}
+
+interface ProcessingMeta {
+  // From file (client-side)
+  file?: FileMeta;
+  // From backend response
+  concepts_extracted?: number;
+  domains_detected?: string[];
+  concept_names?: string[];
+  avg_complexity?: number;
+  content_length?: number;
+  is_multimodal?: boolean;
+  input_type?: string;
+  extraction_agent?: string;
+  existing_concepts_scanned?: number;
+  overlap_ratio?: number;
+  related_concept_names?: string[];
+  concepts_created?: number;
+  relationships_created?: number;
+  flashcards_generated?: number;
+  flashcard_agent?: string;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getFormatLabel(ext: string): string {
+  const map: Record<string, string> = {
+    pdf: 'PDF Document',
+    md: 'Markdown',
+    txt: 'Plain Text',
+    jpg: 'JPEG Image',
+    jpeg: 'JPEG Image',
+    png: 'PNG Image',
+    gif: 'GIF Image',
+    webp: 'WebP Image',
+  };
+  return map[ext] || ext.toUpperCase();
+}
+
 export function CreateScreen() {
   const [step, setStep] = useState<CreateStep>('upload');
   const [isDragging, setIsDragging] = useState(false);
@@ -31,7 +81,20 @@ export function CreateScreen() {
   const [inputType, setInputType] = useState<'upload' | 'text'>('upload');
   const [textInput, setTextInput] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [processingMeta, setProcessingMeta] = useState<ProcessingMeta>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Simulate progress ticks while waiting for API
+  useEffect(() => {
+    if (step !== 'processing' || progress >= 90) return;
+    const timer = setInterval(() => {
+      setProgress(p => {
+        if (p >= 85) return p; // Cap simulated progress at 85%
+        return p + Math.random() * 8 + 2;
+      });
+    }, 800);
+    return () => clearInterval(timer);
+  }, [step, progress]);
 
   const readFileContent = async (file: File): Promise<string> => {
     const extension = file.name.split('.').pop()?.toLowerCase();
@@ -41,6 +104,12 @@ export function CreateScreen() {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         let fullText = '';
+
+        // Track page count for geekout facts
+        setProcessingMeta(prev => ({
+          ...prev,
+          file: { ...prev.file!, pageCount: pdf.numPages }
+        }));
 
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
@@ -74,10 +143,19 @@ export function CreateScreen() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
       try {
         setStep('processing');
         setProgress(5);
         setError(null);
+        setProcessingMeta({
+          file: {
+            fileName: file.name,
+            fileSize: file.size,
+            fileFormat: ext,
+            inputSource: 'file',
+          }
+        });
         const content = await readFileContent(file);
         startProcessing(content, file.name);
       } catch (err: any) {
@@ -102,10 +180,19 @@ export function CreateScreen() {
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
       try {
         setStep('processing');
         setProgress(5);
         setError(null);
+        setProcessingMeta({
+          file: {
+            fileName: file.name,
+            fileSize: file.size,
+            fileFormat: ext,
+            inputSource: 'file',
+          }
+        });
         const content = await readFileContent(file);
         startProcessing(content, file.name);
       } catch (err: any) {
@@ -120,10 +207,25 @@ export function CreateScreen() {
     setProgress(10);
     setError(null);
 
+    // Set text input meta if no file meta exists
+    setProcessingMeta(prev => prev.file ? prev : {
+      file: {
+        fileName: title,
+        fileSize: new Blob([content]).size,
+        fileFormat: content.startsWith('data:image') ? 'image' : 'text',
+        inputSource: 'text',
+      }
+    });
+
     try {
       const response = await ingestService.ingest(content, title);
       setThreadId(response.thread_id);
       setProgress(100);
+
+      // Merge backend processing metadata
+      if (response.processing_metadata) {
+        setProcessingMeta(prev => ({ ...prev, ...response.processing_metadata }));
+      }
 
       if (response.status === 'awaiting_review') {
         const decisions = response.synthesis_decisions || [];
@@ -298,9 +400,20 @@ export function CreateScreen() {
                       if (url) {
                         setStep('processing');
                         setProgress(10);
+                        setProcessingMeta({
+                          file: {
+                            fileName: url,
+                            fileSize: 0,
+                            fileFormat: 'url',
+                            inputSource: 'url',
+                          }
+                        });
                         ingestService.ingestUrl(url)
                           .then(response => {
                             setThreadId(response.thread_id);
+                            if (response.processing_metadata) {
+                              setProcessingMeta(prev => ({ ...prev, ...response.processing_metadata }));
+                            }
                             setProgress(100);
                             setStep('success');
                           })
@@ -329,27 +442,30 @@ export function CreateScreen() {
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-              className="w-20 h-20 rounded-full border-4 border-white/10 border-t-[#B6FF2E] mb-6"
+              className="w-16 h-16 rounded-full border-4 border-white/10 border-t-[#B6FF2E] mb-4"
             />
             <h3 className="font-heading text-lg font-bold text-white mb-2">
               Analyzing Your Notes
             </h3>
-            <div className="w-48 h-2 bg-white/10 rounded-full overflow-hidden mb-4">
+            <div className="w-48 h-2 bg-white/10 rounded-full overflow-hidden mb-6">
               <motion.div
                 className="h-full bg-gradient-to-r from-[#B6FF2E] to-[#2EFFE6]"
                 initial={{ width: 0 }}
-                animate={{ width: `${progress}%` }}
+                animate={{ width: `${Math.min(progress, 100)}%` }}
               />
             </div>
 
             {/* Steps */}
-            <div className="space-y-2 text-sm">
+            <div className="space-y-2 text-sm mb-6">
               <ProcessingStep label="Document parsed" completed={progress >= 20} />
               <ProcessingStep label="Content chunked" completed={progress >= 40} />
               <ProcessingStep label="Extracting concepts..." completed={progress >= 60} active={progress >= 40 && progress < 60} />
               <ProcessingStep label="Detecting conflicts" completed={progress >= 80} />
               <ProcessingStep label="Building relationships" completed={progress >= 100} />
             </div>
+
+            {/* Geekout Facts Panel */}
+            <GeekoutPanel meta={processingMeta} progress={progress} />
           </motion.div>
         )}
 
@@ -468,36 +584,63 @@ export function CreateScreen() {
             <h2 className="font-heading text-2xl font-bold text-white mb-2">Success!</h2>
             <p className="text-white/60 mb-6">Added to your knowledge graph:</p>
 
-            <div className="space-y-2 text-sm mb-8">
+            <div className="space-y-2 text-sm mb-6">
               <div className="flex items-center gap-2 text-white/80">
                 <div className="w-4 h-4 rounded-full bg-[#B6FF2E]/20 flex items-center justify-center">
                   <Check className="w-3 h-3 text-[#B6FF2E]" />
                 </div>
-                <span>{selectedCount} new concepts</span>
+                <span>{processingMeta.concepts_created || processingMeta.concepts_extracted || selectedCount} new concepts</span>
               </div>
               <div className="flex items-center gap-2 text-white/80">
                 <div className="w-4 h-4 rounded-full bg-[#2EFFE6]/20 flex items-center justify-center">
                   <Check className="w-3 h-3 text-[#2EFFE6]" />
                 </div>
-                <span>12 new relationships</span>
+                <span>{processingMeta.relationships_created || 0} new relationships</span>
               </div>
               <div className="flex items-center gap-2 text-white/80">
                 <div className="w-4 h-4 rounded-full bg-[#9B59B6]/20 flex items-center justify-center">
                   <Check className="w-3 h-3 text-[#9B59B6]" />
                 </div>
-                <span>2 concepts merged with existing</span>
+                <span>{processingMeta.flashcards_generated || 0} flashcards generated</span>
               </div>
+              {processingMeta.domains_detected && processingMeta.domains_detected.length > 0 && (
+                <div className="flex items-center gap-2 text-white/80">
+                  <div className="w-4 h-4 rounded-full bg-amber-500/20 flex items-center justify-center">
+                    <Check className="w-3 h-3 text-amber-400" />
+                  </div>
+                  <span>Domains: {processingMeta.domains_detected.join(', ')}</span>
+                </div>
+              )}
             </div>
+
+            {/* Geekout Summary on success */}
+            {processingMeta.concept_names && processingMeta.concept_names.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="w-full mb-6 p-3 rounded-xl bg-white/[0.03] border border-white/5"
+              >
+                <p className="text-[10px] uppercase tracking-wider text-white/30 mb-2 font-mono">Concepts Detected</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {processingMeta.concept_names.map((name, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded-full text-[11px] bg-[#B6FF2E]/10 text-[#B6FF2E]/80 border border-[#B6FF2E]/10">
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              </motion.div>
+            )}
 
             <div className="flex gap-3 w-full">
               <button
-                onClick={() => setStep('upload')}
+                onClick={() => { setStep('upload'); setProcessingMeta({}); }}
                 className="flex-1 py-3 rounded-xl bg-white/5 text-white/70 font-medium hover:bg-white/10 transition-colors"
               >
                 Add More
               </button>
               <button
-                onClick={() => setStep('upload')}
+                onClick={() => { setStep('upload'); setProcessingMeta({}); }}
                 className="flex-1 py-3 rounded-xl bg-[#B6FF2E] text-[#07070A] font-medium hover:bg-[#c5ff4d] transition-colors"
               >
                 Go to Feed
@@ -507,6 +650,123 @@ export function CreateScreen() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+// ============================================================================
+// Geekout Facts Panel (shown during processing)
+// ============================================================================
+
+function GeekoutPanel({ meta, progress }: { meta: ProcessingMeta; progress: number }) {
+  const facts: { icon: React.ElementType; label: string; value: string; color: string }[] = [];
+
+  // File-level facts (available immediately)
+  if (meta.file) {
+    const f = meta.file;
+    if (f.inputSource === 'url') {
+      facts.push({ icon: Link2, label: 'Source', value: f.fileName.length > 35 ? f.fileName.slice(0, 35) + '...' : f.fileName, color: 'text-blue-400' });
+    } else {
+      facts.push({ icon: FileType, label: 'Format', value: getFormatLabel(f.fileFormat), color: 'text-[#B6FF2E]' });
+      if (f.fileSize > 0) {
+        facts.push({ icon: HardDrive, label: 'Size', value: formatFileSize(f.fileSize), color: 'text-[#2EFFE6]' });
+      }
+      if (f.pageCount && f.pageCount > 0) {
+        facts.push({ icon: Layers, label: 'Pages', value: `${f.pageCount}`, color: 'text-amber-400' });
+      }
+    }
+    if (f.inputSource === 'text') {
+      facts.push({ icon: FileText, label: 'Input', value: 'Pasted Text', color: 'text-purple-400' });
+    }
+  }
+
+  // Backend metadata (arrives after API response)
+  if (meta.extraction_agent) {
+    facts.push({ icon: Cpu, label: 'Agent', value: meta.extraction_agent, color: 'text-orange-400' });
+  }
+  if (meta.is_multimodal) {
+    facts.push({ icon: Brain, label: 'Mode', value: 'Multimodal (Vision)', color: 'text-pink-400' });
+  }
+  if (meta.content_length) {
+    facts.push({ icon: Database, label: 'Content', value: `${(meta.content_length / 1024).toFixed(1)} KB processed`, color: 'text-sky-400' });
+  }
+  if (meta.concepts_extracted) {
+    facts.push({ icon: Zap, label: 'Concepts', value: `${meta.concepts_extracted} extracted`, color: 'text-[#B6FF2E]' });
+  }
+  if (meta.domains_detected && meta.domains_detected.length > 0) {
+    facts.push({ icon: Layers, label: 'Domains', value: meta.domains_detected.join(', '), color: 'text-amber-400' });
+  }
+  if (meta.avg_complexity) {
+    facts.push({ icon: Brain, label: 'Avg Complexity', value: `${meta.avg_complexity}/10`, color: 'text-purple-400' });
+  }
+  if (meta.existing_concepts_scanned) {
+    facts.push({ icon: Database, label: 'Graph Scanned', value: `${meta.existing_concepts_scanned} existing concepts`, color: 'text-sky-400' });
+  }
+  if (meta.overlap_ratio !== undefined && meta.overlap_ratio > 0) {
+    facts.push({ icon: GitBranch, label: 'Overlap', value: `${Math.round(meta.overlap_ratio * 100)}% with existing`, color: 'text-amber-400' });
+  }
+  if (meta.relationships_created) {
+    facts.push({ icon: GitBranch, label: 'Relationships', value: `${meta.relationships_created} created`, color: 'text-[#2EFFE6]' });
+  }
+  if (meta.flashcards_generated) {
+    facts.push({ icon: Zap, label: 'Flashcards', value: `${meta.flashcards_generated} generated`, color: 'text-pink-400' });
+  }
+
+  if (facts.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2 }}
+      className="w-full max-w-xs"
+    >
+      <div className="flex items-center gap-1.5 mb-2">
+        <Cpu className="w-3 h-3 text-white/30" />
+        <span className="text-[10px] uppercase tracking-wider text-white/30 font-mono">Processing Details</span>
+      </div>
+      <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-1.5">
+        <AnimatePresence>
+          {facts.map((fact, i) => (
+            <motion.div
+              key={fact.label}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.08 }}
+              className="flex items-center gap-2 text-xs"
+            >
+              <fact.icon className={`w-3 h-3 ${fact.color} shrink-0`} />
+              <span className="text-white/40 shrink-0">{fact.label}</span>
+              <span className="text-white/10 shrink-0">|</span>
+              <span className="text-white/70 truncate">{fact.value}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+
+        {/* Concept names as tags (if available) */}
+        {meta.concept_names && meta.concept_names.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: facts.length * 0.08 + 0.1 }}
+            className="pt-1.5 border-t border-white/5"
+          >
+            <div className="flex flex-wrap gap-1">
+              {meta.concept_names.map((name, i) => (
+                <motion.span
+                  key={name}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: facts.length * 0.08 + 0.15 + i * 0.06 }}
+                  className="px-1.5 py-0.5 rounded text-[10px] bg-[#B6FF2E]/8 text-[#B6FF2E]/70 border border-[#B6FF2E]/10"
+                >
+                  {name}
+                </motion.span>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </motion.div>
   );
 }
 
