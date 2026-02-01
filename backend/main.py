@@ -105,10 +105,20 @@ app = FastAPI(
 )
 
 # CORS middleware for frontend
-# CORS middleware for frontend
+# In production with allow_credentials=True, we cannot use ["*"].
+# We must specify the exact origins.
+import os
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://graph-recall.vercel.app",  # Explicit Vercel URL
+    frontend_url,
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
