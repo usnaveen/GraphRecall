@@ -247,5 +247,5 @@ class ExtractionResult(BaseModel):
 
     concepts: list[ConceptCreate]
     raw_response: Optional[str] = None
-    model_used: str = "gpt-3.5-turbo-1106"
+    model_used: str = "gemini-2.5-flash"
     processing_time_ms: Optional[float] = None
