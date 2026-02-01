@@ -8,10 +8,16 @@ CREATE EXTENSION IF NOT EXISTS "vector";
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    google_id VARCHAR(255) UNIQUE,
     email VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255),
+    profile_picture TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP WITH TIME ZONE,
     settings_json JSONB DEFAULT '{}'::jsonb
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
 
 -- Notes table (source of truth for all content)
 CREATE TABLE IF NOT EXISTS notes (

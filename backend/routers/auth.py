@@ -3,6 +3,8 @@ from pydantic import BaseModel
 import structlog
 from backend.auth.google_oauth import verify_google_token
 from backend.db.postgres_client import get_postgres_client
+from backend.auth.middleware import get_current_user
+import json
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -69,3 +71,34 @@ async def google_login(request: GoogleAuthRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error during login"
         )
+
+class UpdateProfileRequest(BaseModel):
+    settings: dict | None = None
+    daily_limit: int | None = None
+
+@router.patch("/profile")
+async def update_profile(
+    request: UpdateProfileRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update user profile settings."""
+    pg_client = await get_postgres_client()
+    try:
+        if request.settings is not None:
+            # Merge existing settings with new ones (simple JSON update)
+            # In a real app, might want deep merge, but JSONB || operator works too
+            # For now, just replacing/updating keys at top level
+            await pg_client.execute_query(
+                """
+                UPDATE users 
+                SET settings_json = COALESCE(settings_json, '{}'::jsonb) || :settings::jsonb,
+                    last_login = NOW()
+                WHERE id = :id
+                """,
+                {"settings": json.dumps(request.settings), "id": current_user["id"]}
+            )
+            
+        return {"status": "success"}
+    except Exception as e:
+        logger.error("Auth: Failed to update profile", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update profile")

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { authService } from '../services/api';
 
 export function ProfileScreen() {
   const [showSettings, setShowSettings] = useState(false);
@@ -224,6 +225,25 @@ function StatCard({
 
 // Settings Screen
 function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const { user } = useAuthStore();
+  // Initialize from user object or defaults
+  // Note: backend needs to return settings in user object for this to persist across reloads properly
+  // For now we just mock the local state toggling
+  const [settings, setSettings] = useState(user?.settings_json || {});
+
+  const updateSetting = async (key: string, value: any) => {
+    const newSettings = { ...settings, [key]: value };
+    setSettings(newSettings);
+
+    // Persist to backend
+    try {
+      await authService.updateProfile(newSettings);
+    } catch (err) {
+      console.error("Failed to save setting", err);
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
       {/* Header */}
@@ -244,19 +264,21 @@ function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: ()
           <SettingItem
             icon={Target}
             label="Daily item limit"
-            value="20"
+            value={(settings.daily_limit || 20).toString()}
+            onClick={() => {
+              const limit = prompt("Enter daily item limit:", settings.daily_limit || 20);
+              if (limit) updateSetting('daily_limit', parseInt(limit));
+            }}
             action
           />
           <SettingItem
             icon={Bell}
             label="Notification time"
-            value="9:00 AM"
-            action
-          />
-          <SettingItem
-            icon={Moon}
-            label="Weekend mode"
-            value="Off"
+            value={settings.notification_time || "9:00 AM"}
+            onClick={() => {
+              const time = prompt("Enter notification time:", settings.notification_time || "9:00 AM");
+              if (time) updateSetting('notification_time', time);
+            }}
             action
           />
         </SettingsGroup>
@@ -266,76 +288,32 @@ function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: ()
           <SettingItem
             icon={Moon}
             label="Theme"
-            value="Dark"
-            action
-          />
-          <SettingItem
-            icon={Zap}
-            label="Graph colors"
-            value="By Domain"
+            value={settings.theme || "Dark"}
+            onClick={() => updateSetting('theme', settings.theme === 'Light' ? 'Dark' : 'Light')}
             action
           />
           <SettingItem
             icon={Zap}
             label="Animations"
-            value="On"
+            value={settings.animations === false ? "Off" : "On"}
             toggle
-          />
-        </SettingsGroup>
-
-        {/* Spaced Repetition */}
-        <SettingsGroup title="Spaced Repetition">
-          <SettingItem
-            icon={Database}
-            label="Algorithm"
-            value="SM-2"
-            action
-          />
-          <SettingItem
-            icon={Target}
-            label="Easy interval bonus"
-            value="1.3x"
-            action
-          />
-          <SettingItem
-            icon={Zap}
-            label="Failed item boost"
-            value="On"
-            toggle
+            checked={settings.animations !== false}
+            onToggle={() => updateSetting('animations', settings.animations === false)}
           />
         </SettingsGroup>
 
         {/* Data */}
         <SettingsGroup title="Data">
           <SettingItem
-            icon={Download}
-            label="Export knowledge graph"
-            action
-          />
-          <SettingItem
-            icon={Upload}
-            label="Import from Anki"
-            action
-          />
-          <SettingItem
             icon={Trash2}
             label="Clear all data"
             danger
             action
-          />
-        </SettingsGroup>
-
-        {/* About */}
-        <SettingsGroup title="About">
-          <SettingItem
-            icon={HelpCircle}
-            label="Version"
-            value="1.0.0"
-          />
-          <SettingItem
-            icon={HelpCircle}
-            label="Help & Support"
-            action
+            onClick={() => {
+              if (confirm("Are you sure? This cannot be undone.")) {
+                alert("Data cleared (simulated)");
+              }
+            }}
           />
         </SettingsGroup>
 
@@ -384,17 +362,24 @@ function SettingItem({
   value,
   action,
   toggle,
-  danger
+  checked,
+  danger,
+  onToggle,
+  onClick
 }: {
   icon: React.ElementType;
   label: string;
   value?: string;
   action?: boolean;
   toggle?: boolean;
+  checked?: boolean;
   danger?: boolean;
+  onToggle?: () => void;
+  onClick?: () => void;
 }) {
   return (
     <button
+      onClick={toggle ? onToggle : onClick}
       className={`
         w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors
         border-b border-white/5 last:border-b-0
@@ -414,8 +399,8 @@ function SettingItem({
           <ChevronRight className="w-4 h-4 text-white/30" />
         )}
         {toggle && (
-          <div className="w-10 h-5 rounded-full bg-[#B6FF2E] relative">
-            <div className="absolute right-0.5 top-0.5 w-4 h-4 rounded-full bg-white" />
+          <div className={`w-10 h-5 rounded-full relative transition-colors ${checked ? 'bg-[#B6FF2E]' : 'bg-white/10'}`}>
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${checked ? 'right-0.5' : 'left-0.5'}`} />
           </div>
         )}
       </div>

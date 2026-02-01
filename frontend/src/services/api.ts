@@ -124,6 +124,17 @@ export const chatService = {
     }
 };
 
+export const authService = {
+    updateProfile: async (settings: any) => {
+        const response = await authFetch(`${API_BASE}/auth/profile`, {
+            method: 'PATCH',
+            body: JSON.stringify({ settings })
+        });
+        if (!response.ok) throw new Error('Failed to update profile');
+        return response.json();
+    }
+};
+
 export const ingestService = {
     /** Start ingestion workflow */
     ingest: async (content: string, title?: string, skipReview: boolean = false) => {
