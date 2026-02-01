@@ -89,17 +89,31 @@ Output JSON:
         """Get embedding vector for text."""
         return await self.embeddings.aembed_query(text)
 
+    async def _embed_existing_concepts(
+        self,
+        existing_concepts: list[dict],
+    ) -> list[tuple[dict, list[float]]]:
+        """Batch-embed all existing concepts once (cached across new concepts)."""
+        texts = [
+            f"{c.get('name', '')}: {c.get('definition', '')}"
+            for c in existing_concepts
+        ]
+        # Use batch embed to avoid N sequential API calls
+        vectors = await self.embeddings.aembed_documents(texts)
+        return list(zip(existing_concepts, vectors))
+
     async def _find_similar_concepts(
         self,
         concept: dict,
-        existing_concepts: list[dict],
+        existing_with_embeddings: list[tuple[dict, list[float]]],
     ) -> list[dict]:
         """
         Find existing concepts similar to the new concept.
 
         Uses cosine similarity between embeddings to find matches.
+        Expects pre-computed existing embeddings from _embed_existing_concepts.
         """
-        if not existing_concepts:
+        if not existing_with_embeddings:
             return []
 
         # Get embedding for the new concept
@@ -107,11 +121,7 @@ Output JSON:
         new_embedding = await self._get_embedding(concept_text)
 
         similar = []
-        for existing in existing_concepts:
-            existing_text = f"{existing.get('name', '')}: {existing.get('definition', '')}"
-            existing_embedding = await self._get_embedding(existing_text)
-
-            # Calculate cosine similarity
+        for existing, existing_embedding in existing_with_embeddings:
             similarity = self._cosine_similarity(new_embedding, existing_embedding)
 
             if similarity > 0.3:  # Lower threshold for candidates
@@ -138,8 +148,8 @@ Output JSON:
         return dot_product / (norm1 * norm2)
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
     )
     async def analyze(
         self,
@@ -181,12 +191,15 @@ Output JSON:
 
             return SynthesisResult(decisions=decisions)
 
+        # Pre-compute embeddings for existing concepts once (saves N*M -> N+M calls)
+        existing_with_embeddings = await self._embed_existing_concepts(existing_concepts)
+
         # For each new concept, find similar existing concepts
         all_decisions = []
 
         for concept in new_concepts:
             try:
-                similar = await self._find_similar_concepts(concept, existing_concepts)
+                similar = await self._find_similar_concepts(concept, existing_with_embeddings)
 
                 if not similar:
                     # No similar concepts found - it's NEW
