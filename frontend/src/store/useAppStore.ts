@@ -123,6 +123,23 @@ export const useAppStore = create<AppState>((set, get) => ({
               caption: content.title,
               sourceNote: content.source_note_id || 'Note'
             };
+          case 'concept_showcase':
+            return {
+              id: item.id,
+              type: 'concept_showcase',
+              conceptName: content.concept_name || concept_name || 'Concept',
+              definition: content.definition || 'No definition available',
+              domain: content.domain || domain || 'General',
+              complexityScore: content.complexity_score || 5,
+              tagline: content.tagline || '',
+              visualMetaphor: content.visual_metaphor || '',
+              keyPoints: content.key_points || [],
+              realWorldExample: content.real_world_example || '',
+              connectionsNote: content.connections_note || '',
+              emojiIcon: content.emoji_icon || '📚',
+              prerequisites: content.prerequisites || [],
+              relatedConcepts: content.related_concepts || [],
+            };
           default:
             return {
               id: item.id,
