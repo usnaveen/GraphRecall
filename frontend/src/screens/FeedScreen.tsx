@@ -16,19 +16,8 @@ export function FeedScreen() {
     nextFeedItem,
     prevFeedItem,
     toggleLike,
-    toggleSave,
-    fetchFeed
+    toggleSave
   } = useAppStore();
-
-  useEffect(() => {
-    // App handles initial fetch. We don't want to trigger global loading here
-    // as it unmounts this component (causing a loop).
-    if (feedItems.length === 0 && !isLoading) {
-      // Only fetch if empty and not already loading. 
-      // But really, App.tsx should handle this.
-      // fetchFeed(); 
-    }
-  }, []);
 
   const currentItem = feedItems[currentFeedIndex];
   const isLiked = currentItem && likedItems.has(currentItem.id);
