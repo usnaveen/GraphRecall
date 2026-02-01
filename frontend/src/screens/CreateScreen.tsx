@@ -1,10 +1,14 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, Image, FileText, Link2, Check,
-  Save
+  Save, AlertCircle
 } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
 import { ingestService } from '../services/api';
+
+// Set PDF Worker - interacting with CDN to avoid Vite build complexity
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 type CreateStep = 'upload' | 'processing' | 'review' | 'success';
 
@@ -26,13 +30,52 @@ export function CreateScreen() {
   const [extractedConcepts, setExtractedConcepts] = useState<ExtractedConcept[]>([]);
   const [inputType, setInputType] = useState<'upload' | 'text'>('upload');
   const [textInput, setTextInput] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const readFileContent = async (file: File): Promise<string> => {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+
+    if (extension === 'pdf') {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map((item: any) => item.str).join(' ');
+          fullText += `\n--- Page ${i} ---\n${pageText}`;
+        }
+        return `Draft Note: ${file.name}\n\n${fullText}`;
+      } catch (e) {
+        throw new Error("Failed to parse PDF. Please ensure it is a valid text-based PDF.");
+      }
+    } else {
+      // Text, Markdown, etc.
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = (e) => reject(e);
+        reader.readAsText(file);
+      });
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      // For now, just taking the file name as a simulation of reading it
-      // In a real app, use FileReader
-      startProcessing(`File: ${e.target.files[0].name}\n(Content simulation)`);
+      const file = e.target.files[0];
+      try {
+        setStep('processing');
+        setProgress(5);
+        setError(null);
+        const content = await readFileContent(file);
+        startProcessing(content, file.name);
+      } catch (err: any) {
+        setError(err.message || "Failed to read file");
+        setStep('upload');
+      }
     }
   };
 
@@ -45,18 +88,32 @@ export function CreateScreen() {
     setIsDragging(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    startProcessing("Uploaded document content here..."); // In real app, read file
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      try {
+        setStep('processing');
+        setProgress(5);
+        setError(null);
+        const content = await readFileContent(file);
+        startProcessing(content, file.name);
+      } catch (err: any) {
+        setError(err.message || "Failed to read file");
+        setStep('upload');
+      }
+    }
   };
 
-  const startProcessing = async (content: string) => {
+  const startProcessing = async (content: string, title: string = "New Knowledge") => {
     setStep('processing');
     setProgress(10);
+    setError(null);
 
     try {
-      const response = await ingestService.ingest(content, "New Knowledge");
+      const response = await ingestService.ingest(content, title);
       setThreadId(response.thread_id);
       setProgress(100);
 
@@ -125,6 +182,12 @@ export function CreateScreen() {
             <div className="text-center mb-6">
               <h2 className="font-heading text-xl font-bold text-white mb-1">Add Knowledge</h2>
               <p className="text-sm text-white/50">Upload notes, images, or paste text</p>
+              {error && (
+                <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-center gap-2 text-red-400 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {error}
+                </div>
+              )}
             </div>
 
             {/* Main Input Area */}
