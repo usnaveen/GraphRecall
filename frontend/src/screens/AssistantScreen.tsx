@@ -6,6 +6,7 @@ import {
   MessageSquare, Trash2, History, BookmarkPlus
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useAuthStore } from '../store/useAuthStore';
 import type { ChatMessage } from '../types';
 import { api } from '../services/api';
 
@@ -132,11 +133,18 @@ export function AssistantScreen() {
     };
     addChatMessage(assistantMessage);
 
+    // Use auth token and correct API URL
+    const token = useAuthStore.getState().idToken; // Access token directly from store
+    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
     try {
       // Use streaming endpoint
-      const response = await fetch('/api/chat/stream', {
+      const response = await fetch(`${API_BASE}/chat/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           message: inputValue,
           user_id: '00000000-0000-0000-0000-000000000001',
