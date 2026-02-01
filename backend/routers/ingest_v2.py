@@ -10,6 +10,7 @@ following modern LangGraph 1.0.7 patterns with:
 
 from typing import Optional
 
+import asyncio
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -106,12 +107,13 @@ async def ingest_note(
     )
     
     try:
-        result = await run_ingestion(
+        # Wrap in shield to ensure ingestion completes even if client disconnects
+        result = await asyncio.shield(run_ingestion(
             content=request.content,
             title=request.title,
             user_id=user_id,
             skip_review=request.skip_review,
-        )
+        ))
         
         status = result.get("status", "completed")
         
