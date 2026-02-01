@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Settings, ChevronRight, BookOpen, FileText, Target,
@@ -11,8 +11,12 @@ import { authService } from '../services/api';
 
 export function ProfileScreen() {
   const [showSettings, setShowSettings] = useState(false);
-  const { userStats } = useAppStore();
+  const { userStats, fetchStats } = useAppStore();
   const { user, logout } = useAuthStore();
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
   if (showSettings) {
     return <SettingsScreen onBack={() => setShowSettings(false)} onLogout={logout} />;
