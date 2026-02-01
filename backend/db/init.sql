@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS notes (
     tags TEXT[] DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    embedding_vector vector(3072),  -- Gemini embedding-001 dimension
+    embedding vector(3072),  -- Gemini embedding-001 dimension
     
     CONSTRAINT valid_content_type CHECK (content_type IN ('text', 'markdown', 'pdf', 'handwriting')),
     CONSTRAINT valid_resource_type CHECK (resource_type IN ('notes', 'lecture_slides', 'youtube', 'article', 'chat_conversation', 'documentation', 'research'))
@@ -148,7 +148,7 @@ CREATE INDEX IF NOT EXISTS idx_saved_responses_user ON saved_responses(user_id);
 
 -- Vector similarity index for semantic search on notes
 CREATE INDEX IF NOT EXISTS idx_notes_embedding ON notes 
-    USING ivfflat (embedding_vector vector_cosine_ops)
+    USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
 
 -- Insert a default test user for development

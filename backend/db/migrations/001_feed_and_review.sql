@@ -117,7 +117,13 @@ CREATE TABLE IF NOT EXISTS daily_stats (
 CREATE INDEX IF NOT EXISTS idx_daily_stats_user_date ON daily_stats(user_id, stat_date DESC);
 
 -- Add embedding column alias for consistency
-ALTER TABLE notes RENAME COLUMN embedding_vector TO embedding;
+-- Idempotent check: Only rename if 'embedding_vector' exists
+DO $$
+BEGIN
+  IF EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='notes' AND column_name='embedding_vector') THEN
+    ALTER TABLE notes RENAME COLUMN embedding_vector TO embedding;
+  END IF;
+END $$;
 
 -- Update notes embedding index
 DROP INDEX IF EXISTS idx_notes_embedding;
