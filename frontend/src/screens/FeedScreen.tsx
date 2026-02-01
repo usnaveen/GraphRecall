@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Heart, Bookmark, Share2, ChevronRight, Lightbulb,
@@ -16,8 +16,13 @@ export function FeedScreen() {
     nextFeedItem,
     prevFeedItem,
     toggleLike,
-    toggleSave
+    toggleSave,
+    fetchFeed
   } = useAppStore();
+
+  useEffect(() => {
+    fetchFeed();
+  }, []);
 
   const currentItem = feedItems[currentFeedIndex];
   const isLiked = currentItem && likedItems.has(currentItem.id);
