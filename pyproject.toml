@@ -34,6 +34,7 @@ dependencies = [
     "structlog>=24.1.0",
     "tenacity>=8.2.3",
     "python-multipart>=0.0.22",
+    "google-auth>=2.48.0",
 ]
 
 [project.optional-dependencies]
