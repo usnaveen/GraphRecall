@@ -568,21 +568,25 @@ Return ONLY valid JSON:
 def route_after_find_related(state: IngestionState) -> Literal["synthesize", "create_concepts"]:
     """
     Route based on overlap detection.
-    
-    If significant overlap found -> go to synthesis
-    Otherwise -> go directly to concept creation
+
+    If significant overlap found AND review not skipped -> go to synthesis
+    Otherwise -> go directly to concept creation (fast path)
     """
     needs_synthesis = state.get("needs_synthesis", False)
     skip_review = state.get("skip_review", False)
-    
-    if needs_synthesis or not skip_review:
+
+    if needs_synthesis and not skip_review:
         logger.info(
             "route_after_find_related: Routing to synthesis",
-            reason="overlap_detected" if needs_synthesis else "user_review_required"
+            reason="overlap_detected",
         )
         return "synthesize"
     else:
-        logger.info("route_after_find_related: Routing to create_concepts (no overlap & auto-approve)")
+        logger.info(
+            "route_after_find_related: Routing to create_concepts (fast path)",
+            needs_synthesis=needs_synthesis,
+            skip_review=skip_review,
+        )
         return "create_concepts"
 
 
