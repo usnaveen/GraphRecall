@@ -7,7 +7,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from backend.auth.middleware import get_current_user
-from langchain_openai import ChatOpenAI
+from backend.config.llm import get_chat_model
 
 from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
@@ -388,12 +388,8 @@ async def generate_topic_quiz(
                 detail=f"No content found for topic '{topic_name}'. Try adding some notes first."
             )
         
-        # Step 3: Generate quiz questions using LLM
-        llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.5,
-            model_kwargs={"response_format": {"type": "json_object"}},
-        )
+        # Step 3: Generate quiz questions using LLM (Gemini)
+        llm = get_chat_model(temperature=0.5)
         
         content_text = "\n\n".join(content_parts)
         

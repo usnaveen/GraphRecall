@@ -19,7 +19,7 @@ from typing import Literal
 import structlog
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from backend.config.llm import get_chat_model
 from langgraph.graph import StateGraph, START, END
 
 from backend.agents.states import MermaidState
@@ -41,7 +41,7 @@ async def generate_code_node(state: MermaidState) -> dict:
     
     logger.info("generate_code: Generating", type=chart_type)
     
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
+    llm = get_chat_model(temperature=0.1)
     
     system_prompt = """You are a Mermaid.js expert.
 Generate valid Mermaid syntax for the requested diagram.
@@ -125,7 +125,7 @@ async def fix_errors_node(state: MermaidState) -> dict:
     
     logger.info("fix_errors: Fixing", attempt=attempt, error=error)
     
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
+    llm = get_chat_model(temperature=0.1)
     
     prompt = f"""The following Mermaid code has errors:
     

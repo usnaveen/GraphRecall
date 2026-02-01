@@ -21,7 +21,7 @@ import structlog
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
+from backend.config.llm import get_chat_model
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -325,12 +325,8 @@ async def generate_quiz_node(state: QuizState) -> dict:
     
     combined_content = "\n\n".join(content_parts) if content_parts else f"Topic: {topic}"
     
-    # LLM for quiz generation
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.5,
-        model_kwargs={"response_format": {"type": "json_object"}},
-    )
+    # LLM for quiz generation (Gemini)
+    llm = get_chat_model(temperature=0.5)
     
     prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content=f"""Generate {num_questions} quiz questions about "{topic}".

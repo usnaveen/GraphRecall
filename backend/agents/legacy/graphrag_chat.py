@@ -8,10 +8,10 @@ This agent:
 """
 
 import json
-from typing import Optional
+from typing import Any, Optional
 
 import structlog
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from backend.config.llm import get_chat_model, get_embeddings
 from pydantic import BaseModel
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -50,18 +50,18 @@ class GraphRAGAgent:
         self.pg_client = pg_client
         self.model_name = model
         
-        self.llm = ChatOpenAI(
+        self.llm = get_chat_model(
             model=model,
             temperature=0.3,  # Lower temperature for more factual responses
         )
         
-        self.query_analyzer = ChatOpenAI(
+        self.query_analyzer = get_chat_model(
             model="gpt-3.5-turbo-1106",  # Faster model for query analysis
             temperature=0,
             model_kwargs={"response_format": {"type": "json_object"}},
         )
         
-        self.embeddings = OpenAIEmbeddings(model=embedding_model)
+        self.embeddings = get_embeddings()
     
     async def analyze_query(self, query: str) -> QueryAnalysis:
         """

@@ -5,7 +5,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 import structlog
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from backend.config.llm import get_chat_model, get_embeddings
 
 from backend.db.neo4j_client import get_neo4j_client
 from backend.models.schemas import (
@@ -38,7 +38,7 @@ class GraphBuilderAgent:
         self,
         embedding_model: str = "text-embedding-3-small",
     ):
-        self.embeddings = OpenAIEmbeddings(model=embedding_model)
+        self.embeddings = get_embeddings()
 
     async def _get_embedding(self, text: str) -> list[float]:
         """Get embedding vector for text."""

@@ -17,7 +17,7 @@ from typing import Optional
 import structlog
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
+from backend.config.llm import get_chat_model
 from langgraph.prebuilt import create_react_agent
 
 from backend.db.neo4j_client import get_neo4j_client
@@ -102,15 +102,17 @@ async def save_research_note(
         sources_text = "\n\n## Sources\n" + "\n".join([f"- {s}" for s in sources])
         full_content = content + sources_text
         
-        await pg_client.execute(
+        await pg_client.execute_insert(
             """
-            INSERT INTO notes (id, user_id, title, content, created_at)
-            VALUES ($1, $2, $3, $4, NOW())
+            INSERT INTO notes (id, user_id, title, content_text, created_at)
+            VALUES (:id, :user_id, :title, :content_text, NOW())
             """,
-            uuid.UUID(note_id),
-            user_id,
-            f"Research: {topic}",
-            full_content,
+            {
+                "id": note_id,
+                "user_id": user_id,
+                "title": f"Research: {topic}",
+                "content_text": full_content,
+            }
         )
         
         logger.info("save_research_note: Complete", note_id=note_id)
@@ -207,11 +209,8 @@ def create_research_agent():
     if TAVILY_AVAILABLE:
         tools.append(search_web)
     
-    # Create the model
-    model = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.3,
-    )
+    # Create the model (Gemini)
+    model = get_chat_model(temperature=0.3)
     
     # System prompt for the research agent
     system_prompt = """You are a research assistant for GraphRecall.

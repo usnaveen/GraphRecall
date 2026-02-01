@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Literal
 
 import structlog
-from langchain_openai import ChatOpenAI
+from backend.config.llm import get_chat_model
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import interrupt, Command
 
@@ -31,20 +31,11 @@ from backend.graphs.checkpointer import get_checkpointer
 logger = structlog.get_logger()
 
 # ============================================================================
-# LLM Configuration
+# LLM Configuration (Gemini)
 # ============================================================================
 
-llm_extraction = ChatOpenAI(
-    model="gpt-4o-mini",
-    temperature=0.2,
-    model_kwargs={"response_format": {"type": "json_object"}},
-)
-
-llm_flashcard = ChatOpenAI(
-    model="gpt-4o-mini",
-    temperature=0.3,
-    model_kwargs={"response_format": {"type": "json_object"}},
-)
+llm_extraction = get_chat_model(temperature=0.2)
+llm_flashcard = get_chat_model(temperature=0.3)
 
 # ============================================================================
 # Node Functions

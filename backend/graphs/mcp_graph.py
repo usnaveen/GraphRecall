@@ -13,7 +13,7 @@ import structlog
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
+from backend.config.llm import get_chat_model
 
 from backend.agents.states import MCPState
 from backend.db.postgres_client import get_postgres_client
@@ -110,11 +110,7 @@ async def parse_mcp_result_node(state: MCPState) -> dict:
     content_list = raw_response.get("content", [])
     mcp_text = "\n".join([c.get("text", "") for c in content_list if c.get("type") == "text"])
     
-    llm = ChatOpenAI(
-        model="gpt-4o-mini", 
-        temperature=0,
-        model_kwargs={"response_format": {"type": "json_object"}}
-    )
+    llm = get_chat_model(temperature=0)
     
     prompt = f"""You are a Fact Check Arbiter.
     

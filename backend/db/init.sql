@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS notes (
     tags TEXT[] DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    embedding_vector vector(1536),  -- OpenAI text-embedding-3-small dimension
+    embedding_vector vector(768),  -- Gemini text-embedding-004 dimension
     
     CONSTRAINT valid_content_type CHECK (content_type IN ('text', 'markdown', 'pdf', 'handwriting')),
     CONSTRAINT valid_resource_type CHECK (resource_type IN ('notes', 'lecture_slides', 'youtube', 'article', 'chat_conversation', 'documentation', 'research'))

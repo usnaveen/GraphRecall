@@ -23,7 +23,7 @@ from langchain_core.messages import (
 )
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from backend.config.llm import get_chat_model, get_embeddings
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -236,12 +236,8 @@ async def analyze_query_node(state: ChatState) -> dict:
     
     logger.info("analyze_query_node: Analyzing", query=query[:100])
     
-    # LLM for query analysis with structured output
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0,
-        model_kwargs={"response_format": {"type": "json_object"}},
-    )
+    # LLM for query analysis with structured output (Gemini)
+    llm = get_chat_model(temperature=0)
     
     prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content="""Analyze the user's query and output JSON with:
@@ -390,8 +386,8 @@ async def generate_response_node(state: ChatState) -> dict:
     
     instruction = intent_instructions.get(intent, intent_instructions["general"])
     
-    # Build prompt with proper message types
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+    # Build prompt with proper message types (Gemini)
+    llm = get_chat_model(temperature=0.3)
     
     prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content=f"""You are GraphRecall, a knowledge assistant helping users learn from their notes.

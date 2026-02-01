@@ -16,7 +16,7 @@ from typing import Annotated
 
 import structlog
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
+from backend.config.llm import get_chat_model
 from langgraph.graph import StateGraph, START, END
 
 from backend.agents.states import ContentState
@@ -63,7 +63,7 @@ async def generate_mcq_node(state: ContentState) -> dict:
     
     logger.info("generate_mcq: Starting")
     
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.5, model_kwargs={"response_format": {"type": "json_object"}})
+    llm = get_chat_model(temperature=0.5)
     
     concept_text = "\n".join([f"{c['name']}: {c['definition']}" for c in concepts])
     
@@ -91,7 +91,7 @@ async def generate_flashcards_node(state: ContentState) -> dict:
         
     logger.info("generate_flashcards: Starting")
     
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, model_kwargs={"response_format": {"type": "json_object"}})
+    llm = get_chat_model(temperature=0.3)
     
     concept_text = "\n".join([f"{c['name']}: {c['definition']}" for c in concepts])
     
