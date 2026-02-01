@@ -52,6 +52,14 @@ export function CreateScreen() {
       } catch (e) {
         throw new Error("Failed to parse PDF. Please ensure it is a valid text-based PDF.");
       }
+    } else if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension || '')) {
+      // Handle Images as Base64 Data URL for Gemini Multimodal
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = (e) => reject(e);
+        reader.readAsDataURL(file);
+      });
     } else {
       // Text, Markdown, etc.
       return new Promise((resolve, reject) => {
