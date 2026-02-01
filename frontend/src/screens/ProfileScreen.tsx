@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Settings, ChevronRight, BookOpen, FileText, Target,
-  Flame, Download, Upload, Trash2, HelpCircle, Moon,
-  Bell, Zap, Database, LogOut
+  Flame, Download, Trash2, Moon,
+  Bell, Zap, LogOut
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -225,7 +225,6 @@ function StatCard({
 
 // Settings Screen
 function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) {
-  const [loading, setLoading] = useState(false);
   const { user } = useAuthStore();
   // Initialize from user object or defaults
   // Note: backend needs to return settings in user object for this to persist across reloads properly
