@@ -20,7 +20,7 @@ logger = structlog.get_logger()
 class PostgresSettings(BaseSettings):
     """PostgreSQL connection settings."""
 
-    database_url: str = "postgresql+asyncpg://graphrecall:graphrecall123@localhost:5432/graphrecall"
+    database_url: str 
 
     model_config = {"env_prefix": "", "extra": "ignore"}
 
@@ -44,6 +44,20 @@ class PostgresClient:
         if db_url.startswith("postgresql://"):
             db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
+        # Configure SSL for Cloud Databases (Supabase/Render)
+        connect_args = {"statement_cache_size": 0}
+        
+        # Check if SSL is required (common in cloud deployments)
+        is_cloud_db = "supabase" in db_url or "render" in db_url or "?sslmode=require" in db_url
+        if is_cloud_db:
+            # Create a simplified SSL context for asyncpg
+            # This is often needed because asyncpg is strict about SSL
+            import ssl
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            connect_args["ssl"] = ssl_ctx
+            
         self._engine = create_async_engine(
             db_url,
             pool_size=10,
@@ -51,7 +65,7 @@ class PostgresClient:
             pool_pre_ping=True,
             pool_recycle=3600,
             echo=False,
-            connect_args={"statement_cache_size": 0},
+            connect_args=connect_args,
         )
 
         self._session_factory = async_sessionmaker(

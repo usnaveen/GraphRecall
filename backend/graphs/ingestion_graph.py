@@ -15,7 +15,7 @@ START → extract_concepts → store_note → find_related
 
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Literal
 
 import structlog
@@ -137,7 +137,7 @@ async def store_note_node(state: IngestionState) -> dict:
                 "user_id": user_id,
                 "title": state.get("title") or "Untitled Note",
                 "content_text": state.get("raw_content", ""),
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
             }
         )
         
@@ -549,7 +549,7 @@ Return ONLY valid JSON:
                     "back_content": card.get("answer", ""),
                     "difficulty": 0.5,
                     "source_note_ids": [note_id] if note_id else [],
-                    "created_at": datetime.utcnow(),
+                    "created_at": datetime.now(timezone.utc),
                 }
             )
             
