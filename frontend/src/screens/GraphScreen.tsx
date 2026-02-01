@@ -1,10 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Filter, ChevronDown, X, Target, BookOpen, Link2,
   ZoomIn, ZoomOut, RotateCw, Play, Loader2, Check, XCircle
 } from 'lucide-react';
-import { mockGraphNodes, mockGraphEdges } from '../data/mockData';
 import type { GraphNode, GraphEdge } from '../types';
 import { api } from '../services/api';
 
@@ -22,6 +21,13 @@ export function GraphScreen() {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+
+  // Real Data State
+  const [nodes, setNodes] = useState<GraphNode[]>([]);
+  const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const dragStart = useRef({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -36,11 +42,31 @@ export function GraphScreen() {
   const [quizTopic, setQuizTopic] = useState('');
   const [quizResearched, setQuizResearched] = useState(false);
 
-  const filteredNodes = searchQuery
-    ? (mockGraphNodes as GraphNode[]).filter((n: GraphNode) => n.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : mockGraphNodes;
+  // Fetch Graph Data on Mount
+  useEffect(() => {
+    const fetchGraph = async () => {
+      try {
+        setLoading(true);
+        const data = await api.graph.getGraph();
+        // Transform or directly use data depending on API shape
+        // Assuming API returns { nodes: [], edges: [] }
+        setNodes(data.nodes || []);
+        setEdges(data.edges || []);
+      } catch (err) {
+        console.error("Failed to load graph:", err);
+        setError("Failed to load knowledge graph. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchGraph();
+  }, []);
 
-  const selectedNodeData = (mockGraphNodes as GraphNode[]).find((n: GraphNode) => n.id === selectedNode);
+  const filteredNodes = searchQuery
+    ? nodes.filter((n: GraphNode) => n.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : nodes;
+
+  const selectedNodeData = nodes.find((n: GraphNode) => n.id === selectedNode);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.target === containerRef.current) {
@@ -187,9 +213,9 @@ export function GraphScreen() {
         >
           <svg width="600" height="400" className="overflow-visible">
             {/* Edges */}
-            {mockGraphEdges.map((edge: GraphEdge, i: number) => {
-              const source = (mockGraphNodes as GraphNode[]).find((n: GraphNode) => n.id === edge.source);
-              const target = (mockGraphNodes as GraphNode[]).find((n: GraphNode) => n.id === edge.target);
+            {edges.map((edge: GraphEdge, i: number) => {
+              const source = nodes.find((n: GraphNode) => n.id === edge.source);
+              const target = nodes.find((n: GraphNode) => n.id === edge.target);
               if (!source || !target) return null;
 
               const sx = 300 + source.x * 30;
