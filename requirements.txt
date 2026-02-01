@@ -22,3 +22,5 @@ mcp>=1.0.0
 python-multipart>=0.0.6
 langchain-google-genai>=2.0.0
 google-auth>=2.27.0
+tavily-python>=0.3.0
+beautifulsoup4>=4.12.0

@@ -33,14 +33,21 @@ from backend.models.schemas import (
     NoteCreate,
 )
 
-# Import new routers
-from backend.routers.feed import router as feed_router
-from backend.routers.review import router as review_router
-from backend.routers.chat import router as chat_router
-from backend.routers.graph3d import router as graph3d_router
-from backend.routers.uploads import router as uploads_router
-from backend.routers.ingest_v2 import router as ingest_v2_router
-from backend.routers.auth import router as auth_router
+# Import new routers with debug logging
+try:
+    from backend.routers.feed import router as feed_router
+    from backend.routers.review import router as review_router
+    from backend.routers.chat import router as chat_router
+    from backend.routers.graph3d import router as graph3d_router
+    from backend.routers.uploads import router as uploads_router
+    from backend.routers.ingest_v2 import router as ingest_v2_router
+    from backend.routers.auth import router as auth_router
+except Exception as e:
+    import traceback
+    traceback.print_exc()
+    print(f"CRITICAL: Failed to import routers: {e}")
+    # We re-raise so the app still crashes, but after printing the error
+    raise e
 
 # Configure structured logging
 structlog.configure(
