@@ -150,6 +150,16 @@ export const ingestService = {
         return response.json();
     },
 
+    /** Ingest content from a URL */
+    ingestUrl: async (url: string) => {
+        const response = await authFetch(`${API_BASE}/v2/ingest/url`, {
+            method: 'POST',
+            body: JSON.stringify({ url })
+        });
+        if (!response.ok) throw new Error('URL Ingestion failed');
+        return response.json();
+    },
+
     /** Resume ingestion after user review */
     resume: async (threadId: string, approvedConcepts: any[], cancelled: boolean = false) => {
         const response = await authFetch(`${API_BASE}/v2/ingest/${threadId}/approve`, {
