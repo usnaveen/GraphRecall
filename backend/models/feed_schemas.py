@@ -318,6 +318,17 @@ class ChatResponse(BaseModel):
 # ============================================================================
 
 
+
+class DailyActivity(BaseModel):
+    """Daily activity for heatmap."""
+
+    date: str  # YYYY-MM-DD
+    reviews_completed: int
+    concepts_learned: int
+    notes_added: int
+    accuracy: float
+
+
 class UserStats(BaseModel):
     """User learning statistics."""
 
@@ -346,14 +357,7 @@ class UserStats(BaseModel):
     )
 
 
-class DailyActivity(BaseModel):
-    """Daily activity for heatmap."""
 
-    date: str  # YYYY-MM-DD
-    reviews_completed: int
-    concepts_learned: int
-    notes_added: int
-    accuracy: float
 
 
 # ============================================================================
