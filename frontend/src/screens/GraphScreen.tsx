@@ -149,6 +149,28 @@ export function GraphScreen() {
 
   const currentQuestion = quizQuestions[currentQuestionIndex];
 
+  if (loading) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-black/90 text-white">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+          <p className="text-sm text-gray-400">Loading Knowledge Graph...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-black/90 text-white">
+        <div className="flex flex-col items-center gap-4">
+          <XCircle className="w-8 h-8 text-red-500" />
+          <p className="text-sm text-red-400">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-[calc(100vh-180px)] flex flex-col">
       {/* Search Bar */}
