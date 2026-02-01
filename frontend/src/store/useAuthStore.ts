@@ -10,6 +10,7 @@ export interface User {
     email: string;
     name: string;
     picture: string;
+    settings_json?: any;
 }
 
 interface AuthState {
@@ -44,6 +45,7 @@ function decodeGoogleJwt(token: string): User | null {
             email: payload.email || '',
             name: payload.name || '',
             picture: payload.picture || '',
+            settings_json: {},
         };
     } catch {
         return null;
@@ -85,6 +87,7 @@ export const useAuthStore = create<AuthState>()(
                             email: data.user.email,
                             name: data.user.name,
                             picture: data.user.profile_picture || data.user.picture || '',
+                            settings_json: data.user.settings_json || {},
                         },
                         idToken: credential,
                         isAuthenticated: true,
