@@ -445,16 +445,18 @@ async def save_message_for_quiz(
         saved_id = str(uuid.uuid4())
         topic = request.topic or msg.get("conversation_title") or "Chat Response"
         
-        await pg_client.execute(
+        await pg_client.execute_insert(
             """
             INSERT INTO saved_responses (id, user_id, message_id, topic, content)
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES (:id, :user_id, :message_id, :topic, :content)
             """,
-            uuid.UUID(saved_id),
-            user_id,
-            uuid.UUID(message_id),
-            topic,
-            msg.get("content", ""),
+            {
+                "id": saved_id,
+                "user_id": user_id,
+                "message_id": message_id,
+                "topic": topic,
+                "content": msg.get("content", ""),
+            }
         )
         
         logger.info("save_message_for_quiz", message_id=message_id, saved_id=saved_id)
@@ -533,15 +535,19 @@ async def add_conversation_to_knowledge(
         # Create note
         note_id = str(uuid.uuid4())
         
-        await pg_client.execute(
+        await pg_client.execute_insert(
             """
             INSERT INTO notes (id, user_id, title, content_text, resource_type, content_type)
-            VALUES ($1, $2, $3, $4, 'chat_conversation', 'markdown')
+            VALUES (:id, :user_id, :title, :content_text, :resource_type, :content_type)
             """,
-            uuid.UUID(note_id),
-            user_id,
-            conv_title,
-            transcript,
+            {
+                "id": note_id,
+                "user_id": user_id,
+                "title": conv_title,
+                "content_text": transcript,
+                "resource_type": "chat_conversation",
+                "content_type": "markdown",
+            }
         )
         
         # Mark conversation as saved
@@ -580,8 +586,8 @@ async def add_conversation_to_knowledge(
                     """,
                     {"note_id": note_id, "topic": topic, "summary": summary}
                 )
-        except:
-            pass  # Topic extraction is optional
+        except Exception as topic_err:
+            logger.warning("Topic extraction failed (optional)", error=str(topic_err))
         
         logger.info(
             "add_conversation_to_knowledge",

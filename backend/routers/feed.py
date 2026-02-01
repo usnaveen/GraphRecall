@@ -173,8 +173,8 @@ async def get_user_stats(
             )
             if result:
                 total_concepts = result[0].get("count", 0)
-        except:
-            pass
+        except Exception as e:
+            logger.warning("Failed to get concept count", error=str(e))
         
         # Get note count
         total_notes = 0
@@ -185,8 +185,8 @@ async def get_user_stats(
             )
             if result:
                 total_notes = result[0].get("count", 0)
-        except:
-            pass
+        except Exception as e:
+            logger.warning("Failed to get note count", error=str(e))
         
         # Calculate domain progress (placeholder - would need more data)
         domain_progress = {domain: 0.5 for domain in domains}  # 50% as placeholder
@@ -533,8 +533,8 @@ async def get_resources_for_concept(
                     "preview": s.get("content", "")[:200] + "...",
                     "created_at": str(s.get("created_at")),
                 })
-        except:
-            pass  # Table might not exist yet
+        except Exception as e:
+            logger.debug("saved_responses table not available", error=str(e))
         
         # Get concepts from Neo4j
         concepts_query = """

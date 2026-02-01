@@ -25,3 +25,25 @@ services:
         value: "false"
       - key: FRONTEND_URL
         sync: false
+      # Environment (production uses PostgresSaver)
+      - key: ENVIRONMENT
+        value: "production"
+      # Google OAuth
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      # Web research
+      - key: TAVILY_API_KEY
+        sync: false
+      # S3 Storage (for file uploads)
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_REGION
+        value: "us-east-1"
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_PUBLIC_URL_BASE
+        sync: false

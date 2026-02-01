@@ -270,17 +270,19 @@ Return JSON:
                 content_with_sources += f"\n[{i}] [{source['title']}]({source['url']})"
         
         try:
-            await self.pg_client.execute(
+            await self.pg_client.execute_insert(
                 """
                 INSERT INTO notes (id, user_id, title, content_text, resource_type, tags)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                VALUES (:id, :user_id, :title, :content_text, :resource_type, :tags)
                 """,
-                uuid.UUID(note_id),
-                user_id,
-                f"Research: {result.topic}",
-                content_with_sources,
-                "research",
-                result.key_points[:5],  # Use key points as tags
+                {
+                    "id": note_id,
+                    "user_id": user_id,
+                    "title": f"Research: {result.topic}",
+                    "content_text": content_with_sources,
+                    "resource_type": "research",
+                    "tags": result.key_points[:5],
+                }
             )
             
             logger.info("save_research_note", note_id=note_id, topic=result.topic)
