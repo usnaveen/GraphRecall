@@ -120,8 +120,16 @@ CREATE INDEX IF NOT EXISTS idx_daily_stats_user_date ON daily_stats(user_id, sta
 -- Idempotent check: Only rename if 'embedding_vector' exists
 DO $$
 BEGIN
+  -- Safe rename only if target doesn't exist
   IF EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='notes' AND column_name='embedding_vector') THEN
-    ALTER TABLE notes RENAME COLUMN embedding_vector TO embedding;
+    IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='notes' AND column_name='embedding') THEN
+        ALTER TABLE notes RENAME COLUMN embedding_vector TO embedding;
+    END IF;
+  END IF;
+
+  -- Ensure title column exists (fix for legacy schema)
+  IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='notes' AND column_name='title') THEN
+    ALTER TABLE notes ADD COLUMN title VARCHAR(500);
   END IF;
 END $$;
 
