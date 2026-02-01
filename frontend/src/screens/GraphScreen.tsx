@@ -42,14 +42,19 @@ export function GraphScreen() {
   const [quizTopic, setQuizTopic] = useState('');
   const [quizResearched, setQuizResearched] = useState(false);
 
+  // Resources Modal State
+  const [showResources, setShowResources] = useState(false);
+  const [resourceType, setResourceType] = useState<'note' | 'link' | 'concept'>('note');
+  const [selectedResourceTopic, setSelectedResourceTopic] = useState('');
+  const [resources, setResources] = useState<any[]>([]);
+  const [resourcesLoading, setResourcesLoading] = useState(false);
+
   // Fetch Graph Data on Mount
   useEffect(() => {
     const fetchGraph = async () => {
       try {
         setLoading(true);
         const data = await api.graph.getGraph();
-        // Transform or directly use data depending on API shape
-        // Assuming API returns { nodes: [], edges: [] }
         setNodes(data.nodes || []);
         setEdges(data.edges || []);
       } catch (err) {
@@ -61,6 +66,33 @@ export function GraphScreen() {
     };
     fetchGraph();
   }, []);
+
+  const handleShowResources = async (topicName: string, type: 'note' | 'link') => {
+    setSelectedResourceTopic(topicName);
+    setResourceType(type);
+    setShowResources(true);
+    setResourcesLoading(true);
+    setResources([]);
+
+    try {
+      // Use resource endpoint
+      const response = await api.get(`/api/feed/resources/${encodeURIComponent(topicName)}?resource_type=${type === 'link' ? 'article' : 'notes'}`);
+
+      // Filter based on requested type if needed, though backend does some filtering
+      const allResources = response.data.resources || [];
+      const filtered = allResources.filter((r: any) => {
+        if (type === 'note') return r.type === 'note' || r.type === 'saved_response';
+        if (type === 'link') return r.resource_type === 'article' || r.resource_type === 'youtube' || r.resource_type === 'documentation';
+        return true;
+      });
+
+      setResources(filtered);
+    } catch (error) {
+      console.error("Failed to fetch resources:", error);
+    } finally {
+      setResourcesLoading(false);
+    }
+  };
 
   const filteredNodes = searchQuery
     ? nodes.filter((n: GraphNode) => n.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -422,17 +454,84 @@ export function GraphScreen() {
               <Target className="w-3 h-3" />
               Quiz Me
             </button>
-            <button className="flex-1 py-2 rounded-xl bg-white/5 text-white/70 text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-white/10 transition-colors">
+            <button
+              onClick={() => handleShowResources(selectedNodeData.name, 'note')}
+              className="flex-1 py-2 rounded-xl bg-white/5 text-white/70 text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-white/10 transition-colors"
+            >
               <BookOpen className="w-3 h-3" />
               Notes
             </button>
-            <button className="flex-1 py-2 rounded-xl bg-white/5 text-white/70 text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-white/10 transition-colors">
+            <button
+              onClick={() => handleShowResources(selectedNodeData.name, 'link')}
+              className="flex-1 py-2 rounded-xl bg-white/5 text-white/70 text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-white/10 transition-colors"
+            >
               <Link2 className="w-3 h-3" />
               Links
             </button>
           </div>
         </motion.div>
       )}
+
+      {/* Resources Modal */}
+      <AnimatePresence>
+        {showResources && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="bg-[#0a0a0f] border border-white/10 rounded-3xl w-full max-w-md max-h-[80vh] flex flex-col"
+            >
+              <div className="flex items-center justify-between p-4 border-b border-white/10">
+                <h3 className="text-lg font-semibold text-white capitalize">{resourceType}s for {selectedResourceTopic}</h3>
+                <button onClick={() => setShowResources(false)}>
+                  <X className="w-5 h-5 text-white/60" />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto flex-1">
+                {resourcesLoading ? (
+                  <div className="flex justify-center p-8">
+                    <Loader2 className="w-8 h-8 animate-spin text-[#B6FF2E]" />
+                  </div>
+                ) : resources.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-white/60">No {resourceType}s found.</p>
+                    <p className="text-xs text-white/40 mt-1">Try generating a quiz or adding notes!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {resources.map((res: any, i) => (
+                      <div key={i} className="p-3 bg-white/5 rounded-xl border border-white/10">
+                        <div className="flex justify-between items-start mb-1">
+                          <h4 className="font-medium text-white text-sm">{res.title}</h4>
+                          <span className="text-[10px] text-white/40">{new Date(res.created_at).toLocaleDateString()}</span>
+                        </div>
+                        <p className="text-xs text-white/60 mb-2 line-clamp-3">{res.preview}</p>
+                        {res.source_url && (
+                          <a
+                            href={res.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-[#2EFFE6] flex items-center gap-1 hover:underline"
+                          >
+                            <Link2 className="w-3 h-3" /> Open Link
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Quiz Modal */}
       <AnimatePresence>
