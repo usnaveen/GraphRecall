@@ -149,6 +149,57 @@ async def ingest_note(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============================================================================
+# URL Ingestion (Articles/Substack)
+# ============================================================================
+
+from backend.graphs.article_graph import process_article_url
+
+class IngestUrlRequest(BaseModel):
+    url: str
+
+@router.post("/ingest/url", response_model=IngestResponse)
+async def ingest_url(
+    request: IngestUrlRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Ingest an article from a URL (e.g. Substack, Medium, Blog).
+    
+    1. Fetches HTML.
+    2. Parses Title/Author/Content using Gemini.
+    3. Ingests into Knowledge Graph (auto-approved).
+    """
+    user_id = str(current_user["id"])
+    logger.info("v2/ingest/url: Starting", url=request.url)
+    
+    try:
+        # Run Article Graph
+        result = await process_article_url(request.url, user_id=user_id)
+        
+        if result.get("error"):
+             raise HTTPException(status_code=400, detail=result["error"])
+             
+        ingestion_res = result.get("ingestion_result", {})
+        
+        # Merge structured metadata
+        return IngestResponse(
+            note_id=ingestion_res.get("note_id"),
+            concepts=ingestion_res.get("concepts", []),
+            concept_ids=ingestion_res.get("concept_ids", []),
+            flashcard_ids=ingestion_res.get("flashcard_ids", []),
+            status="completed", # Article graph auto-ingests
+            thread_id=ingestion_res.get("thread_id", ""),
+            error=ingestion_res.get("error"),
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("v2/ingest/url: Failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/ingest/{thread_id}/status", response_model=StatusResponse)
 async def get_status(
     thread_id: str,

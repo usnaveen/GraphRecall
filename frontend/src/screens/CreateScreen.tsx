@@ -294,8 +294,22 @@ export function CreateScreen() {
                     icon={Link2}
                     label="Import URL"
                     onClick={() => {
-                      const url = prompt("Enter URL to analyze:");
-                      if (url) startProcessing(`Source URL: ${url}`);
+                      const url = prompt("Enter Article/Substack URL to analyze:");
+                      if (url) {
+                        setStep('processing');
+                        setProgress(10);
+                        ingestService.ingestUrl(url)
+                          .then(response => {
+                            setThreadId(response.thread_id);
+                            setProgress(100);
+                            setStep('success');
+                          })
+                          .catch(err => {
+                            console.error(err);
+                            setError("Failed to fetch article. Ensure URL is publicly accessible.");
+                            setStep('upload');
+                          });
+                      }
                     }}
                   />
                 </div>
