@@ -785,6 +785,7 @@ async def resume_ingestion(
     thread_id: str,
     user_approved_concepts: Optional[list[dict]] = None,
     user_cancelled: bool = False,
+    user_id: Optional[str] = None,
 ) -> dict:
     """
     Resume a paused ingestion workflow after user review.
@@ -793,6 +794,7 @@ async def resume_ingestion(
         thread_id: The thread ID from the initial run
         user_approved_concepts: Concepts approved by the user
         user_cancelled: If True, cancel the workflow
+        user_id: Optional user ID to verify ownership
     
     Returns:
         Dict with final results
@@ -807,6 +809,17 @@ async def resume_ingestion(
     )
     
     try:
+        # Check ownership if user_id provided
+        if user_id:
+            state = ingestion_graph.get_state(config)
+            if state and state.values.get("user_id") != user_id:
+                logger.warning(
+                    "resume_ingestion: Unauthorized access attempt",
+                    thread_id=thread_id,
+                    user_id=user_id,
+                )
+                return {"status": "error", "error": "Unauthorized access to thread"}
+
         # Resume using Command pattern
         resume_value = {
             "approved_concepts": user_approved_concepts or [],
@@ -838,12 +851,13 @@ async def resume_ingestion(
         }
 
 
-async def get_ingestion_status(thread_id: str) -> dict:
+async def get_ingestion_status(thread_id: str, user_id: Optional[str] = None) -> dict:
     """
     Get the current status of an ingestion workflow.
     
     Args:
         thread_id: The thread ID from the initial run
+        user_id: Optional user ID to verify ownership
     
     Returns:
         Dict with current state and status
@@ -857,6 +871,16 @@ async def get_ingestion_status(thread_id: str) -> dict:
             return {"status": "not_found", "thread_id": thread_id}
         
         values = state.values
+        
+        # Check ownership
+        if user_id and values.get("user_id") != user_id:
+            logger.warning(
+                "get_ingestion_status: Unauthorized access attempt",
+                thread_id=thread_id,
+                user_id=user_id,
+            )
+            return {"status": "not_found", "thread_id": thread_id}
+            
         next_nodes = state.next if hasattr(state, "next") else []
         
         if values.get("awaiting_user_approval"):

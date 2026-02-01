@@ -3,8 +3,9 @@
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from backend.auth.middleware import get_current_user
 
 from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
@@ -25,7 +26,6 @@ class IngestWithReviewRequest(BaseModel):
     """Request for ingestion with human review."""
     
     content: str
-    user_id: str = "00000000-0000-0000-0000-000000000001"
     source_url: Optional[str] = None
     skip_review: bool = False  # If True, auto-approve (old behavior)
 
@@ -41,7 +41,10 @@ class IngestWithReviewResponse(BaseModel):
 
 
 @router.post("/ingest", response_model=IngestWithReviewResponse)
-async def ingest_with_review(request: IngestWithReviewRequest):
+async def ingest_with_review(
+    request: IngestWithReviewRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Ingest a note with human-in-the-loop concept review.
     
@@ -59,6 +62,7 @@ async def ingest_with_review(request: IngestWithReviewRequest):
         pg_client = await get_postgres_client()
         neo4j_client = await get_neo4j_client()
         
+        user_id = str(current_user["id"])
         # Save the note first
         note_id = await pg_client.execute_insert(
             """
@@ -67,7 +71,7 @@ async def ingest_with_review(request: IngestWithReviewRequest):
             RETURNING id
             """,
             {
-                "user_id": request.user_id,
+                "user_id": user_id,
                 "content": request.content,
                 "source_url": request.source_url,
             },
@@ -81,7 +85,7 @@ async def ingest_with_review(request: IngestWithReviewRequest):
             # V2 Migration: Use run_ingestion directly
             result = await run_ingestion(
                 content=request.content,
-                user_id=request.user_id,
+                user_id=user_id,
                 title=None,
                 source_url=request.source_url,
                 skip_review=True,
@@ -135,7 +139,7 @@ async def ingest_with_review(request: IngestWithReviewRequest):
         # Create review session
         review_service = ConceptReviewService(pg_client, neo4j_client)
         session = await review_service.create_review_session(
-            user_id=request.user_id,
+            user_id=user_id,
             note_id=note_id,
             original_content=request.content,
             extracted_concepts=extracted_concepts,
@@ -165,7 +169,7 @@ async def ingest_with_review(request: IngestWithReviewRequest):
 
 @router.get("/sessions")
 async def list_pending_sessions(
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List all pending review sessions for a user.
@@ -178,6 +182,7 @@ async def list_pending_sessions(
         pg_client = await get_postgres_client()
         neo4j_client = await get_neo4j_client()
         
+        user_id = str(current_user["id"])
         review_service = ConceptReviewService(pg_client, neo4j_client)
         sessions = await review_service.get_pending_sessions(user_id)
         
@@ -201,7 +206,10 @@ async def list_pending_sessions(
 
 
 @router.get("/sessions/{session_id}", response_model=ConceptReviewSession)
-async def get_review_session(session_id: str):
+async def get_review_session(
+    session_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get a specific review session with all concepts.
     
@@ -211,11 +219,9 @@ async def get_review_session(session_id: str):
     - Session status and expiration
     """
     try:
-        pg_client = await get_postgres_client()
-        neo4j_client = await get_neo4j_client()
-        
+        user_id = str(current_user["id"])
         review_service = ConceptReviewService(pg_client, neo4j_client)
-        session = await review_service.get_session(session_id)
+        session = await review_service.get_session(session_id, user_id=user_id)
         
         if not session:
             raise HTTPException(status_code=404, detail="Session not found or expired")
@@ -233,6 +239,7 @@ async def get_review_session(session_id: str):
 async def update_review_session(
     session_id: str,
     concepts: list[ConceptReviewItem],
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Update concepts in a review session.
@@ -245,11 +252,11 @@ async def update_review_session(
     Changes are saved but not committed until /approve is called.
     """
     try:
-        pg_client = await get_postgres_client()
-        neo4j_client = await get_neo4j_client()
-        
+        user_id = str(current_user["id"])
         review_service = ConceptReviewService(pg_client, neo4j_client)
-        session = await review_service.update_session(session_id, concepts)
+        session = await review_service.update_session(
+            session_id, concepts, user_id=user_id
+        )
         
         if not session:
             raise HTTPException(status_code=404, detail="Session not found or expired")
@@ -271,6 +278,7 @@ async def update_review_session(
 async def approve_review_session(
     session_id: str,
     approval: ConceptReviewApproval,
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Approve a review session and commit concepts to the knowledge graph.
@@ -297,8 +305,9 @@ async def approve_review_session(
         pg_client = await get_postgres_client()
         neo4j_client = await get_neo4j_client()
         
+        user_id = str(current_user["id"])
         review_service = ConceptReviewService(pg_client, neo4j_client)
-        result = await review_service.approve_session(approval)
+        result = await review_service.approve_session(approval, user_id=user_id)
         
         return {
             "status": "approved",
@@ -318,7 +327,10 @@ async def approve_review_session(
 
 
 @router.post("/sessions/{session_id}/cancel")
-async def cancel_review_session(session_id: str):
+async def cancel_review_session(
+    session_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Cancel a review session without creating any concepts.
     
@@ -326,11 +338,9 @@ async def cancel_review_session(session_id: str):
     to the knowledge graph.
     """
     try:
-        pg_client = await get_postgres_client()
-        neo4j_client = await get_neo4j_client()
-        
+        user_id = str(current_user["id"])
         review_service = ConceptReviewService(pg_client, neo4j_client)
-        success = await review_service.cancel_session(session_id)
+        success = await review_service.cancel_session(session_id, user_id=user_id)
         
         if not success:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -352,6 +362,7 @@ async def cancel_review_session(session_id: str):
 async def add_concept_to_session(
     session_id: str,
     concept: ConceptReviewItem,
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Add a new concept to an existing review session.
@@ -360,11 +371,9 @@ async def add_concept_to_session(
     that wasn't extracted by the AI.
     """
     try:
-        pg_client = await get_postgres_client()
-        neo4j_client = await get_neo4j_client()
-        
+        user_id = str(current_user["id"])
         review_service = ConceptReviewService(pg_client, neo4j_client)
-        session = await review_service.get_session(session_id)
+        session = await review_service.get_session(session_id, user_id=user_id)
         
         if not session:
             raise HTTPException(status_code=404, detail="Session not found or expired")
@@ -374,7 +383,7 @@ async def add_concept_to_session(
         session.concepts.append(concept)
         
         # Save
-        await review_service.update_session(session_id, session.concepts)
+        await review_service.update_session(session_id, session.concepts, user_id=user_id)
         
         return {
             "status": "added",

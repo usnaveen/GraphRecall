@@ -3,8 +3,9 @@
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from pydantic import BaseModel
+from backend.auth.middleware import get_current_user
 
 from backend.db.postgres_client import get_postgres_client
 from backend.models.feed_schemas import FeedItemType, UserUpload, UserUploadCreate
@@ -33,7 +34,7 @@ class LinkConceptsRequest(BaseModel):
 
 @router.post("", response_model=UploadResponse)
 async def create_upload(
-    user_id: str = Form(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
     upload_type: str = Form(default="screenshot"),
     title: Optional[str] = Form(default=None),
     description: Optional[str] = Form(default=None),
@@ -51,6 +52,8 @@ async def create_upload(
     Upload types: screenshot, infographic, diagram
     """
     try:
+        user_id = str(current_user["id"])
+        
         # Resolve file URL: either upload to S3 or use provided URL
         resolved_url: str
         if file is not None:
@@ -122,7 +125,7 @@ async def create_upload(
 
 @router.get("")
 async def list_uploads(
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
     upload_type: Optional[str] = Query(default=None),
     limit: int = Query(default=20, le=50),
     offset: int = Query(default=0, ge=0),
@@ -135,6 +138,8 @@ async def list_uploads(
     try:
         pg_client = await get_postgres_client()
 
+        user_id = str(current_user["id"])
+        
         # Build query
         where_clauses = ["user_id = :user_id"]
         params = {"user_id": user_id, "limit": limit, "offset": offset}
@@ -184,9 +189,13 @@ async def list_uploads(
 
 
 @router.get("/{upload_id}")
-async def get_upload(upload_id: str):
+async def get_upload(
+    upload_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """Get a specific upload by ID."""
     try:
+        user_id = str(current_user["id"])
         pg_client = await get_postgres_client()
 
         result = await pg_client.execute_query(
@@ -196,9 +205,9 @@ async def get_upload(upload_id: str):
                 title, description, linked_concepts, ocr_text,
                 created_at, last_shown_at, show_count
             FROM user_uploads
-            WHERE id = :upload_id
+            WHERE id = :upload_id AND user_id = :user_id
             """,
-            {"upload_id": upload_id},
+            {"upload_id": upload_id, "user_id": user_id},
         )
 
         if not result:
@@ -218,14 +227,16 @@ async def update_upload(
     upload_id: str,
     title: Optional[str] = None,
     description: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
 ):
     """Update upload metadata."""
     try:
+        user_id = str(current_user["id"])
         pg_client = await get_postgres_client()
 
         # Build update
         updates = []
-        params = {"upload_id": upload_id}
+        params = {"upload_id": upload_id, "user_id": user_id}
 
         if title is not None:
             updates.append("title = :title")
@@ -244,7 +255,7 @@ async def update_upload(
             f"""
             UPDATE user_uploads
             SET {update_clause}
-            WHERE id = :upload_id
+            WHERE id = :upload_id AND user_id = :user_id
             """,
             params,
         )
@@ -262,6 +273,7 @@ async def update_upload(
 async def link_concepts_to_upload(
     upload_id: str,
     request: LinkConceptsRequest,
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Link concepts to an upload.
@@ -270,6 +282,7 @@ async def link_concepts_to_upload(
     allowing it to appear in the feed when those concepts are due for review.
     """
     try:
+        user_id = str(current_user["id"])
         pg_client = await get_postgres_client()
 
         # Get current linked concepts
@@ -277,9 +290,9 @@ async def link_concepts_to_upload(
             """
             SELECT linked_concepts
             FROM user_uploads
-            WHERE id = :upload_id
+            WHERE id = :upload_id AND user_id = :user_id
             """,
-            {"upload_id": upload_id},
+            {"upload_id": upload_id, "user_id": user_id},
         )
 
         if not result:
@@ -295,9 +308,9 @@ async def link_concepts_to_upload(
             """
             UPDATE user_uploads
             SET linked_concepts = :concepts
-            WHERE id = :upload_id
+            WHERE id = :upload_id AND user_id = :user_id
             """,
-            {"upload_id": upload_id, "concepts": updated},
+            {"upload_id": upload_id, "user_id": user_id, "concepts": updated},
         )
 
         return {
@@ -317,9 +330,11 @@ async def link_concepts_to_upload(
 async def unlink_concept_from_upload(
     upload_id: str,
     concept_id: str,
+    current_user: dict = Depends(get_current_user),
 ):
     """Remove a concept link from an upload."""
     try:
+        user_id = str(current_user["id"])
         pg_client = await get_postgres_client()
 
         # Get current linked concepts
@@ -327,9 +342,9 @@ async def unlink_concept_from_upload(
             """
             SELECT linked_concepts
             FROM user_uploads
-            WHERE id = :upload_id
+            WHERE id = :upload_id AND user_id = :user_id
             """,
-            {"upload_id": upload_id},
+            {"upload_id": upload_id, "user_id": user_id},
         )
 
         if not result:
@@ -346,9 +361,9 @@ async def unlink_concept_from_upload(
             """
             UPDATE user_uploads
             SET linked_concepts = :concepts
-            WHERE id = :upload_id
+            WHERE id = :upload_id AND user_id = :user_id
             """,
-            {"upload_id": upload_id, "concepts": current},
+            {"upload_id": upload_id, "user_id": user_id, "concepts": current},
         )
 
         return {
@@ -365,17 +380,21 @@ async def unlink_concept_from_upload(
 
 
 @router.delete("/{upload_id}")
-async def delete_upload(upload_id: str):
+async def delete_upload(
+    upload_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Delete an upload record and its file from storage.
     """
     try:
+        user_id = str(current_user["id"])
         pg_client = await get_postgres_client()
 
         # Get the upload record to find the file URL
         result = await pg_client.execute_query(
-            "SELECT id, file_url FROM user_uploads WHERE id = :upload_id",
-            {"upload_id": upload_id},
+            "SELECT id, file_url FROM user_uploads WHERE id = :upload_id AND user_id = :user_id",
+            {"upload_id": upload_id, "user_id": user_id},
         )
 
         if not result:
@@ -397,8 +416,8 @@ async def delete_upload(upload_id: str):
 
         # Delete database record
         await pg_client.execute_insert(
-            "DELETE FROM user_uploads WHERE id = :upload_id",
-            {"upload_id": upload_id},
+            "DELETE FROM user_uploads WHERE id = :upload_id AND user_id = :user_id",
+            {"upload_id": upload_id, "user_id": user_id},
         )
 
         logger.info("Uploads: Deleted upload", upload_id=upload_id)

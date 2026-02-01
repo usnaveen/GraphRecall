@@ -11,8 +11,9 @@ following modern LangGraph 1.0.7 patterns with:
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from backend.auth.middleware import get_current_user
 
 from backend.graphs.ingestion_graph import (
     run_ingestion,
@@ -35,7 +36,6 @@ class IngestRequest(BaseModel):
     
     content: str
     title: Optional[str] = None
-    user_id: str = "00000000-0000-0000-0000-000000000001"
     skip_review: bool = False  # If True, auto-approve concepts
 
 
@@ -77,7 +77,10 @@ class StatusResponse(BaseModel):
 
 
 @router.post("/ingest", response_model=IngestResponse)
-async def ingest_note(request: IngestRequest):
+async def ingest_note(
+    request: IngestRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Ingest a note using the LangGraph workflow.
     
@@ -93,10 +96,11 @@ async def ingest_note(request: IngestRequest):
     If overlap is detected and skip_review=False, returns with status="awaiting_review".
     Use the thread_id to check status or resume the workflow.
     """
+    user_id = str(current_user["id"])
     logger.info(
         "v2/ingest: Starting ingestion",
         content_length=len(request.content),
-        user_id=request.user_id,
+        user_id=user_id,
         skip_review=request.skip_review,
     )
     
@@ -104,7 +108,7 @@ async def ingest_note(request: IngestRequest):
         result = await run_ingestion(
             content=request.content,
             title=request.title,
-            user_id=request.user_id,
+            user_id=user_id,
             skip_review=request.skip_review,
         )
         
@@ -146,7 +150,10 @@ async def ingest_note(request: IngestRequest):
 
 
 @router.get("/ingest/{thread_id}/status", response_model=StatusResponse)
-async def get_status(thread_id: str):
+async def get_status(
+    thread_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Get the current status of an ingestion workflow.
     
@@ -158,7 +165,8 @@ async def get_status(thread_id: str):
     - not_found: Thread ID not found
     """
     try:
-        result = await get_ingestion_status(thread_id)
+        user_id = str(current_user["id"])
+        result = await get_ingestion_status(thread_id, user_id=user_id)
         
         return StatusResponse(
             status=result.get("status", "not_found"),
@@ -176,7 +184,11 @@ async def get_status(thread_id: str):
 
 
 @router.post("/ingest/{thread_id}/approve", response_model=IngestResponse)
-async def approve_and_resume(thread_id: str, request: ResumeRequest):
+async def approve_and_resume(
+    thread_id: str,
+    request: ResumeRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Resume ingestion after user has reviewed concepts.
     
@@ -196,10 +208,12 @@ async def approve_and_resume(thread_id: str, request: ResumeRequest):
     )
     
     try:
+        user_id = str(current_user["id"])
         result = await resume_ingestion(
             thread_id=thread_id,
             user_approved_concepts=request.approved_concepts,
             user_cancelled=request.cancelled,
+            user_id=user_id,
         )
         
         status = result.get("status", "completed")

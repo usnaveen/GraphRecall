@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TopBar } from './components/TopBar';
 import { LiquidDock } from './components/LiquidDock';
@@ -7,15 +8,20 @@ import { GraphScreen } from './screens/GraphScreen';
 import { CreateScreen } from './screens/CreateScreen';
 import { AssistantScreen } from './screens/AssistantScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import { LoginScreen } from './screens/LoginScreen';
 import { useAppStore } from './store/useAppStore';
+import { useAuthStore } from './store/useAuthStore';
 import type { TabType } from './types';
 
-function App() {
+// Get Google Client ID from environment
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+function AuthenticatedApp() {
   const [activeTab, setActiveTab] = useState<TabType>('feed');
   const { fetchFeed, fetchStats, isLoading } = useAppStore();
 
   useEffect(() => {
-    // Initial data fetch
+    // Initial data fetch after authentication
     fetchFeed();
     fetchStats();
   }, [fetchFeed, fetchStats]);
@@ -90,6 +96,25 @@ function App() {
       {/* Bottom Liquid Glass Dock */}
       <LiquidDock activeTab={activeTab} onTabChange={setActiveTab} />
     </div>
+  );
+}
+
+function App() {
+  const { isAuthenticated, isLoading } = useAuthStore();
+
+  // Show loading state while checking persisted auth
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 bg-[#07070A] flex items-center justify-center">
+        <div className="h-8 w-8 rounded-full border-2 border-[#B6FF2E] border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      {isAuthenticated ? <AuthenticatedApp /> : <LoginScreen />}
+    </GoogleOAuthProvider>
   );
 }
 

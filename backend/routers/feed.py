@@ -4,8 +4,9 @@ import json
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from backend.auth.middleware import get_current_user
 from langchain_openai import ChatOpenAI
 
 from backend.db.neo4j_client import get_neo4j_client
@@ -30,10 +31,7 @@ router = APIRouter(prefix="/api/feed", tags=["Feed"])
 
 @router.get("", response_model=FeedResponse)
 async def get_feed(
-    user_id: str = Query(
-        default="00000000-0000-0000-0000-000000000001",
-        description="User ID",
-    ),
+    current_user: dict = Depends(get_current_user),
     max_items: int = Query(default=20, le=50),
     item_types: Optional[str] = Query(
         default=None,
@@ -75,7 +73,7 @@ async def get_feed(
             parsed_domains = [d.strip() for d in domains.split(",")]
         
         request = FeedFilterRequest(
-            user_id=user_id,
+            user_id=str(current_user["id"]),
             max_items=max_items,
             item_types=parsed_types,
             domains=parsed_domains,
@@ -95,7 +93,7 @@ async def record_review(
     item_id: str,
     item_type: str,
     difficulty: DifficultyLevel,
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
     response_time_ms: Optional[int] = None,
 ):
     """
@@ -117,7 +115,7 @@ async def record_review(
         review = ReviewResult(
             item_id=item_id,
             item_type=item_type,
-            user_id=user_id,
+            user_id=str(current_user["id"]),
             difficulty=difficulty,
             response_time_ms=response_time_ms,
         )
@@ -139,7 +137,7 @@ async def record_review(
 
 @router.get("/stats", response_model=UserStats)
 async def get_user_stats(
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get user's learning statistics.
@@ -157,6 +155,8 @@ async def get_user_stats(
         
         feed_service = FeedService(pg_client, neo4j_client)
         sr_service = SpacedRepetitionService(pg_client)
+        
+        user_id = str(current_user["id"])
         
         # Get various stats
         sr_stats = await sr_service.get_user_stats(user_id)
@@ -211,13 +211,14 @@ async def get_user_stats(
 
 @router.get("/due-count")
 async def get_due_count(
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Get quick count of items due for review."""
     try:
         pg_client = await get_postgres_client()
         sr_service = SpacedRepetitionService(pg_client)
         
+        user_id = str(current_user["id"])
         stats = await sr_service.get_user_stats(user_id)
         
         return {
@@ -233,11 +234,12 @@ async def get_due_count(
 async def toggle_like(
     item_id: str,
     item_type: str,
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Toggle like status for a feed item (flashcard or quiz)."""
     try:
         pg_client = await get_postgres_client()
+        user_id = str(current_user["id"])
         table = "flashcards" if item_type == "flashcard" else "quizzes"
         
         # Toggle the boolean
@@ -263,11 +265,12 @@ async def toggle_like(
 async def toggle_save(
     item_id: str,
     item_type: str,
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Toggle save status for a feed item (flashcard or quiz)."""
     try:
         pg_client = await get_postgres_client()
+        user_id = str(current_user["id"])
         table = "flashcards" if item_type == "flashcard" else "quizzes"
         
         # Toggle the boolean
@@ -313,6 +316,7 @@ class QuizQuestion(BaseModel):
 async def generate_topic_quiz(
     topic_name: str,
     request: TopicQuizRequest,
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Generate a quiz on a specific topic.
@@ -331,9 +335,10 @@ async def generate_topic_quiz(
         research_agent = WebResearchAgent(neo4j_client, pg_client)
         
         # Step 1: Check if we have enough resources
+        user_id = str(current_user["id"])
         research_result = await research_agent.research_topic(
             topic=topic_name,
-            user_id=request.user_id,
+            user_id=user_id,
             force=request.force_research,
         )
         
@@ -456,7 +461,7 @@ Rules:
 @router.get("/resources/{concept_name}")
 async def get_resources_for_concept(
     concept_name: str,
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
     resource_type: Optional[str] = Query(default=None),
 ):
     """
@@ -471,7 +476,7 @@ async def get_resources_for_concept(
         pg_client = await get_postgres_client()
         neo4j_client = await get_neo4j_client()
         
-        resources = []
+        user_id = str(current_user["id"])
         
         # Get notes
         notes_query = """

@@ -5,9 +5,10 @@ import uuid
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from backend.auth.middleware import get_current_user
 
 from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
@@ -30,7 +31,10 @@ class QuickChatRequest(BaseModel):
 
 
 @router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Chat with the GraphRAG assistant.
     
@@ -63,7 +67,7 @@ async def chat(request: ChatRequest):
 
         # Execute the graph
         result = await run_chat(
-            user_id=request.user_id,
+            user_id=str(current_user["id"]),
             message=request.message,
             thread_id=str(uuid.uuid4()) # Create new thread for single turn if no ID
         )
@@ -80,7 +84,10 @@ async def chat(request: ChatRequest):
 
 
 @router.post("/quick", response_model=ChatResponse)
-async def quick_chat(request: QuickChatRequest):
+async def quick_chat(
+    request: QuickChatRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Quick chat without conversation history.
     
@@ -89,7 +96,7 @@ async def quick_chat(request: QuickChatRequest):
     try:
         # Refactor: Use LangGraph run_chat
         result = await run_chat(
-            user_id=request.user_id,
+            user_id=str(current_user["id"]),
             message=request.message,
             thread_id=str(uuid.uuid4())
         )
@@ -107,7 +114,7 @@ async def quick_chat(request: QuickChatRequest):
 
 @router.get("/suggestions")
 async def get_chat_suggestions(
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Get suggested questions based on user's knowledge graph.
@@ -184,13 +191,14 @@ async def get_chat_suggestions(
 
 @router.get("/conversations")
 async def list_conversations(
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
     limit: int = Query(default=20, le=50),
 ):
     """List recent chat conversations."""
     try:
         pg_client = await get_postgres_client()
         
+        user_id = str(current_user["id"])
         result = await pg_client.execute_query(
             """
             SELECT 
@@ -216,19 +224,23 @@ async def list_conversations(
 
 
 @router.get("/conversations/{conversation_id}")
-async def get_conversation(conversation_id: str):
+async def get_conversation(
+    conversation_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """Get a specific conversation with all messages."""
     try:
         pg_client = await get_postgres_client()
         
+        user_id = str(current_user["id"])
         # Get conversation
         conv_result = await pg_client.execute_query(
             """
             SELECT id, user_id, title, created_at, updated_at
             FROM chat_conversations
-            WHERE id = :conversation_id
+            WHERE id = :conversation_id AND user_id = :user_id
             """,
-            {"conversation_id": conversation_id},
+            {"conversation_id": conversation_id, "user_id": user_id},
         )
         
         if not conv_result:
@@ -259,13 +271,14 @@ async def get_conversation(conversation_id: str):
 
 @router.post("/conversations")
 async def create_conversation(
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
     title: Optional[str] = None,
 ):
     """Create a new chat conversation."""
     try:
         pg_client = await get_postgres_client()
         
+        user_id = str(current_user["id"])
         conversation_id = await pg_client.execute_insert(
             """
             INSERT INTO chat_conversations (user_id, title)
@@ -289,7 +302,7 @@ async def create_conversation(
 async def add_message_to_conversation(
     conversation_id: str,
     message: str,
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Add a message to a conversation and get AI response.
@@ -304,6 +317,16 @@ async def add_message_to_conversation(
         pg_client = await get_postgres_client()
         neo4j_client = await get_neo4j_client()
         
+        user_id = str(current_user["id"])
+        
+        # Verify conversation ownership
+        conv_check = await pg_client.execute_query(
+            "SELECT id FROM chat_conversations WHERE id = :id AND user_id = :user_id",
+            {"id": conversation_id, "user_id": user_id}
+        )
+        if not conv_check:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
         # Get existing messages
         existing_messages = await pg_client.execute_query(
             """
@@ -384,7 +407,7 @@ class SaveMessageRequest(BaseModel):
 async def save_message_for_quiz(
     message_id: str,
     request: SaveMessageRequest,
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Save a chat response for future quiz generation.
@@ -395,15 +418,16 @@ async def save_message_for_quiz(
     try:
         pg_client = await get_postgres_client()
         
-        # Get the message content
+        user_id = str(current_user["id"])
+        # Get the message content and verify ownership via join
         message = await pg_client.execute_query(
             """
             SELECT cm.content, cm.role, cc.title as conversation_title
             FROM chat_messages cm
             JOIN chat_conversations cc ON cc.id = cm.conversation_id
-            WHERE cm.id = :message_id
+            WHERE cm.id = :message_id AND cc.user_id = :user_id
             """,
-            {"message_id": message_id}
+            {"message_id": message_id, "user_id": user_id}
         )
         
         if not message:
@@ -458,7 +482,7 @@ class AddToKnowledgeRequest(BaseModel):
 async def add_conversation_to_knowledge(
     conversation_id: str,
     request: AddToKnowledgeRequest,
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Add a chat conversation to the knowledge base.
@@ -475,15 +499,18 @@ async def add_conversation_to_knowledge(
         pg_client = await get_postgres_client()
         neo4j_client = await get_neo4j_client()
         
-        # Get conversation messages
+        user_id = str(current_user["id"])
+        
+        # Get conversation messages and verify ownership
         messages = await pg_client.execute_query(
             """
-            SELECT role, content, created_at
-            FROM chat_messages
-            WHERE conversation_id = :conversation_id
-            ORDER BY created_at ASC
+            SELECT cm.role, cm.content, cm.created_at
+            FROM chat_messages cm
+            JOIN chat_conversations cc ON cc.id = cm.conversation_id
+            WHERE cm.conversation_id = :conversation_id AND cc.user_id = :user_id
+            ORDER BY cm.created_at ASC
             """,
-            {"conversation_id": conversation_id}
+            {"conversation_id": conversation_id, "user_id": user_id}
         )
         
         if not messages:
@@ -584,7 +611,7 @@ async def add_conversation_to_knowledge(
 
 @router.get("/history")
 async def get_chat_history(
-    user_id: str = Query(default="00000000-0000-0000-0000-000000000001"),
+    current_user: dict = Depends(get_current_user),
     limit: int = Query(default=20, le=50),
 ):
     """
@@ -593,6 +620,7 @@ async def get_chat_history(
     try:
         pg_client = await get_postgres_client()
         
+        user_id = str(current_user["id"])
         result = await pg_client.execute_query(
             """
             SELECT 
@@ -636,14 +664,18 @@ async def get_chat_history(
 
 
 @router.delete("/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str):
+async def delete_conversation(
+    conversation_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     """Delete a chat conversation and all its messages."""
     try:
+        user_id = str(current_user["id"])
         pg_client = await get_postgres_client()
         
         await pg_client.execute_query(
-            "DELETE FROM chat_conversations WHERE id = :id",
-            {"id": conversation_id}
+            "DELETE FROM chat_conversations WHERE id = :id AND user_id = :user_id",
+            {"id": conversation_id, "user_id": user_id}
         )
         
         return {"status": "deleted", "conversation_id": conversation_id}
@@ -659,7 +691,10 @@ async def delete_conversation(conversation_id: str):
 
 
 @router.post("/stream")
-async def stream_chat(request: ChatRequest):
+async def stream_chat(
+    request: ChatRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Stream chat responses using Server-Sent Events.
     
@@ -671,9 +706,10 @@ async def stream_chat(request: ChatRequest):
             thread_id = str(uuid.uuid4())
             config = {"configurable": {"thread_id": thread_id}}
             
+            user_id = str(current_user["id"])
             initial_state: ChatState = {
                 "messages": [HumanMessage(content=request.message)],
-                "user_id": request.user_id,
+                "user_id": user_id,
                 "graph_context": {},
                 "rag_context": [],
             }
