@@ -184,10 +184,10 @@ async def search_notes(query: str, user_id: str = "default") -> str:
         # Keyword-based search (fallback for when embeddings aren't available)
         result = await pg_client.execute_query(
             """
-            SELECT id, title, content, created_at
+            SELECT id, title, content_text as content, created_at
             FROM notes
             WHERE user_id = :user_id
-              AND (title ILIKE :search_pattern OR content ILIKE :search_pattern)
+              AND (title ILIKE :search_pattern OR content_text ILIKE :search_pattern)
             ORDER BY created_at DESC
             LIMIT 5
             """,
@@ -318,10 +318,10 @@ async def get_context_node(state: ChatState) -> dict:
             
             result = await pg_client.execute_query(
                 """
-                SELECT id, title, content, created_at
+                SELECT id, title, content_text as content, created_at
                 FROM notes
                 WHERE user_id = :user_id
-                  AND (title ILIKE :search_pattern OR content ILIKE :search_pattern)
+                  AND (title ILIKE :search_pattern OR content_text ILIKE :search_pattern)
                 LIMIT 3
                 """,
                 {
