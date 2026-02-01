@@ -39,6 +39,27 @@ export function LiquidDock({ activeTab, onTabChange }: LiquidDockProps) {
           const isCenter = index === 2; // Create button
           const Icon = item.icon;
 
+          if (isCenter) {
+            return (
+              <div key={item.id} className="relative w-12 h-11 flex items-center justify-center">
+                <motion.button
+                  onClick={() => onTabChange(item.id)}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="absolute w-12 h-12 -top-3 flex items-center justify-center rounded-full bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6] transition-all duration-300"
+                >
+                  <Icon
+                    className="w-5 h-5 text-[#07070A] relative z-10"
+                    strokeWidth={2.5}
+                  />
+                  <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-black/80 rounded-md text-[10px] text-white/80 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                    {item.label}
+                  </span>
+                </motion.button>
+              </div>
+            );
+          }
+
           return (
             <motion.button
               key={item.id}
@@ -47,18 +68,15 @@ export function LiquidDock({ activeTab, onTabChange }: LiquidDockProps) {
               whileTap={{ scale: 0.95 }}
               className={`
                 relative flex items-center justify-center rounded-full transition-all duration-300
-                ${isCenter
-                  ? 'w-12 h-12 -mt-4 bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6]'
-                  : 'w-11 h-11'
-                }
-                ${isActive && !isCenter
+                w-11 h-11
+                ${isActive
                   ? 'bg-[#B6FF2E]/20 neon-glow'
                   : 'hover:bg-white/5'
                 }
               `}
             >
               {/* Active indicator glow */}
-              {isActive && !isCenter && (
+              {isActive && (
                 <motion.div
                   layoutId="activeGlow"
                   className="absolute inset-0 rounded-full bg-[#B6FF2E]/20 neon-glow"
@@ -70,14 +88,9 @@ export function LiquidDock({ activeTab, onTabChange }: LiquidDockProps) {
               <Icon
                 className={`
                   w-5 h-5 transition-colors duration-300 relative z-10
-                  ${isCenter
-                    ? 'text-[#07070A]'
-                    : isActive
-                      ? 'text-[#B6FF2E]'
-                      : 'text-white/60'
-                  }
+                  ${isActive ? 'text-[#B6FF2E]' : 'text-white/60'}
                 `}
-                strokeWidth={isActive || isCenter ? 2.5 : 2}
+                strokeWidth={isActive ? 2.5 : 2}
               />
 
               {/* Label tooltip */}
