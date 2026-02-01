@@ -43,7 +43,7 @@ class GraphRAGAgent:
         self,
         neo4j_client,
         pg_client,
-        model: str = "gpt-4o-mini",
+        model: Optional[str] = None,
         embedding_model: str = "text-embedding-3-small",
     ):
         self.neo4j_client = neo4j_client
@@ -56,9 +56,8 @@ class GraphRAGAgent:
         )
         
         self.query_analyzer = get_chat_model(
-            model="gpt-3.5-turbo-1106",  # Faster model for query analysis
             temperature=0,
-            model_kwargs={"response_format": {"type": "json_object"}},
+            json_mode=True,
         )
         
         self.embeddings = get_embeddings()

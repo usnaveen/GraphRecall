@@ -50,7 +50,7 @@ class WebResearchAgent:
         self,
         neo4j_client,
         pg_client,
-        model: str = "gpt-4o-mini",
+        model: Optional[str] = None,
         max_results: int = 5,
     ):
         self.neo4j_client = neo4j_client
