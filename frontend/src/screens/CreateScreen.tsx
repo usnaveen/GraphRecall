@@ -464,8 +464,7 @@ export function CreateScreen() {
               <ProcessingStep label="Building relationships" completed={progress >= 100} />
             </div>
 
-            {/* Geekout Facts Panel */}
-            <GeekoutPanel meta={processingMeta} progress={progress} />
+            <GeekoutPanel meta={processingMeta} />
           </motion.div>
         )}
 
@@ -657,7 +656,7 @@ export function CreateScreen() {
 // Geekout Facts Panel (shown during processing)
 // ============================================================================
 
-function GeekoutPanel({ meta, progress }: { meta: ProcessingMeta; progress: number }) {
+function GeekoutPanel({ meta }: { meta: ProcessingMeta }) {
   const facts: { icon: React.ElementType; label: string; value: string; color: string }[] = [];
 
   // File-level facts (available immediately)

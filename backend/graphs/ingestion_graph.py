@@ -219,10 +219,17 @@ async def synthesize_node(state: IngestionState) -> dict:
         # Convert output to decision format expected by frontend
         synthesis_decisions = []
         for decision in result.decisions:
-            # Map Conflict object to dict
+            # Find original concept data
+            original = next((c for c in extracted if c["name"] == decision.new_concept_name), {"name": decision.new_concept_name})
+            new_concept = original.copy()
+            
+            # If matched, store ID for potential merge
+            if decision.matched_concept_id:
+                new_concept["existing_id"] = decision.matched_concept_id
+
             synthesis_decisions.append({
-                "new_concept": next((c for c in extracted if c["name"] == decision.new_concept_name), {"name": decision.new_concept_name}),
-                "matches": [{"existing_name": decision.matched_concept_id}] if decision.matched_concept_id else [], # Simplified match info
+                "new_concept": new_concept,
+                "matches": [{"existing_name": decision.matched_concept_id}] if decision.matched_concept_id else [],
                 "recommended_action": decision.merge_strategy.value.lower() if hasattr(decision.merge_strategy, 'value') else str(decision.merge_strategy),
                 "reasoning": decision.reasoning,
                 "user_decision": "pending",
@@ -251,11 +258,21 @@ async def user_review_node(state: IngestionState) -> dict:
     
     if state.get("skip_review", False):
         decisions = state.get("synthesis_decisions", [])
-        # Auto-approve what is reasonable
         approved = []
+        
         for d in decisions:
-            # If extracting from d["new_concept"], it's a dict
-            approved.append(d["new_concept"])
+            action = d.get("recommended_action", "create_new").lower()
+            concept = d["new_concept"]
+            
+            # Skip duplicates/rejected
+            if action in ["skip", "reject"]:
+                continue
+                
+            # For merge/enhance, ensure we point to the existing ID
+            if action in ["merge", "enhance", "duplicate"] and concept.get("existing_id"):
+                concept["id"] = concept["existing_id"]
+                
+            approved.append(concept)
             
         logger.info("user_review_node: Auto-approved", num_approved=len(approved))
         return {
@@ -301,13 +318,15 @@ async def create_concepts_node(state: IngestionState) -> dict:
         
         for concept in concepts:
             # Call create_concept with correct signature
+            # Use concept.get("id") if present (from merge logic), otherwise None (generates new UUID)
             result_node = await neo4j.create_concept(
                 name=concept.get("name", "Unknown"),
                 definition=concept.get("definition", ""),
                 domain=concept.get("domain", "General"),
                 complexity_score=float(concept.get("complexity_score", 5)),
                 user_id=user_id,
-                # concept_id=None (generated), embedding=None (for now)
+                concept_id=concept.get("id"),
+                # embedding=None (for now)
             )
             concept_ids.append(result_node.get("id"))
         
@@ -555,11 +574,14 @@ def route_after_find_related(state: IngestionState) -> Literal["synthesize", "cr
     needs_synthesis = state.get("needs_synthesis", False)
     skip_review = state.get("skip_review", False)
     
-    if needs_synthesis and not skip_review:
-        logger.info("route_after_find_related: Routing to synthesis")
+    if needs_synthesis or not skip_review:
+        logger.info(
+            "route_after_find_related: Routing to synthesis",
+            reason="overlap_detected" if needs_synthesis else "user_review_required"
+        )
         return "synthesize"
     else:
-        logger.info("route_after_find_related: Routing to create_concepts (no overlap)")
+        logger.info("route_after_find_related: Routing to create_concepts (no overlap & auto-approve)")
         return "create_concepts"
 
 
