@@ -161,9 +161,8 @@ class PostgresClient:
                     with open(init_sql_path, "r") as f:
                         sql_content = f.read()
                         
-                    # Split by semicolon to execute individually
-                    # asyncpg cannot handle multiple statements in one execute call
-                    statements = [s.strip() for s in sql_content.split(";") if s.strip()]
+                    # Use smart splitting to handle $$ blocks
+                    statements = self._split_sql_statements(sql_content)
                     
                     for statement in statements:
                         await session.execute(text(statement))
@@ -179,8 +178,8 @@ class PostgresClient:
                         with open(os.path.join(migrations_dir, migration_file), "r") as f:
                             migration_sql = f.read()
                             
-                        # Split by semicolon for migrations too
-                        statements = [s.strip() for s in migration_sql.split(";") if s.strip()]
+                        # Use same smart splitter
+                        statements = self._split_sql_statements(migration_sql)
                         for statement in statements:
                             await session.execute(text(statement))
                             
@@ -191,9 +190,49 @@ class PostgresClient:
             except Exception as e:
                 logger.error("Schema initialization failed", error=str(e))
                 await session.rollback()
-                # Don't raise here to allow app to start even if schema init fails (e.g. read-only user)
-                # But for this use case, we probably want to know.
                 logger.warning("Continuing application startup despite schema error")
+
+    @staticmethod
+    def _split_sql_statements(sql: str) -> list[str]:
+        """
+        Split SQL script into statements, preserving $$ blocks.
+        
+        This is a simple parser that mainly handles standard ;;
+        vs $$...$$ blocks used in PL/pgSQL.
+        """
+        statements = []
+        current_stmt = []
+        in_dollar_quote = False
+        i = 0
+        length = len(sql)
+        
+        while i < length:
+            char = sql[i]
+            
+            # Check for $$ start/end
+            if char == '$' and i + 1 < length and sql[i+1] == '$':
+                in_dollar_quote = not in_dollar_quote
+                current_stmt.append("$$")
+                i += 2
+                continue
+            
+            # Split on semicolon only if not in a dollar quote block
+            if char == ';' and not in_dollar_quote:
+                stmt = "".join(current_stmt).strip()
+                if stmt:
+                    statements.append(stmt)
+                current_stmt = []
+            else:
+                current_stmt.append(char)
+            i += 1
+            
+        # Append remaining
+        if current_stmt:
+            stmt = "".join(current_stmt).strip()
+            if stmt:
+                statements.append(stmt)
+                
+        return statements
 
 # Global client instance
 _postgres_client: Optional[PostgresClient] = None
