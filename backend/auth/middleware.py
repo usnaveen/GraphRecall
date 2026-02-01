@@ -43,7 +43,7 @@ async def get_current_user(
             user = result[0]
             # Update last login
             await pg_client.execute_query(
-                "UPDATE users SET last_login = NOW() WHERE id = :id",
+                "UPDATE users SET last_login = NOW() WHERE id = :id RETURNING id",
                 {"id": user["id"]}
             )
             return user

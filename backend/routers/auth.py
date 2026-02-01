@@ -94,6 +94,7 @@ async def update_profile(
                 SET settings_json = COALESCE(settings_json, '{}'::jsonb) || :settings::jsonb,
                     last_login = NOW()
                 WHERE id = :id
+                RETURNING id
                 """,
                 {"settings": json.dumps(request.settings), "id": current_user["id"]}
             )
