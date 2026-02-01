@@ -23,34 +23,37 @@ DEFAULT_REASONING_MODEL = "gemini-2.0-flash-thinking-exp-01-21"  # Thinking mode
 DEFAULT_EMBEDDING_MODEL = "models/gemini-embedding-001"  # 3072 dimensions
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
 def get_chat_model(
     model: Optional[str] = None,
     temperature: float = 0.3,
     json_mode: bool = False,
 ) -> ChatGoogleGenerativeAI:
     """Get a cached chat model instance.
-    
+
     Args:
-        model: Model name (defaults to gemini-2.0-flash-exp)
+        model: Model name (defaults to gemini-2.5-flash)
         temperature: Creativity (0.0 = deterministic, 1.0 = creative)
         json_mode: If True, enables JSON output mode
     """
     model_name = model or DEFAULT_CHAT_MODEL
-    
-    # Build generation config
-    generation_config = {"temperature": temperature}
+
+    logger.debug("Creating chat model", model=model_name, temperature=temperature, json_mode=json_mode)
+
+    # Build kwargs - only pass generation_config for json_mode to avoid
+    # conflicting with the direct temperature parameter
+    kwargs: dict = {}
     if json_mode:
-        generation_config["response_mime_type"] = "application/json"
-    
-    logger.debug("Creating chat model", model=model_name, temperature=temperature)
-    
+        kwargs["model_kwargs"] = {
+            "generation_config": {"response_mime_type": "application/json"}
+        }
+
     return ChatGoogleGenerativeAI(
         model=model_name,
         google_api_key=os.getenv("GOOGLE_API_KEY"),
         temperature=temperature,
         convert_system_message_to_human=True,  # Gemini quirk
-        model_kwargs={"generation_config": generation_config},
+        **kwargs,
     )
 
 

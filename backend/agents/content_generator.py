@@ -24,6 +24,22 @@ logger = structlog.get_logger()
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
+def _parse_llm_json(response) -> dict:
+    """Safely parse JSON from LLM response, handling empty/malformed content."""
+    content = getattr(response, "content", None)
+    if not content or not content.strip():
+        raise ValueError("LLM returned empty response")
+
+    text = content.strip()
+    # Strip markdown code fences if present
+    if text.startswith("```json"):
+        text = text.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif text.startswith("```"):
+        text = text.split("```", 1)[1].split("```", 1)[0].strip()
+
+    return json.loads(text)
+
+
 class ContentGeneratorAgent:
     """
     Agent for generating various types of study content.
@@ -49,8 +65,8 @@ class ContentGeneratorAgent:
     # =========================================================================
     
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
     )
     async def generate_mcq(
         self,
@@ -103,8 +119,8 @@ Output JSON format:
         
         try:
             response = await self.llm.ainvoke(prompt)
-            parsed = json.loads(response.content)
-            
+            parsed = _parse_llm_json(response)
+
             options = [
                 MCQOption(
                     id=opt["id"],
@@ -113,7 +129,7 @@ Output JSON format:
                 )
                 for opt in parsed["options"]
             ]
-            
+
             return MCQQuestion(
                 concept_id="",  # To be set by caller
                 question=parsed["question"],
@@ -121,7 +137,7 @@ Output JSON format:
                 explanation=parsed.get("explanation", ""),
                 difficulty=parsed.get("difficulty", difficulty),
             )
-            
+
         except Exception as e:
             logger.error("ContentGenerator: MCQ generation failed", error=str(e))
             raise
@@ -168,8 +184,8 @@ Output JSON format:
     # =========================================================================
     
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
     )
     async def generate_fill_blank(
         self,
@@ -211,8 +227,8 @@ Output JSON format:
         
         try:
             response = await self.llm.ainvoke(prompt)
-            parsed = json.loads(response.content)
-            
+            parsed = _parse_llm_json(response)
+
             return FillBlankQuestion(
                 concept_id="",  # To be set by caller
                 sentence=parsed["sentence"],
@@ -220,7 +236,7 @@ Output JSON format:
                 hint=parsed.get("hint"),
                 difficulty=parsed.get("difficulty", difficulty),
             )
-            
+
         except Exception as e:
             logger.error("ContentGenerator: Fill-blank generation failed", error=str(e))
             raise
@@ -230,8 +246,8 @@ Output JSON format:
     # =========================================================================
     
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
     )
     async def generate_flashcards(
         self,
@@ -282,10 +298,10 @@ Output JSON format:
         
         try:
             response = await self.llm.ainvoke(prompt)
-            parsed = json.loads(response.content)
-            
+            parsed = _parse_llm_json(response)
+
             return parsed.get("flashcards", [])
-            
+
         except Exception as e:
             logger.error("ContentGenerator: Flashcard generation failed", error=str(e))
             raise
@@ -295,8 +311,8 @@ Output JSON format:
     # =========================================================================
     
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
     )
     async def generate_mermaid_diagram(
         self,
@@ -338,8 +354,8 @@ Output JSON format:
     # =========================================================================
     
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
     )
     async def generate_concept_showcase(
         self,
@@ -386,8 +402,8 @@ Output JSON format:
         
         try:
             response = await self.llm.ainvoke(prompt)
-            parsed = json.loads(response.content)
-            
+            parsed = _parse_llm_json(response)
+
             return {
                 "concept_name": concept_name,
                 "definition": concept_definition,
@@ -397,7 +413,7 @@ Output JSON format:
                 "related_concepts": related_concepts,
                 **parsed,
             }
-            
+
         except Exception as e:
             logger.error("ContentGenerator: Showcase generation failed", error=str(e))
             # Return basic showcase on failure
