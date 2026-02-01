@@ -139,7 +139,7 @@ Content:
             return ExtractionResult(
                 concepts=concepts,
                 raw_response=raw_response,
-                model_used=self.model_name,
+                model_used=self.model_name or "gemini-2.5-flash",
                 processing_time_ms=processing_time,
             )
 
