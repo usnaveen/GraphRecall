@@ -51,8 +51,8 @@ function AuthenticatedApp() {
           animate={{ opacity: 1, scale: 1 }}
           className="text-center"
         >
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6] flex items-center justify-center mb-4 mx-auto">
-            <span className="text-2xl font-bold text-[#07070A]">G</span>
+          <div className="w-20 h-20 flex items-center justify-center mb-4 mx-auto">
+            <img src="/logo.png" alt="GraphRecall Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="font-heading text-2xl font-bold text-white">GraphRecall</h1>
           <p className="text-sm text-[#A6A8B1] mt-2">Loading your knowledge...</p>
