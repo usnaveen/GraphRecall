@@ -97,7 +97,12 @@ Content:
         try:
             # Call the LLM
             response = await self.llm.ainvoke(prompt)
-            raw_response = response.content
+            # Clean markdown code blocks from response
+            raw_response = response.content.strip()
+            if raw_response.startswith("```json"):
+                raw_response = raw_response.split("```json")[1].split("```")[0].strip()
+            elif raw_response.startswith("```"):
+                raw_response = raw_response.split("```")[1].split("```")[0].strip()
 
             # Parse the JSON response
             parsed = json.loads(raw_response)
