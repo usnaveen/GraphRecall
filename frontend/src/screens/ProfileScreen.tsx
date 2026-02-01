@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Settings, ChevronRight, BookOpen, FileText, Target,
-  Flame, Download, Trash2, Moon,
+  Flame, Download, Moon,
   Bell, Zap, LogOut
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';

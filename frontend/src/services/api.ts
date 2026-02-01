@@ -198,4 +198,12 @@ export const api = {
         if (!response.ok) throw new Error(`DELETE ${url} failed`);
         return { data: await response.json() };
     },
+
+    graph: {
+        getGraph: async () => {
+            const response = await authFetch(`${API_BASE}/graph3d`);
+            if (!response.ok) throw new Error('Failed to fetch graph data');
+            return response.json();
+        }
+    }
 };
