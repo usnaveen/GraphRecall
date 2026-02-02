@@ -68,7 +68,24 @@ async def extract_concepts_node(state: IngestionState) -> dict:
     meta["extraction_agent"] = "ExtractionAgent (Gemini, temp=0.2)"
 
     try:
-        result = await extraction_agent.extract(content)
+        # Fetch existing concept names so the LLM can reference them in
+        # related_concepts / prerequisites (enables cross-note linking)
+        existing_concept_names: list[str] = []
+        try:
+            user_id = state.get("user_id", "default_user")
+            neo4j = await get_neo4j_client()
+            existing = await neo4j.execute_query(
+                "MATCH (c:Concept) WHERE c.user_id = $user_id RETURN c.name AS name LIMIT 200",
+                {"user_id": user_id},
+            )
+            existing_concept_names = [c["name"] for c in existing if c.get("name")]
+        except Exception:
+            pass  # Continue without context if Neo4j is unavailable
+
+        if existing_concept_names:
+            result = await extraction_agent.extract_with_context(content, existing_concept_names)
+        else:
+            result = await extraction_agent.extract(content)
         concepts = [c.model_dump() for c in result.concepts]
 
         # Enrich metadata with extraction results
@@ -338,46 +355,63 @@ async def create_concepts_node(state: IngestionState) -> dict:
                 concept_ids.append(str(node_data) if node_data else None)
         
         # Create relationships based on extraction (Semantic)
+        # Build lookup from current batch
         name_to_id = {c.get("name", "").lower(): cid for c, cid in zip(concepts, concept_ids)}
-        
+
+        # Also fetch ALL existing user concepts for cross-note linking
+        existing_concepts = await neo4j.execute_query(
+            "MATCH (c:Concept) WHERE c.user_id = $user_id RETURN c.id AS id, c.name AS name",
+            {"user_id": user_id},
+        )
+        existing_name_to_id = {c["name"].lower(): c["id"] for c in existing_concepts if c.get("name")}
+        # Merge: current batch takes priority, then existing concepts
+        all_name_to_id = {**existing_name_to_id, **name_to_id}
+
+        relationships_created = 0
         for concept, cid in zip(concepts, concept_ids):
-             # Handle related_concepts
+             # Handle related_concepts — search ALL existing concepts, not just current batch
              for related_name in concept.get("related_concepts", []):
-                 # related_concepts might be strings or dicts depending on agent evolution, 
-                 # currently ExtractionAgent produces list[str] (names) or list[dict]? 
-                 # Schema says list[str] in logic, but let's be safe.
                  r_name = related_name
                  if isinstance(related_name, dict):
                      r_name = related_name.get("name")
-                 
-                 if isinstance(r_name, str):
-                     r_id = name_to_id.get(r_name.lower())
-                     if r_id and r_id != cid:
-                         await neo4j.create_relationship(
-                             from_concept_id=cid,
-                             to_concept_id=r_id,
-                             relationship_type="RELATED_TO",
-                             user_id=user_id,
-                             properties={"strength": 0.8, "source": "extraction"}
-                         )
 
-             # Handle prerequisites
+                 if isinstance(r_name, str):
+                     r_id = all_name_to_id.get(r_name.lower())
+                     if r_id and r_id != cid:
+                         try:
+                             await neo4j.create_relationship(
+                                 from_concept_id=cid,
+                                 to_concept_id=r_id,
+                                 relationship_type="RELATED_TO",
+                                 user_id=user_id,
+                                 properties={"strength": 0.8, "source": "extraction"}
+                             )
+                             relationships_created += 1
+                         except Exception:
+                             pass  # Skip if relationship creation fails
+
+             # Handle prerequisites — search ALL existing concepts
              for prereq_name in concept.get("prerequisites", []):
                  p_name = prereq_name
                  if isinstance(prereq_name, dict):
                      p_name = prereq_name.get("name")
-                     
+
                  if isinstance(p_name, str):
-                     p_id = name_to_id.get(p_name.lower())
+                     p_id = all_name_to_id.get(p_name.lower())
                      if p_id and p_id != cid:
-                         # Prerequisite -> Concept
-                         await neo4j.create_relationship(
-                             from_concept_id=p_id,
-                             to_concept_id=cid,
-                             relationship_type="PREREQUISITE_OF",
-                             user_id=user_id,
-                             properties={"strength": 0.9, "source": "extraction"}
-                         )
+                         try:
+                             await neo4j.create_relationship(
+                                 from_concept_id=p_id,
+                                 to_concept_id=cid,
+                                 relationship_type="PREREQUISITE_OF",
+                                 user_id=user_id,
+                                 properties={"strength": 0.9, "source": "extraction"}
+                             )
+                             relationships_created += 1
+                         except Exception:
+                             pass
+
+        logger.info("create_concepts_node: Relationships created", count=relationships_created)
         
         # Link note to concepts
         if note_id:

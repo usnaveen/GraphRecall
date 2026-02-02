@@ -400,7 +400,7 @@ export function AssistantScreen() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-4 pr-1 mb-4 mt-10">
-        {chatMessages.map((message: ChatMessage, i: number) => (
+        {chatMessages.map((message: ChatMessage) => (
           <motion.div
             key={message.id}
             initial={{ opacity: 0, y: 10 }}

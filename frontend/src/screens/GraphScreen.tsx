@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, Filter, ChevronDown, X, Target, BookOpen, Link2,
+  Search, Filter, ChevronDown, X, Target, BookOpen, Link2, FileText,
   ZoomIn, ZoomOut, RotateCw, Play, Loader2, Check, XCircle
 } from 'lucide-react';
 import type { GraphNode, GraphEdge } from '../types';
@@ -387,6 +387,9 @@ export function GraphScreen() {
   const [linkedNotes, setLinkedNotes] = useState<any[]>([]);
   const [linkedNotesLoading, setLinkedNotesLoading] = useState(false);
   const [nodeConnections, setNodeConnections] = useState<any[]>([]);
+
+  // Note detail modal
+  const [selectedNoteDetail, setSelectedNoteDetail] = useState<any | null>(null);
 
   /* ---------------------------------------------------------------- */
   /*  Fetch Graph Data on Mount                                       */
@@ -1043,7 +1046,7 @@ export function GraphScreen() {
                   <div
                     key={note.id}
                     className="p-2 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-pointer"
-                    onClick={() => handleShowResources(selectedNodeData.name, 'note')}
+                    onClick={() => setSelectedNoteDetail(note)}
                   >
                     <p className="text-xs text-white/80 font-medium truncate">{note.title}</p>
                     <p className="text-[10px] text-white/40 truncate mt-0.5">{note.preview}</p>
@@ -1287,6 +1290,60 @@ export function GraphScreen() {
                     )}
                   </>
                 )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Note Detail Modal */}
+      <AnimatePresence>
+        {selectedNoteDetail && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
+            onClick={() => setSelectedNoteDetail(null)}
+          >
+            <motion.div
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 100, opacity: 0 }}
+              className="bg-[#1a1a2e] rounded-2xl border border-white/10 w-full max-w-lg max-h-[70vh] overflow-hidden flex flex-col"
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-white/10">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText className="w-4 h-4 text-[#2EFFE6] flex-shrink-0" />
+                  <h3 className="text-white font-medium text-sm truncate">{selectedNoteDetail.title || 'Untitled Note'}</h3>
+                </div>
+                <button
+                  onClick={() => setSelectedNoteDetail(null)}
+                  className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
+                >
+                  <X className="w-4 h-4 text-white/60" />
+                </button>
+              </div>
+
+              {/* Metadata */}
+              <div className="px-4 py-2 flex items-center gap-3 text-[10px] text-white/40 border-b border-white/5">
+                {selectedNoteDetail.resource_type && (
+                  <span className="px-2 py-0.5 rounded-full bg-[#2EFFE6]/10 text-[#2EFFE6]">
+                    {selectedNoteDetail.resource_type}
+                  </span>
+                )}
+                {selectedNoteDetail.created_at && (
+                  <span>{new Date(selectedNoteDetail.created_at).toLocaleDateString()}</span>
+                )}
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-4">
+                <p className="text-white/70 text-sm leading-relaxed whitespace-pre-wrap">
+                  {selectedNoteDetail.preview || selectedNoteDetail.content_text || 'No content available.'}
+                </p>
               </div>
             </motion.div>
           </motion.div>
