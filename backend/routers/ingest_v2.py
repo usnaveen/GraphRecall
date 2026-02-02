@@ -107,12 +107,33 @@ async def ingest_note(
     )
     
     try:
+        # 1. Check for duplicates
+        import hashlib
+        content_hash = hashlib.sha256(request.content.encode("utf-8")).hexdigest()
+        
+        pg_client = await get_postgres_client()
+        existing_note = await pg_client.execute_query(
+            "SELECT id FROM notes WHERE user_id = :user_id AND content_hash = :hash_val",
+            {"user_id": user_id, "hash_val": content_hash}
+        )
+        
+        if existing_note:
+            logger.info("v2/ingest: Duplicate detected", note_id=existing_note[0]["id"])
+            # Return successfully but point to existing note
+            return IngestResponse(
+                note_id=existing_note[0]["id"],
+                status="completed",
+                thread_id="duplicate_skipped",
+                error="Duplicate content detected. Note already exists."
+            )
+
         # Wrap in shield to ensure ingestion completes even if client disconnects
         result = await asyncio.shield(run_ingestion(
             content=request.content,
             title=request.title,
             user_id=user_id,
             skip_review=request.skip_review,
+            content_hash=content_hash, # Pass hash to save it
         ))
         
         status = result.get("status", "completed")

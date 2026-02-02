@@ -46,10 +46,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.agents.extraction import ExtractionAgent
 from backend.agents.synthesis import SynthesisAgent
+from backend.agents.content_generator import ContentGeneratorAgent
 
 # Initialize agents
 extraction_agent = ExtractionAgent(temperature=0.2)
 synthesis_agent = SynthesisAgent()
+content_generator = ContentGeneratorAgent()
 
 async def extract_concepts_node(state: IngestionState) -> dict:
     """
@@ -119,10 +121,11 @@ async def store_note_node(state: IngestionState) -> dict:
         # Insert or update note using named params
         await pg_client.execute_insert(
             """
-            INSERT INTO notes (id, user_id, title, content_text, created_at, updated_at)
-            VALUES (:id, :user_id, :title, :content_text, :created_at, :created_at)
+            INSERT INTO notes (id, user_id, title, content_text, content_hash, created_at, updated_at)
+            VALUES (:id, :user_id, :title, :content_text, :content_hash, :created_at, :created_at)
             ON CONFLICT (id) DO UPDATE SET
                 content_text = :content_text,
+                content_hash = :content_hash,
                 updated_at = :created_at
             RETURNING id
             """,
@@ -131,6 +134,7 @@ async def store_note_node(state: IngestionState) -> dict:
                 "user_id": user_id,
                 "title": state.get("title") or "Untitled Note",
                 "content_text": state.get("raw_content", ""),
+                "content_hash": state.get("content_hash"), # Save hash
                 "created_at": datetime.now(timezone.utc),
             }
         )
@@ -600,6 +604,94 @@ Return ONLY valid JSON:
         return {"flashcard_ids": []}
 
 
+async def generate_quiz_node(state: IngestionState) -> dict:
+    """
+    Node 8: Generate quizzes (MCQs) from extracted concepts (Persistence Layer).
+    
+    Input: user_approved_concepts/extracted_concepts, user_id
+    Output: quiz_ids
+    """
+    logger.info("generate_quiz_node: Starting")
+    
+    concepts = state.get("user_approved_concepts") or state.get("extracted_concepts", [])
+    user_id = state.get("user_id", "default_user")
+    
+    if not concepts:
+         return {"quiz_ids": []}
+         
+    try:
+        # Generate MCQs for valid concepts
+        # Filter concepts that have at least a name and definition
+        valid_concepts = [
+            c for c in concepts 
+            if c.get("name") and c.get("definition")
+        ]
+        
+        # Batch generate MCQs using ContentGeneratorAgent
+        # We generate 2 MCQs per concept to populate the DB
+        mcqs = await content_generator.generate_mcq_batch(
+            valid_concepts, 
+            num_per_concept=2
+        )
+        
+        if not mcqs:
+            return {"quiz_ids": []}
+            
+        pg_client = await get_postgres_client()
+        quiz_ids = []
+        
+        for mcq in mcqs:
+            q_id = str(uuid.uuid4())
+            
+            # Find concept_id
+            concept_id = mcq.concept_id
+            # If concept_id is missing or name-only, try to resolve to UUID from creation step
+            if not concept_id or concept_id == mcq.concept_id: # (if equal to name)
+                 # Try to find matching concept in our list which might have 'id' now
+                 for c in concepts:
+                     if c.get("name") == mcq.concept_id: # or however it was mapped
+                        if c.get("id"):
+                            concept_id = c.get("id")
+                            break
+            
+            # Fallback if still no UUID (shouldn't happen if create_concepts ran)
+            if not concept_id:
+                concept_id = "unknown"
+
+            # Insert into quizzes table
+            await pg_client.execute_update(
+                """
+                INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type, 
+                                     options_json, correct_answer, explanation, created_at)
+                VALUES (:id, :user_id, :concept_id, :question_text, 'mcq',
+                        :options_json, :correct_answer, :explanation, :created_at)
+                """,
+                {
+                    "id": q_id,
+                    "user_id": user_id,
+                    "concept_id": concept_id,
+                    "question_text": mcq.question,
+                    "options_json": json.dumps([o.model_dump() for o in mcq.options]),
+                    "correct_answer": next((o.id for o in mcq.options if o.is_correct), "A"),
+                    "explanation": mcq.explanation,
+                    "created_at": datetime.now(timezone.utc),
+                }
+            )
+            quiz_ids.append(q_id)
+            
+        # Enrich processing metadata
+        meta = state.get("processing_metadata") or {}
+        meta["quizzes_generated"] = len(quiz_ids)
+        
+        logger.info("generate_quiz_node: Complete", num_quizzes=len(quiz_ids))
+        
+        return {"quiz_ids": quiz_ids, "processing_metadata": meta}
+
+    except Exception as e:
+        logger.error("generate_quiz_node: Failed", error=str(e))
+        return {"quiz_ids": []}
+
+
 # ============================================================================
 # Routing Functions (Conditional Edges)
 # ============================================================================
@@ -681,6 +773,7 @@ def create_ingestion_graph(enable_interrupts: bool = True):
     builder.add_node("create_concepts", create_concepts_node)
     builder.add_node("link_synthesis", link_synthesis_node)
     builder.add_node("generate_flashcards", generate_flashcards_node)
+    builder.add_node("generate_quiz", generate_quiz_node)
     
     # Linear edges (always executed)
     builder.add_edge(START, "extract_concepts")
@@ -711,7 +804,8 @@ def create_ingestion_graph(enable_interrupts: bool = True):
     # Convergence: both paths lead to create_concepts → link → flashcards
     builder.add_edge("create_concepts", "link_synthesis")
     builder.add_edge("link_synthesis", "generate_flashcards")
-    builder.add_edge("generate_flashcards", END)
+    builder.add_edge("generate_flashcards", "generate_quiz")
+    builder.add_edge("generate_quiz", END)
     
     # Get checkpointer (MemorySaver for dev, PostgresSaver for prod)
     checkpointer = get_checkpointer()
@@ -738,6 +832,7 @@ async def run_ingestion(
     user_id: str = "default_user",
     note_id: Optional[str] = None,
     skip_review: bool = False,
+    content_hash: Optional[str] = None, # New arg
 ) -> dict:
     """
     Run the ingestion workflow for a note.
@@ -748,6 +843,7 @@ async def run_ingestion(
         user_id: User ID
         note_id: Optional existing note ID (for updates)
         skip_review: If True, auto-approve all concepts (no human-in-the-loop)
+        content_hash: SHA-256 hash of content for deduplication
     
     Returns:
         Dict with note_id, concept_ids, flashcard_ids, thread_id
@@ -761,12 +857,14 @@ async def run_ingestion(
         "title": title,
         "note_id": note_id,
         "skip_review": skip_review,
+        "content_hash": content_hash, # Pass to state
         "extracted_concepts": [],
         "related_concepts": [],
         "needs_synthesis": False,
         "synthesis_completed": False,
         "created_concept_ids": [],
         "flashcard_ids": [],
+        "quiz_ids": [],
         "error": None,
     }
     
@@ -810,6 +908,7 @@ async def run_ingestion(
             "concepts": result.get("extracted_concepts", []),
             "concept_ids": result.get("created_concept_ids", []),
             "flashcard_ids": result.get("flashcard_ids", []),
+            "quiz_ids": result.get("quiz_ids", []),
             "processing_metadata": result.get("processing_metadata", {}),
             "status": "completed",
             "thread_id": thread_id,
