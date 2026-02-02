@@ -378,9 +378,43 @@ async def focus_on_concept(
             {"id": concept_id, "user_id": user_id},
         )
         
+        # Get linked notes for this concept
+        linked_notes_result = await neo4j_client.execute_query(
+            """
+            MATCH (n:NoteSource)-[r:EXPLAINS]->(c:Concept {id: $id, user_id: $user_id})
+            RETURN n.id AS note_id, n.summary AS summary,
+                   r.relevance AS relevance
+            ORDER BY r.relevance DESC
+            LIMIT 10
+            """,
+            {"id": concept_id, "user_id": user_id},
+        )
+
+        # Enrich linked notes with full note data from Postgres
+        linked_notes = []
+        for ln in linked_notes_result:
+            note_data = await pg_client.execute_query(
+                """
+                SELECT id, title, content_text, resource_type, created_at
+                FROM notes
+                WHERE id = :note_id AND user_id = :user_id
+                """,
+                {"note_id": ln["note_id"], "user_id": user_id},
+            )
+            if note_data:
+                nd = note_data[0]
+                linked_notes.append({
+                    "id": str(nd["id"]),
+                    "title": nd.get("title", "Untitled"),
+                    "preview": (nd.get("content_text", "") or "")[:150],
+                    "resource_type": nd.get("resource_type", "note"),
+                    "relevance": ln.get("relevance", 0),
+                    "created_at": str(nd.get("created_at", "")),
+                })
+
         # Get mastery for all concepts
         all_ids = [concept_id] + [c["connected"]["id"] for c in connected_result]
-        
+
         mastery_result = await pg_client.execute_query(
             """
             SELECT concept_id, score
@@ -390,9 +424,9 @@ async def focus_on_concept(
             """,
             {"user_id": user_id, "ids": all_ids},
         )
-        
+
         mastery_map = {r["concept_id"]: r["score"] for r in mastery_result}
-        
+
         # Build response
         return {
             "center": {
@@ -420,6 +454,7 @@ async def focus_on_concept(
                 for c in connected_result
             ],
             "prerequisite_path": prereq_path[0]["path_nodes"] if prereq_path else [],
+            "linked_notes": linked_notes,
             "total_connections": len(connected_result),
         }
         
