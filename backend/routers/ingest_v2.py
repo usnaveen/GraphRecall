@@ -139,7 +139,7 @@ async def ingest_note(
         return IngestResponse(
             note_id=result.get("note_id"),
             concepts=result.get("concepts", []),
-            concept_ids=result.get("concept_ids", []),
+            concept_ids=[c for c in result.get("concept_ids", []) if c is not None],
             flashcard_ids=result.get("flashcard_ids", []),
             synthesis_decisions=result.get("synthesis_decisions"),
             processing_metadata=result.get("processing_metadata"),

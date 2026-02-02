@@ -91,6 +91,18 @@ Content:
             model=self.model_name,
         )
 
+        # Safety: Truncate content to prevent token limits
+        # gemini-2.5-flash has 1M token limit, but let's be safe with 100k chars for now
+        # to avoid timeouts/memory issues until we implement chunking
+        MAX_CHARS = 100_000
+        if len(content) > MAX_CHARS:
+            logger.warning(
+                "ExtractionAgent: Content too long, truncating",
+                original_length=len(content),
+                new_length=MAX_CHARS,
+            )
+            content = content[:MAX_CHARS] + "\n...[TRUNCATED]..."
+
         # Prepare the prompt
         prompt = self._prompt_template.replace("{content}", content)
 

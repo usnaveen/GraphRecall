@@ -742,7 +742,7 @@ export function GraphScreen() {
     setResources([]);
 
     try {
-      const response = await api.get(`/api/feed/resources/${encodeURIComponent(topicName)}?resource_type=${type === 'link' ? 'article' : 'notes'}`);
+      const response = await api.get(`/feed/resources/${encodeURIComponent(topicName)}?resource_type=${type === 'link' ? 'article' : 'notes'}`);
 
       const allResources = response.data.resources || [];
       const filtered = allResources.filter((r: any) => {
@@ -772,7 +772,7 @@ export function GraphScreen() {
     setShowAnswer(false);
 
     try {
-      const response = await api.post(`/api/feed/quiz/topic/${encodeURIComponent(topicName)}`, {
+      const response = await api.post(`/feed/quiz/topic/${encodeURIComponent(topicName)}`, {
         num_questions: 5,
         force_research: false,
       });
