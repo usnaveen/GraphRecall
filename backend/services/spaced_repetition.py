@@ -281,7 +281,7 @@ class SpacedRepetitionService:
         ))
         
         # Update database
-        await self.pg_client.execute_insert(
+        await self.pg_client.execute_update(
             """
             UPDATE proficiency_scores
             SET 

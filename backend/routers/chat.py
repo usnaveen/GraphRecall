@@ -374,7 +374,7 @@ async def add_message_to_conversation(
         )
         
         # Update conversation timestamp
-        await pg_client.execute_insert(
+        await pg_client.execute_update(
             """
             UPDATE chat_conversations
             SET updated_at = NOW()
@@ -438,7 +438,7 @@ async def save_message_for_quiz(
         msg = message[0]
         
         # Mark as saved in chat_messages
-        await pg_client.execute_query(
+        await pg_client.execute_update(
             "UPDATE chat_messages SET is_saved_for_quiz = TRUE WHERE id = :message_id",
             {"message_id": message_id}
         )
@@ -555,7 +555,7 @@ async def add_conversation_to_knowledge(
         # Mark conversation as saved
         summary = f"Conversation with {len(messages)} messages about {conv_title}"
         
-        await pg_client.execute_query(
+        await pg_client.execute_update(
             """
             UPDATE chat_conversations 
             SET is_saved_to_knowledge = TRUE, summary = :summary
@@ -681,7 +681,7 @@ async def delete_conversation(
         user_id = str(current_user["id"])
         pg_client = await get_postgres_client()
         
-        await pg_client.execute_query(
+        await pg_client.execute_update(
             "DELETE FROM chat_conversations WHERE id = :id AND user_id = :user_id",
             {"id": conversation_id, "user_id": user_id}
         )
@@ -775,4 +775,3 @@ async def stream_chat(
             "Connection": "keep-alive",
         }
     )
-
