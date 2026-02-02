@@ -189,7 +189,27 @@ export const ingestService = {
         });
         if (!response.ok) throw new Error('Resume ingestion failed');
         return response.json();
-    }
+    },
+
+    /** Store a YouTube link (no processing) */
+    ingestYoutube: async (url: string, title?: string) => {
+        const response = await authFetch(`${API_BASE}/v2/ingest/youtube`, {
+            method: 'POST',
+            body: JSON.stringify({ url, title })
+        });
+        if (!response.ok) throw new Error('YouTube link storage failed');
+        return response.json();
+    },
+
+    /** Ingest an LLM chat transcript */
+    ingestChatTranscript: async (content: string, title?: string) => {
+        const response = await authFetch(`${API_BASE}/v2/ingest/chat-transcript`, {
+            method: 'POST',
+            body: JSON.stringify({ content, title })
+        });
+        if (!response.ok) throw new Error('Chat transcript ingestion failed');
+        return response.json();
+    },
 };
 
 /**
