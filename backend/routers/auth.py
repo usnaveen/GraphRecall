@@ -33,15 +33,15 @@ async def google_login(request: GoogleAuthRequest):
         
         if result:
             user = result[0]
-            # Update last login
-            await pg_client.execute_query(
+            # Update last login — use execute_update for non-returning statements
+            await pg_client.execute_update(
                 "UPDATE users SET last_login = NOW() WHERE id = :id",
                 {"id": user["id"]}
             )
         else:
-            # Create new user
+            # Create new user — use execute_query (not execute_insert) to get full row dict
             logger.info("Auth: Creating new user through login endpoint", email=user_info["email"])
-            user = await pg_client.execute_insert(
+            new_users = await pg_client.execute_query(
                 """
                 INSERT INTO users (google_id, email, name, profile_picture)
                 VALUES (:google_id, :email, :name, :profile_picture)
@@ -49,6 +49,7 @@ async def google_login(request: GoogleAuthRequest):
                 """,
                 user_info
             )
+            user = new_users[0] if new_users else {}
         
         # Format the response
         return {

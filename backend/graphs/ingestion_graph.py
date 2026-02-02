@@ -329,7 +329,13 @@ async def create_concepts_node(state: IngestionState) -> dict:
                 concept_id=concept.get("id"),
                 # embedding=None (for now)
             )
-            concept_ids.append(result_node.get("id"))
+            # Neo4j RETURN c gives {"c": {node_props}} — extract the node dict
+            node_data = result_node.get("c", result_node) if isinstance(result_node, dict) else {}
+            # If node_data is a Neo4j Node object, convert to dict
+            if hasattr(node_data, 'items'):
+                concept_ids.append(node_data.get("id"))
+            else:
+                concept_ids.append(str(node_data) if node_data else None)
         
         # Create relationships based on extraction (Semantic)
         name_to_id = {c.get("name", "").lower(): cid for c, cid in zip(concepts, concept_ids)}
@@ -522,11 +528,11 @@ Return ONLY valid JSON:
             if not concept_id:
                 concept_id = concept_name  # Use name as fallback
             
-            await pg_client.execute_insert(
+            await pg_client.execute_update(
                 """
-                INSERT INTO flashcards (id, user_id, concept_id, front_content, back_content, 
+                INSERT INTO flashcards (id, user_id, concept_id, front_content, back_content,
                                         difficulty, source_note_ids, created_at)
-                VALUES (:id, :user_id, :concept_id, :front_content, :back_content, 
+                VALUES (:id, :user_id, :concept_id, :front_content, :back_content,
                         :difficulty, :source_note_ids, :created_at)
                 """,
                 {
