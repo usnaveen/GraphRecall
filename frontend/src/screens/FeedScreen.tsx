@@ -474,6 +474,8 @@ function FillBlankContent({ card }: { card: any }) {
 
 // Screenshot Content
 function ScreenshotContent({ card }: { card: any }) {
+  const [imgError, setImgError] = useState(false);
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -482,44 +484,82 @@ function ScreenshotContent({ card }: { card: any }) {
         <span className="text-xs font-mono text-[#FF6B6B] uppercase tracking-wider">Screenshot</span>
       </div>
 
-      {/* Image Placeholder */}
-      <div className="flex-1 min-h-[200px] rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 flex items-center justify-center mb-4">
-        <div className="text-center">
-          <ImageIcon className="w-12 h-12 text-white/20 mx-auto mb-2" />
-          <p className="text-sm text-white/40">User uploaded screenshot</p>
-        </div>
+      {/* Actual Image or Fallback */}
+      <div className="flex-1 min-h-[200px] rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 flex items-center justify-center mb-4 overflow-hidden">
+        {card.imageUrl && !imgError ? (
+          <img
+            src={card.imageUrl}
+            alt="User upload"
+            className="w-full h-full object-contain max-h-[300px]"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="text-center p-4">
+            <ImageIcon className="w-12 h-12 text-white/20 mx-auto mb-2" />
+            <p className="text-sm text-white/40">Image unavailable</p>
+          </div>
+        )}
       </div>
 
       {/* Linked Concepts */}
-      <div>
-        <p className="text-xs text-white/50 mb-2">Linked Concepts</p>
-        <div className="flex flex-wrap gap-2">
-          {card.linkedConcepts?.map((concept: string, i: number) => (
-            <span
-              key={i}
-              className="px-3 py-1 rounded-full text-xs font-medium bg-[#FF6B6B]/10 border border-[#FF6B6B]/30 text-[#FF6B6B]"
-            >
-              {concept}
-            </span>
-          )) || (
-              <>
-                <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#B6FF2E]/10 border border-[#B6FF2E]/30 text-[#B6FF2E]">CNNs</span>
-                <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#2EFFE6]/10 border border-[#2EFFE6]/30 text-[#2EFFE6]">Pooling</span>
-                <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#FF6B6B]/10 border border-[#FF6B6B]/30 text-[#FF6B6B]">Filters</span>
-              </>
-            )}
+      {card.linkedConcepts?.length > 0 && (
+        <div>
+          <p className="text-xs text-white/50 mb-2">Linked Concepts</p>
+          <div className="flex flex-wrap gap-2">
+            {card.linkedConcepts.map((concept: string, i: number) => (
+              <span
+                key={i}
+                className="px-3 py-1 rounded-full text-xs font-medium bg-[#FF6B6B]/10 border border-[#FF6B6B]/30 text-[#FF6B6B]"
+              >
+                {concept}
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <p className="text-xs text-white/40 mt-3">
-        Added: {card.addedAt?.toLocaleDateString() || 'Jan 15, 2026'}
+        Added: {card.addedAt?.toLocaleDateString() || 'Recently'}
       </p>
     </div>
   );
 }
 
-// Diagram Content
+// Diagram Content — renders mermaid code as styled blocks
 function DiagramContent({ card }: { card: any }) {
+  // Parse simple mermaid mindmap/flowchart nodes from code
+  const parseMermaidNodes = (code: string): { center: string; children: string[] } => {
+    const lines = (code || '').split('\n').map(l => l.trim()).filter(Boolean);
+    const nodes: string[] = [];
+    let center = card.caption || 'Concept Map';
+
+    for (const line of lines) {
+      // Extract node labels from common mermaid patterns
+      // mindmap: root text, then indented items
+      // flowchart: A[label] --> B[label]
+      const bracketMatch = line.match(/\[([^\]]+)\]/g);
+      if (bracketMatch) {
+        bracketMatch.forEach(m => nodes.push(m.slice(1, -1)));
+      }
+      const parenMatch = line.match(/\(([^)]+)\)/g);
+      if (parenMatch) {
+        parenMatch.forEach(m => nodes.push(m.slice(1, -1)));
+      }
+      // mindmap root
+      if (line.startsWith('root(') || line.startsWith('root[')) {
+        const rootMatch = line.match(/root[\(\[]([^\)\]]+)[\)\]]/);
+        if (rootMatch) center = rootMatch[1];
+      }
+    }
+
+    // Deduplicate and take first 8
+    const unique = [...new Set(nodes)].filter(n => n !== center).slice(0, 8);
+    return { center: center || nodes[0] || 'Concept', children: unique };
+  };
+
+  const { center, children } = parseMermaidNodes(card.mermaidCode);
+  const colors = ['#B6FF2E', '#2EFFE6', '#9B59B6', '#F59E0B', '#FF6B6B', '#3B82F6', '#EC4899', '#10B981'];
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -528,35 +568,56 @@ function DiagramContent({ card }: { card: any }) {
         <span className="text-xs font-mono text-[#9B59B6] uppercase tracking-wider">Concept Map</span>
       </div>
 
-      {/* Diagram Placeholder */}
-      <div className="flex-1 min-h-[200px] rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 flex items-center justify-center mb-4 p-4">
-        <div className="text-center">
-          <div className="flex flex-col items-center gap-2">
-            <div className="px-4 py-2 rounded-lg bg-[#B6FF2E]/20 border border-[#B6FF2E]/40 text-[#B6FF2E] text-sm font-medium">
-              Neural Network
-            </div>
-            <div className="flex gap-4 mt-2">
-              <div className="px-3 py-1.5 rounded-lg bg-white/10 text-white/70 text-xs">Input Layer</div>
-              <div className="px-3 py-1.5 rounded-lg bg-white/10 text-white/70 text-xs">Hidden Layers</div>
-              <div className="px-3 py-1.5 rounded-lg bg-white/10 text-white/70 text-xs">Output Layer</div>
-            </div>
+      {/* Visual mindmap from mermaid code */}
+      <div className="flex-1 min-h-[200px] rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 p-4 mb-4">
+        <div className="flex flex-col items-center gap-3">
+          {/* Center node */}
+          <div className="px-4 py-2 rounded-lg bg-[#B6FF2E]/20 border border-[#B6FF2E]/40 text-[#B6FF2E] text-sm font-medium text-center max-w-[200px]">
+            {center}
+          </div>
+
+          {/* Connection lines */}
+          {children.length > 0 && (
+            <div className="w-px h-3 bg-white/20" />
+          )}
+
+          {/* Child nodes in a wrapped grid */}
+          <div className="flex flex-wrap justify-center gap-2">
+            {children.map((node, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.08 }}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border"
+                style={{
+                  backgroundColor: `${colors[i % colors.length]}15`,
+                  borderColor: `${colors[i % colors.length]}40`,
+                  color: colors[i % colors.length],
+                }}
+              >
+                {node}
+              </motion.div>
+            ))}
           </div>
         </div>
+
+        {/* Raw mermaid code toggle */}
+        {card.mermaidCode && (
+          <details className="mt-4">
+            <summary className="text-[10px] text-white/30 cursor-pointer hover:text-white/50">
+              View diagram code
+            </summary>
+            <pre className="mt-2 p-2 rounded-lg bg-black/30 text-[10px] text-white/50 font-mono overflow-x-auto max-h-[100px]">
+              {card.mermaidCode}
+            </pre>
+          </details>
+        )}
       </div>
 
       {/* Caption */}
-      <p className="text-sm text-white/70 mb-2">{card.caption}</p>
-      <p className="text-xs text-white/50">From: {card.sourceNote}</p>
-
-      {/* Actions */}
-      <div className="flex gap-2 mt-4">
-        <button className="flex-1 py-2 rounded-xl bg-white/5 text-white/70 text-sm hover:bg-white/10 transition-colors">
-          Open Original Note
-        </button>
-        <button className="flex-1 py-2 rounded-xl bg-[#9B59B6]/20 text-[#9B59B6] text-sm hover:bg-[#9B59B6]/30 transition-colors">
-          Explore Graph
-        </button>
-      </div>
+      {card.caption && <p className="text-sm text-white/70 mb-2">{card.caption}</p>}
+      {card.sourceNote && <p className="text-xs text-white/50">From: {card.sourceNote}</p>}
     </div>
   );
 }

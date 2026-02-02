@@ -383,6 +383,11 @@ export function GraphScreen() {
   const [resources, setResources] = useState<any[]>([]);
   const [resourcesLoading, setResourcesLoading] = useState(false);
 
+  // Linked notes for selected node (from graph focus API)
+  const [linkedNotes, setLinkedNotes] = useState<any[]>([]);
+  const [linkedNotesLoading, setLinkedNotesLoading] = useState(false);
+  const [nodeConnections, setNodeConnections] = useState<any[]>([]);
+
   /* ---------------------------------------------------------------- */
   /*  Fetch Graph Data on Mount                                       */
   /* ---------------------------------------------------------------- */
@@ -402,6 +407,30 @@ export function GraphScreen() {
     };
     fetchGraph();
   }, []);
+
+  /* ---------------------------------------------------------------- */
+  /*  Fetch linked notes when a node is selected                       */
+  /* ---------------------------------------------------------------- */
+  useEffect(() => {
+    if (!selectedNode) {
+      setLinkedNotes([]);
+      setNodeConnections([]);
+      return;
+    }
+    const fetchFocus = async () => {
+      setLinkedNotesLoading(true);
+      try {
+        const data = await api.graph.getFocus(selectedNode);
+        setLinkedNotes(data.linked_notes || []);
+        setNodeConnections((data.connections || []).slice(0, 5));
+      } catch (err) {
+        console.error("Failed to fetch node focus:", err);
+      } finally {
+        setLinkedNotesLoading(false);
+      }
+    };
+    fetchFocus();
+  }, [selectedNode]);
 
   /* ---------------------------------------------------------------- */
   /*  Run force layout when nodes/edges arrive                         */
@@ -976,6 +1005,7 @@ export function GraphScreen() {
             />
           </div>
 
+          {/* Action Buttons */}
           <div className="flex gap-2">
             <button
               onClick={() => handleQuizMe(selectedNodeData.name)}
@@ -999,6 +1029,48 @@ export function GraphScreen() {
               Links
             </button>
           </div>
+
+          {/* Linked Notes Section */}
+          {linkedNotesLoading ? (
+            <div className="mt-3 flex justify-center">
+              <Loader2 className="w-4 h-4 animate-spin text-white/30" />
+            </div>
+          ) : linkedNotes.length > 0 ? (
+            <div className="mt-3 pt-3 border-t border-white/10">
+              <p className="text-[10px] text-white/40 uppercase tracking-wider mb-2">Linked Notes</p>
+              <div className="space-y-1.5 max-h-[120px] overflow-y-auto">
+                {linkedNotes.map((note: any) => (
+                  <div
+                    key={note.id}
+                    className="p-2 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                    onClick={() => handleShowResources(selectedNodeData.name, 'note')}
+                  >
+                    <p className="text-xs text-white/80 font-medium truncate">{note.title}</p>
+                    <p className="text-[10px] text-white/40 truncate mt-0.5">{note.preview}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Connected Concepts */}
+          {nodeConnections.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-white/10">
+              <p className="text-[10px] text-white/40 uppercase tracking-wider mb-2">Connected Concepts</p>
+              <div className="flex flex-wrap gap-1.5">
+                {nodeConnections.map((conn: any, i: number) => (
+                  <button
+                    key={i}
+                    onClick={() => setSelectedNode(conn.concept?.id)}
+                    className="px-2 py-1 rounded-full text-[10px] bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors flex items-center gap-1"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: selectedNodeData.color }} />
+                    {conn.concept?.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </motion.div>
       )}
 

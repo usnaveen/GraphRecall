@@ -56,7 +56,7 @@ export function AssistantScreen() {
   const [saveTopic, setSaveTopic] = useState('');
   const [conversationId, setConversationId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [swipingMessageId, setSwipingMessageId] = useState<string | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -66,18 +66,11 @@ export function AssistantScreen() {
     scrollToBottom();
   }, [chatMessages]);
 
-  // Long press handlers for saving messages
-  const handleMessageTouchStart = (messageId: string) => {
-    longPressTimer.current = setTimeout(() => {
-      setSelectedMessageId(messageId);
-      setShowSaveModal(true);
-    }, 600); // 600ms long press
-  };
-
-  const handleMessageTouchEnd = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-    }
+  // Swipe-right handler — triggers save modal when user drags an assistant message right
+  const handleSwipeSave = (messageId: string) => {
+    setSelectedMessageId(messageId);
+    setShowSaveModal(true);
+    setSwipingMessageId(null);
   };
 
   // Save message for quiz
@@ -412,15 +405,25 @@ export function AssistantScreen() {
             key={message.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i === chatMessages.length - 1 ? 0 : 0 }}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            onTouchStart={() => message.role === 'assistant' && handleMessageTouchStart(message.id)}
-            onTouchEnd={handleMessageTouchEnd}
-            onMouseDown={() => message.role === 'assistant' && handleMessageTouchStart(message.id)}
-            onMouseUp={handleMessageTouchEnd}
-            onMouseLeave={handleMessageTouchEnd}
+            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} relative overflow-hidden`}
           >
-            <div
+            {/* Swipe-right save indicator (behind the message bubble) */}
+            {message.role === 'assistant' && (
+              <div className="absolute left-0 top-0 bottom-0 flex items-center pl-2 pointer-events-none">
+                <motion.div
+                  animate={{
+                    opacity: swipingMessageId === message.id ? 1 : 0,
+                    scale: swipingMessageId === message.id ? 1 : 0.7,
+                  }}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-[#B6FF2E]/20"
+                >
+                  <Save className="w-4 h-4 text-[#B6FF2E]" />
+                  <span className="text-[10px] text-[#B6FF2E] font-medium">Save</span>
+                </motion.div>
+              </div>
+            )}
+
+            <motion.div
               className={`
                 max-w-[85%] rounded-2xl p-4 relative
                 ${message.role === 'user'
@@ -428,11 +431,30 @@ export function AssistantScreen() {
                   : 'bg-white/5 text-white mr-8 border-l-2 border-[#B6FF2E]/50'
                 }
               `}
+              // Swipe-right-to-save for assistant messages only
+              {...(message.role === 'assistant' && !message.status ? {
+                drag: 'x' as const,
+                dragConstraints: { left: 0, right: 0 },
+                dragElastic: { left: 0, right: 0.4 },
+                onDrag: (_: any, info: any) => {
+                  if (info.offset.x > 30) {
+                    setSwipingMessageId(message.id);
+                  } else {
+                    setSwipingMessageId(null);
+                  }
+                },
+                onDragEnd: (_: any, info: any) => {
+                  if (info.offset.x > 80) {
+                    handleSwipeSave(message.id);
+                  }
+                  setSwipingMessageId(null);
+                },
+              } : {})}
             >
-              {/* Long press hint for assistant messages */}
-              {message.role === 'assistant' && (
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100">
-                  <Save className="w-3 h-3 text-white/30" />
+              {/* Swipe hint for assistant messages */}
+              {message.role === 'assistant' && !message.status && (
+                <div className="absolute top-2 right-2">
+                  <Save className="w-3 h-3 text-white/20" />
                 </div>
               )}
 
@@ -451,18 +473,27 @@ export function AssistantScreen() {
                 )}
               </div>
 
-              {/* Sources */}
+              {/* Sources — clickable to navigate to notes */}
               {message.sources && message.sources.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-white/10">
-                  <p className="text-xs text-white/50 mb-1">Sources</p>
+                  <p className="text-xs text-white/50 mb-1 flex items-center gap-1">
+                    <BookOpen className="w-3 h-3" />
+                    Sources from your notes
+                  </p>
                   <div className="flex flex-wrap gap-1">
                     {message.sources.map((source: string, j: number) => (
-                      <span
+                      <button
                         key={j}
-                        className="px-2 py-0.5 rounded-full text-[10px] bg-white/10 text-white/60"
+                        onClick={() => {
+                          // Navigate to profile notes view — setActiveTab triggers navigation
+                          const { setActiveTab } = useAppStore.getState();
+                          setActiveTab('profile');
+                        }}
+                        className="px-2 py-0.5 rounded-full text-[10px] bg-[#2EFFE6]/10 text-[#2EFFE6] border border-[#2EFFE6]/20 hover:bg-[#2EFFE6]/20 transition-colors cursor-pointer flex items-center gap-1"
                       >
+                        <Link2 className="w-2.5 h-2.5" />
                         {source}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -482,7 +513,7 @@ export function AssistantScreen() {
                   ))}
                 </div>
               )}
-            </div>
+            </motion.div>
           </motion.div>
         ))}
 
