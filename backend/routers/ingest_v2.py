@@ -45,7 +45,7 @@ class IngestResponse(BaseModel):
 
     note_id: Optional[str] = None
     concepts: list[dict] = []
-    concept_ids: list[str] = []
+    concept_ids: list[Optional[str]] = []  # Allow None values (filtered on output)
     flashcard_ids: list[str] = []
     synthesis_decisions: Optional[list[dict]] = None
     processing_metadata: Optional[dict] = None  # Geekout facts for UI

@@ -129,14 +129,21 @@ class PostgresClient:
         """Execute a raw SQL query and return results."""
         async with self.session() as session:
             result = await session.execute(text(query), params or {})
-            return [dict(row._mapping) for row in result.fetchall()]
+            # Guard against non-returning statements (UPDATE/INSERT without RETURNING)
+            if result.returns_rows:
+                return [dict(row._mapping) for row in result.fetchall()]
+            return []
 
     async def execute_insert(self, query: str, params: Optional[dict] = None) -> Optional[str]:
-        """Execute an insert query and return the inserted ID."""
+        """Execute an insert query and return the inserted ID (if RETURNING clause present)."""
         async with self.session() as session:
             result = await session.execute(text(query), params or {})
-            row = result.fetchone()
-            return str(row[0]) if row else None
+            # Only try fetchone if query has RETURNING clause — otherwise fetchone() throws
+            # "This result object does not return rows"
+            if result.returns_rows:
+                row = result.fetchone()
+                return str(row[0]) if row else None
+            return None
 
     async def execute_update(self, query: str, params: Optional[dict] = None) -> None:
         """Execute an update/delete query without returning results."""
