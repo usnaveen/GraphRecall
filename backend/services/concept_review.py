@@ -230,7 +230,7 @@ class ConceptReviewService:
         
         # Update in database
         try:
-            await self.pg_client.execute_insert(
+            await self.pg_client.execute_update(
                 """
                 UPDATE concept_review_sessions
                 SET concepts_json = :concepts_json
@@ -325,7 +325,7 @@ class ConceptReviewService:
         _review_sessions[approval.session_id] = session
         
         try:
-            await self.pg_client.execute_insert(
+            await self.pg_client.execute_update(
                 """
                 UPDATE concept_review_sessions
                 SET status = 'approved',
@@ -380,7 +380,7 @@ class ConceptReviewService:
         
         # Update in database
         try:
-            await self.pg_client.execute_insert(
+            await self.pg_client.execute_update(
                 """
                 UPDATE concept_review_sessions
                 SET status = 'cancelled'

@@ -251,7 +251,7 @@ async def update_upload(
 
         update_clause = ", ".join(updates)
 
-        await pg_client.execute_insert(
+        await pg_client.execute_update(
             f"""
             UPDATE user_uploads
             SET {update_clause}
@@ -304,7 +304,7 @@ async def link_concepts_to_upload(
         updated = list(set(current + request.concept_ids))
 
         # Update
-        await pg_client.execute_insert(
+        await pg_client.execute_update(
             """
             UPDATE user_uploads
             SET linked_concepts = :concepts
@@ -357,7 +357,7 @@ async def unlink_concept_from_upload(
             current.remove(concept_id)
 
         # Update
-        await pg_client.execute_insert(
+        await pg_client.execute_update(
             """
             UPDATE user_uploads
             SET linked_concepts = :concepts
@@ -415,7 +415,7 @@ async def delete_upload(
                 )
 
         # Delete database record
-        await pg_client.execute_insert(
+        await pg_client.execute_update(
             "DELETE FROM user_uploads WHERE id = :upload_id AND user_id = :user_id",
             {"upload_id": upload_id, "user_id": user_id},
         )
