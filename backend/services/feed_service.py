@@ -21,7 +21,9 @@ from backend.models.feed_schemas import (
     FeedFilterRequest,
 )
 from backend.services.spaced_repetition import SpacedRepetitionService
+from backend.services.spaced_repetition import SpacedRepetitionService
 from backend.agents.content_generator import ContentGeneratorAgent
+from backend.agents.web_quiz_agent import WebQuizAgent
 
 logger = structlog.get_logger()
 
@@ -34,6 +36,7 @@ class FeedService:
         self.neo4j_client = neo4j_client
         self.sr_service = SpacedRepetitionService(pg_client)
         self.content_generator = ContentGeneratorAgent()
+        self.web_quiz_agent = WebQuizAgent()
     
     async def get_user_streak(self, user_id: str) -> int:
         """Get the user's current streak in days."""
@@ -249,15 +252,152 @@ class FeedService:
             logger.warning("FeedService: Error getting user uploads", error=str(e))
             return []
     
+    async def _get_db_content(
+        self,
+        concept_id: str,
+        item_type: FeedItemType,
+        user_id: str,
+    ) -> Optional[dict]:
+        """Try to fetch existing content from DB."""
+        if not concept_id:
+            return None
+            
+        try:
+            if item_type == FeedItemType.MCQ:
+                # Get random MCQ for this concept
+                result = await self.pg_client.execute_query(
+                    """
+                    SELECT * FROM quizzes 
+                    WHERE concept_id = :concept_id 
+                      AND user_id = :user_id
+                      AND question_type = 'mcq'
+                    ORDER BY RANDOM() LIMIT 1
+                    """,
+                    {"concept_id": concept_id, "user_id": user_id}
+                )
+                if result:
+                    row = result[0]
+                    options = json.loads(row["options_json"]) if isinstance(row["options_json"], str) else row["options_json"]
+                    return {
+                        "question": row["question_text"],
+                        "options": options,
+                        "explanation": row["explanation"],
+                        "id": str(row["id"])
+                    }
+
+            elif item_type == FeedItemType.FLASHCARD:
+                 # Get random Flashcard
+                result = await self.pg_client.execute_query(
+                    """
+                    SELECT * FROM flashcards
+                    WHERE concept_id = :concept_id 
+                      AND user_id = :user_id
+                    ORDER BY RANDOM() LIMIT 1
+                    """,
+                    {"concept_id": concept_id, "user_id": user_id}
+                )
+                if result:
+                    row = result[0]
+                    return {
+                        "front": row["front_content"],
+                        "back": row["back_content"],
+                        "card_type": "basic", # Simplification
+                        "id": str(row["id"])
+                    }
+                    
+        except Exception as e:
+            logger.warning("FeedService: DB lookup failed", error=str(e))
+            
+        return None
+
     async def generate_feed_item(
         self,
         concept: dict,
         item_type: FeedItemType,
+        user_id: str = "default_user", # Added user_id
     ) -> Optional[FeedItem]:
         """Generate a feed item of the specified type for a concept."""
         try:
-            content = {}
+            content = None
             
+            # 1. Try fetching from DB first
+            if item_type in [FeedItemType.MCQ, FeedItemType.FLASHCARD] and concept.get("id"):
+                 content = await self._get_db_content(concept.get("id"), item_type, user_id)
+                 
+            if content:
+                logger.info("FeedService: Using persisted content", item_type=item_type, concept_id=concept.get("id"))
+                return FeedItem(
+                    item_type=item_type,
+                    content=content,
+                    concept_id=concept.get("id"),
+                    concept_name=concept.get("name"),
+                    domain=concept.get("domain"),
+                    due_date=concept.get("sm2_data", {}).get("next_review"),
+                    priority_score=concept.get("priority_score", 1.0),
+                )
+            
+            # 2. Try Web Augmentation (for MCQs only)
+            if item_type == FeedItemType.MCQ and not content:
+                try:
+                    # Only search if we really lack content
+                    logger.info("FeedService: DB empty, trying Web Search", concept=concept.get("name"))
+                    web_mcqs = await self.web_quiz_agent.find_quizzes(
+                        concept_name=concept.get("name"), 
+                        domain=concept.get("domain", "General")
+                    )
+                    
+                    if web_mcqs:
+                         # Save ALL valid web MCQs to DB immediately
+                         pg_client = self.pg_client
+                         saved_count = 0
+                         first_saved_item = None
+                         
+                         for mcq in web_mcqs:
+                             try:
+                                q_id = str(uuid.uuid4())
+                                await pg_client.execute_update(
+                                    """
+                                    INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type, 
+                                                         options_json, correct_answer, explanation, created_at, source)
+                                    VALUES (:id, :user_id, :concept_id, :question_text, 'mcq',
+                                            :options_json, :correct_answer, :explanation, NOW(), 'web_search')
+                                    """,
+                                    {
+                                        "id": q_id,
+                                        "user_id": user_id,
+                                        "concept_id": concept.get("id") or "unknown",
+                                        "question_text": mcq.question,
+                                        "options_json": json.dumps([o.model_dump() for o in mcq.options]),
+                                        "correct_answer": next((o.id for o in mcq.options if o.is_correct), "A"),
+                                        "explanation": mcq.explanation,
+                                    }
+                                )
+                                saved_count += 1
+                                if not first_saved_item:
+                                    first_saved_item = {
+                                        "question": mcq.question,
+                                        "options": [o.model_dump() for o in mcq.options],
+                                        "explanation": mcq.explanation,
+                                        "id": q_id
+                                    }
+                             except Exception as e:
+                                 logger.warning("FeedService: Failed to save web MCQ", error=str(e))
+                                 
+                         if first_saved_item:
+                             logger.info("FeedService: Using Web content", items_found=saved_count)
+                             return FeedItem(
+                                item_type=item_type,
+                                content=first_saved_item,
+                                concept_id=concept.get("id"),
+                                concept_name=concept.get("name"),
+                                domain=concept.get("domain"),
+                                priority_score=concept.get("priority_score", 0.9), # Web content slightly lower than human/generated
+                             )
+                except Exception as e:
+                    logger.warning("FeedService: Web search failed", error=str(e))
+
+            # 3. If no content, generate it
+            content = {}
             if item_type == FeedItemType.CONCEPT_SHOWCASE:
                 content = await self.content_generator.generate_concept_showcase(
                     concept_name=concept["name"],
@@ -280,6 +420,31 @@ class FeedService:
                     "options": [o.model_dump() for o in mcq.options],
                     "explanation": mcq.explanation,
                 }
+                
+                # Save generated MCQ to DB for next time
+                if concept.get("id"):
+                     try:
+                        q_id = str(uuid.uuid4())
+                        await self.pg_client.execute_update(
+                            """
+                            INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type, 
+                                                 options_json, correct_answer, explanation, created_at)
+                            VALUES (:id, :user_id, :concept_id, :question_text, 'mcq',
+                                    :options_json, :correct_answer, :explanation, NOW())
+                            """,
+                            {
+                                "id": q_id,
+                                "user_id": user_id,
+                                "concept_id": concept.get("id"),
+                                "question_text": mcq.question,
+                                "options_json": json.dumps(content["options"]),
+                                "correct_answer": next((o.id for o in mcq.options if o.is_correct), "A"),
+                                "explanation": mcq.explanation,
+                            }
+                        )
+                        content["id"] = q_id
+                     except Exception as e:
+                         logger.warning("FeedService: Failed to save generated MCQ", error=str(e))
                 
             elif item_type == FeedItemType.FILL_BLANK:
                 fill_blank = await self.content_generator.generate_fill_blank(
@@ -576,7 +741,7 @@ class FeedService:
             
             item_type = random.choice(possible_types)
             
-            item = await self.generate_feed_item(concept, item_type)
+            item = await self.generate_feed_item(concept, item_type, user_id=request.user_id)
             if item:
                 feed_items.append(item)
             
