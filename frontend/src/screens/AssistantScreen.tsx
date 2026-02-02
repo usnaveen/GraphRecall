@@ -78,7 +78,7 @@ export function AssistantScreen() {
     if (!selectedMessageId) return;
 
     try {
-      await api.post(`/api/chat/messages/${selectedMessageId}/save`, {
+      await api.post(`/chat/messages/${selectedMessageId}/save`, {
         topic: saveTopic || undefined,
       });
       setShowSaveModal(false);
@@ -94,7 +94,7 @@ export function AssistantScreen() {
     if (!conversationId) return;
 
     try {
-      await api.post(`/api/chat/conversations/${conversationId}/to-knowledge`, {});
+      await api.post(`/chat/conversations/${conversationId}/to-knowledge`, {});
       setShowMenu(false);
     } catch (error) {
       console.error('Failed to add to knowledge:', error);
@@ -104,7 +104,7 @@ export function AssistantScreen() {
   // Load chat history
   const loadChatHistory = async () => {
     try {
-      const response = await api.get('/api/chat/history');
+      const response = await api.get('/chat/history');
       setChatHistory(response.data.conversations || []);
       setShowHistory(true);
       setShowMenu(false);

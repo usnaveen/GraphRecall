@@ -27,7 +27,7 @@ from backend.config.llm import get_chat_model, get_embeddings
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from backend.db.neo4j_client import get_neo4j_client
@@ -222,11 +222,32 @@ chat_tools = [search_knowledge_graph, search_notes]
 # ============================================================================
 
 
+# ============================================================================
+# Structured Output Models
+# ============================================================================
+
+from pydantic import Field
+
+class QueryAnalysis(BaseModel):
+    """Structured analysis of user query."""
+    intent: Literal["explain", "compare", "find", "summarize", "quiz", "path", "general"] = Field(
+        description="The primary intent of the user's query"
+    )
+    entities: list[str] = Field(
+        default_factory=list,
+        description="List of specific concept, topic, or technology names mentioned"
+    )
+    needs_search: bool = Field(
+        default=False,
+        description="True if the query requires searching the knowledge graph or notes"
+    )
+
+
 async def analyze_query_node(state: ChatState) -> dict:
     """
     Node 1: Analyze the user's query to determine intent and extract entities.
     
-    Uses structured output for reliable JSON parsing.
+    Refactored to use function calling (with_structured_output) for 100% reliability.
     """
     messages = state.get("messages", [])
     if not messages:
@@ -239,36 +260,49 @@ async def analyze_query_node(state: ChatState) -> dict:
     logger.info("analyze_query_node: Analyzing", query=query[:100])
     
     # LLM for query analysis with structured output (Gemini)
+    # Using default model (gemini-2.5-flash) which supports function calling
     llm = get_chat_model(temperature=0)
     
-    prompt = ChatPromptTemplate.from_messages([
-        SystemMessage(content="""Analyze the user's query and output JSON with:
-- intent: explain|compare|find|summarize|quiz|path|general
-- entities: list of concept/topic names mentioned
-- needs_search: true if the query requires searching knowledge graph or notes
+    system_prompt = """Analyze the user's query to determine their intent and extract relevant entities.
 
-Output only valid JSON."""),
+    Intents:
+    - explain: Asking for an explanation of a concept
+    - compare: Asking to compare two or more things
+    - find: Looking for specific facts or notes
+    - summarize: Requesting a summary of a topic
+    - quiz: Asking to be quizzed
+    - path: Asking for a learning path or prerequisites
+    - general: General conversation or greeting
+
+    Entities:
+    - Extract ONLY proper nouns, specific technologies, or defined concepts.
+    - Do not extract generic words like "how", "why", "best".
+    """
+    
+    prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content=system_prompt),
         HumanMessage(content=f"Query: {query}")
     ])
     
     try:
-        response = await llm.ainvoke(prompt.format_messages())
-        content = response.content.replace("```json", "").replace("```", "").strip()
-        parsed = json.loads(content)
+        # Use LangChain's with_structured_output for robust extraction
+        structured_llm = llm.with_structured_output(QueryAnalysis)
+        response: QueryAnalysis = await structured_llm.ainvoke(prompt.format_messages())
         
         logger.info(
             "analyze_query_node: Complete",
-            intent=parsed.get("intent"),
-            entities=parsed.get("entities", []),
+            intent=response.intent,
+            entities=response.entities,
         )
         
         return {
-            "intent": parsed.get("intent", "general"),
-            "entities": parsed.get("entities", []),
+            "intent": response.intent,
+            "entities": response.entities,
         }
         
     except Exception as e:
         logger.error("analyze_query_node: Failed", error=str(e))
+        # Fallback to general intent on failure
         return {"intent": "general", "entities": []}
 
 

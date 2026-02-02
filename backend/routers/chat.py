@@ -748,9 +748,20 @@ async def stream_chat(
             
             related_concepts = values.get("related_concepts", [])
             sources = values.get("sources", [])
-            
+
+            # Fix: Ensure UUIDs are strings for JSON serialization
+            def json_safe(obj):
+                if isinstance(obj, uuid.UUID):
+                    return str(obj)
+                return obj
+
             # Send final event with metadata
-            yield f"data: {json.dumps({'type': 'done', 'sources': sources, 'related_concepts': related_concepts})}\n\n"
+            final_data = {
+                'type': 'done', 
+                'sources': sources, 
+                'related_concepts': related_concepts
+            }
+            yield f"data: {json.dumps(final_data, default=json_safe)}\n\n"
             
         except Exception as e:
             logger.error("Stream chat: Error", error=str(e))

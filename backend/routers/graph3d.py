@@ -241,7 +241,7 @@ async def get_3d_graph(
             c2.id as target,
             type(r) as relationship_type,
             coalesce(r.strength, 1.0) as strength,
-            id(r) as edge_id
+            elementId(r) as edge_id
         """
         
         edges_result = await neo4j_client.execute_query(
