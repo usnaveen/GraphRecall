@@ -2,24 +2,34 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Settings, ChevronRight, BookOpen, FileText, Target,
-  Flame, Download, Moon,
-  Bell, Zap, LogOut
+  Flame, Download, Moon, ArrowLeft, Clock, Brain, Hash,
+  Bell, Zap, LogOut, Search, X
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { authService } from '../services/api';
 
+type ProfileView = 'main' | 'settings' | 'notes' | 'concepts';
+
 export function ProfileScreen() {
-  const [showSettings, setShowSettings] = useState(false);
-  const { userStats, fetchStats } = useAppStore();
+  const [currentView, setCurrentView] = useState<ProfileView>('main');
+  const { userStats, fetchStats, notesList, conceptsList, fetchNotes, fetchConcepts } = useAppStore();
   const { user, logout } = useAuthStore();
 
   useEffect(() => {
     fetchStats();
   }, []);
 
-  if (showSettings) {
-    return <SettingsScreen onBack={() => setShowSettings(false)} onLogout={logout} />;
+  if (currentView === 'settings') {
+    return <SettingsScreen onBack={() => setCurrentView('main')} onLogout={logout} />;
+  }
+
+  if (currentView === 'notes') {
+    return <NotesListView notes={notesList} onBack={() => setCurrentView('main')} onFetch={fetchNotes} />;
+  }
+
+  if (currentView === 'concepts') {
+    return <ConceptsListView concepts={conceptsList} onBack={() => setCurrentView('main')} onFetch={fetchConcepts} />;
   }
 
   // Domain Progress from real data
@@ -87,7 +97,7 @@ export function ProfileScreen() {
       >
         {/* Settings Button */}
         <button
-          onClick={() => setShowSettings(true)}
+          onClick={() => setCurrentView('settings')}
           className="absolute top-0 right-0 p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
         >
           <Settings className="w-5 h-5 text-white/60" />
@@ -131,12 +141,14 @@ export function ProfileScreen() {
           value={userStats.conceptsLearned}
           label="Concepts"
           color="#B6FF2E"
+          onClick={() => { fetchConcepts(); setCurrentView('concepts'); }}
         />
         <StatCard
           icon={FileText}
           value={userStats.notesAdded}
           label="Notes"
           color="#2EFFE6"
+          onClick={() => { fetchNotes(); setCurrentView('notes'); }}
         />
       </motion.div>
 
@@ -269,17 +281,21 @@ function StatCard({
   icon: Icon,
   value,
   label,
-  color
+  color,
+  onClick
 }: {
   icon: React.ElementType;
   value: string | number;
   label: string;
   color: string;
+  onClick?: () => void;
 }) {
   return (
     <motion.div
       whileHover={{ scale: 1.02 }}
-      className="glass-surface rounded-xl p-4 text-center"
+      whileTap={onClick ? { scale: 0.97 } : undefined}
+      onClick={onClick}
+      className={`glass-surface rounded-xl p-4 text-center ${onClick ? 'cursor-pointer active:bg-white/10' : ''}`}
     >
       <div
         className="w-10 h-10 rounded-xl flex items-center justify-center mx-auto mb-2"
@@ -288,8 +304,290 @@ function StatCard({
         <Icon className="w-5 h-5" style={{ color }} />
       </div>
       <p className="font-heading text-2xl font-bold text-white mb-1">{value}</p>
-      <p className="text-xs text-white/50">{label}</p>
+      <div className="flex items-center justify-center gap-1">
+        <p className="text-xs text-white/50">{label}</p>
+        {onClick && <ChevronRight className="w-3 h-3 text-white/30" />}
+      </div>
     </motion.div>
+  );
+}
+
+// Notes List View
+function NotesListView({
+  notes,
+  onBack,
+  onFetch,
+}: {
+  notes: { id: string; title: string; content_text: string; source_type: string; created_at: string }[];
+  onBack: () => void;
+  onFetch: () => void;
+}) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (notes.length === 0) {
+      setIsLoading(true);
+      onFetch();
+      // Small delay then unload
+      const t = setTimeout(() => setIsLoading(false), 1500);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
+  const filtered = notes.filter(
+    (n) =>
+      n.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      n.content_text?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={onBack}
+          className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-white/60" />
+        </button>
+        <h2 className="font-heading text-lg font-bold text-white">My Notes</h2>
+        <span className="ml-auto text-sm text-white/40">{notes.length} total</span>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search notes..."
+          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-[#2EFFE6]/50"
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+            <X className="w-4 h-4 text-white/40" />
+          </button>
+        )}
+      </div>
+
+      {/* Notes List */}
+      {isLoading && notes.length === 0 ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-6 h-6 border-2 border-[#2EFFE6] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12">
+          <FileText className="w-10 h-10 text-white/20 mx-auto mb-3" />
+          <p className="text-white/40 text-sm">
+            {searchQuery ? 'No notes matching your search' : 'No notes yet. Start adding some!'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((note, i) => (
+            <motion.div
+              key={note.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.03 }}
+              className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-[#2EFFE6]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <FileText className="w-4 h-4 text-[#2EFFE6]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-white truncate">
+                    {note.title || 'Untitled Note'}
+                  </h4>
+                  <p className="text-xs text-white/40 mt-1 line-clamp-2">
+                    {note.content_text?.slice(0, 120) || 'No content'}
+                  </p>
+                  <div className="flex items-center gap-3 mt-2">
+                    <span className="text-[10px] text-white/30 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {new Date(note.created_at).toLocaleDateString()}
+                    </span>
+                    {note.source_type && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/40">
+                        {note.source_type}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Concepts List View
+function ConceptsListView({
+  concepts,
+  onBack,
+  onFetch,
+}: {
+  concepts: { id: string; name: string; definition: string; domain: string; complexity_score: number }[];
+  onBack: () => void;
+  onFetch: () => void;
+}) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const { navigateToFeedWithTopic } = useAppStore();
+
+  useEffect(() => {
+    if (concepts.length === 0) {
+      setIsLoading(true);
+      onFetch();
+      const t = setTimeout(() => setIsLoading(false), 1500);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
+  const domains = [...new Set(concepts.map((c) => c.domain).filter(Boolean))].sort();
+
+  const filtered = concepts.filter((c) => {
+    const matchesSearch =
+      c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.definition?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesDomain = !selectedDomain || c.domain === selectedDomain;
+    return matchesSearch && matchesDomain;
+  });
+
+  const domainColors: Record<string, string> = {
+    "Machine Learning": "#7C3AED",
+    "Mathematics": "#3B82F6",
+    "Computer Science": "#10B981",
+    "Database Systems": "#F59E0B",
+    "System Design": "#EF4444",
+    "Programming": "#06B6D4",
+    "General": "#6B7280",
+  };
+
+  return (
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={onBack}
+          className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-white/60" />
+        </button>
+        <h2 className="font-heading text-lg font-bold text-white">My Concepts</h2>
+        <span className="ml-auto text-sm text-white/40">{concepts.length} total</span>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-3">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search concepts..."
+          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-[#B6FF2E]/50"
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+            <X className="w-4 h-4 text-white/40" />
+          </button>
+        )}
+      </div>
+
+      {/* Domain Filter Chips */}
+      {domains.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-3 mb-3 scrollbar-hide">
+          <button
+            onClick={() => setSelectedDomain(null)}
+            className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${
+              !selectedDomain ? 'bg-[#B6FF2E] text-black font-medium' : 'bg-white/5 text-white/60 hover:bg-white/10'
+            }`}
+          >
+            All
+          </button>
+          {domains.map((domain) => (
+            <button
+              key={domain}
+              onClick={() => setSelectedDomain(selectedDomain === domain ? null : domain)}
+              className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${
+                selectedDomain === domain
+                  ? 'bg-[#B6FF2E] text-black font-medium'
+                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+              }`}
+            >
+              {domain}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Concepts List */}
+      {isLoading && concepts.length === 0 ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-6 h-6 border-2 border-[#B6FF2E] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12">
+          <Brain className="w-10 h-10 text-white/20 mx-auto mb-3" />
+          <p className="text-white/40 text-sm">
+            {searchQuery || selectedDomain ? 'No concepts matching your filter' : 'No concepts yet. Ingest some notes!'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((concept, i) => {
+            const color = domainColors[concept.domain] || '#6B7280';
+            return (
+              <motion.div
+                key={concept.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+                className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors cursor-pointer"
+                onClick={() => navigateToFeedWithTopic(concept.name)}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                    style={{ backgroundColor: `${color}20` }}
+                  >
+                    <Brain className="w-4 h-4" style={{ color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-medium text-white truncate">{concept.name}</h4>
+                      <ChevronRight className="w-3 h-3 text-white/20 flex-shrink-0" />
+                    </div>
+                    <p className="text-xs text-white/40 mt-1 line-clamp-2">
+                      {concept.definition || 'No definition'}
+                    </p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <span
+                        className="text-[10px] px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: `${color}15`, color }}
+                      >
+                        {concept.domain}
+                      </span>
+                      <span className="text-[10px] text-white/30 flex items-center gap-1">
+                        <Hash className="w-3 h-3" />
+                        Complexity: {concept.complexity_score}/10
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

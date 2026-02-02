@@ -450,6 +450,36 @@ class FeedService:
             domains=["Meta-Learning"],
         )
 
+    async def get_all_user_concepts(self, user_id: str, limit: int = 20) -> list[dict]:
+        """Get ALL user concepts from Neo4j (not just spaced-rep due ones).
+
+        This is the fallback when no spaced repetition due items exist
+        but the user has concepts in their knowledge graph.
+        """
+        try:
+            concepts = await self.neo4j_client.execute_query(
+                """
+                MATCH (c:Concept {user_id: $user_id})
+                OPTIONAL MATCH (c)-[:RELATED_TO]->(related:Concept {user_id: $user_id})
+                WITH c, collect(related.name)[0..5] as related_names
+                RETURN {
+                    id: c.id,
+                    name: c.name,
+                    definition: c.definition,
+                    domain: c.domain,
+                    complexity_score: c.complexity_score,
+                    related_concepts: related_names
+                } AS concept
+                ORDER BY c.created_at DESC
+                LIMIT $limit
+                """,
+                {"user_id": user_id, "limit": limit},
+            )
+            return [c["concept"] for c in concepts]
+        except Exception as e:
+            logger.error("FeedService: Error getting all concepts", error=str(e))
+            return []
+
     async def get_feed(
         self,
         request: FeedFilterRequest,
@@ -462,17 +492,31 @@ class FeedService:
             user_id=request.user_id,
             max_items=request.max_items,
         )
-        
-        # Get due concepts
+
+        # Get due concepts from spaced repetition
         due_concepts = await self.get_due_concepts(
             user_id=request.user_id,
             limit=request.max_items * 2,
         )
-        
-        # Cold Start: If no concepts, generate onboarding/general items
+
+        # If no spaced-rep due items, check if user has ANY concepts
         if not due_concepts:
-            logger.info("FeedService: Cold start - generating onboarding items")
-            return await self.generate_cold_start_feed(request)
+            all_concepts = await self.get_all_user_concepts(
+                user_id=request.user_id,
+                limit=request.max_items * 2,
+            )
+
+            if all_concepts:
+                logger.info(
+                    "FeedService: No due items but user has concepts, generating from all concepts",
+                    concept_count=len(all_concepts),
+                )
+                # Use all concepts as if they were due
+                due_concepts = all_concepts
+            else:
+                # Truly new user with no concepts at all
+                logger.info("FeedService: Cold start - no concepts found")
+                return await self.generate_cold_start_feed(request)
         
         feed_items: list[FeedItem] = []
         
