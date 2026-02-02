@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Heart, Bookmark, Share2, ChevronRight, Lightbulb,
   CheckCircle, XCircle, Edit3, Image as ImageIcon, Map,
-  Sparkles, ArrowRight, Globe, Layers
+  Sparkles, ArrowRight, Globe, Layers, X, Filter
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import type { FeedItem, QuizOption, ConceptShowcaseCard } from '../types';
@@ -14,13 +14,41 @@ export function FeedScreen() {
     currentFeedIndex,
     likedItems,
     savedItems,
+    feedTopicFilter,
+    clearFeedTopicFilter,
     nextFeedItem,
     prevFeedItem,
     toggleLike,
     toggleSave
   } = useAppStore();
 
-  const currentItem = feedItems[currentFeedIndex];
+  // Filter feed items by topic if a topic filter is active
+  const filteredItems = feedTopicFilter
+    ? feedItems.filter((item) => {
+        const topic = feedTopicFilter.toLowerCase();
+        // Check various fields depending on item type
+        if ('concept' in item && item.concept) {
+          return (
+            item.concept.name?.toLowerCase().includes(topic) ||
+            item.concept.domain?.toLowerCase().includes(topic)
+          );
+        }
+        if ('relatedConcept' in item) {
+          return item.relatedConcept?.toLowerCase().includes(topic);
+        }
+        if ('conceptName' in item) {
+          return (
+            item.conceptName?.toLowerCase().includes(topic) ||
+            item.domain?.toLowerCase().includes(topic)
+          );
+        }
+        return false;
+      })
+    : feedItems;
+
+  const displayItems = filteredItems.length > 0 ? filteredItems : feedItems;
+  const adjustedIndex = Math.min(currentFeedIndex, displayItems.length - 1);
+  const currentItem = displayItems[adjustedIndex];
   const isLiked = currentItem && likedItems.has(currentItem.id);
   const isSaved = currentItem && savedItems.has(currentItem.id);
 
@@ -46,6 +74,31 @@ export function FeedScreen() {
 
   return (
     <div className="h-[calc(100vh-180px)] flex flex-col">
+      {/* Topic Filter Banner */}
+      {feedTopicFilter && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-3 flex items-center gap-2 px-1"
+        >
+          <div className="flex items-center gap-2 px-3 py-2 rounded-full bg-[#B6FF2E]/15 border border-[#B6FF2E]/30">
+            <Filter className="w-3.5 h-3.5 text-[#B6FF2E]" />
+            <span className="text-xs text-[#B6FF2E] font-medium">
+              {feedTopicFilter}
+            </span>
+            <button
+              onClick={clearFeedTopicFilter}
+              className="ml-1 p-0.5 rounded-full hover:bg-white/10 transition-colors"
+            >
+              <X className="w-3 h-3 text-[#B6FF2E]/70" />
+            </button>
+          </div>
+          {filteredItems.length === 0 && feedItems.length > 0 && (
+            <span className="text-xs text-white/40">No exact matches — showing all cards</span>
+          )}
+        </motion.div>
+      )}
+
       {/* Card Container */}
       <div className="flex-1 relative flex items-center justify-center">
         <AnimatePresence mode="wait">

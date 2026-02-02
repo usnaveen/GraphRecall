@@ -10,6 +10,24 @@ import { useAuthStore } from '../store/useAuthStore';
 import type { ChatMessage } from '../types';
 import { api } from '../services/api';
 
+/**
+ * Extract topic from "quiz me on X" style messages.
+ * Returns the topic string or null if not a quiz request.
+ */
+function extractQuizTopic(message: string): string | null {
+  const patterns = [
+    /quiz\s+me\s+on\s+(.+)/i,
+    /test\s+me\s+on\s+(.+)/i,
+    /review\s+(.+)/i,
+    /practice\s+(.+)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
 const quickActions = [
   { id: 'search', icon: Search, label: 'Search Notes', color: '#B6FF2E' },
   { id: 'summarize', icon: BookOpen, label: 'Summarize Topic', color: '#2EFFE6' },
@@ -27,7 +45,7 @@ interface ChatConversation {
 }
 
 export function AssistantScreen() {
-  const { chatMessages, addChatMessage, clearChatMessages } = useAppStore();
+  const { chatMessages, addChatMessage, clearChatMessages, navigateToFeedWithTopic } = useAppStore();
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -113,15 +131,27 @@ export function AssistantScreen() {
   const handleSend = async () => {
     if (!inputValue.trim()) return;
 
+    const messageText = inputValue.trim();
+    const quizTopic = extractQuizTopic(messageText);
+
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      content: inputValue,
+      content: messageText,
     };
 
     addChatMessage(userMessage);
     setInputValue('');
     setIsTyping(true);
+
+    // If it's a quiz request, navigate to feed with the topic after a brief delay
+    if (quizTopic) {
+      setTimeout(() => {
+        navigateToFeedWithTopic(quizTopic);
+      }, 800);
+      setIsTyping(false);
+      return;
+    }
 
     // Initial placeholder for assistant message
     const assistantMessageId = (Date.now() + 1).toString();
@@ -444,6 +474,7 @@ export function AssistantScreen() {
                   {message.relatedConcepts.map((concept: string, j: number) => (
                     <button
                       key={j}
+                      onClick={() => navigateToFeedWithTopic(concept)}
                       className="px-2 py-0.5 rounded-full text-[10px] bg-[#B6FF2E]/10 text-[#B6FF2E] hover:bg-[#B6FF2E]/20 transition-colors"
                     >
                       {concept}

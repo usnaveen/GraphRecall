@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TopBar } from './components/TopBar';
@@ -11,14 +11,12 @@ import { ProfileScreen } from './screens/ProfileScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
-import type { TabType } from './types';
 
 // Get Google Client ID from environment
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 function AuthenticatedApp() {
-  const [activeTab, setActiveTab] = useState<TabType>('feed');
-  const { fetchFeed, fetchStats, isLoading, feedItems } = useAppStore();
+  const { activeTab, setActiveTab, fetchFeed, fetchStats, isLoading, feedItems } = useAppStore();
 
   useEffect(() => {
     // Initial data fetch after authentication
