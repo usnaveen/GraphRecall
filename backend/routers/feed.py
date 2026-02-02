@@ -250,7 +250,7 @@ async def toggle_like(
             raise HTTPException(status_code=400, detail=f"Invalid item_type: {item_type}")
         
         # Toggle the boolean
-        await pg_client.execute_query(
+        await pg_client.execute_update(
             f"UPDATE {table} SET is_liked = NOT is_liked WHERE id = :item_id AND user_id = :user_id",
             {"item_id": item_id, "user_id": user_id}
         )
@@ -286,7 +286,7 @@ async def toggle_save(
             raise HTTPException(status_code=400, detail=f"Invalid item_type: {item_type}")
         
         # Toggle the boolean
-        await pg_client.execute_query(
+        await pg_client.execute_update(
             f"UPDATE {table} SET is_saved = NOT is_saved WHERE id = :item_id AND user_id = :user_id",
             {"item_id": item_id, "user_id": user_id}
         )
@@ -596,4 +596,3 @@ async def get_resources_for_concept(
     except Exception as e:
         logger.error("Get resources: Error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
-
