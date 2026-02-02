@@ -31,6 +31,7 @@ class IngestionState(TypedDict, total=False):
     raw_content: str
     title: Optional[str]
     skip_review: bool  # If True, auto-approve concepts
+    content_hash: Optional[str]  # Hash for deduplication
     
     # Processing fields (updated by nodes)
     note_id: Optional[str]
@@ -53,6 +54,7 @@ class IngestionState(TypedDict, total=False):
     # Output fields
     created_concept_ids: list[str]  # Neo4j concept IDs
     flashcard_ids: list[str]        # Generated flashcard IDs
+    quiz_ids: list[str]             # Generated quiz IDs
 
     # Processing metadata (geekout facts for UI)
     processing_metadata: dict  # Accumulated metadata from each node
