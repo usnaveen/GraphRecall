@@ -216,24 +216,27 @@ export const ingestService = {
  * Generic API helper for direct endpoint access
  */
 export const api = {
-    get: async (url: string) => {
+    get: async (path: string) => {
+        const url = `${API_BASE}${path}`;
         const response = await authFetch(url);
-        if (!response.ok) throw new Error(`GET ${url} failed`);
+        if (!response.ok) throw new Error(`GET ${path} failed`);
         return { data: await response.json() };
     },
 
-    post: async (url: string, data?: object) => {
+    post: async (path: string, data?: object) => {
+        const url = `${API_BASE}${path}`;
         const response = await authFetch(url, {
             method: 'POST',
             body: data ? JSON.stringify(data) : undefined,
         });
-        if (!response.ok) throw new Error(`POST ${url} failed`);
+        if (!response.ok) throw new Error(`POST ${path} failed`);
         return { data: await response.json() };
     },
 
-    delete: async (url: string) => {
+    delete: async (path: string) => {
+        const url = `${API_BASE}${path}`;
         const response = await authFetch(url, { method: 'DELETE' });
-        if (!response.ok) throw new Error(`DELETE ${url} failed`);
+        if (!response.ok) throw new Error(`DELETE ${path} failed`);
         return { data: await response.json() };
     },
 
@@ -241,6 +244,11 @@ export const api = {
         getGraph: async () => {
             const response = await authFetch(`${API_BASE}/graph3d`);
             if (!response.ok) throw new Error('Failed to fetch graph data');
+            return response.json();
+        },
+        getFocus: async (conceptId: string) => {
+            const response = await authFetch(`${API_BASE}/graph3d/focus/${encodeURIComponent(conceptId)}`);
+            if (!response.ok) throw new Error('Failed to fetch concept focus');
             return response.json();
         }
     }
