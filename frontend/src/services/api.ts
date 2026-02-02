@@ -124,6 +124,24 @@ export const chatService = {
     }
 };
 
+export const notesService = {
+    /** Get list of user's notes */
+    listNotes: async (limit: number = 50, offset: number = 0) => {
+        const response = await authFetch(`${API_BASE}/notes?limit=${limit}&offset=${offset}`);
+        if (!response.ok) throw new Error('Failed to fetch notes');
+        return response.json();
+    },
+};
+
+export const conceptsService = {
+    /** Get list of user's concepts (via graph3d endpoint) */
+    listConcepts: async () => {
+        const response = await authFetch(`${API_BASE}/graph3d`);
+        if (!response.ok) throw new Error('Failed to fetch concepts');
+        return response.json();
+    },
+};
+
 export const authService = {
     updateProfile: async (settings: any) => {
         const response = await authFetch(`${API_BASE}/auth/profile`, {

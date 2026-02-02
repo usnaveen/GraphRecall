@@ -1,8 +1,28 @@
 import { create } from 'zustand';
-import type { FeedItem, ChatMessage, UserStats } from '../types';
-import { feedService, chatService } from '../services/api';
+import type { FeedItem, ChatMessage, UserStats, TabType } from '../types';
+import { feedService, chatService, notesService, conceptsService } from '../services/api';
+
+interface NoteItem {
+  id: string;
+  title: string;
+  content_text: string;
+  source_type: string;
+  created_at: string;
+}
+
+interface ConceptItem {
+  id: string;
+  name: string;
+  definition: string;
+  domain: string;
+  complexity_score: number;
+}
 
 interface AppState {
+  // Navigation State
+  activeTab: TabType;
+  feedTopicFilter: string | null;
+
   // Feed State
   feedItems: FeedItem[];
   currentFeedIndex: number;
@@ -18,9 +38,18 @@ interface AppState {
   // User State
   userStats: UserStats;
 
+  // Notes & Concepts lists
+  notesList: NoteItem[];
+  conceptsList: ConceptItem[];
+
   // Actions
+  setActiveTab: (tab: TabType) => void;
+  navigateToFeedWithTopic: (topic: string) => void;
+  clearFeedTopicFilter: () => void;
   fetchFeed: () => Promise<void>;
   fetchStats: () => Promise<void>;
+  fetchNotes: () => Promise<void>;
+  fetchConcepts: () => Promise<void>;
   nextFeedItem: () => void;
   prevFeedItem: () => void;
   toggleLike: (itemId: string, itemType: string) => Promise<void>;
@@ -33,6 +62,8 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial State
+  activeTab: 'feed',
+  feedTopicFilter: null,
   feedItems: [],
   currentFeedIndex: 0,
   likedItems: new Set(),
@@ -41,6 +72,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   dailyItemLimit: 20,
   isLoading: false,
   chatMessages: [],
+  notesList: [],
+  conceptsList: [],
   userStats: {
     conceptsLearned: 0,
     notesAdded: 0,
@@ -48,7 +81,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     streakDays: 0
   },
 
-  // Actions
+  // Navigation Actions
+  setActiveTab: (tab: TabType) => {
+    set({ activeTab: tab });
+  },
+
+  navigateToFeedWithTopic: (topic: string) => {
+    set({ activeTab: 'feed', feedTopicFilter: topic, currentFeedIndex: 0 });
+  },
+
+  clearFeedTopicFilter: () => {
+    set({ feedTopicFilter: null });
+  },
+
+  // Data Fetching Actions
   fetchFeed: async () => {
     set({ isLoading: true });
     try {
@@ -186,6 +232,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     } catch (error) {
       console.error("Failed to fetch stats:", error);
+    }
+  },
+
+  fetchNotes: async () => {
+    try {
+      const data = await notesService.listNotes();
+      set({ notesList: data.notes || [] });
+    } catch (error) {
+      console.error("Failed to fetch notes:", error);
+    }
+  },
+
+  fetchConcepts: async () => {
+    try {
+      const data = await conceptsService.listConcepts();
+      // The graph3d endpoint returns nodes array
+      const concepts = (data.nodes || []).map((node: any) => ({
+        id: node.id,
+        name: node.name || node.label,
+        definition: node.definition || '',
+        domain: node.domain || 'General',
+        complexity_score: node.complexity_score || node.size || 5,
+      }));
+      set({ conceptsList: concepts });
+    } catch (error) {
+      console.error("Failed to fetch concepts:", error);
     }
   },
 
