@@ -100,7 +100,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       // Create a timeout promise
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Request timed out')), 10000);
+        setTimeout(() => reject(new Error('Request timed out')), 30000);
       });
 
       // Race against the actual fetch

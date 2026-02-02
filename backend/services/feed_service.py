@@ -327,7 +327,7 @@ class FeedService:
             
             if not content:
                 return None
-            
+
             return FeedItem(
                 item_type=item_type,
                 content=content,
@@ -337,15 +337,40 @@ class FeedService:
                 due_date=concept.get("sm2_data", {}).get("next_review"),
                 priority_score=concept.get("priority_score", 1.0),
             )
-            
+
         except Exception as e:
-            logger.error(
-                "FeedService: Error generating feed item",
+            logger.warning(
+                "FeedService: LLM generation failed, using fallback card",
                 concept=concept.get("name"),
                 item_type=item_type,
                 error=str(e),
             )
-            return None
+            # Fallback: return a basic concept showcase card from existing data
+            # instead of None, so the feed is never empty for users with concepts
+            try:
+                return FeedItem(
+                    item_type=FeedItemType.CONCEPT_SHOWCASE,
+                    content={
+                        "concept_name": concept.get("name", "Concept"),
+                        "definition": concept.get("definition", ""),
+                        "domain": concept.get("domain", "General"),
+                        "complexity_score": concept.get("complexity_score", 5),
+                        "tagline": f"Review: {concept.get('name', 'this concept')}",
+                        "visual_metaphor": "",
+                        "key_points": [concept.get("definition", "No definition available.")],
+                        "real_world_example": "",
+                        "connections_note": "",
+                        "emoji_icon": "📘",
+                        "prerequisites": concept.get("prerequisites", []),
+                        "related_concepts": concept.get("related_concepts", []),
+                    },
+                    concept_id=concept.get("id"),
+                    concept_name=concept.get("name"),
+                    domain=concept.get("domain"),
+                    priority_score=concept.get("priority_score", 0.5),
+                )
+            except Exception:
+                return None
     
     def _static_cold_start_items(self) -> list[FeedItem]:
         """Return pre-built onboarding items that require no LLM calls."""

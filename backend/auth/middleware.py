@@ -50,7 +50,7 @@ async def get_current_user(
         
         # Create new user if doesn't exist
         logger.info("Auth: Creating new user", email=user_info["email"])
-        user = await pg_client.execute_insert(
+        new_users = await pg_client.execute_query(
             """
             INSERT INTO users (google_id, email, name, profile_picture)
             VALUES (:google_id, :email, :name, :profile_picture)
@@ -58,7 +58,7 @@ async def get_current_user(
             """,
             user_info
         )
-        return user
+        return new_users[0] if new_users else {}
         
     except Exception as e:
         logger.error("Auth: Database error in get_current_user", error=str(e))
