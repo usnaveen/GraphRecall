@@ -93,6 +93,19 @@ export const feedService = {
         );
         if (!response.ok) throw new Error('Failed to save item');
         return response.json();
+    },
+
+    /** Generate a quiz for a specific topic */
+    getTopicQuiz: async (topic: string) => {
+        const response = await authFetch(
+            `${API_BASE}/feed/quiz/topic/${encodeURIComponent(topic)}`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ num_questions: 5, force_research: false })
+            }
+        );
+        if (!response.ok) throw new Error('Failed to generate quiz');
+        return response.json();
     }
 };
 

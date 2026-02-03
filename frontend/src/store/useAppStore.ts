@@ -58,6 +58,7 @@ interface AppState {
   clearChatMessages: () => void;
   sendMessage: (text: string) => Promise<void>;
   resetFeed: () => void;
+  startQuizForTopic: (topic: string) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -347,5 +348,35 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   resetFeed: () => {
     set({ currentFeedIndex: 0 });
+  },
+
+  startQuizForTopic: async (topic: string) => {
+    set({ activeTab: 'feed', isLoading: true, feedTopicFilter: topic });
+    try {
+      const data = await feedService.getTopicQuiz(topic);
+
+      const quizItems: FeedItem[] = data.questions.map((q: any, index: number) => ({
+        id: `temp-quiz-${Date.now()}-${index}`,
+        type: 'quiz',
+        question: q.question,
+        options: q.options.map((opt: string, i: number) => ({
+          id: String.fromCharCode(65 + i), // A, B, C, D
+          text: opt,
+          isCorrect: opt === q.correct_answer
+        })),
+        explanation: q.explanation,
+        relatedConcept: topic,
+        source_url: data.source_url // if available from backend, though backend returns 'research_note_id' currently.
+      }));
+
+      set({
+        feedItems: quizItems,
+        currentFeedIndex: 0,
+        isLoading: false
+      });
+    } catch (error) {
+      console.error("Failed to start quiz:", error);
+      set({ isLoading: false });
+    }
   },
 }));
