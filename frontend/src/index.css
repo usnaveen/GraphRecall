@@ -240,6 +240,12 @@
   75% { transform: scale(1.02) rotate(1deg); }
 }
 
-.flame-animate {
-  animation: flame-flicker 0.8s ease-in-out infinite;
+
+/* Hide Scrollbar Utility */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
 }

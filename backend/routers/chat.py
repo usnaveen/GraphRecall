@@ -528,33 +528,27 @@ async def add_conversation_to_knowledge(
         
         conv_title = request.title or (conv[0].get("title") if conv else "Chat Conversation")
         
-        # Build conversation transcript
+        # Create note content
         transcript = f"# {conv_title}\n\n"
         for msg in messages:
             role = "**You**" if msg["role"] == "user" else "**Assistant**"
             transcript += f"{role}: {msg['content']}\n\n"
         
-        # Create note
-        note_id = str(uuid.uuid4())
+        # Use centralized Ingestion Workflow
+        # This triggers: Extraction -> Synthesis (Review) -> Linking -> Flashcards -> Quizzes
+        from backend.graphs.ingestion_graph import run_ingestion
         
-        await pg_client.execute_insert(
-            """
-            INSERT INTO notes (id, user_id, title, content_text, resource_type, content_type)
-            VALUES (:id, :user_id, :title, :content_text, :resource_type, :content_type)
-            """,
-            {
-                "id": note_id,
-                "user_id": user_id,
-                "title": conv_title,
-                "content_text": transcript,
-                "resource_type": "chat_conversation",
-                "content_type": "markdown",
-            }
+        ingest_result = await run_ingestion(
+            content=transcript,
+            title=conv_title,
+            user_id=user_id,
+            skip_review=False, # User wants to review concepts
         )
         
-        # Mark conversation as saved
-        summary = f"Conversation with {len(messages)} messages about {conv_title}"
+        note_id = ingest_result.get("note_id")
         
+        # Mark conversation as saved to knowledge
+        summary = f"Conversation with {len(messages)} messages about {conv_title}"
         await pg_client.execute_update(
             """
             UPDATE chat_conversations 
@@ -564,37 +558,11 @@ async def add_conversation_to_knowledge(
             {"id": conversation_id, "summary": summary}
         )
         
-        # Extract key topics for Neo4j linking (simple keyword extraction)
-        from backend.config.llm import get_chat_model
-        
-        try:
-            llm = get_chat_model(temperature=0)
-            
-            # Quick topic extraction
-            resp = await llm.ainvoke(
-                f"Extract 3-5 key topic names from this conversation. Return only comma-separated topic names:\n\n{transcript[:2000]}"
-            )
-            topics = [t.strip() for t in resp.content.split(",")][:5]
-            
-            # Link to concepts in Neo4j
-            for topic in topics:
-                await neo4j_client.execute_query(
-                    """
-                    MATCH (c:Concept)
-                    WHERE toLower(c.name) CONTAINS toLower($topic)
-                    MERGE (n:NoteSource {id: $note_id})
-                    SET n.note_id = $note_id, n.summary = $summary
-                    MERGE (n)-[:EXPLAINS {relevance: 0.7}]->(c)
-                    """,
-                    {"note_id": note_id, "topic": topic, "summary": summary}
-                )
-        except Exception as topic_err:
-            logger.warning("Topic extraction failed (optional)", error=str(topic_err))
-        
         logger.info(
-            "add_conversation_to_knowledge",
+            "add_conversation_to_knowledge: Handed off to ingestion graph",
             conversation_id=conversation_id,
             note_id=note_id,
+            status=ingest_result.get("status")
         )
         
         return {
@@ -602,7 +570,9 @@ async def add_conversation_to_knowledge(
             "conversation_id": conversation_id,
             "title": conv_title,
             "message_count": len(messages),
-            "status": "saved_to_knowledge",
+            "status": ingest_result.get("status", "processing"),
+            "concepts_found": len(ingest_result.get("concepts", [])),
+            "awaiting_review": ingest_result.get("status") == "awaiting_review"
         }
         
     except HTTPException:

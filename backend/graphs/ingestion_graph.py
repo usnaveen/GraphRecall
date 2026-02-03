@@ -709,10 +709,20 @@ def route_after_find_related(state: IngestionState) -> Literal["synthesize", "cr
     needs_synthesis = state.get("needs_synthesis", False)
     skip_review = state.get("skip_review", False)
 
-    if needs_synthesis and not skip_review:
+    # Force review/synthesis path if not explicitly skipped
+    # This ensures user always gets to confirm extracted concepts
+    if not skip_review:
         logger.info(
-            "route_after_find_related: Routing to synthesis",
-            reason="overlap_detected",
+            "route_after_find_related: Routing to synthesis (Force Review)",
+            reason="manual_review_required",
+        )
+        return "synthesize"
+    
+    # Auto-pilot path (only if skip_review=True)
+    if needs_synthesis:
+        logger.info(
+            "route_after_find_related: Routing to synthesis (Auto-resolve)",
+            reason="overlap_detected_skipping_review",
         )
         return "synthesize"
     else:

@@ -179,7 +179,7 @@ export function FeedScreen() {
             transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
             className="w-full max-w-md mx-auto"
           >
-            <div className="recall-card p-5 min-h-[480px] flex flex-col">
+            <div className="recall-card p-5 max-h-[70vh] min-h-[400px] flex flex-col overflow-hidden">
               {/* Card Content */}
               <div className="flex-1">
                 <FeedCardContent item={currentItem} />
@@ -414,7 +414,7 @@ function QuizContent({ quiz }: { quiz: any }) {
       </p>
 
       {/* Options */}
-      <div className="space-y-2 flex-1">
+      <div className="space-y-2 flex-1 overflow-y-auto scrollbar-hide min-h-0">
         {quiz.options.map((option: QuizOption, i: number) => {
           const isSelected = selectedOption === option.id;
           const showCorrect = showResult && option.isCorrect;
@@ -441,12 +441,12 @@ function QuizContent({ quiz }: { quiz: any }) {
               `}
             >
               <div className="flex items-center gap-3">
-                <span className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-xs font-mono">
+                <span className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-xs font-mono shrink-0">
                   {String.fromCharCode(65 + i)}
                 </span>
-                {option.text}
-                {showCorrect && <CheckCircle className="w-4 h-4 ml-auto" />}
-                {showWrong && <XCircle className="w-4 h-4 ml-auto" />}
+                <span className="flex-1">{option.text}</span>
+                {showCorrect && <CheckCircle className="w-4 h-4 ml-auto shrink-0" />}
+                {showWrong && <XCircle className="w-4 h-4 ml-auto shrink-0" />}
               </div>
             </motion.button>
           );
