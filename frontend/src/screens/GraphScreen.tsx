@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Search, Filter, ChevronDown, X, Target, BookOpen, Link2, FileText,
+  Search, X, Target, BookOpen, Link2, FileText,
   ZoomIn, ZoomOut, RotateCw, Loader2, XCircle
 } from 'lucide-react';
 import type { GraphNode, GraphEdge } from '../types';
@@ -328,7 +328,6 @@ export function GraphScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
 
   // Camera state
   const [zoom, setZoom] = useState(1);
@@ -783,7 +782,7 @@ export function GraphScreen() {
     setResources([]);
 
     try {
-      const response = await api.get(`/ feed / resources / ${encodeURIComponent(topicName)}?resource_type = ${type === 'link' ? 'article' : 'notes'} `);
+      const response = await api.get(`/feed/resources/${encodeURIComponent(topicName)}`);
 
       const allResources = response.data.resources || [];
       const filtered = allResources.filter((r: any) => {
@@ -940,33 +939,7 @@ export function GraphScreen() {
           <span className="text-xs text-white/50">
             Viewing: {filteredNodes.length} concepts
           </span>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-1 text-xs text-[#B6FF2E] hover:text-[#c5ff4d] transition-colors"
-          >
-            <Filter className="w-3 h-3" />
-            Filters
-            <ChevronDown className={`w - 3 h - 3 transition - transform ${showFilters ? 'rotate-180' : ''} `} />
-          </button>
         </div>
-
-        {showFilters && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="flex gap-2"
-          >
-            {['Domain', 'Mastery', 'Complexity'].map((filter) => (
-              <button
-                key={filter}
-                className="px-3 py-1.5 rounded-full text-xs bg-white/5 text-white/70 border border-white/10 hover:bg-white/10 transition-colors"
-              >
-                {filter}
-              </button>
-            ))}
-          </motion.div>
-        )}
       </motion.div>
 
       {/* Selected Node Panel */}

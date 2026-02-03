@@ -5,6 +5,8 @@ from backend.routers.review import router as review_router
 from backend.routers.chat import router as chat_router
 from backend.routers.graph3d import router as graph3d_router
 from backend.routers.uploads import router as uploads_router
+from backend.routers.notes import router as notes_router
+from backend.routers.concepts import router as concepts_router
 
 __all__ = [
     "feed_router",
@@ -12,4 +14,6 @@ __all__ = [
     "chat_router",
     "graph3d_router",
     "uploads_router",
+    "notes_router",
+    "concepts_router",
 ]

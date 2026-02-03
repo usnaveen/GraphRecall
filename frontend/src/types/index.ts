@@ -50,6 +50,9 @@ export interface ScreenshotCard {
   id: string;
   type: 'screenshot';
   imageUrl: string;
+  thumbnailUrl?: string;
+  title?: string;
+  description?: string;
   linkedConcepts: string[];
   addedAt: Date;
 }
@@ -112,6 +115,7 @@ export interface ChatMessage {
   status?: string; // e.g. "Thinking...", "Searching..."
   sources?: string[];
   relatedConcepts?: string[];
+  serverId?: string;
 }
 
 export interface GraphNode {
