@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import type { FeedItem, ChatMessage, UserStats, TabType } from '../types';
-import { feedService, chatService, notesService, conceptsService } from '../services/api';
+import { feedService, chatService, notesService, conceptsService, uploadsService } from '../services/api';
 
 interface NoteItem {
   id: string;
   title: string;
   content_text: string;
-  source_type: string;
+  resource_type: string;
   created_at: string;
 }
 
@@ -16,6 +16,16 @@ interface ConceptItem {
   definition: string;
   domain: string;
   complexity_score: number;
+}
+
+interface UploadItem {
+  id: string;
+  upload_type: string;
+  file_url: string;
+  thumbnail_url?: string | null;
+  title?: string | null;
+  description?: string | null;
+  created_at: string;
 }
 
 interface AppState {
@@ -42,6 +52,7 @@ interface AppState {
   // Notes & Concepts lists
   notesList: NoteItem[];
   conceptsList: ConceptItem[];
+  uploadsList: UploadItem[];
 
   // Actions
   setActiveTab: (tab: TabType) => void;
@@ -51,6 +62,7 @@ interface AppState {
   fetchStats: () => Promise<void>;
   fetchNotes: () => Promise<void>;
   fetchConcepts: (forceRefresh?: boolean) => Promise<void>;
+  fetchUploads: () => Promise<void>;
   nextFeedItem: () => void;
   prevFeedItem: () => void;
   toggleLike: (itemId: string, itemType: string) => Promise<void>;
@@ -62,6 +74,7 @@ interface AppState {
   startQuizForTopic: (topic: string) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   deleteConcept: (id: string) => Promise<void>;
+  deleteUpload: (id: string) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -79,6 +92,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   chatMessages: [],
   notesList: [],
   conceptsList: [],
+  uploadsList: [],
   userStats: {
     conceptsLearned: 0,
     notesAdded: 0,
@@ -151,7 +165,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                 isCorrect: o.is_correct
               })),
               explanation: content.explanation,
-              relatedConcept: concept_name
+              relatedConcept: concept_name,
+              source_url: content.source_url
             };
           case 'fill_blank':
             return {
@@ -169,6 +184,9 @@ export const useAppStore = create<AppState>((set, get) => ({
               id: item.id,
               type: 'screenshot',
               imageUrl: content.file_url,
+              thumbnailUrl: content.thumbnail_url,
+              title: content.title,
+              description: content.description,
               linkedConcepts: content.linked_concepts || [],
               addedAt: new Date(item.created_at)
             };
@@ -281,6 +299,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchUploads: async () => {
+    try {
+      const data = await uploadsService.listUploads();
+      set({ uploadsList: data.uploads || [] });
+    } catch (error) {
+      console.error("Failed to fetch uploads:", error);
+    }
+  },
+
   nextFeedItem: () => {
     const state = get();
     if (state.currentFeedIndex < state.feedItems.length - 1) {
@@ -301,7 +328,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleLike: async (itemId: string, itemType: string) => {
     const state = get();
     try {
-      const result = await feedService.likeItem(itemId, itemType); // Need to add to api.ts
+      const backendType = itemType === 'fillblank' ? 'fill_blank' : itemType === 'quiz' ? 'mcq' : itemType;
+      if (!['flashcard', 'mcq', 'fill_blank', 'quiz'].includes(backendType)) {
+        return;
+      }
+      const result = await feedService.likeItem(itemId, backendType);
       const newLiked = new Set(state.likedItems);
       if (result.is_liked) {
         newLiked.add(itemId);
@@ -317,7 +348,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleSave: async (itemId: string, itemType: string) => {
     const state = get();
     try {
-      const result = await feedService.saveItem(itemId, itemType); // Need to add to api.ts
+      const backendType = itemType === 'fillblank' ? 'fill_blank' : itemType === 'quiz' ? 'mcq' : itemType;
+      if (!['flashcard', 'mcq', 'fill_blank', 'quiz'].includes(backendType)) {
+        return;
+      }
+      const result = await feedService.saveItem(itemId, backendType);
       const newSaved = new Set(state.savedItems);
       if (result.is_saved) {
         newSaved.add(itemId);
@@ -423,6 +458,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error("Failed to delete concept:", error);
       set({ conceptsList: previousConcepts }); // Rollback
+    }
+  },
+
+  deleteUpload: async (id: string) => {
+    const previousUploads = get().uploadsList;
+    set({ uploadsList: previousUploads.filter(u => u.id !== id) });
+    try {
+      await uploadsService.deleteUpload(id);
+    } catch (error) {
+      console.error("Failed to delete upload:", error);
+      set({ uploadsList: previousUploads });
     }
   }
 }));

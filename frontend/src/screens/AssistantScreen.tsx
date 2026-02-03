@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Send, Paperclip, Mic, Search, BookOpen, Target,
+  Send, Search, BookOpen, Target,
   Map, Lightbulb, Link2, MoreVertical, X, Save,
   MessageSquare, Trash2, History, BookmarkPlus
 } from 'lucide-react';
@@ -78,7 +78,12 @@ export function AssistantScreen() {
     if (!selectedMessageId) return;
 
     try {
-      await api.post(`/chat/messages/${selectedMessageId}/save`, {
+      const msg = chatMessages.find(m => m.id === selectedMessageId);
+      if (!msg?.serverId) {
+        alert('This message is not yet saved on the server.');
+        return;
+      }
+      await api.post(`/chat/messages/${msg.serverId}/save`, {
         topic: saveTopic || undefined,
       });
       setShowSaveModal(false);
@@ -113,6 +118,36 @@ export function AssistantScreen() {
     }
   };
 
+  const handleSelectConversation = async (convId: string) => {
+    try {
+      const response = await api.get(`/chat/conversations/${convId}`);
+      const messages = response.data.messages || [];
+      clearChatMessages();
+      messages.forEach((m: any) => {
+        let sources: string[] | undefined = undefined;
+        if (m.sources_json) {
+          try {
+            const parsed = typeof m.sources_json === 'string' ? JSON.parse(m.sources_json) : m.sources_json;
+            sources = parsed.map((s: any) => s.title || s.name || s);
+          } catch {
+            sources = undefined;
+          }
+        }
+        addChatMessage({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          sources,
+          serverId: m.id,
+        });
+      });
+      setConversationId(convId);
+      setShowHistory(false);
+    } catch (error) {
+      console.error('Failed to load conversation:', error);
+    }
+  };
+
   // Clear conversation
   const handleClearConversation = () => {
     clearChatMessages();
@@ -120,11 +155,18 @@ export function AssistantScreen() {
     setShowMenu(false);
   };
 
-  // Send message with streaming
-  const handleSend = async () => {
-    if (!inputValue.trim()) return;
+  const ensureConversation = async () => {
+    if (conversationId) return conversationId;
+    const response = await api.post('/chat/conversations');
+    const newId = response.data.conversation_id || response.data.id;
+    setConversationId(newId);
+    return newId;
+  };
 
-    const messageText = inputValue.trim();
+  // Send message with streaming
+  const handleSend = async (overrideMessage?: string) => {
+    const messageText = (overrideMessage ?? inputValue).trim();
+    if (!messageText) return;
     const quizTopic = extractQuizTopic(messageText);
 
     const userMessage: ChatMessage = {
@@ -161,6 +203,7 @@ export function AssistantScreen() {
     const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
     try {
+      const activeConversationId = await ensureConversation();
       // Use streaming endpoint
       const response = await fetch(`${API_BASE}/chat/stream`, {
         method: 'POST',
@@ -169,8 +212,9 @@ export function AssistantScreen() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          message: inputValue,
+          message: messageText,
           user_id: '00000000-0000-0000-0000-000000000001',
+          conversation_id: activeConversationId,
         }),
       });
 
@@ -212,8 +256,12 @@ export function AssistantScreen() {
                     status: undefined,
                     sources: data.sources || [],
                     relatedConcepts: data.related_concepts || [],
+                    serverId: data.message_id,
                   };
                   addChatMessage(finalMsg);
+                  if (data.conversation_id) {
+                    setConversationId(data.conversation_id);
+                  }
                 }
               } catch (e) {
                 // Ignore parse errors
@@ -240,15 +288,9 @@ export function AssistantScreen() {
     const action = quickActions.find(a => a.id === actionId);
     if (!action) return;
 
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: `Help me ${action.label.toLowerCase()}`,
-    };
-
-    addChatMessage(userMessage);
-    setInputValue(`Help me ${action.label.toLowerCase()}`);
-    handleSend();
+    const text = `Help me ${action.label.toLowerCase()}`;
+    setInputValue(text);
+    handleSend(text);
   };
 
   const showQuickActions = chatMessages.length <= 1;
@@ -327,6 +369,7 @@ export function AssistantScreen() {
                   chatHistory.map((conv) => (
                     <div
                       key={conv.id}
+                      onClick={() => handleSelectConversation(conv.id)}
                       className="p-3 rounded-xl hover:bg-white/5 cursor-pointer transition-colors"
                     >
                       <div className="flex items-center gap-2">
@@ -590,10 +633,6 @@ export function AssistantScreen() {
         className="relative"
       >
         <div className="flex items-center gap-2 glass-surface rounded-full px-2 py-2">
-          <button className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
-            <Paperclip className="w-4 h-4 text-white/50" />
-          </button>
-
           <input
             type="text"
             value={inputValue}
@@ -602,10 +641,6 @@ export function AssistantScreen() {
             placeholder="Ask anything about your knowledge..."
             className="flex-1 bg-transparent text-white text-sm placeholder:text-white/40 focus:outline-none"
           />
-
-          <button className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
-            <Mic className="w-4 h-4 text-white/50" />
-          </button>
 
           <motion.button
             whileTap={{ scale: 0.95 }}

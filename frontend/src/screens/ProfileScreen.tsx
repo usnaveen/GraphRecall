@@ -3,21 +3,22 @@ import { motion } from 'framer-motion';
 import {
   Settings, ChevronRight, BookOpen, FileText, Target,
   Flame, Download, Moon, ArrowLeft, Clock, Brain, Hash,
-  Bell, Zap, LogOut, Search, X, Trash2
+  Bell, Zap, LogOut, Search, X, Trash2, Image
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { authService } from '../services/api';
 
-type ProfileView = 'main' | 'settings' | 'notes' | 'concepts';
+type ProfileView = 'main' | 'settings' | 'notes' | 'concepts' | 'uploads';
 
 export function ProfileScreen() {
   const [currentView, setCurrentView] = useState<ProfileView>('main');
-  const { userStats, fetchStats, notesList, conceptsList, fetchNotes, fetchConcepts } = useAppStore();
+  const { userStats, fetchStats, notesList, conceptsList, uploadsList, fetchNotes, fetchConcepts, fetchUploads } = useAppStore();
   const { user, logout } = useAuthStore();
 
   useEffect(() => {
     fetchStats();
+    fetchUploads();
   }, []);
 
   if (currentView === 'settings') {
@@ -30,6 +31,9 @@ export function ProfileScreen() {
 
   if (currentView === 'concepts') {
     return <ConceptsListView concepts={conceptsList} onBack={() => setCurrentView('main')} onFetch={fetchConcepts} />;
+  }
+  if (currentView === 'uploads') {
+    return <UploadsListView uploads={uploadsList} onBack={() => setCurrentView('main')} onFetch={fetchUploads} />;
   }
 
   // Domain Progress from real data
@@ -149,6 +153,13 @@ export function ProfileScreen() {
           label="Notes"
           color="#2EFFE6"
           onClick={() => { fetchNotes(); setCurrentView('notes'); }}
+        />
+        <StatCard
+          icon={Image}
+          value={uploadsList.length}
+          label="Uploads"
+          color="#FF6B6B"
+          onClick={() => { fetchUploads(); setCurrentView('uploads'); }}
         />
       </motion.div>
 
@@ -359,11 +370,11 @@ function NoteItem({ note, onDelete }: { note: any; onDelete: (id: string) => voi
                 <Clock className="w-3 h-3" />
                 {new Date(note.created_at).toLocaleDateString()}
               </span>
-              {note.source_type && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/40">
-                  {note.source_type}
-                </span>
-              )}
+            {note.resource_type && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/40">
+                {note.resource_type}
+              </span>
+            )}
             </div>
           </div>
         </div>
@@ -378,7 +389,7 @@ function NotesListView({
   onBack,
   onFetch,
 }: {
-  notes: { id: string; title: string; content_text: string; source_type: string; created_at: string }[];
+  notes: { id: string; title: string; content_text: string; resource_type: string; created_at: string }[];
   onBack: () => void;
   onFetch: () => Promise<void>;
 }) {
@@ -451,6 +462,150 @@ function NotesListView({
           <p className="text-xs text-white/30 text-center mb-2">Swipe left to delete</p>
           {filtered.map((note) => (
             <NoteItem key={note.id} note={note} onDelete={deleteNote} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Upload Item Component for Swipe-to-Delete
+function UploadItem({ upload, onDelete }: { upload: any; onDelete: (id: string) => void }) {
+  const displayTitle = upload.title || (upload.file_url ? upload.file_url.split('/').pop()?.split('?')[0] : 'Untitled Upload');
+  return (
+    <div className="relative group">
+      <div className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4 mb-2">
+        <Trash2 className="w-5 h-5 text-red-500" />
+      </div>
+
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0, x: 0 }}
+        drag="x"
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={{ left: 0.5, right: 0.1 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.x < -100) {
+            if (confirm("Delete this upload?")) {
+              onDelete(upload.id);
+            }
+          }
+        }}
+        className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors cursor-pointer relative z-10 bg-[#07070A]"
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-lg bg-[#FF6B6B]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Image className="w-4 h-4 text-[#FF6B6B]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-medium text-white truncate">{displayTitle}</h4>
+              <ChevronRight className="w-3 h-3 text-white/20 flex-shrink-0" />
+            </div>
+            {upload.description && (
+              <p className="text-xs text-white/40 mt-1 line-clamp-2">
+                {upload.description}
+              </p>
+            )}
+            <div className="flex items-center gap-3 mt-2">
+              <span className="text-[10px] text-white/30 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {new Date(upload.created_at).toLocaleDateString()}
+              </span>
+              {upload.upload_type && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/40">
+                  {upload.upload_type}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// Uploads List View
+function UploadsListView({
+  uploads,
+  onBack,
+  onFetch,
+}: {
+  uploads: { id: string; title?: string; description?: string; file_url: string; upload_type: string; created_at: string }[];
+  onBack: () => void;
+  onFetch: () => Promise<void>;
+}) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const { deleteUpload } = useAppStore();
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setIsLoading(true);
+      await onFetch();
+      if (mounted) setIsLoading(false);
+    };
+    load();
+    return () => { mounted = false; };
+  }, []);
+
+  const filtered = uploads.filter(
+    (u) =>
+      u.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.file_url?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={onBack}
+          className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-white/60" />
+        </button>
+        <h2 className="font-heading text-lg font-bold text-white">My Uploads</h2>
+        <span className="ml-auto text-sm text-white/40">{uploads.length} total</span>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search uploads..."
+          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-[#FF6B6B]/50"
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+            <X className="w-4 h-4 text-white/40" />
+          </button>
+        )}
+      </div>
+
+      {/* Uploads List */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-6 h-6 border-2 border-[#FF6B6B] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12">
+          <Image className="w-10 h-10 text-white/20 mx-auto mb-3" />
+          <p className="text-white/40 text-sm">
+            {searchQuery ? 'No uploads matching your search' : 'No uploads yet. Add a screenshot!'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-white/30 text-center mb-2">Swipe left to delete</p>
+          {filtered.map((upload) => (
+            <UploadItem key={upload.id} upload={upload} onDelete={deleteUpload} />
           ))}
         </div>
       )}
