@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, X, Target, BookOpen, Link2, Plus, Loader2 } from "lucide-react";
 import { GraphVisualizer } from "../components/graph/GraphVisualizer";
-import { GraphData, Community } from "../lib/graphData";
-import { ForceSimulation3D, GraphLayout, Node3D } from "../lib/forceSimulation3d";
+import type { GraphData, Community } from "../lib/graphData";
+import { ForceSimulation3D } from "../lib/forceSimulation3d";
+import type { GraphLayout, Node3D } from "../lib/forceSimulation3d";
 import { api, nodesService } from "../services/api";
 import { useAppStore } from "../store/useAppStore";
 
@@ -665,7 +666,7 @@ function adaptGraphData(raw: any): GraphData {
     degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
     degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
   });
-  entities.forEach((e) => {
+  entities.forEach((e: any) => {
     e.degree = degreeMap.get(e.id) || 0;
   });
 
@@ -701,7 +702,7 @@ function adaptGraphData(raw: any): GraphData {
   }
 
   const domainGroups = new Map<string, string[]>();
-  entities.forEach((e) => {
+  entities.forEach((e: any) => {
     const d = e.domain || "General";
     if (!domainGroups.has(d)) domainGroups.set(d, []);
     domainGroups.get(d)?.push(e.id);

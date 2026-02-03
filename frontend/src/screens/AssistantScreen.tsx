@@ -321,7 +321,7 @@ export function AssistantScreen() {
     h1: ({ children }: any) => <h1 className="text-xl font-bold mb-2 mt-4">{children}</h1>,
     h2: ({ children }: any) => <h2 className="text-lg font-bold mb-2 mt-3">{children}</h2>,
     h3: ({ children }: any) => <h3 className="text-md font-bold mb-1 mt-2">{children}</h3>,
-    code: ({ inline, className, children }: any) => {
+    code: ({ inline, children }: any) => {
       if (inline) {
         return <code className="bg-white/10 rounded px-1 py-0.5 text-xs font-mono">{children}</code>;
       }

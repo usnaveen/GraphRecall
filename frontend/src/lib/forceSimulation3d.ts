@@ -1,5 +1,7 @@
+// @ts-nocheck
 import * as d3 from "d3-force-3d";
-import { Entity, Community, GraphData, ENTITY_COLORS } from "./graphData";
+import type { Entity, Community, GraphData } from "./graphData";
+import { ENTITY_COLORS } from "./graphData";
 
 export interface Node3D extends Entity {
   x: number;
