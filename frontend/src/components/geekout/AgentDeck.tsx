@@ -8,50 +8,66 @@ const AGENTS_DATA: AgentInfo[] = [
     {
         id: 'supervisor',
         name: 'Supervisor',
-        role: 'The Boss',
+        role: 'The Orchestrator',
         description: 'Orchestrates the entire team. Decides which agent is best suited for your request and routes tasks accordingly.',
         model: 'LangGraph + Gemini 2.5',
         rarity: 'legendary',
         number: '000',
         commitSha: '77c19e6',
         createdDate: 'Feb 3, 2026',
-        imageFilename: 'frosted_card_bg_5_supervisor_1770134893540.png'
+        imageFilename: 'frosted_card_bg_5_supervisor_1770134893540.png',
+        tools: ['LangGraph', 'State Management'],
+        databases: [],
+        context: ['User Intent', 'Workflow State'],
+        isRAG: false
     },
     {
         id: 'scanner',
         name: 'Scanner',
-        role: 'The Scout',
+        role: 'File Watcher',
         description: 'Silently prowls through your uploads in the dark, marking potential quizzes so you don\'t have to pay for them later.',
-        model: 'Gemini 2.5 Flash',
+        model: 'Watchdog API',
         rarity: 'rare',
         number: '008',
         commitSha: '39ab1ea',
         createdDate: 'Feb 3, 2026',
-        imageFilename: 'frosted_card_bg_9_scanner_1770134996986.png'
+        imageFilename: 'frosted_card_bg_9_scanner_1770134996986.png',
+        tools: ['File System Events', 'Hash Check'],
+        databases: [],
+        context: ['Local Directories', 'File Metadata'],
+        isRAG: false
     },
     {
         id: 'matchmaker',
         name: 'Matchmaker',
-        role: 'The Connector',
+        role: 'Graph Linker',
         description: 'Analyzes your graph for missing links. "Hey, isn\'t Quantum Mechanics related to Linear Algebra?"',
         model: 'Gemini 2.5 Flash',
         rarity: 'rare',
         number: '009',
         commitSha: '77c19e6',
         createdDate: 'Feb 3, 2026',
-        imageFilename: 'frosted_card_bg_7_matchmaker_1770134942667.png'
+        imageFilename: 'frosted_card_bg_7_matchmaker_1770134942667.png',
+        tools: ['Graph Traversal', 'Semantic Check'],
+        databases: ['Neo4j'],
+        context: ['Graph Structure', 'Concept Nodes'],
+        isRAG: false
     },
     {
         id: 'librarian',
         name: 'Librarian',
-        role: 'The Oracle',
+        role: 'Knowledge Keeper',
         description: 'Keeper of the Graph. Knows everything you\'ve ever noted and weaves answers from the tangled web of your memory.',
-        model: 'Gemini 2.5 Flash + GraphRAG',
+        model: 'Gemini 2.5 Flash',
         rarity: 'legendary',
         number: '005',
         commitSha: '0dea645',
         createdDate: 'Jan 30, 2026',
-        imageFilename: 'frosted_card_bg_10_librarian_1770135034314.png'
+        imageFilename: 'frosted_card_bg_10_librarian_1770135034314.png',
+        tools: ['Vector Search', 'Graph Cypher'],
+        databases: ['Neo4j', 'Postgres'],
+        context: ['Knowledge Graph', 'Notes', 'Chat History'],
+        isRAG: true
     },
     {
         id: 'detective',
@@ -63,43 +79,59 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '006',
         commitSha: 'fb03b97',
         createdDate: 'Jan 31, 2026',
-        imageFilename: 'frosted_card_bg_6_detective_1770134917329.png'
+        imageFilename: 'frosted_card_bg_6_detective_1770134917329.png',
+        tools: ['Reasoning Engine', 'Intent Classifier'],
+        databases: [],
+        context: ['User Query', 'Conversation Context'],
+        isRAG: false
     },
     {
         id: 'quiz',
         name: 'Quiz Master',
-        role: 'The Explorer',
+        role: 'Web Explorer',
         description: 'Ventures into the wild internet (via Tavily) to verify your knowledge against the world.',
-        model: 'Gemini 2.5 Flash + Tavily',
+        model: 'Gemini 2.5 + Tavily',
         rarity: 'rare',
         number: '007',
         commitSha: 'f248ca3',
         createdDate: 'Feb 2, 2026',
-        imageFilename: 'frosted_card_bg_3_1770134221369.png'
+        imageFilename: 'frosted_card_bg_3_1770134221369.png',
+        tools: ['Tavily Search', 'Curriculum Gen'],
+        databases: ['Postgres Cache'],
+        context: ['Web Search Results', 'External Data'],
+        isRAG: false
     },
     {
         id: 'mermaid',
         name: 'Architect',
-        role: 'The Visualizer',
+        role: 'Visualizer',
         description: 'Translates abstract thoughts into structured diagrams. If you can think it, this agent can draw it.',
         model: 'Gemini 2.5 Flash',
         rarity: 'rare',
         number: '003',
         commitSha: '0dea645',
         createdDate: 'Jan 30, 2026',
-        imageFilename: 'frosted_card_bg_4_1770134241935.png'
+        imageFilename: 'frosted_card_bg_4_1770134241935.png',
+        tools: ['Mermaid.js', 'Flowchart Gen'],
+        databases: [],
+        context: ['Concept Relationships', 'Process Flows'],
+        isRAG: false
     },
     {
         id: 'content',
         name: 'Artist',
-        role: 'Content Generator',
+        role: 'Content Engine',
         description: 'The workhorse. Churns out flashcards and questions tirelessly. Loves a good multiple choice.',
         model: 'Gemini 2.5 Flash',
         rarity: 'common',
         number: '004',
         commitSha: '0dea645',
         createdDate: 'Jan 30, 2026',
-        imageFilename: 'frosted_card_bg_1_1770134176619.png'
+        imageFilename: 'frosted_card_bg_1_1770134176619.png',
+        tools: ['JSON Parser', 'Flashcard Gen'],
+        databases: ['Postgres'],
+        context: ['Concept Definitions', 'Learning Science'],
+        isRAG: false
     },
     {
         id: 'synthesis',
@@ -111,7 +143,11 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '002',
         commitSha: '0dea645',
         createdDate: 'Jan 30, 2026',
-        imageFilename: 'frosted_card_bg_2_1770134199307.png'
+        imageFilename: 'frosted_card_bg_2_1770134199307.png',
+        tools: ['Vector Similarity', 'Conflict Resolution'],
+        databases: ['Postgres (pgvector)'],
+        context: ['Existing Concepts', 'New Extracts'],
+        isRAG: false
     },
     {
         id: 'extract',
@@ -123,7 +159,11 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '001',
         commitSha: '0dea645',
         createdDate: 'Jan 30, 2026',
-        imageFilename: 'frosted_card_bg_8_miner_1770134971171.png'
+        imageFilename: 'frosted_card_bg_8_miner_1770134971171.png',
+        tools: ['NLP Extraction', 'Pattern Matching'],
+        databases: [],
+        context: ['Raw Note Content', 'Markdown'],
+        isRAG: false
     },
 ];
 
