@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Send, Search, BookOpen, Target,
   Map, Lightbulb, Link2, MoreVertical, X, Save,
-  MessageSquare, Trash2, History, BookmarkPlus
+  MessageSquare, Trash2, History, BookmarkPlus,
+  Cpu, Activity
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -15,6 +18,8 @@ import { api } from '../services/api';
  * Returns the topic string or null if not a quiz request.
  */
 function extractQuizTopic(message: string): string | null {
+  if (message.startsWith('@quiz ')) return message.replace('@quiz ', '').trim();
+
   const patterns = [
     /quiz\s+me\s+on\s+(.+)/i,
     /test\s+me\s+on\s+(.+)/i,
@@ -29,12 +34,12 @@ function extractQuizTopic(message: string): string | null {
 }
 
 const quickActions = [
-  { id: 'search', icon: Search, label: 'Search Notes', color: '#B6FF2E' },
-  { id: 'summarize', icon: BookOpen, label: 'Summarize Topic', color: '#2EFFE6' },
-  { id: 'quiz', icon: Target, label: 'Quiz Me', color: '#FF6B6B' },
-  { id: 'path', icon: Map, label: 'Learning Path', color: '#9B59B6' },
-  { id: 'explain', icon: Lightbulb, label: 'Explain Like I\'m 5', color: '#F59E0B' },
-  { id: 'connect', icon: Link2, label: 'Find Connections', color: '#EC4899' },
+  { id: 'search', tag: '@search ', icon: Search, label: 'Search Notes', color: '#B6FF2E' },
+  { id: 'summarize', tag: '@summary ', icon: BookOpen, label: 'Summarize', color: '#2EFFE6' },
+  { id: 'quiz', tag: '@quiz ', icon: Target, label: 'Quiz Me', color: '#FF6B6B' },
+  { id: 'path', tag: '@path ', icon: Map, label: 'Learning Path', color: '#9B59B6' },
+  { id: 'explain', tag: '@eli5 ', icon: Lightbulb, label: 'ELI5', color: '#F59E0B' },
+  { id: 'connect', tag: '@connect ', icon: Link2, label: 'Connect', color: '#EC4899' },
 ];
 
 interface ChatConversation {
@@ -43,6 +48,16 @@ interface ChatConversation {
   updated_at: string;
   message_count: number;
 }
+
+const expandTags = (text: string): string => {
+  if (text.startsWith('@search ')) return `Search my notes for: ${text.replace('@search ', '')}`;
+  if (text.startsWith('@summary ')) return `Summarize: ${text.replace('@summary ', '')}`;
+  if (text.startsWith('@quiz ')) return `Quiz me on: ${text.replace('@quiz ', '')}`;
+  if (text.startsWith('@path ')) return `Create a learning path for: ${text.replace('@path ', '')}`;
+  if (text.startsWith('@eli5 ')) return `Explain like I'm 5: ${text.replace('@eli5 ', '')}`;
+  if (text.startsWith('@connect ')) return `Find connections for: ${text.replace('@connect ', '')}`;
+  return text;
+};
 
 export function AssistantScreen() {
   const { chatMessages, addChatMessage, clearChatMessages, navigateToFeedWithTopic } = useAppStore();
@@ -57,6 +72,7 @@ export function AssistantScreen() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [swipingMessageId, setSwipingMessageId] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -165,14 +181,17 @@ export function AssistantScreen() {
 
   // Send message with streaming
   const handleSend = async (overrideMessage?: string) => {
-    const messageText = (overrideMessage ?? inputValue).trim();
-    if (!messageText) return;
-    const quizTopic = extractQuizTopic(messageText);
+    const rawInput = (overrideMessage ?? inputValue).trim();
+    if (!rawInput) return;
+
+    // Expand tags
+    const messageText = expandTags(rawInput);
+    const quizTopic = extractQuizTopic(rawInput); // Check raw input for @quiz tag
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      content: messageText,
+      content: rawInput, // Show what user typed (with tag) or full text? Usually show expanded for clarity or raw for style. Let's show raw to keep "tag" feel.
     };
 
     addChatMessage(userMessage);
@@ -181,11 +200,13 @@ export function AssistantScreen() {
 
     // If it's a quiz request, navigate to feed with the topic after a brief delay
     if (quizTopic) {
+      // Still send to chat for record? Or just nav? User implies "Prompt will go on and work".
+      // We'll let it process normally but also Nav.
       setTimeout(() => {
         navigateToFeedWithTopic(quizTopic);
-      }, 800);
-      setIsTyping(false);
-      return;
+      }, 1500); // Give time to see "Generating quiz..."
+
+      // We can also let the backend generation happen if we want a text response
     }
 
     // Initial placeholder for assistant message
@@ -198,13 +219,11 @@ export function AssistantScreen() {
     };
     addChatMessage(assistantMessage);
 
-    // Use auth token and correct API URL
-    const token = useAuthStore.getState().idToken; // Access token directly from store
+    const token = useAuthStore.getState().idToken;
     const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
     try {
       const activeConversationId = await ensureConversation();
-      // Use streaming endpoint
       const response = await fetch(`${API_BASE}/chat/stream`, {
         method: 'POST',
         headers: {
@@ -212,7 +231,7 @@ export function AssistantScreen() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          message: messageText,
+          message: messageText, // Send expanded text
           user_id: '00000000-0000-0000-0000-000000000001',
           conversation_id: activeConversationId,
         }),
@@ -242,9 +261,8 @@ export function AssistantScreen() {
 
                 if (data.type === 'status') {
                   currentStatus = data.content;
-                  // Update message status in store
                   const updatedMsg = { ...assistantMessage, content: fullContent, status: currentStatus };
-                  addChatMessage(updatedMsg); // Store should handle update if ID matches, else we'd need an update method
+                  addChatMessage(updatedMsg);
                 } else if (data.type === 'chunk') {
                   fullContent += data.content;
                   const updatedMsg = { ...assistantMessage, content: fullContent, status: currentStatus };
@@ -253,7 +271,7 @@ export function AssistantScreen() {
                   const finalMsg: ChatMessage = {
                     ...assistantMessage,
                     content: fullContent,
-                    status: undefined,
+                    status: undefined, // Clear status when done
                     sources: data.sources || [],
                     relatedConcepts: data.related_concepts || [],
                     serverId: data.message_id,
@@ -288,12 +306,38 @@ export function AssistantScreen() {
     const action = quickActions.find(a => a.id === actionId);
     if (!action) return;
 
-    const text = `Help me ${action.label.toLowerCase()}`;
-    setInputValue(text);
-    handleSend(text);
+    setInputValue(action.tag);
+    inputRef.current?.focus();
   };
 
   const showQuickActions = chatMessages.length <= 1;
+
+  // Custom renderer for ReactMarkdown
+  const MarkdownComponents = {
+    p: ({ children }: any) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+    ul: ({ children }: any) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+    ol: ({ children }: any) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+    li: ({ children }: any) => <li>{children}</li>,
+    h1: ({ children }: any) => <h1 className="text-xl font-bold mb-2 mt-4">{children}</h1>,
+    h2: ({ children }: any) => <h2 className="text-lg font-bold mb-2 mt-3">{children}</h2>,
+    h3: ({ children }: any) => <h3 className="text-md font-bold mb-1 mt-2">{children}</h3>,
+    code: ({ inline, className, children }: any) => {
+      if (inline) {
+        return <code className="bg-white/10 rounded px-1 py-0.5 text-xs font-mono">{children}</code>;
+      }
+      return (
+        <pre className="bg-[#1a1a1f] p-3 rounded-lg overflow-x-auto mb-2 border border-white/10">
+          <code className="text-xs font-mono text-white/80">{children}</code>
+        </pre>
+      );
+    },
+    strong: ({ children }: any) => <strong className="font-semibold text-[#B6FF2E]">{children}</strong>,
+    a: ({ href, children }: any) => (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#2EFFE6] hover:underline">
+        {children}
+      </a>
+    ),
+  };
 
   return (
     <div className="h-[calc(100vh-180px)] flex flex-col relative">
@@ -310,10 +354,10 @@ export function AssistantScreen() {
         <AnimatePresence>
           {showMenu && (
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="absolute right-0 top-10 bg-[#1a1a1f] border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[200px]"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="absolute right-0 top-10 bg-[#1a1a1f] border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[200px] origin-top-right z-50"
             >
               <button
                 onClick={handleAddToKnowledge}
@@ -442,100 +486,113 @@ export function AssistantScreen() {
       </AnimatePresence>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 pr-1 mb-4 mt-10">
+      <div className="flex-1 overflow-y-auto space-y-6 pr-2 mb-4 mt-2 p-1">
+        {chatMessages.length === 0 && !showQuickActions && (
+          <div className="h-full flex flex-col items-center justify-center opacity-30">
+            <MessageSquare className="w-12 h-12 mb-2" />
+            <p>Start a conversation</p>
+          </div>
+        )}
+
         {chatMessages.map((message: ChatMessage) => (
           <motion.div
             key={message.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} relative overflow-hidden`}
+            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} relative overflow-visible group`}
           >
-            {/* Swipe-right save indicator (behind the message bubble) */}
+            {/* Swipe/Status Layer */}
             {message.role === 'assistant' && (
-              <div className="absolute left-0 top-0 bottom-0 flex items-center pl-2 pointer-events-none">
+              <div className="absolute -left-12 top-0 bottom-0 flex items-center">
                 <motion.div
                   animate={{
-                    opacity: swipingMessageId === message.id ? 1 : 0,
-                    scale: swipingMessageId === message.id ? 1 : 0.7,
+                    x: swipingMessageId === message.id ? 10 : 0,
+                    opacity: swipingMessageId === message.id ? 1 : 0
                   }}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-[#B6FF2E]/20"
+                  className="p-2 rounded-full bg-[#B6FF2E] text-black shadow-lg shadow-[#B6FF2E]/20"
                 >
-                  <Save className="w-4 h-4 text-[#B6FF2E]" />
-                  <span className="text-[10px] text-[#B6FF2E] font-medium">Save</span>
+                  <Save className="w-4 h-4" />
                 </motion.div>
               </div>
             )}
 
             <motion.div
               className={`
-                max-w-[85%] rounded-2xl p-4 relative
+                max-w-[85%] rounded-2xl p-4 relative shadow-sm
                 ${message.role === 'user'
-                  ? 'bg-[#B6FF2E]/20 text-white ml-8'
-                  : 'bg-white/5 text-white mr-8 border-l-2 border-[#B6FF2E]/50'
+                  ? 'bg-[#B6FF2E]/10 text-white ml-10 border border-[#B6FF2E]/20'
+                  : 'bg-[#1a1a2e] text-white mr-10 border border-white/10'
                 }
               `}
-              // Swipe-right-to-save for assistant messages only
+              // Enhanced drag gesture
               {...(message.role === 'assistant' && !message.status ? {
-                drag: 'x' as const,
-                dragConstraints: { left: 0, right: 0 },
-                dragElastic: { left: 0, right: 0.4 },
+                drag: 'x',
+                dragConstraints: { left: 0, right: 80 },
+                dragElastic: 0.1,
                 onDrag: (_: any, info: any) => {
-                  if (info.offset.x > 30) {
+                  if (info.offset.x > 40) {
                     setSwipingMessageId(message.id);
                   } else {
                     setSwipingMessageId(null);
                   }
                 },
                 onDragEnd: (_: any, info: any) => {
-                  if (info.offset.x > 80) {
+                  if (info.offset.x > 60) {
                     handleSwipeSave(message.id);
                   }
                   setSwipingMessageId(null);
-                },
+                }
               } : {})}
+              style={{ x: 0 }} // Reset x on drag end visually handled by dragConstraints roughly
             >
-              {/* Swipe hint for assistant messages */}
+              {/* Swipe Hint */}
               {message.role === 'assistant' && !message.status && (
-                <div className="absolute top-2 right-2">
-                  <Save className="w-3 h-3 text-white/20" />
+                <div className="absolute -right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-30 transition-opacity">
+                  <div className="w-1 h-8 rounded-full bg-white/20" />
+                </div>
+              )}
+
+              {/* Status Header for Assistant */}
+              {message.role === 'assistant' && message.status && (
+                <div className="mb-3 flex items-center gap-2 text-xs font-mono text-[#B6FF2E]">
+                  <Activity className="w-3 h-3 animate-pulse" />
+                  <span className="opacity-80 uppercase tracking-wider">{message.status}</span>
                 </div>
               )}
 
               {/* Content */}
-              <div className="text-sm whitespace-pre-line leading-relaxed">
-                {message.content}
-                {message.status && (
-                  <div className="mt-2 flex items-center gap-2 text-[10px] text-[#B6FF2E]/60 italic animate-pulse">
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                      className="w-2 h-2 border-t border-[#B6FF2E] rounded-full"
-                    />
-                    {message.status}
-                  </div>
+              <div className="text-sm text-white/90">
+                {message.role === 'user' ? (
+                  <p className="whitespace-pre-wrap font-medium">{message.content}</p>
+                ) : (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={MarkdownComponents}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
                 )}
               </div>
 
-              {/* Sources — clickable to navigate to notes */}
+              {/* Sources */}
               {message.sources && message.sources.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-white/10">
-                  <p className="text-xs text-white/50 mb-1 flex items-center gap-1">
+                <div className="mt-4 pt-3 border-t border-white/10">
+                  <p className="text-[10px] text-white/40 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                     <BookOpen className="w-3 h-3" />
-                    Sources from your notes
+                    Verified Sources
                   </p>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5">
                     {message.sources.map((source: string, j: number) => (
                       <button
                         key={j}
                         onClick={() => {
-                          // Navigate to profile notes view — setActiveTab triggers navigation
                           const { setActiveTab } = useAppStore.getState();
                           setActiveTab('profile');
                         }}
-                        className="px-2 py-0.5 rounded-full text-[10px] bg-[#2EFFE6]/10 text-[#2EFFE6] border border-[#2EFFE6]/20 hover:bg-[#2EFFE6]/20 transition-colors cursor-pointer flex items-center gap-1"
+                        className="px-2.5 py-1 rounded-md text-[10px] bg-[#2EFFE6]/5 text-[#2EFFE6] border border-[#2EFFE6]/10 hover:bg-[#2EFFE6]/10 transition-colors cursor-pointer flex items-center gap-1"
                       >
                         <Link2 className="w-2.5 h-2.5" />
-                        {source}
+                        <span className="truncate max-w-[150px]">{source}</span>
                       </button>
                     ))}
                   </div>
@@ -544,12 +601,12 @@ export function AssistantScreen() {
 
               {/* Related Concepts */}
               {message.relatedConcepts && message.relatedConcepts.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1">
+                <div className="mt-3 flex flex-wrap gap-1.5">
                   {message.relatedConcepts.map((concept: string, j: number) => (
                     <button
                       key={j}
                       onClick={() => navigateToFeedWithTopic(concept)}
-                      className="px-2 py-0.5 rounded-full text-[10px] bg-[#B6FF2E]/10 text-[#B6FF2E] hover:bg-[#B6FF2E]/20 transition-colors"
+                      className="px-2.5 py-1 rounded-full text-[10px] bg-[#B6FF2E]/5 text-[#B6FF2E] border border-[#B6FF2E]/10 hover:bg-[#B6FF2E]/10 transition-colors"
                     >
                       {concept}
                     </button>
@@ -560,36 +617,21 @@ export function AssistantScreen() {
           </motion.div>
         ))}
 
-        {/* Typing Indicator */}
+        {/* Typing Bubble */}
         {isTyping && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex justify-start"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex justify-start px-4"
           >
-            <div className="bg-white/5 rounded-2xl p-4 mr-8 border-l-2 border-[#B6FF2E]/30">
-              <div className="flex gap-1">
-                <motion.div
-                  animate={{ y: [0, -4, 0] }}
-                  transition={{ duration: 0.5, repeat: Infinity, delay: 0 }}
-                  className="w-2 h-2 rounded-full bg-white/40"
-                />
-                <motion.div
-                  animate={{ y: [0, -4, 0] }}
-                  transition={{ duration: 0.5, repeat: Infinity, delay: 0.15 }}
-                  className="w-2 h-2 rounded-full bg-white/40"
-                />
-                <motion.div
-                  animate={{ y: [0, -4, 0] }}
-                  transition={{ duration: 0.5, repeat: Infinity, delay: 0.3 }}
-                  className="w-2 h-2 rounded-full bg-white/40"
-                />
-              </div>
+            <div className="flex items-center gap-2 p-3 rounded-2xl bg-[#1a1a2e] border border-white/5">
+              <Cpu className="w-3 h-3 text-[#B6FF2E] animate-pulse" />
+              <span className="text-xs text-white/40">Processing...</span>
             </div>
           </motion.div>
         )}
 
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-4" />
       </div>
 
       {/* Quick Actions */}
@@ -599,9 +641,9 @@ export function AssistantScreen() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="mb-4"
+            className="mb-4 px-4"
           >
-            <p className="text-xs text-white/40 mb-3">Quick Actions</p>
+            <p className="text-[10px] text-white/30 uppercase tracking-wider mb-2 ml-1">Suggested Actions</p>
             <div className="grid grid-cols-2 gap-2">
               {quickActions.map((action, i: number) => (
                 <motion.button
@@ -610,15 +652,18 @@ export function AssistantScreen() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                   onClick={() => handleQuickAction(action.id)}
-                  className="flex items-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-left"
+                  className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-br from-white/5 to-white/0 border border-white/10 hover:border-white/20 transition-all text-left group"
                 >
                   <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center"
-                    style={{ backgroundColor: `${action.color}20` }}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110"
+                    style={{ backgroundColor: `${action.color}15`, color: action.color }}
                   >
-                    <action.icon className="w-4 h-4" style={{ color: action.color }} />
+                    <action.icon className="w-4 h-4" />
                   </div>
-                  <span className="text-xs text-white/80">{action.label}</span>
+                  <div>
+                    <span className="text-xs font-medium text-white/90 block">{action.label}</span>
+                    <span className="text-[10px] text-white/40 font-mono">{action.tag}</span>
+                  </div>
                 </motion.button>
               ))}
             </div>
@@ -627,31 +672,34 @@ export function AssistantScreen() {
       </AnimatePresence>
 
       {/* Input Bar */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative"
-      >
-        <div className="flex items-center gap-2 glass-surface rounded-full px-2 py-2">
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Ask anything about your knowledge..."
-            className="flex-1 bg-transparent text-white text-sm placeholder:text-white/40 focus:outline-none"
-          />
+      <div className="p-4 pt-0">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative"
+        >
+          <div className="flex items-center gap-2 glass-surface rounded-2xl p-2 border border-white/10 focus-within:border-[#B6FF2E]/50 transition-colors bg-[#0a0a0f]">
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              placeholder="Message assistant..."
+              className="flex-1 bg-transparent text-white text-sm placeholder:text-white/30 focus:outline-none px-2 font-medium"
+            />
 
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={() => handleSend()}
-            disabled={!inputValue.trim()}
-            className="w-9 h-9 rounded-full bg-[#B6FF2E] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#c5ff4d] transition-colors"
-          >
-            <Send className="w-4 h-4 text-[#07070A]" />
-          </motion.button>
-        </div>
-      </motion.div>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => handleSend()}
+              disabled={!inputValue.trim()}
+              className="w-10 h-10 rounded-xl bg-[#B6FF2E] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#c5ff4d] transition-colors text-black shadow-lg shadow-[#B6FF2E]/10"
+            >
+              <Send className="w-5 h-5" />
+            </motion.button>
+          </div>
+        </motion.div>
+      </div>
     </div>
   );
 }

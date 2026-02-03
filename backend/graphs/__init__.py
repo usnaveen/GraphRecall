@@ -39,6 +39,10 @@ from backend.graphs.content_graph import (
     content_graph,
     run_content_generation,
 )
+from backend.graphs.link_suggestion_graph import (
+    link_suggestion_graph,
+    run_link_suggestions,
+)
 from backend.graphs.supervisor_graph import supervisor_graph
 from backend.graphs.mcp_graph import mcp_graph, run_verification
 from backend.graphs.checkpointer import get_checkpointer, setup_postgres_checkpointer
@@ -66,6 +70,9 @@ __all__ = [
     # Content (Parallel)
     "content_graph",
     "run_content_generation",
+    # Link Suggestions
+    "link_suggestion_graph",
+    "run_link_suggestions",
     # Supervisor (Orchestrator)
     "supervisor_graph",
     # Verification (MCP)
@@ -75,4 +82,3 @@ __all__ = [
     "get_checkpointer",
     "setup_postgres_checkpointer",
 ]
-

@@ -79,7 +79,7 @@ function AuthenticatedApp() {
       <TopBar />
 
       {/* Main Content */}
-      <main className="pt-16 pb-28 px-4 min-h-screen">
+      <main className="pt-16 pb-28 px-4 min-h-screen lg:pb-10 lg:pr-24 lg:px-8">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -87,7 +87,7 @@ function AuthenticatedApp() {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="max-w-lg mx-auto"
+            className="max-w-lg mx-auto w-full lg:max-w-[1440px]"
           >
             {renderScreen()}
           </motion.div>
@@ -95,7 +95,18 @@ function AuthenticatedApp() {
       </main>
 
       {/* Bottom Liquid Glass Dock */}
-      <LiquidDock activeTab={activeTab} onTabChange={setActiveTab} />
+      <LiquidDock
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        orientation="horizontal"
+        className="lg:hidden"
+      />
+      <LiquidDock
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        orientation="vertical"
+        className="hidden lg:flex"
+      />
     </div>
   );
 }

@@ -5,6 +5,8 @@ import type { TabType } from '../types';
 interface LiquidDockProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
+  orientation?: 'horizontal' | 'vertical';
+  className?: string;
 }
 
 interface DockItem {
@@ -21,19 +23,37 @@ const dockItems: DockItem[] = [
   { id: 'profile', icon: User, label: 'Profile' },
 ];
 
-export function LiquidDock({ activeTab, onTabChange }: LiquidDockProps) {
+export function LiquidDock({
+  activeTab,
+  onTabChange,
+  orientation = 'horizontal',
+  className = '',
+}: LiquidDockProps) {
+  const isVertical = orientation === 'vertical';
+  const navClasses = isVertical
+    ? 'fixed right-4 top-1/2 -translate-y-1/2 z-50 flex justify-center'
+    : 'fixed bottom-0 left-0 right-0 z-50 flex justify-center pb-safe-area';
+  const navStyle = isVertical
+    ? {}
+    : {
+        paddingBottom: 'clamp(1rem, env(safe-area-inset-bottom), 3rem)',
+        marginBottom: '0.5rem',
+      };
+  const dockClasses = isVertical
+    ? 'liquid-glass-dock rounded-3xl px-2 py-3 flex flex-col items-center gap-2 mx-2'
+    : 'liquid-glass-dock rounded-full px-3 py-2 flex items-center gap-1 mx-4 w-fit max-w-[90vw] justify-center';
+  const tooltipClass = isVertical
+    ? 'absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-black/80 rounded-md text-[10px] text-white/80 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none'
+    : 'absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-black/80 rounded-md text-[10px] text-white/80 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none';
   return (
     <motion.nav
-      initial={{ opacity: 0, y: 50 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, y: isVertical ? 0 : 50, x: isVertical ? 50 : 0 }}
+      animate={{ opacity: 1, y: 0, x: 0 }}
       transition={{ duration: 0.5, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
-      className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pb-safe-area"
-      style={{
-        paddingBottom: 'clamp(1rem, env(safe-area-inset-bottom), 3rem)',
-        marginBottom: '0.5rem'
-      }}
+      className={`${navClasses} ${className}`}
+      style={navStyle}
     >
-      <div className="liquid-glass-dock rounded-full px-3 py-2 flex items-center gap-1 mx-4 w-fit max-w-[90vw] justify-center">
+      <div className={dockClasses}>
         {dockItems.map((item, index) => {
           const isActive = activeTab === item.id;
           const isCenter = index === 2; // Create button
@@ -41,18 +61,18 @@ export function LiquidDock({ activeTab, onTabChange }: LiquidDockProps) {
 
           if (isCenter) {
             return (
-              <div key={item.id} className="relative w-12 h-11 flex items-center justify-center">
+              <div key={item.id} className="relative w-12 h-12 flex items-center justify-center">
                 <motion.button
                   onClick={() => onTabChange(item.id)}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  className="absolute w-12 h-12 -top-3 flex items-center justify-center rounded-full bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6] transition-all duration-300"
+                  className={`group absolute w-12 h-12 flex items-center justify-center rounded-full bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6] transition-all duration-300 ${isVertical ? 'right-0' : '-top-3'}`}
                 >
                   <Icon
                     className="w-5 h-5 text-[#07070A] relative z-10"
                     strokeWidth={2.5}
                   />
-                  <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-black/80 rounded-md text-[10px] text-white/80 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                  <span className={tooltipClass}>
                     {item.label}
                   </span>
                 </motion.button>
@@ -67,7 +87,7 @@ export function LiquidDock({ activeTab, onTabChange }: LiquidDockProps) {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               className={`
-                relative flex items-center justify-center rounded-full transition-all duration-300
+                group relative flex items-center justify-center rounded-full transition-all duration-300
                 w-11 h-11
                 ${isActive
                   ? 'bg-[#B6FF2E]/20 neon-glow'
@@ -94,7 +114,7 @@ export function LiquidDock({ activeTab, onTabChange }: LiquidDockProps) {
               />
 
               {/* Label tooltip */}
-              <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-black/80 rounded-md text-[10px] text-white/80 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              <span className={tooltipClass}>
                 {item.label}
               </span>
             </motion.button>
