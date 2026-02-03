@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import structlog
 from langchain_community.tools.tavily_search import TavilySearchResults
@@ -35,13 +35,14 @@ class WebQuizAgent:
         concept_name: str, 
         domain: str = "General",
         num_questions: int = 3
-    ) -> List[MCQQuestion]:
+    ) -> Tuple[List[MCQQuestion], str]:
         """
         Search the web for questions about a concept and parse them.
+        Returns: (List[MCQQuestion], source_url)
         """
         if not self.search:
             logger.warning("WebQuizAgent: Search disabled (no API key?)")
-            return []
+            return [], ""
 
         logger.info("WebQuizAgent: Searching", concept=concept_name)
         
@@ -56,8 +57,11 @@ class WebQuizAgent:
                 for res in search_results
             ])
             
+            # Use the first result as the primary source URL (simplification)
+            primary_source_url = search_results[0]['url'] if search_results else ""
+            
             if not context_text:
-                return []
+                return [], ""
 
             # 2. Extract/Generate MCQs using LLM
             prompt = f"""You are a Quiz Generator Agent.
@@ -118,8 +122,8 @@ OUTPUT JSON FORMAT:
                 ))
                 
             logger.info("WebQuizAgent: Found/Generated quizzes", count=len(mcqs))
-            return mcqs
+            return mcqs, primary_source_url
 
         except Exception as e:
             logger.error("WebQuizAgent: Failed to generate quizzes", error=str(e))
-            return []
+            return [], ""
