@@ -180,9 +180,9 @@ export function GraphScreen() {
   const handleShowResources = async (topicName: string, type: "note" | "link") => {
     setSelectedResourceTopic(topicName);
     setResourceType(type);
-    setShowResources(true);
-    setResourcesLoading(true);
+    setResourcesLoading(true); // Set loading FIRST
     setResources([]);
+    setShowResources(true); // Then show modal
 
     try {
       const response = await api.get(`/feed/resources/${encodeURIComponent(topicName)}`);

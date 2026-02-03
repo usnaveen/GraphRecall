@@ -66,7 +66,7 @@ export function LiquidDock({
                   onClick={() => onTabChange(item.id)}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  className={`group absolute w-12 h-12 flex items-center justify-center rounded-full bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6] transition-all duration-300 ${isVertical ? 'right-0' : '-top-3'}`}
+                  className={`group absolute left-0 w-12 h-12 flex items-center justify-center rounded-full bg-gradient-to-br from-[#B6FF2E] to-[#2EFFE6] transition-all duration-300 ${isVertical ? 'right-0' : '-top-5 shadow-[0_0_20px_rgba(182,255,46,0.3)]'}`}
                 >
                   <Icon
                     className="w-5 h-5 text-[#07070A] relative z-10"

@@ -63,7 +63,11 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, index, onRemove }) 
                 scale: isTop ? 1 : 1 - index * 0.05,
                 y: isTop ? 0 : index * 10,
                 opacity: index < 3 ? 1 : 0,
-                rotate: isTop ? 0 : (index % 2 === 0 ? 2 : -2)
+                rotate: isTop ? 0 : (index % 2 === 0 ? 2 : -2),
+            }}
+            whileTap={{
+                scale: 0.98,
+                filter: "drop-shadow(0 0 15px rgba(182, 255, 46, 0.5))"
             }}
             exit={{ x: exitX.current, opacity: 0, transition: { duration: 0.2 } }}
             drag={isTop ? 'x' : false}
