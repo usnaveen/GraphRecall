@@ -12,6 +12,11 @@ export interface AgentInfo {
     commitSha: string;
     createdDate: string;
     imageFilename: string;
+    // New fields
+    tools?: string[];
+    databases?: string[];
+    context?: string[];
+    isRAG?: boolean;
 }
 
 interface AgentCardProps {
@@ -89,13 +94,20 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, index, onRemove }) 
                     <div className="bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-xs font-mono text-zinc-300">
                         #{agent.number}
                     </div>
-                    <div className={`
-             px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider
-             ${agent.rarity === 'legendary' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50' :
-                            agent.rarity === 'rare' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/50' :
-                                'bg-white/10 text-zinc-400 border border-white/10'}
-           `}>
-                        {RARITY_LABELS[agent.rarity]}
+                    <div className="flex gap-2">
+                        {agent.isRAG && (
+                            <div className="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#B6FF2E] text-black border border-[#B6FF2E]">
+                                RAG CORE
+                            </div>
+                        )}
+                        <div className={`
+                 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider
+                 ${agent.rarity === 'legendary' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50' :
+                                agent.rarity === 'rare' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/50' :
+                                    'bg-white/10 text-zinc-400 border border-white/10'}
+               `}>
+                            {RARITY_LABELS[agent.rarity]}
+                        </div>
                     </div>
                 </div>
 
@@ -109,22 +121,52 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, index, onRemove }) 
                             {agent.role}
                         </div>
 
-                        <p className="text-zinc-300 text-sm leading-relaxed mb-6 italic border-l-2 border-white/20 pl-3">
+                        <p className="text-zinc-300 text-sm leading-relaxed mb-4 italic border-l-2 border-white/20 pl-3">
                             "{agent.description}"
                         </p>
 
-                        <div className="space-y-2 text-xs font-mono text-zinc-400 bg-black/40 p-4 rounded-xl border border-white/5">
-                            <div className="flex justify-between">
-                                <span>Model:</span>
-                                <span className="text-zinc-200">{agent.model}</span>
+                        {/* Tech Specs */}
+                        <div className="space-y-3 bg-black/40 p-3 rounded-xl border border-white/5 backdrop-blur-sm">
+                            {(agent.tools && agent.tools.length > 0) && (
+                                <div>
+                                    <div className="text-[10px] uppercase text-zinc-500 mb-1 font-bold">Tools & Access</div>
+                                    <div className="flex flex-wrap gap-1">
+                                        {agent.tools.map(tool => (
+                                            <span key={tool} className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] text-zinc-300">
+                                                {tool}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-2">
+                                {(agent.context && agent.context.length > 0) && (
+                                    <div>
+                                        <div className="text-[10px] uppercase text-zinc-500 mb-1 font-bold">Context</div>
+                                        <div className="text-[10px] text-zinc-400 leading-tight">
+                                            {agent.context.join(", ")}
+                                        </div>
+                                    </div>
+                                )}
+                                {(agent.databases && agent.databases.length > 0) && (
+                                    <div>
+                                        <div className="text-[10px] uppercase text-zinc-500 mb-1 font-bold">Database</div>
+                                        <div className="flex flex-wrap gap-1">
+                                            {agent.databases.map(db => (
+                                                <span key={db} className="text-[#B6FF2E]/70 text-[10px]">
+                                                    {db}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                            <div className="flex justify-between">
-                                <span>Born:</span>
-                                <span className="text-zinc-200">{agent.createdDate}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>Commit:</span>
-                                <span className="text-zinc-500">{agent.commitSha}</span>
+
+                            {/* Footer Info */}
+                            <div className="pt-2 mt-2 border-t border-white/5 flex justify-between text-[10px] text-zinc-600 font-mono">
+                                <span>{agent.model}</span>
+                                <span>{agent.createdDate}</span>
                             </div>
                         </div>
                     </div>
