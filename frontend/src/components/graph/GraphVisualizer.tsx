@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Text, Sphere, Line } from "@react-three/drei";
 import * as THREE from "three";
@@ -93,6 +93,7 @@ function Node({
 }
 
 function Link({ link, isHighlighted }: { link: Link3D; isHighlighted: boolean }) {
+  const lineRef = useRef<any>(null);
   const points = useMemo(() => {
     return [
       new THREE.Vector3(link.source.x, link.source.y, link.source.z),
@@ -101,13 +102,25 @@ function Link({ link, isHighlighted }: { link: Link3D; isHighlighted: boolean })
   }, [link.source.x, link.source.y, link.source.z, link.target.x, link.target.y, link.target.z]);
 
   const thickness = useMemo(() => calculateLinkThickness(link.weight), [link.weight]);
+  const baseOpacity = isHighlighted ? 0.9 : 0.5;
+
+  useFrame(({ clock }) => {
+    if (!lineRef.current) return;
+    const t = (Math.sin(clock.elapsedTime * 3) + 1) / 2;
+    const pulse = isHighlighted ? t : 0;
+    lineRef.current.material.opacity = baseOpacity + pulse * 0.35;
+    if (lineRef.current.material.linewidth !== undefined) {
+      lineRef.current.material.linewidth = (isHighlighted ? thickness * 2 : thickness) * (1 + pulse * 0.4);
+    }
+  });
   return (
     <Line
+      ref={lineRef}
       points={points}
       color={isHighlighted ? "#ffffff" : "#888888"}
       lineWidth={isHighlighted ? thickness * 2 : thickness}
       transparent
-      opacity={isHighlighted ? 0.9 : 0.5}
+      opacity={baseOpacity}
     />
   );
 }
@@ -145,19 +158,7 @@ function Bloom({ strength }: { strength: number }) {
   return null;
 }
 
-export function GraphVisualizer({
-  layout,
-  selectedNode,
-  hoveredNode,
-  onNodeSelect,
-  onNodeHover,
-  showCommunities,
-  searchTerm,
-  visibleNodeIds,
-  showLabels,
-  isMobile,
-  onEmptyContextMenu,
-}: {
+type GraphVisualizerProps = {
   layout: GraphLayout | null;
   selectedNode: Node3D | null;
   hoveredNode: Node3D | null;
@@ -169,9 +170,29 @@ export function GraphVisualizer({
   showLabels: boolean;
   isMobile: boolean;
   onEmptyContextMenu?: (point: { x: number; y: number; z: number }) => void;
-}) {
+  focusNodeId?: string | null;
+  pulseNodeId?: string | null;
+};
+
+function GraphScene({
+  layout,
+  selectedNode,
+  hoveredNode,
+  onNodeSelect,
+  onNodeHover,
+  showCommunities,
+  searchTerm,
+  visibleNodeIds,
+  showLabels,
+  isMobile,
+  onEmptyContextMenu,
+  focusNodeId,
+  pulseNodeId,
+}: GraphVisualizerProps) {
   const nodes = layout?.nodes || [];
   const links = layout?.links || [];
+  const controlsRef = useRef<any>(null);
+  const focusRef = useRef<{ target: THREE.Vector3; position: THREE.Vector3; active: boolean } | null>(null);
 
   const highlightedIds = useMemo(() => {
     if (!searchTerm) return new Set<string>();
@@ -197,13 +218,42 @@ export function GraphVisualizer({
     );
   }, [layout?.communities, visibleNodeIds]);
 
+  const focusNode = useMemo(() => {
+    if (!focusNodeId) return null;
+    return nodes.find((n) => n.id === focusNodeId) || null;
+  }, [nodes, focusNodeId]);
+
+  const { camera } = useThree();
+
+  useEffect(() => {
+    if (!focusNode) return;
+    const controls = controlsRef.current;
+    const target = new THREE.Vector3(focusNode.x, focusNode.y, focusNode.z);
+    const currentTarget = controls?.target ? controls.target.clone() : new THREE.Vector3(0, 0, 0);
+    const currentDistance = camera.position.distanceTo(currentTarget);
+    const distance = Math.min(320, Math.max(80, currentDistance || 120));
+    const direction = camera.position.clone().sub(currentTarget).normalize();
+    const desiredPosition = target.clone().add(direction.multiplyScalar(distance));
+    focusRef.current = { target, position: desiredPosition, active: true };
+  }, [focusNode, camera]);
+
+  useFrame(() => {
+    if (!focusRef.current?.active) return;
+    const controls = controlsRef.current;
+    const target = focusRef.current.target;
+    const position = focusRef.current.position;
+    camera.position.lerp(position, 0.08);
+    if (controls?.target) {
+      controls.target.lerp(target, 0.08);
+      controls.update();
+    }
+    if (camera.position.distanceTo(position) < 1.5) {
+      focusRef.current.active = false;
+    }
+  });
+
   return (
-    <Canvas
-      camera={{ position: [0, 0, 220], fov: 55 }}
-      dpr={isMobile ? 1 : [1, 2]}
-      onPointerMissed={() => onNodeSelect(null)}
-      style={{ width: "100%", height: "100%" }}
-    >
+    <>
       <ambientLight intensity={0.4} />
       <pointLight position={[100, 100, 100]} intensity={1.2} />
       <GalaxyBackground />
@@ -228,7 +278,9 @@ export function GraphVisualizer({
           const isHighlighted =
             (selectedNode && (link.source.id === selectedNode.id || link.target.id === selectedNode.id)) ||
             (hoveredNode && (link.source.id === hoveredNode.id || link.target.id === hoveredNode.id));
-          return <Link key={link.id} link={link} isHighlighted={!!isHighlighted} />;
+          const isPulse =
+            !!pulseNodeId && (link.source.id === pulseNodeId || link.target.id === pulseNodeId);
+          return <Link key={link.id} link={link} isHighlighted={!!isHighlighted || isPulse} />;
         })}
         {visibleNodes.map((node) => (
           <Node
@@ -244,8 +296,22 @@ export function GraphVisualizer({
         ))}
       </group>
 
-      <OrbitControls enablePan enableZoom enableRotate />
+      <OrbitControls ref={controlsRef} enablePan enableZoom enableRotate />
       <Bloom strength={isMobile ? 0.4 : 0.9} />
+    </>
+  );
+}
+
+export function GraphVisualizer(props: GraphVisualizerProps) {
+  const { isMobile, onNodeSelect } = props;
+  return (
+    <Canvas
+      camera={{ position: [0, 0, 220], fov: 55 }}
+      dpr={isMobile ? 1 : [1, 2]}
+      onPointerMissed={() => onNodeSelect(null)}
+      style={{ width: "100%", height: "100%" }}
+    >
+      <GraphScene {...props} />
     </Canvas>
   );
 }

@@ -8,7 +8,9 @@ Combines:
 """
 
 import random
+import asyncio
 import uuid
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -22,7 +24,7 @@ from backend.models.feed_schemas import (
     FeedFilterRequest,
 )
 from backend.services.spaced_repetition import SpacedRepetitionService
-from backend.services.spaced_repetition import SpacedRepetitionService
+
 from backend.agents.content_generator import ContentGeneratorAgent
 from backend.agents.web_quiz_agent import WebQuizAgent
 
@@ -38,6 +40,26 @@ class FeedService:
         self.sr_service = SpacedRepetitionService(pg_client)
         self.content_generator = ContentGeneratorAgent()
         self.web_quiz_agent = WebQuizAgent()
+        self.llm_timeout_seconds = 6
+
+    def _basic_concept_showcase(self, concept: dict) -> dict:
+        """Fallback concept showcase content without LLM calls."""
+        return {
+            "concept_name": concept.get("name", "Concept"),
+            "definition": concept.get("definition", ""),
+            "domain": concept.get("domain", "General"),
+            "complexity_score": concept.get("complexity_score", 5),
+            "tagline": f"Quick intro to {concept.get('name', 'this concept')}",
+            "visual_metaphor": "Think of this as a building block in your knowledge graph.",
+            "key_points": [
+                concept.get("definition", "")[:120] or "Key idea summary unavailable.",
+            ],
+            "real_world_example": "Applied when you connect knowledge to real tasks.",
+            "connections_note": "Explore prerequisites and related concepts to deepen understanding.",
+            "emoji_icon": "📚",
+            "prerequisites": concept.get("prerequisites", []),
+            "related_concepts": concept.get("related_concepts", []),
+        }
     
     async def get_user_streak(self, user_id: str) -> int:
         """Get the user's current streak in days."""
@@ -318,6 +340,7 @@ class FeedService:
         user_id: str,
         concept: dict,
         item_type: FeedItemType,
+        allow_llm: bool = True,
     ) -> Optional[FeedItem]:
         """Generate a feed item of the specified type for a concept."""
         try:
@@ -341,15 +364,30 @@ class FeedService:
                 if isinstance(content, dict) and content.get("id"):
                     feed_kwargs["id"] = str(content.get("id"))
                 return FeedItem(**feed_kwargs)
+
+            if not allow_llm:
+                fallback_content = self._basic_concept_showcase(concept)
+                return FeedItem(
+                    item_type=FeedItemType.CONCEPT_SHOWCASE,
+                    content=fallback_content,
+                    concept_id=concept.get("id"),
+                    concept_name=concept.get("name"),
+                    domain=concept.get("domain"),
+                    due_date=concept.get("sm2_data", {}).get("next_review"),
+                    priority_score=concept.get("priority_score", 0.6),
+                )
             
             # 2. Try Web Augmentation (for MCQs only)
             if item_type == FeedItemType.MCQ and not content:
                 try:
                     # Only search if we really lack content
                     logger.info("FeedService: DB empty, trying Web Search", concept=concept.get("name"))
-                    web_mcqs, source_url = await self.web_quiz_agent.find_quizzes(
-                        concept_name=concept.get("name"), 
-                        domain=concept.get("domain", "General")
+                    web_mcqs, source_url = await asyncio.wait_for(
+                        self.web_quiz_agent.find_quizzes(
+                            concept_name=concept.get("name"),
+                            domain=concept.get("domain", "General"),
+                        ),
+                        timeout=self.llm_timeout_seconds,
                     )
                     
                     if web_mcqs:
@@ -410,21 +448,27 @@ class FeedService:
             # 3. If no content, generate it
             content = {}
             if item_type == FeedItemType.CONCEPT_SHOWCASE:
-                content = await self.content_generator.generate_concept_showcase(
-                    concept_name=concept["name"],
-                    concept_definition=concept.get("definition", ""),
-                    domain=concept.get("domain", "General"),
-                    complexity_score=concept.get("complexity_score", 5),
-                    prerequisites=concept.get("prerequisites", []),
-                    related_concepts=concept.get("related_concepts", []),
+                content = await asyncio.wait_for(
+                    self.content_generator.generate_concept_showcase(
+                        concept_name=concept["name"],
+                        concept_definition=concept.get("definition", ""),
+                        domain=concept.get("domain", "General"),
+                        complexity_score=concept.get("complexity_score", 5),
+                        prerequisites=concept.get("prerequisites", []),
+                        related_concepts=concept.get("related_concepts", []),
+                    ),
+                    timeout=self.llm_timeout_seconds,
                 )
                 
             elif item_type == FeedItemType.MCQ:
-                mcq = await self.content_generator.generate_mcq(
-                    concept_name=concept["name"],
-                    concept_definition=concept.get("definition", ""),
-                    related_concepts=concept.get("related_concepts", []),
-                    difficulty=int(concept.get("complexity_score", 5)),
+                mcq = await asyncio.wait_for(
+                    self.content_generator.generate_mcq(
+                        concept_name=concept["name"],
+                        concept_definition=concept.get("definition", ""),
+                        related_concepts=concept.get("related_concepts", []),
+                        difficulty=int(concept.get("complexity_score", 5)),
+                    ),
+                    timeout=self.llm_timeout_seconds,
                 )
                 content = {
                     "question": mcq.question,
@@ -458,10 +502,13 @@ class FeedService:
                          logger.warning("FeedService: Failed to save generated MCQ", error=str(e))
                 
             elif item_type == FeedItemType.FILL_BLANK:
-                fill_blank = await self.content_generator.generate_fill_blank(
-                    concept_name=concept["name"],
-                    concept_definition=concept.get("definition", ""),
-                    difficulty=int(concept.get("complexity_score", 5)),
+                fill_blank = await asyncio.wait_for(
+                    self.content_generator.generate_fill_blank(
+                        concept_name=concept["name"],
+                        concept_definition=concept.get("definition", ""),
+                        difficulty=int(concept.get("complexity_score", 5)),
+                    ),
+                    timeout=self.llm_timeout_seconds,
                 )
                 content = {
                     "sentence": fill_blank.sentence,
@@ -470,11 +517,14 @@ class FeedService:
                 }
                 
             elif item_type == FeedItemType.FLASHCARD:
-                flashcards = await self.content_generator.generate_flashcards(
-                    concept_name=concept["name"],
-                    concept_definition=concept.get("definition", ""),
-                    related_concepts=concept.get("related_concepts", []),
-                    num_cards=1,
+                flashcards = await asyncio.wait_for(
+                    self.content_generator.generate_flashcards(
+                        concept_name=concept["name"],
+                        concept_definition=concept.get("definition", ""),
+                        related_concepts=concept.get("related_concepts", []),
+                        num_cards=1,
+                    ),
+                    timeout=self.llm_timeout_seconds,
                 )
                 if flashcards:
                     content = flashcards[0]
@@ -490,10 +540,13 @@ class FeedService:
                 # We would ideally fetch full objects for related concepts here
                 # For now using available data
                 
-                mermaid = await self.content_generator.generate_mermaid_diagram(
-                    concepts=diagram_concepts,
-                    diagram_type="mindmap", # Default to mindmap for single concept focus
-                    title=f"Map: {concept['name']}",
+                mermaid = await asyncio.wait_for(
+                    self.content_generator.generate_mermaid_diagram(
+                        concepts=diagram_concepts,
+                        diagram_type="mindmap", # Default to mindmap for single concept focus
+                        title=f"Map: {concept['name']}",
+                    ),
+                    timeout=self.llm_timeout_seconds,
                 )
                 content = {
                     "mermaid_code": mermaid.mermaid_code,
@@ -530,20 +583,7 @@ class FeedService:
             try:
                 return FeedItem(
                     item_type=FeedItemType.CONCEPT_SHOWCASE,
-                    content={
-                        "concept_name": concept.get("name", "Concept"),
-                        "definition": concept.get("definition", ""),
-                        "domain": concept.get("domain", "General"),
-                        "complexity_score": concept.get("complexity_score", 5),
-                        "tagline": f"Review: {concept.get('name', 'this concept')}",
-                        "visual_metaphor": "",
-                        "key_points": [concept.get("definition", "No definition available.")],
-                        "real_world_example": "",
-                        "connections_note": "",
-                        "emoji_icon": "📘",
-                        "prerequisites": concept.get("prerequisites", []),
-                        "related_concepts": concept.get("related_concepts", []),
-                    },
+                    content=self._basic_concept_showcase(concept),
                     concept_id=concept.get("id"),
                     concept_name=concept.get("name"),
                     domain=concept.get("domain"),
@@ -642,7 +682,7 @@ class FeedService:
                 "complexity_score": 3,
                 "priority_score": 0.6,
             }
-            item = await self.generate_feed_item(concept, FeedItemType.MCQ)
+            item = await self.generate_feed_item(request.user_id, concept, FeedItemType.MCQ)
             if item:
                 feed_items.append(item)
         except Exception as e:
@@ -735,6 +775,11 @@ class FeedService:
         
         # Determine content type distribution
         allowed_types = request.item_types or list(FeedItemType)
+
+        # Prevent long-running LLM calls from timing out the feed endpoint
+        start_time = time.monotonic()
+        llm_budget = 3
+        max_llm_seconds = 12
         
         # Generate items for due concepts
         for concept in due_concepts[:request.max_items]:
@@ -756,10 +801,19 @@ class FeedService:
                 continue
             
             item_type = random.choice(possible_types)
-            
-            item = await self.generate_feed_item(request.user_id, concept, item_type)
+
+            allow_llm = llm_budget > 0 and (time.monotonic() - start_time) < max_llm_seconds
+            item = await self.generate_feed_item(
+                request.user_id,
+                concept,
+                item_type,
+                allow_llm=allow_llm,
+            )
             if item:
                 feed_items.append(item)
+
+            if allow_llm:
+                llm_budget -= 1
             
             # Stop if we have enough items
             if len(feed_items) >= request.max_items:

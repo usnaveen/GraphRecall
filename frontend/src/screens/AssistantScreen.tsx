@@ -60,11 +60,19 @@ const expandTags = (text: string): string => {
 };
 
 export function AssistantScreen() {
-  const { chatMessages, addChatMessage, clearChatMessages, navigateToFeedWithTopic } = useAppStore();
+  const {
+    chatMessages,
+    addChatMessage,
+    clearChatMessages,
+    navigateToFeedWithTopic,
+    fetchNotes,
+    fetchConcepts,
+  } = useAppStore();
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [knowledgeStatus, setKnowledgeStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatConversation[]>([]);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -117,8 +125,14 @@ export function AssistantScreen() {
     try {
       await api.post(`/chat/conversations/${conversationId}/to-knowledge`, {});
       setShowMenu(false);
+      setKnowledgeStatus({ type: 'success', message: 'Added to Knowledge Base' });
+      fetchNotes();
+      fetchConcepts(true);
+      setTimeout(() => setKnowledgeStatus(null), 3000);
     } catch (error) {
       console.error('Failed to add to knowledge:', error);
+      setKnowledgeStatus({ type: 'error', message: 'Failed to add to Knowledge Base' });
+      setTimeout(() => setKnowledgeStatus(null), 3000);
     }
   };
 
@@ -341,6 +355,17 @@ export function AssistantScreen() {
 
   return (
     <div className="h-[calc(100vh-180px)] flex flex-col relative">
+      {knowledgeStatus && (
+        <div
+          className={`absolute top-0 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full text-xs font-medium ${
+            knowledgeStatus.type === 'success'
+              ? 'bg-[#B6FF2E]/20 text-[#B6FF2E] border border-[#B6FF2E]/30'
+              : 'bg-red-500/20 text-red-300 border border-red-500/30'
+          }`}
+        >
+          {knowledgeStatus.message}
+        </div>
+      )}
       {/* Three-dot Menu Button */}
       <div className="absolute top-0 right-0 z-20">
         <button
