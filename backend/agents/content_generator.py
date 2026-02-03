@@ -37,6 +37,11 @@ def _parse_llm_json(response) -> dict:
     elif text.startswith("```"):
         text = text.split("```", 1)[1].split("```", 1)[0].strip()
 
+    # Additional cleaning for common LLM JSON errors
+    import re
+    # Remove control characters that often break json.loads
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+
     return json.loads(text)
 
 

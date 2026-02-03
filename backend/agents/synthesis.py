@@ -266,7 +266,7 @@ Output JSON:
 
         try:
             response = await self.llm.ainvoke(prompt)
-            # Clean markdown code blocks from response
+            # Clean markdown code blocks and handle escaped characters
             raw_response = response.content.strip()
             if not raw_response:
                  raise ValueError("Empty LLM response")
@@ -276,6 +276,11 @@ Output JSON:
             elif raw_response.startswith("```"):
                 raw_response = raw_response.split("```")[1].split("```")[0].strip()
 
+            # Additional cleaning for common LLM JSON errors
+            import re
+            # Remove control characters
+            raw_response = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', raw_response)
+            
             parsed = json.loads(raw_response)
 
             decisions = parsed.get("decisions", [])
