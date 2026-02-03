@@ -761,11 +761,10 @@ export function CreateScreen() {
                     return (
                       <span
                         key={i}
-                        className={`px-2 py-0.5 rounded-full text-[11px] border ${
-                          isExisting
-                            ? 'bg-amber-400/10 text-amber-400/80 border-amber-400/20'
-                            : 'bg-[#B6FF2E]/10 text-[#B6FF2E]/80 border-[#B6FF2E]/15'
-                        }`}
+                        className={`px-2 py-0.5 rounded-full text-[11px] border ${isExisting
+                          ? 'bg-amber-400/10 text-amber-400/80 border-amber-400/20'
+                          : 'bg-[#B6FF2E]/10 text-[#B6FF2E]/80 border-[#B6FF2E]/15'
+                          }`}
                       >
                         {isExisting ? '↻ ' : '+ '}{name}
                       </span>
@@ -801,7 +800,7 @@ export function CreateScreen() {
 // ============================================================================
 
 function GeekoutPanel({ meta }: { meta: ProcessingMeta }) {
-  const facts: { icon: React.ElementType; label: string; value: string; color: string }[] = [];
+  const facts: { icon: any; label: string; value: string; color: string }[] = [];
 
   // File-level facts (available immediately)
   if (meta.file) {
@@ -908,11 +907,10 @@ function GeekoutPanel({ meta }: { meta: ProcessingMeta }) {
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: facts.length * 0.08 + 0.15 + i * 0.06 }}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
-                      isExisting
-                        ? 'bg-amber-400/10 text-amber-400/80 border-amber-400/20'
-                        : 'bg-[#B6FF2E]/10 text-[#B6FF2E]/80 border-[#B6FF2E]/15'
-                    }`}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${isExisting
+                      ? 'bg-amber-400/10 text-amber-400/80 border-amber-400/20'
+                      : 'bg-[#B6FF2E]/10 text-[#B6FF2E]/80 border-[#B6FF2E]/15'
+                      }`}
                   >
                     {isExisting ? '↻ ' : '+ '}{name}
                   </motion.span>
@@ -932,7 +930,7 @@ function QuickActionButton({
   label,
   onClick
 }: {
-  icon: React.ElementType;
+  icon: any;
   label: string;
   onClick: () => void;
 }) {
