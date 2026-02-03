@@ -337,9 +337,9 @@ function NoteItem({ note, onDelete }: { note: any; onDelete: (id: string) => voi
 
   return (
     <div className="relative group overflow-hidden rounded-xl">
-      {/* Background Action Layer */}
       <motion.div
         className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4"
+        initial={{ opacity: 0 }}
         style={{ opacity: backgroundOpacity }}
       >
         <Trash2 className="w-5 h-5 text-red-500" />
@@ -393,6 +393,18 @@ function NoteItem({ note, onDelete }: { note: any; onDelete: (id: string) => voi
               )}
             </div>
           </div>
+
+          {/* Desktop Delete Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm("Delete this note?")) onDelete(note.id);
+            }}
+            className="opacity-0 group-hover:opacity-100 p-2 hover:bg-red-500/20 rounded-full transition-all absolute top-2 right-2"
+            title="Delete Note"
+          >
+            <Trash2 className="w-4 h-4 text-red-400" />
+          </button>
         </div>
       </motion.div>
     </div>
@@ -494,6 +506,7 @@ function UploadItem({ upload, onDelete }: { upload: any; onDelete: (id: string) 
     <div className="relative group overflow-hidden rounded-xl">
       <motion.div
         className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4"
+        initial={{ opacity: 0 }}
         style={{ opacity: backgroundOpacity }}
       >
         <Trash2 className="w-5 h-5 text-red-500" />
@@ -548,6 +561,18 @@ function UploadItem({ upload, onDelete }: { upload: any; onDelete: (id: string) 
               )}
             </div>
           </div>
+
+          {/* Desktop Delete Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm("Delete this upload?")) onDelete(upload.id);
+            }}
+            className="opacity-0 group-hover:opacity-100 p-2 hover:bg-red-500/20 rounded-full transition-all absolute top-2 right-2"
+            title="Delete Upload"
+          >
+            <Trash2 className="w-4 h-4 text-red-400" />
+          </button>
         </div>
       </motion.div>
     </div>
@@ -649,6 +674,7 @@ function ConceptItem({ concept, color, onTap, onDelete }: { concept: any; color:
     <div className="relative group overflow-hidden rounded-xl">
       <motion.div
         className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4"
+        initial={{ opacity: 0 }}
         style={{ opacity: backgroundOpacity }}
       >
         <Trash2 className="w-5 h-5 text-red-500" />
@@ -708,6 +734,18 @@ function ConceptItem({ concept, color, onTap, onDelete }: { concept: any; color:
               </span>
             </div>
           </div>
+
+          {/* Desktop Delete Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm("Delete this concept?")) onDelete(concept.id);
+            }}
+            className="opacity-0 group-hover:opacity-100 p-2 hover:bg-red-500/20 rounded-full transition-all absolute top-2 right-2"
+            title="Delete Concept"
+          >
+            <Trash2 className="w-4 h-4 text-red-400" />
+          </button>
         </div>
       </motion.div>
     </div>

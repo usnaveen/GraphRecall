@@ -40,7 +40,7 @@ class FeedService:
         self.sr_service = SpacedRepetitionService(pg_client)
         self.content_generator = ContentGeneratorAgent()
         self.web_quiz_agent = WebQuizAgent()
-        self.llm_timeout_seconds = 6
+        self.llm_timeout_seconds = 25
 
     def _basic_concept_showcase(self, concept: dict) -> dict:
         """Fallback concept showcase content without LLM calls."""
