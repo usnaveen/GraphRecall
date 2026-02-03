@@ -53,6 +53,9 @@ GraphRecall is a full-stack AI application that ingests your notes, articles, an
 - **SM-2 algorithm** &mdash; SuperMemo 2 scheduling adjusts review intervals based on your difficulty ratings
 - **Topic-scoped quizzes** &mdash; Generate quizzes on any concept with automatic web research fallback via Tavily
 - **Proficiency tracking** &mdash; Per-concept mastery scores drive adaptive feed ordering
+- **Lazy Quiz Generation** &mdash; "Scanner Agent" identifies quiz candidates during ingestion, creating full questions only when needed (just-in-time) to save tokens.
+- **Web Search Caching** &mdash; Intelligent caching of Tavily search results to reduce API costs and latency.
+
 
 ### Knowledge Graph
 - **3D visualization** &mdash; Force-directed graph with zoom, pan, search, and focus modes
@@ -141,8 +144,9 @@ graph TD
         AG1["ExtractionAgent\n(Concept Extraction)"]
         AG2["SynthesisAgent\n(Conflict Detection)"]
         AG3["ContentGeneratorAgent\n(MCQ, Flashcards)"]
-        AG4["WebResearchAgent\n(Tavily Search)"]
+        AG4["WebResearchAgent\n(Tavily Search + Cache)"]
         AG5["MermaidAgent\n(Diagram Generation)"]
+        AG6["ScannerAgent\n(Lazy Quiz Discovery)"]
     end
 
     subgraph Graphs["LangGraph Workflows"]
@@ -233,7 +237,7 @@ graph TD
 | **Relational DB** | PostgreSQL via Supabase (SQLAlchemy async + pgvector) |
 | **Vector Search** | pgvector IVFFlat index on note embeddings |
 | **File Storage** | Supabase Storage (S3-compatible) |
-| **Web Research** | Tavily Search API |
+| **Web Research** | Tavily Search API (with PostgreSQL caching) |
 | **Auth** | Google OAuth 2.0 |
 | **Observability** | LangSmith tracing, structlog |
 | **Deployment** | Render (backend), Vercel (frontend) |
@@ -251,6 +255,8 @@ GraphRecall/
 │   │   ├── content_generator.py   #   MCQ, flashcard, fill-blank generation
 │   │   ├── research_agent.py      #   Web research via Tavily
 │   │   ├── mermaid_agent.py       #   Mermaid diagram generation
+│   │   ├── scanner_agent.py       #   Lazy quiz candidate discovery
+│   │   ├── web_quiz_agent.py      #   Web search with caching
 │   │   └── states.py              #   Shared state schemas
 │   ├── auth/
 │   │   ├── google_oauth.py        #   Google token verification
@@ -597,6 +603,23 @@ erDiagram
         integer reviews_completed
         integer concepts_learned
         decimal accuracy
+    }
+
+    web_search_cache {
+        varchar query_hash PK
+        text query_text
+        jsonb results_json
+        timestamp created_at
+    }
+
+    quiz_candidates {
+        uuid id PK
+        uuid user_id FK
+        uuid source_note_id FK
+        text chunk_text
+        varchar topic
+        decimal difficulty
+        varchar status
     }
 
     users ||--o{ notes : owns

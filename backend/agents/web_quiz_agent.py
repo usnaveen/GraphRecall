@@ -1,7 +1,7 @@
-"""Agent for sourcing quiz content from the web when local content is exhausted."""
-
+import hashlib
 import json
 import os
+from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
 import structlog
@@ -10,6 +10,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from backend.config.llm import get_chat_model
+from backend.db.postgres_client import get_postgres_client
 from backend.models.feed_schemas import MCQQuestion, MCQOption
 
 logger = structlog.get_logger()
@@ -29,6 +30,53 @@ class WebQuizAgent:
             logger.warning("WebQuizAgent: Tavily not configured", error=str(e))
             self.search = None
 
+    async def _get_cached_search(self, query: str) -> Optional[List[dict]]:
+        """Check if search query is cached."""
+        try:
+            pg_client = await get_postgres_client()
+            query_hash = hashlib.sha256(query.encode()).hexdigest()
+            
+            result = await pg_client.execute_query(
+                """
+                SELECT results_json, created_at 
+                FROM web_search_cache 
+                WHERE query_hash = :hash
+                """,
+                {"hash": query_hash}
+            )
+            
+            if result:
+                # Check TTL (e.g. 7 days)
+                created_at = result[0]["created_at"]
+                if (datetime.now(created_at.tzinfo) - created_at).days < 7:
+                    return result[0]["results_json"]
+            return None
+        except Exception as e:
+            logger.warning("WebQuizAgent: Cache lookup failed", error=str(e))
+            return None
+
+    async def _cache_search(self, query: str, results: List[dict]):
+        """Cache search results."""
+        try:
+            pg_client = await get_postgres_client()
+            query_hash = hashlib.sha256(query.encode()).hexdigest()
+            
+            await pg_client.execute_insert(
+                """
+                INSERT INTO web_search_cache (query_hash, query_text, results_json)
+                VALUES (:hash, :text, :json)
+                ON CONFLICT (query_hash) 
+                DO UPDATE SET results_json = :json, created_at = CURRENT_TIMESTAMP
+                """,
+                {
+                    "hash": query_hash,
+                    "text": query,
+                    "json": json.dumps(results)
+                }
+            )
+        except Exception as e:
+            logger.warning("WebQuizAgent: Cache save failed", error=str(e))
+
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def find_quizzes(
         self, 
@@ -47,9 +95,16 @@ class WebQuizAgent:
         logger.info("WebQuizAgent: Searching", concept=concept_name)
         
         try:
-            # 1. Search for content
+            # 1. Search for content (Check Cache First)
             query = f"interview questions multiple choice {concept_name} {domain} practice quiz"
-            search_results = await self.search.ainvoke(query)
+            
+            search_results = await self._get_cached_search(query)
+            if search_results:
+                logger.info("WebQuizAgent: CACHE HIT for query", query=query)
+            else:
+                search_results = await self.search.ainvoke(query)
+                # Cache the results
+                await self._cache_search(query, search_results)
             
             # Format context from search results
             context_text = "\n\n".join([
@@ -63,7 +118,7 @@ class WebQuizAgent:
             if not context_text:
                 return [], ""
 
-            # 2. Extract/Generate MCQs using LLM
+            # 2. Extract/Generate MCQs using LLM (Code unchanged below)
             prompt = f"""You are a Quiz Generator Agent.
 Your task is to create {num_questions} high-quality Multiple Choice Questions (MCQs) about '{concept_name}' using the provided search results.
 

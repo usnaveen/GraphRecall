@@ -166,7 +166,7 @@ class FeedService:
             domain_totals = {}  # domain -> [total_score, count]
             
             for concept_id, domain in domain_map.items():
-                score = score_map.get(concept_id, 0.0)
+                score = float(score_map.get(concept_id, 0.0))
                 if domain not in domain_totals:
                     domain_totals[domain] = [0.0, 0]
                 
@@ -335,6 +335,38 @@ class FeedService:
             
         return None
 
+    async def _get_from_quiz_candidates(self, topic: str, user_id: str) -> Optional[dict]:
+        """Try to fetch a pending quiz candidate for this topic."""
+        try:
+            # Simple text match for now
+            result = await self.pg_client.execute_query(
+                """
+                SELECT id, chunk_text, diff 
+                FROM quiz_candidates
+                WHERE user_id = :user_id 
+                  AND topic ILIKE :topic 
+                  AND status = 'pending'
+                LIMIT 1
+                """,
+                {"user_id": user_id, "topic": f"%{topic}%"}
+            )
+            
+            if result:
+                row = result[0]
+                # Mark as processing/generated
+                await self.pg_client.execute_update(
+                    "UPDATE quiz_candidates SET status = 'generated' WHERE id = :id",
+                    {"id": row["id"]}
+                )
+                return {
+                    "text": row["chunk_text"],
+                    "difficulty": float(row.get("diff", 0.5))
+                }
+            return None
+        except Exception as e:
+            logger.warning("FeedService: Error fetching quiz candidate", error=str(e))
+            return None
+
     async def generate_feed_item(
         self,
         user_id: str,
@@ -461,10 +493,17 @@ class FeedService:
                 )
                 
             elif item_type == FeedItemType.MCQ:
+                # Check for "Lazy Gen" candidates first
+                candidate = await self._get_from_quiz_candidates(concept["name"], user_id)
+                context_append = ""
+                if candidate:
+                    logger.info("FeedService: Using Lazy Quiz Candidate", concept=concept["name"])
+                    context_append = f"\n\nContext Source: {candidate['text']}"
+                
                 mcq = await asyncio.wait_for(
                     self.content_generator.generate_mcq(
                         concept_name=concept["name"],
-                        concept_definition=concept.get("definition", ""),
+                        concept_definition=concept.get("definition", "") + context_append,
                         related_concepts=concept.get("related_concepts", []),
                         difficulty=int(concept.get("complexity_score", 5)),
                     ),

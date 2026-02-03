@@ -15,6 +15,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from backend.auth.middleware import get_current_user
+from backend.agents.scanner_agent import ScannerAgent
 
 from backend.graphs.ingestion_graph import (
     run_ingestion,
@@ -23,6 +24,7 @@ from backend.graphs.ingestion_graph import (
 )
 
 logger = structlog.get_logger()
+scanner_agent = ScannerAgent()
 
 router = APIRouter(prefix="/api/v2", tags=["V2 Ingestion"])
 
@@ -156,6 +158,16 @@ async def ingest_note(
                 num_concepts=len(result.get("concept_ids", [])),
                 num_flashcards=len(result.get("flashcard_ids", [])),
             )
+        
+        if status == "completed" or (status == "awaiting_review" and result.get("note_id")):
+             # Trigger Lazy Quiz Scanner in background
+             note_id = result.get("note_id")
+             if note_id:
+                 asyncio.create_task(scanner_agent.scan_and_save(
+                     request.content, 
+                     note_id, 
+                     user_id
+                 ))
         
         return IngestResponse(
             note_id=result.get("note_id"),
@@ -432,6 +444,14 @@ Return the consolidated note as clean markdown."""
             user_id=user_id,
             skip_review=True,
         ))
+
+        # Trigger Lazy Quiz Scanner in background
+        if result.get("note_id"):
+             asyncio.create_task(scanner_agent.scan_and_save(
+                 consolidated, 
+                 result.get("note_id"), 
+                 user_id
+             ))
 
         return IngestResponse(
             note_id=result.get("note_id"),
