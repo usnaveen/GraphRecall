@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useTransform } from 'framer-motion';
 import {
   Settings, ChevronRight, BookOpen, FileText, Target,
   Flame, Download, Moon, ArrowLeft, Clock, Brain, Hash,
@@ -332,34 +332,43 @@ function StatCard({
 
 // Note Item Component for Swipe-to-Delete
 function NoteItem({ note, onDelete }: { note: any; onDelete: (id: string) => void }) {
-  // const [showConfirm, setShowConfirm] = useState(false); // Removed unused declarations
-
+  const x = useMotionValue(0);
+  const backgroundOpacity = useTransform(x, [-120, -60, 0], [1, 0.6, 0]);
 
   return (
-    <div className="relative group">
+    <div className="relative group overflow-hidden rounded-xl">
       {/* Background Action Layer */}
-      <div className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4 mb-2">
+      <motion.div
+        className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4"
+        style={{ opacity: backgroundOpacity }}
+      >
         <Trash2 className="w-5 h-5 text-red-500" />
-      </div>
+      </motion.div>
 
       <motion.div
         layout
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0, x: 0 }}
         drag="x"
-        dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={{ left: 0.5, right: 0.1 }}
+        dragConstraints={{ left: -140, right: 0 }}
+        dragElastic={{ left: 0.3, right: 0.1 }}
+        style={{ x }}
         onDragEnd={(_, info) => {
           if (info.offset.x < -100) {
-            // Swipe left threshold met
             if (confirm("Delete this note?")) {
               onDelete(note.id);
             }
           }
         }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          if (confirm("Delete this note?")) {
+            onDelete(note.id);
+          }
+        }}
         whileHover={{ scale: 1.01 }}
         whileTap={{ scale: 0.99 }}
-        className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors relative z-10 bg-[#07070A]" // Added bg to cover trash icon
+        className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors relative z-10 bg-[#07070A]"
       >
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-lg bg-[#2EFFE6]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -479,24 +488,36 @@ function NotesListView({
 // Upload Item Component for Swipe-to-Delete
 function UploadItem({ upload, onDelete }: { upload: any; onDelete: (id: string) => void }) {
   const displayTitle = upload.title || (upload.file_url ? upload.file_url.split('/').pop()?.split('?')[0] : 'Untitled Upload');
+  const x = useMotionValue(0);
+  const backgroundOpacity = useTransform(x, [-120, -60, 0], [1, 0.6, 0]);
   return (
-    <div className="relative group">
-      <div className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4 mb-2">
+    <div className="relative group overflow-hidden rounded-xl">
+      <motion.div
+        className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4"
+        style={{ opacity: backgroundOpacity }}
+      >
         <Trash2 className="w-5 h-5 text-red-500" />
-      </div>
+      </motion.div>
 
       <motion.div
         layout
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0, x: 0 }}
         drag="x"
-        dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={{ left: 0.5, right: 0.1 }}
+        dragConstraints={{ left: -140, right: 0 }}
+        dragElastic={{ left: 0.3, right: 0.1 }}
+        style={{ x }}
         onDragEnd={(_, info) => {
           if (info.offset.x < -100) {
             if (confirm("Delete this upload?")) {
               onDelete(upload.id);
             }
+          }
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          if (confirm("Delete this upload?")) {
+            onDelete(upload.id);
           }
         }}
         className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors cursor-pointer relative z-10 bg-[#07070A]"
@@ -622,24 +643,36 @@ function UploadsListView({
 
 // Concept Item Component for Swipe-to-Delete
 function ConceptItem({ concept, color, onTap, onDelete }: { concept: any; color: string; onTap: (name: string) => void; onDelete: (id: string) => void }) {
+  const x = useMotionValue(0);
+  const backgroundOpacity = useTransform(x, [-120, -60, 0], [1, 0.6, 0]);
   return (
-    <div className="relative group">
-      <div className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4 mb-2">
+    <div className="relative group overflow-hidden rounded-xl">
+      <motion.div
+        className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4"
+        style={{ opacity: backgroundOpacity }}
+      >
         <Trash2 className="w-5 h-5 text-red-500" />
-      </div>
+      </motion.div>
 
       <motion.div
         layout
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0, x: 0 }}
         drag="x"
-        dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={{ left: 0.5, right: 0.1 }}
+        dragConstraints={{ left: -140, right: 0 }}
+        dragElastic={{ left: 0.3, right: 0.1 }}
+        style={{ x }}
         onDragEnd={(_, info) => {
           if (info.offset.x < -100) {
             if (confirm("Delete this concept?")) {
               onDelete(concept.id);
             }
+          }
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          if (confirm("Delete this concept?")) {
+            onDelete(concept.id);
           }
         }}
         onClick={() => onTap(concept.name)}

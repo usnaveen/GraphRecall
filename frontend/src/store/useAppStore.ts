@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { FeedItem, ChatMessage, UserStats, TabType } from '../types';
+import type { GraphData } from '../lib/graphData';
+import type { GraphLayout } from '../lib/forceSimulation3d';
 import { feedService, chatService, notesService, conceptsService, uploadsService } from '../services/api';
 
 interface NoteItem {
@@ -54,6 +56,14 @@ interface AppState {
   conceptsList: ConceptItem[];
   uploadsList: UploadItem[];
 
+  // Graph cache (persist between tab switches)
+  graphCache: {
+    data: GraphData | null;
+    layout: GraphLayout | null;
+    loadedAt: number | null;
+  };
+  setGraphCache: (data: GraphData | null, layout: GraphLayout | null) => void;
+
   // Actions
   setActiveTab: (tab: TabType) => void;
   navigateToFeedWithTopic: (topic: string) => void;
@@ -93,6 +103,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   notesList: [],
   conceptsList: [],
   uploadsList: [],
+  graphCache: {
+    data: null,
+    layout: null,
+    loadedAt: null,
+  },
   userStats: {
     conceptsLearned: 0,
     notesAdded: 0,
@@ -111,6 +126,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   clearFeedTopicFilter: () => {
     set({ feedTopicFilter: null });
+  },
+
+  setGraphCache: (data, layout) => {
+    set({ graphCache: { data, layout, loadedAt: Date.now() } });
   },
 
   // Data Fetching Actions
