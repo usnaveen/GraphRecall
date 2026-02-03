@@ -102,7 +102,7 @@ export function ProfileScreen() {
 
 
   return (
-    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1 pb-10">
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1 pb-10 scrollbar-hide">
       {/* Geeky Facts Modal */}
       {showGeekyFacts && <AgentDeck onClose={() => setShowGeekyFacts(false)} />}
 
@@ -155,56 +155,7 @@ export function ProfileScreen() {
         <p className="text-sm text-white/50">{user?.email || 'Learning since Jan 2026'}</p>
       </motion.div>
 
-      {/* Weekly Stats */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="grid grid-cols-2 gap-3 mb-6"
-      >
-        <StatCard
-          icon={BookOpen}
-          value={userStats.conceptsLearned}
-          label="Concepts"
-          color="#B6FF2E"
-          onClick={() => { fetchConcepts(); setCurrentView('concepts'); }}
-        />
-        <StatCard
-          icon={FileText}
-          value={userStats.notesAdded}
-          label="Notes"
-          color="#2EFFE6"
-          onClick={() => { fetchNotes(); setCurrentView('notes'); }}
-        />
-        <StatCard
-          icon={Image}
-          value={uploadsList.length}
-          label="Uploads"
-          color="#FF6B6B"
-          onClick={() => { fetchUploads(); setCurrentView('uploads'); }}
-        />
-      </motion.div>
-
-      {/* Cost & Usage Stats (Estimated) */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15 }}
-        className="grid grid-cols-2 gap-3 mb-6"
-      >
-        <StatCard
-          icon={Zap}
-          value={`${((userStats.conceptsLearned * 1500 + userStats.notesAdded * 500) / 1000).toFixed(1)}k`}
-          label="Est. Tokens"
-          color="#FF6B6B"
-        />
-        <StatCard
-          icon={Target} // Dollar Sign would be better but Lucide Target is imported
-          value={`$${((userStats.conceptsLearned * 1500 + userStats.notesAdded * 500) / 1000000 * 0.50).toFixed(4)}`}
-          label="Est. Cost"
-          color="#F59E0B"
-        />
-      </motion.div>
+      {/* Sections Removed per user request */}
 
       {/* Domain Progress */}
       <motion.div
@@ -310,43 +261,7 @@ export function ProfileScreen() {
       <div className="text-center pb-6">
         <p className="text-xs text-white/20 font-mono">GraphRecall v0.2.1 • Built with Love</p>
       </div>
-    </div>
-  );
-}
-
-// Stat Card Component
-function StatCard({
-  icon: Icon,
-  value,
-  label,
-  color,
-  onClick
-}: {
-  icon: any;
-  value: string | number;
-  label: string;
-  color: string;
-  onClick?: () => void;
-}) {
-  return (
-    <motion.div
-      whileHover={{ scale: 1.02 }}
-      whileTap={onClick ? { scale: 0.97 } : undefined}
-      onClick={onClick}
-      className={`glass-surface rounded-xl p-4 text-center ${onClick ? 'cursor-pointer active:bg-white/10' : ''}`}
-    >
-      <div
-        className="w-10 h-10 rounded-xl flex items-center justify-center mx-auto mb-2"
-        style={{ backgroundColor: `${color}20` }}
-      >
-        <Icon className="w-5 h-5" style={{ color }} />
-      </div>
-      <p className="font-heading text-2xl font-bold text-white mb-1">{value}</p>
-      <div className="flex items-center justify-center gap-1">
-        <p className="text-xs text-white/50">{label}</p>
-        {onClick && <ChevronRight className="w-3 h-3 text-white/30" />}
-      </div>
-    </motion.div>
+    </div >
   );
 }
 

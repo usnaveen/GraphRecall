@@ -357,17 +357,20 @@ export function AssistantScreen() {
     <div className="h-[calc(100vh-180px)] flex flex-col relative">
       {knowledgeStatus && (
         <div
-          className={`absolute top-0 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full text-xs font-medium ${
-            knowledgeStatus.type === 'success'
-              ? 'bg-[#B6FF2E]/20 text-[#B6FF2E] border border-[#B6FF2E]/30'
-              : 'bg-red-500/20 text-red-300 border border-red-500/30'
-          }`}
+          className={`absolute top-0 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full text-xs font-medium ${knowledgeStatus.type === 'success'
+            ? 'bg-[#B6FF2E]/20 text-[#B6FF2E] border border-[#B6FF2E]/30'
+            : 'bg-red-500/20 text-red-300 border border-red-500/30'
+            }`}
         >
           {knowledgeStatus.message}
         </div>
       )}
-      {/* Three-dot Menu Button */}
-      <div className="absolute top-0 right-0 z-20">
+      <div className="absolute top-0 right-0 z-20 flex items-center gap-2">
+        {conversationId && (
+          <span className="text-xs text-white/40 font-mono hidden sm:block">
+            {chatHistory.find(c => c.id === conversationId)?.title || 'Current Chat'}
+          </span>
+        )}
         <button
           onClick={() => setShowMenu(!showMenu)}
           className="p-2 rounded-full hover:bg-white/10 transition-colors"
@@ -703,7 +706,7 @@ export function AssistantScreen() {
           animate={{ opacity: 1, y: 0 }}
           className="relative"
         >
-          <div className="flex items-center gap-2 glass-surface rounded-2xl p-2 border border-white/10 focus-within:border-[#B6FF2E]/50 transition-colors bg-[#0a0a0f]">
+          <div className="flex items-center gap-2 glass-surface rounded-full p-2 border border-white/10 focus-within:border-[#B6FF2E]/50 transition-colors bg-[#0a0a0f]">
             <input
               ref={inputRef}
               type="text"
@@ -718,7 +721,7 @@ export function AssistantScreen() {
               whileTap={{ scale: 0.95 }}
               onClick={() => handleSend()}
               disabled={!inputValue.trim()}
-              className="w-10 h-10 rounded-xl bg-[#B6FF2E] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#c5ff4d] transition-colors text-black shadow-lg shadow-[#B6FF2E]/10"
+              className="w-10 h-10 rounded-full bg-[#B6FF2E] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#c5ff4d] transition-colors text-black shadow-lg shadow-[#B6FF2E]/10"
             >
               <Send className="w-5 h-5" />
             </motion.button>

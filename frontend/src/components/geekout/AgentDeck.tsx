@@ -193,15 +193,7 @@ export const AgentDeck: React.FC<AgentDeckProps> = ({ onClose }) => {
                 <X className="w-6 h-6" />
             </button>
 
-            <div className="relative w-full max-w-sm h-[600px] flex flex-col items-center">
-                <div className="text-center mb-8 relative z-50">
-                    <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-purple-400">
-                        Geeky Facts
-                    </h2>
-                    <p className="text-zinc-400 text-xs mt-1">
-                        Meet the AI Agents powering your brain
-                    </p>
-                </div>
+            <div className="relative w-full max-w-sm h-full flex flex-col items-center justify-center">
 
                 <div className="relative w-[320px] h-[500px]">
                     <AnimatePresence>
