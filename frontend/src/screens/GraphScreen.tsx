@@ -535,31 +535,55 @@ export function GraphScreen() {
   }, [resizeCanvas]);
 
   // Re-layout when canvas size changes significantly (e.g. first paint)
+  // Re-layout when nodes arrive or container resizes
   useEffect(() => {
-    if (!loading && nodes.length > 0) {
-      // Small delay to ensure container has laid out
-      const timer = setTimeout(() => {
-        const container = containerRef.current;
-        if (!container) return;
-        const cw = container.clientWidth;
-        const ch = container.clientHeight;
-        if (cw > 0 && ch > 0) {
-          const sim = buildSimNodes(nodes, cw, ch);
-          const sEdges: SimEdge[] = edges.map(e => ({
-            source: e.source,
-            target: e.target,
-            strength: e.strength,
-          }));
-          runForceSimulation(sim, sEdges, cw, ch, 120);
-          simNodesRef.current = sim;
-          simEdgesRef.current = sEdges;
-          layoutReadyRef.current = true;
-          resizeCanvas();
-        }
-      }, 100);
-      return () => clearTimeout(timer);
+    if (loading || nodes.length === 0) {
+      layoutReadyRef.current = false;
+      return;
     }
-  }, [loading, nodes, edges, resizeCanvas]);
+
+    const runLayout = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+
+      if (cw > 0 && ch > 0) {
+        // Only re-run if we haven't or if dimensions changed substantially? 
+        // For now, always re-run on valid resize to ensure fit.
+        const sim = buildSimNodes(nodes, cw, ch);
+        const sEdges: SimEdge[] = edges.map(e => ({
+          source: e.source,
+          target: e.target,
+          strength: e.strength,
+        }));
+        runForceSimulation(sim, sEdges, cw, ch, 120);
+        simNodesRef.current = sim;
+        simEdgesRef.current = sEdges;
+        layoutReadyRef.current = true;
+        resizeCanvas();
+        // Force a render frame
+        animFrameRef.current = requestAnimationFrame(render);
+      }
+    };
+
+    // Run initially (with delay for tab animation)
+    const timer = setTimeout(runLayout, 100);
+
+    // Also use ResizeObserver to catch when tab becomes visible/sized
+    const observer = new ResizeObserver(() => {
+      runLayout();
+    });
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [loading, nodes, edges, resizeCanvas, render]);
 
   /* ---------------------------------------------------------------- */
   /*  Hit testing                                                      */

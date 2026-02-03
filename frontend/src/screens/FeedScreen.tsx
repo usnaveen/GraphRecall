@@ -60,6 +60,19 @@ export function FeedScreen() {
     }
   };
 
+  // Error State
+  const { error } = useAppStore();
+  if (error) {
+    return (
+      <div className="h-[calc(100vh-180px)] flex items-center justify-center p-4">
+        <div className="text-center bg-red-500/10 p-6 rounded-2xl border border-red-500/20">
+          <p className="text-red-400 font-bold mb-2">Something went wrong</p>
+          <p className="text-red-300/70 text-sm font-mono break-all">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
   // Empty state
   if (!feedItems.length) {
     return (

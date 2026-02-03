@@ -537,7 +537,8 @@ class FeedService:
                     domain=concept.get("domain"),
                     priority_score=concept.get("priority_score", 0.5),
                 )
-            except Exception:
+            except Exception as e:
+                logger.error("FeedService: Failed to generate feed item", concept_name=concept.get("name"), error=str(e), exc_info=True)
                 return None
     
     def _static_cold_start_items(self) -> list[FeedItem]:
