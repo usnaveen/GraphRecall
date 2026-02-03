@@ -111,10 +111,9 @@ export function GraphScreen() {
     if (graphCache.data && graphCache.layout && isCacheFresh) {
       setLayout(graphCache.layout);
       setLoading(false);
-      return;
+    } else {
+      loadGraph();
     }
-
-    loadGraph();
   }, [graphCache, loadGraph]);
 
   useEffect(() => {
@@ -446,6 +445,28 @@ export function GraphScreen() {
             </div>
           )}
 
+          {/* Relationship Buttons */}
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => setConnectionView(connectionView === 'prereqs' ? 'all' : 'prereqs')}
+              className={`flex-1 py-1.5 rounded-lg text-[10px] font-medium transition-colors border ${connectionView === 'prereqs'
+                ? 'bg-blue-500/20 text-blue-300 border-blue-500/50'
+                : 'bg-white/5 text-white/60 border-transparent hover:bg-white/10'
+                }`}
+            >
+              Prerequisites
+            </button>
+            <button
+              onClick={() => setConnectionView(connectionView === 'children' ? 'all' : 'children')}
+              className={`flex-1 py-1.5 rounded-lg text-[10px] font-medium transition-colors border ${connectionView === 'children'
+                ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
+                : 'bg-white/5 text-white/60 border-transparent hover:bg-white/10'
+                }`}
+            >
+              Children
+            </button>
+          </div>
+
           {linkedNotesLoading ? (
             <div className="mt-3 flex justify-center">
               <Loader2 className="w-4 h-4 animate-spin text-white/30" />
@@ -475,25 +496,22 @@ export function GraphScreen() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setConnectionView("prereqs")}
-                    className={`text-[10px] px-2 py-0.5 rounded-full ${
-                      connectionView === "prereqs" ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/60"
-                    }`}
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${connectionView === "prereqs" ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/60"
+                      }`}
                   >
                     Prereqs ({prerequisiteConnections.length})
                   </button>
                   <button
                     onClick={() => setConnectionView("children")}
-                    className={`text-[10px] px-2 py-0.5 rounded-full ${
-                      connectionView === "children" ? "bg-[#2EFFE6] text-black" : "bg-white/10 text-white/60"
-                    }`}
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${connectionView === "children" ? "bg-[#2EFFE6] text-black" : "bg-white/10 text-white/60"
+                      }`}
                   >
                     Children ({childConnections.length})
                   </button>
                   <button
                     onClick={() => setConnectionView("all")}
-                    className={`text-[10px] px-2 py-0.5 rounded-full ${
-                      connectionView === "all" ? "bg-white/20 text-white" : "bg-white/10 text-white/60"
-                    }`}
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${connectionView === "all" ? "bg-white/20 text-white" : "bg-white/10 text-white/60"
+                      }`}
                   >
                     All
                   </button>
@@ -513,13 +531,12 @@ export function GraphScreen() {
                     className="px-2 py-1 rounded-full text-[10px] bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors flex items-center gap-1"
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        conn.relationship === "PREREQUISITE_OF" && conn.direction === "incoming"
-                          ? "bg-[#B6FF2E]"
-                          : conn.relationship === "PREREQUISITE_OF" && conn.direction === "outgoing"
+                      className={`w-1.5 h-1.5 rounded-full ${conn.relationship === "PREREQUISITE_OF" && conn.direction === "incoming"
+                        ? "bg-[#B6FF2E]"
+                        : conn.relationship === "PREREQUISITE_OF" && conn.direction === "outgoing"
                           ? "bg-[#2EFFE6]"
                           : "bg-white/40"
-                      }`}
+                        }`}
                     />
                     {conn.concept?.name}
                   </button>
