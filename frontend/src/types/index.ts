@@ -27,12 +27,14 @@ export interface QuizCard {
   options: QuizOption[];
   explanation: string;
   relatedConcept: string;
+  source_url?: string;
 }
 
 export interface Flashcard {
   id: string;
   type: 'flashcard';
   concept: Concept;
+  source_url?: string;
 }
 
 export interface FillBlankCard {
