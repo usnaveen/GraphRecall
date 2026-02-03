@@ -212,13 +212,24 @@ Return JSON:
             response = await self.synthesizer.ainvoke(prompt)
             content = response.content.strip()
             
-            # Handle markdown code blocks
-            if content.startswith("```json"):
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif content.startswith("```"):
-                content = content.split("```")[1].split("```")[0].strip()
+            # Extract JSON from potential markdown wrapping
+            json_str = content
+            if "```json" in content:
+                json_str = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                json_str = content.split("```")[1].split("```")[0].strip()
             
-            data = json.loads(content)
+            # Clean up potential leading/trailing garbage
+            if not json_str.startswith("{"):
+                start_idx = json_str.find("{")
+                if start_idx != -1:
+                    json_str = json_str[start_idx:]
+            if not json_str.endswith("}"):
+                end_idx = json_str.rfind("}")
+                if end_idx != -1:
+                    json_str = json_str[:end_idx+1]
+
+            data = json.loads(json_str)
             
             return ResearchResult(
                 topic=topic,
@@ -232,13 +243,13 @@ Return JSON:
             )
             
         except Exception as e:
-            logger.error("synthesize_notes failed", error=str(e))
+            logger.error("synthesize_notes failed", error=str(e), partial_content=content[:200])
             return ResearchResult(
                 topic=topic,
                 summary=f"Research on {topic}",
                 key_points=[],
                 sources=[],
-                note_content=f"# {topic}\n\nResearch synthesis failed.",
+                note_content=f"# {topic}\n\nResearch synthesis failed. Please try again.",
             )
     
     async def save_research_note(
