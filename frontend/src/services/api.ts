@@ -31,10 +31,11 @@ const getHeaders = (includeContentType: boolean = false): HeadersInit => {
  * Automatically logs the user out on 401 (expired Google ID token).
  */
 const authFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const response = await fetch(url, {
         ...options,
         headers: {
-            ...getHeaders(options.method === 'POST' || options.method === 'PUT'),
+            ...getHeaders((options.method === 'POST' || options.method === 'PUT') && !isFormData),
             ...options.headers,
         },
     });
@@ -78,7 +79,7 @@ export const feedService = {
     /** Toggle like status for a card */
     likeItem: async (itemId: string, itemType: string) => {
         const response = await authFetch(
-            `${API_BASE}/${itemId}/like?item_type=${itemType}`,
+            `${API_BASE}/feed/${itemId}/like?item_type=${itemType}`,
             { method: 'POST' }
         );
         if (!response.ok) throw new Error('Failed to like item');
@@ -88,7 +89,7 @@ export const feedService = {
     /** Toggle save status for a card */
     saveItem: async (itemId: string, itemType: string) => {
         const response = await authFetch(
-            `${API_BASE}/${itemId}/save?item_type=${itemType}`,
+            `${API_BASE}/feed/${itemId}/save?item_type=${itemType}`,
             { method: 'POST' }
         );
         if (!response.ok) throw new Error('Failed to save item');
@@ -235,6 +236,47 @@ export const ingestService = {
         if (!response.ok) throw new Error('Chat transcript ingestion failed');
         return response.json();
     },
+};
+
+export const uploadsService = {
+    /** Upload a screenshot/infographic file */
+    createUpload: async (
+        file: File,
+        uploadType: 'screenshot' | 'infographic' | 'diagram' = 'screenshot',
+        title?: string,
+        description?: string,
+        linkedConcepts?: string[]
+    ) => {
+        const formData = new FormData();
+        formData.append('upload_type', uploadType);
+        if (title) formData.append('title', title);
+        if (description) formData.append('description', description);
+        if (linkedConcepts && linkedConcepts.length > 0) {
+            formData.append('linked_concepts', linkedConcepts.join(','));
+        }
+        formData.append('file', file);
+
+        const response = await authFetch(`${API_BASE}/uploads`, {
+            method: 'POST',
+            body: formData,
+        });
+        if (!response.ok) throw new Error('Upload failed');
+        return response.json();
+    },
+
+    /** List uploads */
+    listUploads: async (limit: number = 20, offset: number = 0) => {
+        const response = await authFetch(`${API_BASE}/uploads?limit=${limit}&offset=${offset}`);
+        if (!response.ok) throw new Error('Failed to fetch uploads');
+        return response.json();
+    },
+
+    /** Delete an upload */
+    deleteUpload: async (uploadId: string) => {
+        const response = await authFetch(`${API_BASE}/uploads/${uploadId}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error('Failed to delete upload');
+        return response.json();
+    }
 };
 
 /**

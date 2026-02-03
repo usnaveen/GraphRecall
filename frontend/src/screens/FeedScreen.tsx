@@ -51,12 +51,60 @@ export function FeedScreen() {
   const currentItem = displayItems[adjustedIndex];
   const isLiked = currentItem && likedItems.has(currentItem.id);
   const isSaved = currentItem && savedItems.has(currentItem.id);
+  const canReact = currentItem && ['flashcard', 'quiz'].includes(currentItem.type);
 
   const handleSwipe = (direction: 'up' | 'down') => {
     if (direction === 'up') {
       nextFeedItem();
     } else {
       prevFeedItem();
+    }
+  };
+
+  const handleShare = async () => {
+    if (!currentItem) return;
+    let title = 'GraphRecall';
+    let text = 'Check this out from my GraphRecall feed.';
+    let url: string | undefined;
+
+    switch (currentItem.type) {
+      case 'flashcard':
+        title = currentItem.concept.name;
+        text = `${currentItem.concept.name}: ${currentItem.concept.definition}`;
+        break;
+      case 'quiz':
+        title = 'Quiz Question';
+        text = currentItem.question;
+        break;
+      case 'fillblank':
+        title = 'Fill in the Blank';
+        text = currentItem.sentence;
+        break;
+      case 'screenshot':
+        title = currentItem.title || 'Screenshot';
+        text = currentItem.description || 'Screenshot from my GraphRecall feed.';
+        url = currentItem.imageUrl;
+        break;
+      case 'diagram':
+        title = currentItem.caption || 'Concept Diagram';
+        text = currentItem.caption || 'Concept diagram from my GraphRecall feed.';
+        break;
+      case 'concept_showcase':
+        title = currentItem.conceptName;
+        text = currentItem.definition;
+        break;
+    }
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text, url });
+      } else if (navigator.clipboard) {
+        const payload = url ? `${text}\n${url}` : text;
+        await navigator.clipboard.writeText(payload);
+        alert('Copied to clipboard');
+      }
+    } catch (err) {
+      console.error('Share failed:', err);
     }
   };
 
@@ -142,48 +190,53 @@ export function FeedScreen() {
                 <div className="flex items-center justify-between">
                   {/* Left: Like, Save, Share */}
                   <div className="flex items-center gap-4">
-                    {/* Like Button */}
-                    <motion.button
-                      whileTap={{ scale: 0.85 }}
-                      onClick={() => toggleLike(currentItem.id, currentItem.type)}
-                      className="flex items-center gap-1.5 group"
-                    >
-                      <motion.div
-                        animate={isLiked ? { scale: [1, 1.3, 1] } : {}}
-                        transition={{ duration: 0.3 }}
-                      >
-                        <Heart
-                          className={`w-6 h-6 transition-all duration-200 ${isLiked
-                            ? 'fill-red-500 text-red-500'
-                            : 'text-white/60 group-hover:text-white'
-                            }`}
-                        />
-                      </motion.div>
-                      <span className={`text-sm ${isLiked ? 'text-red-400' : 'text-white/60'}`}>
-                        {isLiked ? 'Liked' : 'Like'}
-                      </span>
-                    </motion.button>
+                    {canReact && (
+                      <>
+                        {/* Like Button */}
+                        <motion.button
+                          whileTap={{ scale: 0.85 }}
+                          onClick={() => toggleLike(currentItem.id, currentItem.type)}
+                          className="flex items-center gap-1.5 group"
+                        >
+                          <motion.div
+                            animate={isLiked ? { scale: [1, 1.3, 1] } : {}}
+                            transition={{ duration: 0.3 }}
+                          >
+                            <Heart
+                              className={`w-6 h-6 transition-all duration-200 ${isLiked
+                                ? 'fill-red-500 text-red-500'
+                                : 'text-white/60 group-hover:text-white'
+                                }`}
+                            />
+                          </motion.div>
+                          <span className={`text-sm ${isLiked ? 'text-red-400' : 'text-white/60'}`}>
+                            {isLiked ? 'Liked' : 'Like'}
+                          </span>
+                        </motion.button>
 
-                    {/* Save Button */}
-                    <motion.button
-                      whileTap={{ scale: 0.85 }}
-                      onClick={() => toggleSave(currentItem.id, currentItem.type)}
-                      className="flex items-center gap-1.5 group"
-                    >
-                      <Bookmark
-                        className={`w-6 h-6 transition-all duration-200 ${isSaved
-                          ? 'fill-[#B6FF2E] text-[#B6FF2E]'
-                          : 'text-white/60 group-hover:text-white'
-                          }`}
-                      />
-                      <span className={`text-sm ${isSaved ? 'text-[#B6FF2E]' : 'text-white/60'}`}>
-                        {isSaved ? 'Saved' : 'Save'}
-                      </span>
-                    </motion.button>
+                        {/* Save Button */}
+                        <motion.button
+                          whileTap={{ scale: 0.85 }}
+                          onClick={() => toggleSave(currentItem.id, currentItem.type)}
+                          className="flex items-center gap-1.5 group"
+                        >
+                          <Bookmark
+                            className={`w-6 h-6 transition-all duration-200 ${isSaved
+                              ? 'fill-[#B6FF2E] text-[#B6FF2E]'
+                              : 'text-white/60 group-hover:text-white'
+                              }`}
+                          />
+                          <span className={`text-sm ${isSaved ? 'text-[#B6FF2E]' : 'text-white/60'}`}>
+                            {isSaved ? 'Saved' : 'Save'}
+                          </span>
+                        </motion.button>
+                      </>
+                    )}
 
                     {/* Share Button */}
                     <motion.button
                       whileTap={{ scale: 0.85 }}
+                      onClick={handleShare}
                       className="flex items-center gap-1.5 group"
                     >
                       <Share2 className="w-6 h-6 text-white/60 group-hover:text-white transition-colors" />
@@ -511,6 +564,7 @@ function FillBlankContent({ card }: { card: any }) {
 // Screenshot Content
 function ScreenshotContent({ card }: { card: any }) {
   const [imgError, setImgError] = useState(false);
+  const imageSrc = card.thumbnailUrl || card.imageUrl;
 
   return (
     <div className="flex flex-col h-full">
@@ -520,12 +574,23 @@ function ScreenshotContent({ card }: { card: any }) {
         <span className="text-xs font-mono text-[#FF6B6B] uppercase tracking-wider">Screenshot</span>
       </div>
 
+      {(card.title || card.description) && (
+        <div className="mb-3">
+          {card.title && (
+            <h3 className="text-base font-semibold text-white">{card.title}</h3>
+          )}
+          {card.description && (
+            <p className="text-xs text-white/60 mt-1 line-clamp-2">{card.description}</p>
+          )}
+        </div>
+      )}
+
       {/* Actual Image or Fallback */}
       <div className="flex-1 min-h-[200px] rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 flex items-center justify-center mb-4 overflow-hidden">
-        {card.imageUrl && !imgError ? (
+        {imageSrc && !imgError ? (
           <img
-            src={card.imageUrl}
-            alt="User upload"
+            src={imageSrc}
+            alt={card.title || "User upload"}
             className="w-full h-full object-contain max-h-[300px]"
             onError={() => setImgError(true)}
           />

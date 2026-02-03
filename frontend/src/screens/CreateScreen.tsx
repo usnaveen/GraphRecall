@@ -6,7 +6,8 @@ import {
   FileType, HardDrive, Layers, GitBranch, Youtube, MessageSquare
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { ingestService } from '../services/api';
+import { ingestService, uploadsService } from '../services/api';
+import { useAppStore } from '../store/useAppStore';
 
 // Set PDF Worker - interacting with CDN to avoid Vite build complexity
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -51,6 +52,8 @@ interface ProcessingMeta {
   relationships_created?: number;
   flashcards_generated?: number;
   flashcard_agent?: string;
+  upload_only?: boolean;
+  upload_title?: string;
 }
 
 function formatFileSize(bytes: number): string {
@@ -86,7 +89,9 @@ export function CreateScreen() {
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [processingMeta, setProcessingMeta] = useState<ProcessingMeta>({});
+  const [uploadIntent, setUploadIntent] = useState<'ingest' | 'upload'>('ingest');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { fetchFeed, setActiveTab } = useAppStore();
 
   // Simulate progress ticks while waiting for API
   useEffect(() => {
@@ -165,9 +170,42 @@ export function CreateScreen() {
     }
   };
 
+  const uploadImageFile = async (file: File) => {
+    try {
+      setStep('processing');
+      setProgress(10);
+      setError(null);
+      setProcessingMeta({
+        file: {
+          fileName: file.name,
+          fileSize: file.size,
+          fileFormat: file.name.split('.').pop()?.toLowerCase() || '',
+          inputSource: 'file',
+        },
+        upload_only: true,
+        upload_title: file.name,
+      });
+
+      await uploadsService.createUpload(file, 'screenshot', file.name);
+      setProgress(100);
+      setStep('success');
+      fetchFeed(true);
+    } catch (err: any) {
+      setError(err.message || "Failed to upload image");
+      setStep('upload');
+    } finally {
+      setUploadIntent('ingest');
+    }
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
+      const isImage = file.type.startsWith('image/');
+      if (uploadIntent === 'upload' && isImage) {
+        await uploadImageFile(file);
+        return;
+      }
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
       try {
         setStep('processing');
@@ -205,6 +243,11 @@ export function CreateScreen() {
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
+      const isImage = file.type.startsWith('image/');
+      if (uploadIntent === 'upload' && isImage) {
+        await uploadImageFile(file);
+        return;
+      }
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
       try {
         setStep('processing');
@@ -499,6 +542,7 @@ export function CreateScreen() {
                     onClick={() => {
                       if (fileInputRef.current) {
                         fileInputRef.current.accept = "image/*";
+                        setUploadIntent('upload');
                         fileInputRef.current.click();
                       }
                     }}
@@ -523,7 +567,7 @@ export function CreateScreen() {
               className="w-16 h-16 rounded-full border-4 border-white/10 border-t-[#B6FF2E] mb-4"
             />
             <h3 className="font-heading text-lg font-bold text-white mb-2">
-              Analyzing Your Notes
+              {processingMeta.upload_only ? 'Uploading Image' : 'Analyzing Your Notes'}
             </h3>
             <div className="w-48 h-2 bg-white/10 rounded-full overflow-hidden mb-6">
               <motion.div
@@ -659,39 +703,49 @@ export function CreateScreen() {
             </motion.div>
 
             <h2 className="font-heading text-2xl font-bold text-white mb-2">Success!</h2>
-            <p className="text-white/60 mb-6">Added to your knowledge graph:</p>
+            <p className="text-white/60 mb-6">
+              {processingMeta.upload_only ? 'Upload saved to your feed:' : 'Added to your knowledge graph:'}
+            </p>
 
-            <div className="space-y-2 text-sm mb-6">
-              <div className="flex items-center gap-2 text-white/80">
-                <div className="w-4 h-4 rounded-full bg-[#B6FF2E]/20 flex items-center justify-center">
-                  <Check className="w-3 h-3 text-[#B6FF2E]" />
-                </div>
-                <span>{processingMeta.concepts_created || processingMeta.concepts_extracted || selectedCount} new concepts</span>
+            {processingMeta.upload_only ? (
+              <div className="text-sm text-white/80 mb-6">
+                <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10">
+                  {processingMeta.upload_title || processingMeta.file?.fileName || 'Untitled Upload'}
+                </span>
               </div>
-              <div className="flex items-center gap-2 text-white/80">
-                <div className="w-4 h-4 rounded-full bg-[#2EFFE6]/20 flex items-center justify-center">
-                  <Check className="w-3 h-3 text-[#2EFFE6]" />
-                </div>
-                <span>{processingMeta.relationships_created || 0} new relationships</span>
-              </div>
-              <div className="flex items-center gap-2 text-white/80">
-                <div className="w-4 h-4 rounded-full bg-[#9B59B6]/20 flex items-center justify-center">
-                  <Check className="w-3 h-3 text-[#9B59B6]" />
-                </div>
-                <span>{processingMeta.flashcards_generated || 0} flashcards generated</span>
-              </div>
-              {processingMeta.domains_detected && processingMeta.domains_detected.length > 0 && (
+            ) : (
+              <div className="space-y-2 text-sm mb-6">
                 <div className="flex items-center gap-2 text-white/80">
-                  <div className="w-4 h-4 rounded-full bg-amber-500/20 flex items-center justify-center">
-                    <Check className="w-3 h-3 text-amber-400" />
+                  <div className="w-4 h-4 rounded-full bg-[#B6FF2E]/20 flex items-center justify-center">
+                    <Check className="w-3 h-3 text-[#B6FF2E]" />
                   </div>
-                  <span>Domains: {processingMeta.domains_detected.join(', ')}</span>
+                  <span>{processingMeta.concepts_created || processingMeta.concepts_extracted || selectedCount} new concepts</span>
                 </div>
-              )}
-            </div>
+                <div className="flex items-center gap-2 text-white/80">
+                  <div className="w-4 h-4 rounded-full bg-[#2EFFE6]/20 flex items-center justify-center">
+                    <Check className="w-3 h-3 text-[#2EFFE6]" />
+                  </div>
+                  <span>{processingMeta.relationships_created || 0} new relationships</span>
+                </div>
+                <div className="flex items-center gap-2 text-white/80">
+                  <div className="w-4 h-4 rounded-full bg-[#9B59B6]/20 flex items-center justify-center">
+                    <Check className="w-3 h-3 text-[#9B59B6]" />
+                  </div>
+                  <span>{processingMeta.flashcards_generated || 0} flashcards generated</span>
+                </div>
+                {processingMeta.domains_detected && processingMeta.domains_detected.length > 0 && (
+                  <div className="flex items-center gap-2 text-white/80">
+                    <div className="w-4 h-4 rounded-full bg-amber-500/20 flex items-center justify-center">
+                      <Check className="w-3 h-3 text-amber-400" />
+                    </div>
+                    <span>Domains: {processingMeta.domains_detected.join(', ')}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Geekout Summary on success — green=new, yellow=existing */}
-            {processingMeta.concept_names && processingMeta.concept_names.length > 0 && (
+            {!processingMeta.upload_only && processingMeta.concept_names && processingMeta.concept_names.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -729,7 +783,7 @@ export function CreateScreen() {
                 Add More
               </button>
               <button
-                onClick={() => { setStep('upload'); setProcessingMeta({}); }}
+                onClick={() => { setStep('upload'); setProcessingMeta({}); setActiveTab('feed'); }}
                 className="flex-1 py-3 rounded-xl bg-[#B6FF2E] text-[#07070A] font-medium hover:bg-[#c5ff4d] transition-colors"
               >
                 Go to Feed

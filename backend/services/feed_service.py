@@ -283,7 +283,8 @@ class FeedService:
                         "question": row["question_text"],
                         "options": options,
                         "explanation": row["explanation"],
-                        "id": str(row["id"])
+                        "id": str(row["id"]),
+                        "source_url": row.get("source_url"),
                     }
 
             elif item_type == FeedItemType.FLASHCARD:
@@ -303,7 +304,8 @@ class FeedService:
                         "front": row["front_content"],
                         "back": row["back_content"],
                         "card_type": "basic", # Simplification
-                        "id": str(row["id"])
+                        "id": str(row["id"]),
+                        "source_url": row.get("source_url"),
                     }
                     
         except Exception as e:
@@ -327,15 +329,18 @@ class FeedService:
                  
             if content:
                 logger.info("FeedService: Using persisted content", item_type=item_type, concept_id=concept.get("id"))
-                return FeedItem(
-                    item_type=item_type,
-                    content=content,
-                    concept_id=concept.get("id"),
-                    concept_name=concept.get("name"),
-                    domain=concept.get("domain"),
-                    due_date=concept.get("sm2_data", {}).get("next_review"),
-                    priority_score=concept.get("priority_score", 1.0),
-                )
+                feed_kwargs = {
+                    "item_type": item_type,
+                    "content": content,
+                    "concept_id": concept.get("id"),
+                    "concept_name": concept.get("name"),
+                    "domain": concept.get("domain"),
+                    "due_date": concept.get("sm2_data", {}).get("next_review"),
+                    "priority_score": concept.get("priority_score", 1.0),
+                }
+                if isinstance(content, dict) and content.get("id"):
+                    feed_kwargs["id"] = str(content.get("id"))
+                return FeedItem(**feed_kwargs)
             
             # 2. Try Web Augmentation (for MCQs only)
             if item_type == FeedItemType.MCQ and not content:
@@ -388,14 +393,17 @@ class FeedService:
                                  
                          if first_saved_item:
                              logger.info("FeedService: Using Web content", items_found=saved_count)
-                             return FeedItem(
-                                item_type=item_type,
-                                content=first_saved_item,
-                                concept_id=concept.get("id"),
-                                concept_name=concept.get("name"),
-                                domain=concept.get("domain"),
-                                priority_score=concept.get("priority_score", 0.9), # Web content slightly lower than human/generated
-                             )
+                             feed_kwargs = {
+                                "item_type": item_type,
+                                "content": first_saved_item,
+                                "concept_id": concept.get("id"),
+                                "concept_name": concept.get("name"),
+                                "domain": concept.get("domain"),
+                                "priority_score": concept.get("priority_score", 0.9), # Web content slightly lower than human/generated
+                             }
+                             if first_saved_item.get("id"):
+                                feed_kwargs["id"] = str(first_saved_item.get("id"))
+                             return FeedItem(**feed_kwargs)
                 except Exception as e:
                     logger.warning("FeedService: Web search failed", error=str(e))
 
@@ -496,15 +504,19 @@ class FeedService:
             if not content:
                 return None
 
-            return FeedItem(
-                item_type=item_type,
-                content=content,
-                concept_id=concept.get("id"),
-                concept_name=concept.get("name"),
-                domain=concept.get("domain"),
-                due_date=concept.get("sm2_data", {}).get("next_review"),
-                priority_score=concept.get("priority_score", 1.0),
-            )
+            feed_kwargs = {
+                "item_type": item_type,
+                "content": content,
+                "concept_id": concept.get("id"),
+                "concept_name": concept.get("name"),
+                "domain": concept.get("domain"),
+                "due_date": concept.get("sm2_data", {}).get("next_review"),
+                "priority_score": concept.get("priority_score", 1.0),
+            }
+            if isinstance(content, dict) and content.get("id"):
+                feed_kwargs["id"] = str(content.get("id"))
+
+            return FeedItem(**feed_kwargs)
 
         except Exception as e:
             logger.warning(
@@ -766,19 +778,25 @@ class FeedService:
             for upload in uploads:
                 upload_type = FeedItemType(upload.get("upload_type", "screenshot"))
                 if upload_type in allowed_types:
-                    feed_items.append(FeedItem(
-                        item_type=upload_type,
-                        content={
-                            "file_url": upload.get("file_url"),
-                            "thumbnail_url": upload.get("thumbnail_url"),
-                            "title": upload.get("title"),
-                            "description": upload.get("description"),
-                        },
-                        concept_id=None,
-                        concept_name=upload.get("title"),
-                        domain=None,
-                        priority_score=0.5,  # Lower priority than due items
-                    ))
+                    upload_content = {
+                        "file_url": upload.get("file_url"),
+                        "thumbnail_url": upload.get("thumbnail_url"),
+                        "title": upload.get("title"),
+                        "description": upload.get("description"),
+                        "linked_concepts": upload.get("linked_concepts") or [],
+                    }
+                    feed_kwargs = {
+                        "item_type": upload_type,
+                        "content": upload_content,
+                        "concept_id": None,
+                        "concept_name": upload.get("title"),
+                        "domain": None,
+                        "priority_score": 0.5,  # Lower priority than due items
+                        "created_at": upload.get("created_at"),
+                    }
+                    if upload.get("id"):
+                        feed_kwargs["id"] = str(upload.get("id"))
+                    feed_items.append(FeedItem(**feed_kwargs))
         
         # Sort by priority
         feed_items.sort(key=lambda x: x.priority_score, reverse=True)

@@ -711,10 +711,45 @@ async def stream_chat(
     """
     async def generate():
         try:
-            thread_id = str(uuid.uuid4())
-            config = {"configurable": {"thread_id": thread_id}}
-            
+            pg_client = await get_postgres_client()
             user_id = str(current_user["id"])
+
+            # Resolve or create conversation
+            conversation_id = request.conversation_id
+            if conversation_id:
+                conv_check = await pg_client.execute_query(
+                    "SELECT id FROM chat_conversations WHERE id = :id AND user_id = :user_id",
+                    {"id": conversation_id, "user_id": user_id},
+                )
+                if not conv_check:
+                    conversation_id = None
+
+            if not conversation_id:
+                title = (request.message[:60] + "...") if len(request.message) > 60 else request.message
+                conversation_id = await pg_client.execute_insert(
+                    """
+                    INSERT INTO chat_conversations (user_id, title)
+                    VALUES (:user_id, :title)
+                    RETURNING id
+                    """,
+                    {"user_id": user_id, "title": title or "New Conversation"},
+                )
+            if not conversation_id:
+                raise RuntimeError("Failed to create conversation")
+
+            thread_id = conversation_id or str(uuid.uuid4())
+            config = {"configurable": {"thread_id": thread_id}}
+
+            # Save user message immediately
+            await pg_client.execute_insert(
+                """
+                INSERT INTO chat_messages (conversation_id, role, content)
+                VALUES (:conversation_id, 'user', :content)
+                RETURNING id
+                """,
+                {"conversation_id": conversation_id, "content": request.message},
+            )
+
             initial_state: ChatState = {
                 "messages": [HumanMessage(content=request.message)],
                 "user_id": user_id,
@@ -724,6 +759,8 @@ async def stream_chat(
             
             # Streaming Loop using astream_events (LangGraph 1.0+)
             # Using version="v2" for standard event format
+            full_content = ""
+
             async for event in chat_graph.astream_events(initial_state, config, version="v2"):
                 
                 kind = event["event"]
@@ -732,6 +769,7 @@ async def stream_chat(
                 if kind == "on_chat_model_stream":
                     content = event["data"]["chunk"].content
                     if content:
+                        full_content += content
                         yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
                 
                 # Notify about tool usage (searching graph/notes)
@@ -755,11 +793,37 @@ async def stream_chat(
                     return str(obj)
                 return obj
 
+            # Persist assistant message
+            assistant_message_id = await pg_client.execute_insert(
+                """
+                INSERT INTO chat_messages (conversation_id, role, content, sources_json)
+                VALUES (:conversation_id, 'assistant', :content, :sources)
+                RETURNING id
+                """,
+                {
+                    "conversation_id": conversation_id,
+                    "content": full_content,
+                    "sources": json.dumps(sources),
+                },
+            )
+
+            # Update conversation timestamp
+            await pg_client.execute_update(
+                """
+                UPDATE chat_conversations
+                SET updated_at = NOW()
+                WHERE id = :conversation_id
+                """,
+                {"conversation_id": conversation_id},
+            )
+
             # Send final event with metadata
             final_data = {
-                'type': 'done', 
-                'sources': sources, 
-                'related_concepts': related_concepts
+                'type': 'done',
+                'sources': sources,
+                'related_concepts': related_concepts,
+                'message_id': assistant_message_id,
+                'conversation_id': conversation_id,
             }
             yield f"data: {json.dumps(final_data, default=json_safe)}\n\n"
             
