@@ -66,7 +66,11 @@ async def test_get_3d_graph_returns_communities(monkeypatch):
     monkeypatch.setattr(graph3d_router, "get_postgres_client", fake_get_postgres_client)
     monkeypatch.setattr(graph3d_router.CommunityService, "get_communities", fake_get_communities)
 
-    response = await graph3d_router.get_3d_graph(current_user={"id": "user-1"})
+    response = await graph3d_router.get_3d_graph(
+        current_user={"id": "user-1"},
+        center_concept_id=None,
+        max_depth=3,
+    )
 
     assert response.total_nodes == 1
     assert response.total_edges == 1

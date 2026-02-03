@@ -40,8 +40,11 @@ def mock_dependencies():
     mock_pg_client.execute_update = AsyncMock(return_value=None)
     mock_pg_client.execute_query = AsyncMock(return_value=[])
     
-    mock_llm_instance = AsyncMock()
-    mock_llm_instance.ainvoke.return_value = AIMessage(content='{"intent": "general", "entities": []}')
+    mock_llm_instance = MagicMock()
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(return_value=MagicMock(intent="general", entities=[]))
+    mock_llm_instance.with_structured_output.return_value = structured
+    mock_llm_instance.ainvoke = AsyncMock(return_value=AIMessage(content='{"intent": "general", "entities": []}'))
 
     mock_concept = MagicMock()
     mock_concept.model_dump.return_value = {
@@ -58,7 +61,7 @@ def mock_dependencies():
     # Patch list
     patches = [
         # Chat Graph
-        patch("backend.graphs.chat_graph.get_chat_model", return_value=mock_llm_instance),
+        patch("backend.graphs.chat_graph.get_chat_model", new=lambda *args, **kwargs: mock_llm_instance),
         patch("backend.graphs.chat_graph.get_neo4j_client", new_callable=AsyncMock, return_value=mock_neo4j_client),
         patch("backend.graphs.chat_graph.get_postgres_client", new_callable=AsyncMock, return_value=mock_pg_client),
         
@@ -73,12 +76,12 @@ def mock_dependencies():
         patch("backend.graphs.ingestion_graph.content_generator.generate_mcq_batch", new_callable=AsyncMock, return_value=[]),
         
         # Quiz Graph
-        patch("backend.graphs.quiz_graph.get_chat_model", return_value=mock_llm_instance),
+        patch("backend.graphs.quiz_graph.get_chat_model", new=lambda *args, **kwargs: mock_llm_instance),
         patch("backend.graphs.quiz_graph.get_neo4j_client", new_callable=AsyncMock, return_value=mock_neo4j_client),
         patch("backend.graphs.quiz_graph.get_postgres_client", new_callable=AsyncMock, return_value=mock_pg_client),
         
         # MCP Graph
-        patch("backend.graphs.mcp_graph.get_chat_model", return_value=mock_llm_instance),
+        patch("backend.graphs.mcp_graph.get_chat_model", new=lambda *args, **kwargs: mock_llm_instance),
         
         # Checkpointer (Global)
         patch("backend.graphs.checkpointer.get_checkpointer", return_value=MagicMock())
@@ -121,6 +124,9 @@ async def test_chat_graph_flow(mock_dependencies):
     val1 = AIMessage(content='{"intent": "explain", "entities": ["LangGraph"]}')
     val2 = AIMessage(content="LangGraph is cool.")
     mocks["llm"].ainvoke.side_effect = [val1, val2]
+    mocks["llm"].with_structured_output.return_value.ainvoke = AsyncMock(
+        return_value=MagicMock(intent="explain", entities=["LangGraph"])
+    )
     
     graph = create_chat_graph()
     
