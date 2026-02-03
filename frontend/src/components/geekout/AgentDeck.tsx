@@ -1,0 +1,149 @@
+import React, { useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
+import { AgentCard, type AgentInfo } from './AgentCard';
+import { X } from 'lucide-react';
+
+// Hardcoded Geeky Data
+const AGENTS_DATA: AgentInfo[] = [
+    {
+        id: 'scanner',
+        name: 'Scanner',
+        role: 'The Scout',
+        description: 'Silently prowls through your uploads in the dark, marking potential quizzes so you don\'t have to pay for them later.',
+        model: 'Gemini 2.5 Flash',
+        rarity: 'common',
+        number: '007',
+        commitSha: '39ab1ea',
+        createdDate: 'Feb 3, 2026',
+        bgImageIndex: 1
+    },
+    {
+        id: 'librarian',
+        name: 'Librarian',
+        role: 'The Oracle',
+        description: 'Keeper of the Graph. Knows everything you\'ve ever noted and weaves answers from the tangled web of your memory.',
+        model: 'Gemini 2.5 Flash + GraphRAG',
+        rarity: 'legendary',
+        number: '005',
+        commitSha: '0dea645',
+        createdDate: 'Jan 30, 2026',
+        bgImageIndex: 2
+    },
+    {
+        id: 'quiz',
+        name: 'Quiz Master',
+        role: 'The Explorer',
+        description: 'Ventures into the wild internet (via Tavily) to verify your knowledge against the world.',
+        model: 'Gemini 2.5 Flash + Tavily',
+        rarity: 'rare',
+        number: '006',
+        commitSha: 'f248ca3',
+        createdDate: 'Feb 2, 2026',
+        bgImageIndex: 3
+    },
+    {
+        id: 'mermaid',
+        name: 'Architect',
+        role: 'The Visualizer',
+        description: 'Translates abstract thoughts into structured diagrams. If you can think it, this agent can draw it.',
+        model: 'Gemini 2.5 Flash',
+        rarity: 'rare',
+        number: '003',
+        commitSha: '0dea645',
+        createdDate: 'Jan 30, 2026',
+        bgImageIndex: 4
+    },
+    {
+        id: 'content',
+        name: 'Artist',
+        role: 'Content Generator',
+        description: 'The workhorse. Churns out flashcards and questions tirelessly. Loves a good multiple choice.',
+        model: 'Gemini 2.5 Flash',
+        rarity: 'common',
+        number: '004',
+        commitSha: '0dea645',
+        createdDate: 'Jan 30, 2026',
+        bgImageIndex: 1
+    },
+    {
+        id: 'synthesis',
+        name: 'Diplomat',
+        role: 'Synthesis Agent',
+        description: 'Resolves conflicts between new and old ideas. Ensures your knowledge graph doesn\'t contradict itself.',
+        model: 'Gemini 2.5 Flash',
+        rarity: 'uncommon',
+        number: '002',
+        commitSha: '0dea645',
+        createdDate: 'Jan 30, 2026',
+        bgImageIndex: 2
+    },
+    {
+        id: 'extract',
+        name: 'Miner',
+        role: 'Extraction Agent',
+        description: 'The first line of defense. Smashes raw text rocks to find the concept gems hidden inside.',
+        model: 'Gemini 2.5 Flash',
+        rarity: 'common',
+        number: '001',
+        commitSha: '0dea645',
+        createdDate: 'Jan 30, 2026',
+        bgImageIndex: 3
+    },
+];
+
+interface AgentDeckProps {
+    onClose: () => void;
+}
+
+export const AgentDeck: React.FC<AgentDeckProps> = ({ onClose }) => {
+    const [agents, setAgents] = useState<AgentInfo[]>(AGENTS_DATA);
+
+    const removeTopCard = () => {
+        setAgents((prev) => {
+            const top = prev[0];
+            const rest = prev.slice(1);
+            // Recycle to bottom
+            return [...rest, top];
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            {/* Close Button */}
+            <button
+                onClick={onClose}
+                className="absolute top-6 right-6 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors z-50"
+            >
+                <X className="w-6 h-6" />
+            </button>
+
+            <div className="relative w-full max-w-sm h-[600px] flex flex-col items-center">
+                <div className="text-center mb-8 relative z-50">
+                    <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-purple-400">
+                        Geeky Facts
+                    </h2>
+                    <p className="text-zinc-400 text-xs mt-1">
+                        Meet the AI Agents powering your brain
+                    </p>
+                </div>
+
+                <div className="relative w-[320px] h-[500px]">
+                    <AnimatePresence>
+                        {agents.map((agent, index) => (
+                            <AgentCard
+                                key={agent.id}
+                                agent={agent}
+                                index={index}
+                                onRemove={removeTopCard}
+                            />
+                        ))}
+                    </AnimatePresence>
+                </div>
+
+                <div className="mt-8 text-zinc-500 text-xs font-mono animate-pulse">
+                    Swipe to explore agents &rarr;
+                </div>
+            </div>
+        </div>
+    );
+};
