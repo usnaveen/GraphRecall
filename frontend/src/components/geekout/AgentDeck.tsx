@@ -4,7 +4,6 @@ import { AgentCard, type AgentInfo } from './AgentCard';
 import { X } from 'lucide-react';
 
 // Hardcoded Geeky Data
-// Hardcoded Geeky Data
 const AGENTS_DATA: AgentInfo[] = [
     {
         id: 'supervisor',
@@ -16,7 +15,7 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '000',
         commitSha: '77c19e6',
         createdDate: 'Feb 3, 2026',
-        bgImageIndex: 4
+        imageFilename: 'frosted_card_bg_5_supervisor_1770134893540.png'
     },
     {
         id: 'scanner',
@@ -28,7 +27,7 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '008',
         commitSha: '39ab1ea',
         createdDate: 'Feb 3, 2026',
-        bgImageIndex: 1
+        imageFilename: 'frosted_card_bg_9_scanner_1770134996986.png'
     },
     {
         id: 'matchmaker',
@@ -40,7 +39,7 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '009',
         commitSha: '77c19e6',
         createdDate: 'Feb 3, 2026',
-        bgImageIndex: 3
+        imageFilename: 'frosted_card_bg_7_matchmaker_1770134942667.png'
     },
     {
         id: 'librarian',
@@ -52,7 +51,7 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '005',
         commitSha: '0dea645',
         createdDate: 'Jan 30, 2026',
-        bgImageIndex: 2
+        imageFilename: 'frosted_card_bg_10_librarian_1770135034314.png'
     },
     {
         id: 'detective',
@@ -64,7 +63,7 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '006',
         commitSha: 'fb03b97',
         createdDate: 'Jan 31, 2026',
-        bgImageIndex: 4
+        imageFilename: 'frosted_card_bg_6_detective_1770134917329.png'
     },
     {
         id: 'quiz',
@@ -76,7 +75,7 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '007',
         commitSha: 'f248ca3',
         createdDate: 'Feb 2, 2026',
-        bgImageIndex: 3
+        imageFilename: 'frosted_card_bg_3_1770134221369.png'
     },
     {
         id: 'mermaid',
@@ -88,7 +87,7 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '003',
         commitSha: '0dea645',
         createdDate: 'Jan 30, 2026',
-        bgImageIndex: 4
+        imageFilename: 'frosted_card_bg_4_1770134241935.png'
     },
     {
         id: 'content',
@@ -100,7 +99,7 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '004',
         commitSha: '0dea645',
         createdDate: 'Jan 30, 2026',
-        bgImageIndex: 1
+        imageFilename: 'frosted_card_bg_1_1770134176619.png'
     },
     {
         id: 'synthesis',
@@ -112,7 +111,7 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '002',
         commitSha: '0dea645',
         createdDate: 'Jan 30, 2026',
-        bgImageIndex: 2
+        imageFilename: 'frosted_card_bg_2_1770134199307.png'
     },
     {
         id: 'extract',
@@ -124,7 +123,7 @@ const AGENTS_DATA: AgentInfo[] = [
         number: '001',
         commitSha: '0dea645',
         createdDate: 'Jan 30, 2026',
-        bgImageIndex: 3
+        imageFilename: 'frosted_card_bg_8_miner_1770134971171.png'
     },
 ];
 
