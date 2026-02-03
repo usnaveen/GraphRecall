@@ -4,18 +4,43 @@ import { AgentCard, type AgentInfo } from './AgentCard';
 import { X } from 'lucide-react';
 
 // Hardcoded Geeky Data
+// Hardcoded Geeky Data
 const AGENTS_DATA: AgentInfo[] = [
+    {
+        id: 'supervisor',
+        name: 'Supervisor',
+        role: 'The Boss',
+        description: 'Orchestrates the entire team. Decides which agent is best suited for your request and routes tasks accordingly.',
+        model: 'LangGraph + Gemini 2.5',
+        rarity: 'legendary',
+        number: '000',
+        commitSha: '77c19e6',
+        createdDate: 'Feb 3, 2026',
+        bgImageIndex: 4
+    },
     {
         id: 'scanner',
         name: 'Scanner',
         role: 'The Scout',
         description: 'Silently prowls through your uploads in the dark, marking potential quizzes so you don\'t have to pay for them later.',
         model: 'Gemini 2.5 Flash',
-        rarity: 'common',
-        number: '007',
+        rarity: 'rare',
+        number: '008',
         commitSha: '39ab1ea',
         createdDate: 'Feb 3, 2026',
         bgImageIndex: 1
+    },
+    {
+        id: 'matchmaker',
+        name: 'Matchmaker',
+        role: 'The Connector',
+        description: 'Analyzes your graph for missing links. "Hey, isn\'t Quantum Mechanics related to Linear Algebra?"',
+        model: 'Gemini 2.5 Flash',
+        rarity: 'rare',
+        number: '009',
+        commitSha: '77c19e6',
+        createdDate: 'Feb 3, 2026',
+        bgImageIndex: 3
     },
     {
         id: 'librarian',
@@ -30,13 +55,25 @@ const AGENTS_DATA: AgentInfo[] = [
         bgImageIndex: 2
     },
     {
+        id: 'detective',
+        name: 'Sherlock',
+        role: 'Intent Analyst',
+        description: 'Deduces what you actually want when you type "help me study". Figures out if you need a quiz, a summary, or a specific fact.',
+        model: 'Gemini 2.5 Flash',
+        rarity: 'uncommon',
+        number: '006',
+        commitSha: 'fb03b97',
+        createdDate: 'Jan 31, 2026',
+        bgImageIndex: 4
+    },
+    {
         id: 'quiz',
         name: 'Quiz Master',
         role: 'The Explorer',
         description: 'Ventures into the wild internet (via Tavily) to verify your knowledge against the world.',
         model: 'Gemini 2.5 Flash + Tavily',
         rarity: 'rare',
-        number: '006',
+        number: '007',
         commitSha: 'f248ca3',
         createdDate: 'Feb 2, 2026',
         bgImageIndex: 3
