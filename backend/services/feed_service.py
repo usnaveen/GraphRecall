@@ -274,6 +274,33 @@ class FeedService:
         except Exception as e:
             logger.warning("FeedService: Error getting user uploads", error=str(e))
             return []
+
+    async def get_user_quizzes(self, user_id: str) -> list[dict]:
+        """Get all quizzes generated for the user."""
+        try:
+            # Fetch quizzes
+            quizzes = await self.pg_client.execute_query(
+                """
+                SELECT id, question_text, question_type, created_at, concept_id
+                FROM quizzes
+                WHERE user_id = :user_id
+                ORDER BY created_at DESC
+                LIMIT 100
+                """,
+                {"user_id": user_id}
+            )
+            
+            # Enrich with concept names from Neo4j in bulk? 
+            # For now, we will return list. Frontend can maybe show "General" or we try to fetch names.
+            # Doing N+1 queries is bad.
+            # But we don't have concept names in Postgres?
+            # We can check if `concepts` table exists in Postgres? No, Neo4j is source of truth.
+            # We'll return concept_id.
+            
+            return quizzes
+        except Exception as e:
+            logger.error("FeedService: Error getting user quizzes", error=str(e))
+            return []
     
     async def _get_db_content(
         self,

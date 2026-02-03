@@ -107,6 +107,13 @@ export const feedService = {
         );
         if (!response.ok) throw new Error('Failed to generate quiz');
         return response.json();
+    },
+
+    /** Get generated quiz history */
+    getQuizHistory: async () => {
+        const response = await authFetch(`${API_BASE}/feed/history/quizzes`);
+        if (!response.ok) throw new Error('Failed to fetch quiz history');
+        return response.json();
     }
 };
 
