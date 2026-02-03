@@ -372,7 +372,7 @@ async def focus_on_concept(
             WHERE prereq.user_id = $user_id AND center.user_id = $user_id
             WITH [n IN nodes(path) | {id: n.id, name: n.name}] as path_nodes
             RETURN path_nodes
-            ORDER BY length(path_nodes) DESC
+            ORDER BY size(path_nodes) DESC
             LIMIT 1
             """,
             {"id": concept_id, "user_id": user_id},
