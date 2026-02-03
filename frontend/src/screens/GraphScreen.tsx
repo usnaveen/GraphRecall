@@ -1,4 +1,3 @@
-```
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -84,8 +83,8 @@ function runForceSimulation(
     const ti = idxMap.get(e.target);
     if (si !== undefined && ti !== undefined) {
       edgeList.push({ si, ti, strength: e.strength });
-      edgeMap.set(`${ si }| ${ ti } `, edgeList.length - 1);
-      edgeMap.set(`${ ti }| ${ si } `, edgeList.length - 1);
+      edgeMap.set(`${si}| ${ti} `, edgeList.length - 1);
+      edgeMap.set(`${ti}| ${si} `, edgeList.length - 1);
     }
   }
 
@@ -219,8 +218,8 @@ function drawEdges(
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.strokeStyle = isConnectedToSelected
-      ? `rgba(182, 255, 46, ${ alpha })`
-      : `rgba(255, 255, 255, ${ alpha })`;
+      ? `rgba(182, 255, 46, ${alpha})`
+      : `rgba(255, 255, 255, ${alpha})`;
     ctx.lineWidth = isConnectedToSelected ? 1.5 : 0.8;
     ctx.stroke();
   }
@@ -299,7 +298,7 @@ function drawLabels(
     const isSelected = node.id === selectedId;
     const radius = (8 + node.size * 8);
 
-    ctx.font = `${ isSelected ? 600 : 400 } ${ fontSize } px - apple - system, BlinkMacSystemFont, "Segoe UI", sans - serif`;
+    ctx.font = `${isSelected ? 600 : 400} ${fontSize} px - apple - system, BlinkMacSystemFont, "Segoe UI", sans - serif`;
     ctx.fillStyle = isSelected ? '#B6FF2E' : 'rgba(255, 255, 255, 0.7)';
     ctx.fillText(node.name, node.x, node.y + radius + 6);
   }
@@ -307,7 +306,7 @@ function drawLabels(
 
 function hexToRgba(hex: string, alpha: number): string {
   let r = 0, g = 0, b = 0;
-  if (!hex || hex.length < 4) return `rgba(150, 100, 255, ${ alpha })`;
+  if (!hex || hex.length < 4) return `rgba(150, 100, 255, ${alpha})`;
   const h = hex.replace('#', '');
   if (h.length === 3) {
     r = parseInt(h[0] + h[0], 16);
@@ -318,7 +317,7 @@ function hexToRgba(hex: string, alpha: number): string {
     g = parseInt(h.substring(2, 4), 16);
     b = parseInt(h.substring(4, 6), 16);
   }
-  return `rgba(${ r }, ${ g }, ${ b }, ${ alpha })`;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -519,8 +518,8 @@ export function GraphScreen() {
     const rect = container.getBoundingClientRect();
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
-    canvas.style.width = `${ rect.width } px`;
-    canvas.style.height = `${ rect.height } px`;
+    canvas.style.width = `${rect.width} px`;
+    canvas.style.height = `${rect.height} px`;
   }, []);
 
   useEffect(() => {
@@ -756,7 +755,7 @@ export function GraphScreen() {
     setResources([]);
 
     try {
-      const response = await api.get(`/ feed / resources / ${ encodeURIComponent(topicName) }?resource_type = ${ type === 'link' ? 'article' : 'notes' } `);
+      const response = await api.get(`/ feed / resources / ${encodeURIComponent(topicName)}?resource_type = ${type === 'link' ? 'article' : 'notes'} `);
 
       const allResources = response.data.resources || [];
       const filtered = allResources.filter((r: any) => {
@@ -915,7 +914,7 @@ export function GraphScreen() {
           >
             <Filter className="w-3 h-3" />
             Filters
-            <ChevronDown className={`w - 3 h - 3 transition - transform ${ showFilters ? 'rotate-180' : '' } `} />
+            <ChevronDown className={`w - 3 h - 3 transition - transform ${showFilters ? 'rotate-180' : ''} `} />
           </button>
         </div>
 
@@ -964,7 +963,7 @@ export function GraphScreen() {
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{
-                width: `${ selectedNodeData.mastery }% `,
+                width: `${selectedNodeData.mastery}% `,
                 backgroundColor: selectedNodeData.color
               }}
             />
