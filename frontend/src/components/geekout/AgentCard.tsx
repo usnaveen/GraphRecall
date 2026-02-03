@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, PanInfo } from 'framer-motion';
+import { motion, type PanInfo } from 'framer-motion';
 
 export interface AgentInfo {
     id: string;
@@ -11,7 +11,7 @@ export interface AgentInfo {
     number: string;
     commitSha: string;
     createdDate: string;
-    bgImageIndex: number; // 1-4
+    imageFilename: string;
 }
 
 interface AgentCardProps {
@@ -77,7 +77,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, index, onRemove }) 
                 <div className="absolute inset-0 z-0">
                     {/* Since images are in public/assets/agents/ */}
                     <img
-                        src={`/assets/agents/frosted_card_bg_${agent.bgImageIndex}.png`}
+                        src={`/assets/agents/${agent.imageFilename}`}
                         alt="bg"
                         className="w-full h-full object-cover opacity-60"
                     />
