@@ -514,7 +514,7 @@ function FillBlankContent({ card }: { card: any }) {
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
           placeholder="Type your answer..."
-          className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#2EFFE6]/50"
+          className="w-full p-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/40 focus:outline-none focus:border-[#2EFFE6]/50 mb-4"
         />
       )}
 
