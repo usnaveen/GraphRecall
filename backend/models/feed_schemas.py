@@ -179,6 +179,7 @@ class FeedItem(BaseModel):
     concept_id: Optional[str] = None
     concept_name: Optional[str] = None
     domain: Optional[str] = None
+    priority_score: float = 0.5
 
     # Spaced repetition data
     due_date: Optional[datetime] = None

@@ -160,16 +160,15 @@ class Neo4jClient:
         concept_id: Optional[str] = None,
         embedding: Optional[list[float]] = None,
     ) -> dict:
-        """Create a new Concept node."""
+        """Create or update a Concept node, merging by name/user_id."""
         import uuid
         
-        if not concept_id:
-            concept_id = str(uuid.uuid4())
-            
+        # Identity for merging should be (name, user_id)
+        # c.id is a property we set, but not the merge key if we want name uniqueness
         query = """
-        MERGE (c:Concept {id: $id, user_id: $user_id})
+        MERGE (c:Concept {name: $name, user_id: $user_id})
         ON CREATE SET
-            c.name = $name,
+            c.id = $id,
             c.definition = $definition,
             c.domain = $domain,
             c.complexity_score = $complexity_score,
@@ -183,7 +182,7 @@ class Neo4jClient:
         RETURN c
         """
         params = {
-            "id": concept_id,
+            "id": concept_id or str(uuid.uuid4()),
             "user_id": user_id,
             "name": name,
             "definition": definition,
@@ -192,7 +191,8 @@ class Neo4jClient:
             "embedding": embedding,
         }
         result = await self.execute_query(query, params)
-        return result[0] if result else {}
+        node_data = result[0]["c"] if result else {}
+        return {"c": node_data} # Return in standard format expected by ingestion graph
 
     async def create_relationship(
         self,

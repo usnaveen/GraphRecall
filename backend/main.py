@@ -74,18 +74,43 @@ async def lifespan(app: FastAPI):
         try:
             logger.info("Applying schema fixes...")
             async with pg_client.session() as session:
-                # Add resource_type column if it doesn't exist
-                # Add resource_type column if it doesn't exist - using simple SQL instead of PL/pgSQL
-                try:
-                    await session.execute(text(
-                        "ALTER TABLE notes ADD COLUMN IF NOT EXISTS resource_type VARCHAR(50) DEFAULT 'notes'"
-                    ))
-                    await session.commit()
-                except Exception:
-                    await session.rollback()
-                    # Ignore if it failed (e.g. column exists) -> verify with explicit check if needed but IF NOT EXISTS should suffice
+                # 1. Notes table fixes
+                await session.execute(text(
+                    "ALTER TABLE notes ADD COLUMN IF NOT EXISTS resource_type VARCHAR(50) DEFAULT 'notes'"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE notes ADD COLUMN IF NOT EXISTS content_hash TEXT"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE notes ADD COLUMN IF NOT EXISTS summary TEXT"
+                ))
+                
+                # 2. Proficiency scores fixes (SM2 metadata)
+                await session.execute(text(
+                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS easiness_factor DECIMAL(3,2) DEFAULT 2.5"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS interval_days INTEGER DEFAULT 1"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS repetition_count INTEGER DEFAULT 0"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS total_reviews INTEGER DEFAULT 0"
+                ))
+                await session.execute(text(
+                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS correct_streak INTEGER DEFAULT 0"
+                ))
+                # Fix name mismatch: ensure next_review_due is the primary column, 
+                # but also support next_review if legacy code uses it.
+                await session.execute(text(
+                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS next_review_due TIMESTAMP WITH TIME ZONE"
+                ))
+                
+                await session.commit()
 
-            logger.info("Schema fixes applied")
+            logger.info("Schema fixes applied (resource_type, content_hash, SM2 metadata)")
+
         except Exception as e:
             logger.warning("Schema fixes skipped", error=str(e))
         
@@ -203,20 +228,35 @@ async def ingest_note(
     try:
         user_id = str(current_user["id"])
         
-        # First, save the note to PostgreSQL
+        # 1. Check for duplicates
+        import hashlib
+        content_hash = hashlib.sha256(request.content.encode("utf-8")).hexdigest()
+        
         pg_client = await get_postgres_client()
-        note_id = await pg_client.execute_insert(
-            """
-            INSERT INTO notes (user_id, content_text, content_type, source_url)
-            VALUES (:user_id, :content, 'markdown', :source_url)
-            RETURNING id
-            """,
-            {
-                "user_id": user_id,
-                "content": request.content,
-                "source_url": request.source_url,
-            },
+        existing_note = await pg_client.execute_query(
+            "SELECT id FROM notes WHERE user_id = :user_id AND (content_hash = :hash_val OR content_text = :content)",
+            {"user_id": user_id, "hash_val": content_hash, "content": request.content}
         )
+        
+        if existing_note:
+            note_id = existing_note[0]["id"]
+            logger.info("ingest: Duplicate detected", note_id=note_id)
+        else:
+            # First, save the note to PostgreSQL
+            note_id = await pg_client.execute_insert(
+                """
+                INSERT INTO notes (user_id, content_text, content_type, source_url, content_hash)
+                VALUES (:user_id, :content, 'markdown', :source_url, :content_hash)
+                RETURNING id
+                """,
+                {
+                    "user_id": user_id,
+                    "content": request.content,
+                    "source_url": request.source_url,
+                    "content_hash": content_hash,
+                },
+            )
+
         # ... rest of the function ...
         # Run the ingestion pipeline
         # V2 Migration: Use run_ingestion with skip_review=True to mimic old auto-approve behavior
