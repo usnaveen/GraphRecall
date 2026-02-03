@@ -211,6 +211,42 @@ async def get_user_stats(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/history/quizzes")
+async def get_quiz_history(
+    current_user: dict = Depends(get_current_user),
+):
+    """Get history of quizzes created for the user."""
+    try:
+        pg_client = await get_postgres_client()
+        neo4j_client = await get_neo4j_client()
+        feed_service = FeedService(pg_client, neo4j_client)
+        
+        quizzes = await feed_service.get_user_quizzes(str(current_user["id"]))
+        
+        # Helper to fetch concept names for grouping
+        # This is a bit expensive but necessary for "grouped by topic"
+        # We collect unique concept_ids
+        concept_ids = list(set(q["concept_id"] for q in quizzes if q.get("concept_id")))
+        
+        concept_map = {}
+        if concept_ids:
+             # Neo4j query
+             query = "MATCH (c:Concept) WHERE c.id IN $ids RETURN c.id as id, c.name as name"
+             result = await neo4j_client.execute_query(query, {"ids": concept_ids})
+             for row in result:
+                 concept_map[row["id"]] = row["name"]
+        
+        # Annotate quizzes
+        for q in quizzes:
+            q["topic"] = concept_map.get(q["concept_id"], "General Knowledge")
+            
+        return {"quizzes": quizzes}
+        
+    except Exception as e:
+        logger.error("Feed: Error getting quiz history", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/due-count")
 async def get_due_count(
     current_user: dict = Depends(get_current_user),

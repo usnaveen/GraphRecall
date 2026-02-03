@@ -414,7 +414,7 @@ function QuizContent({ quiz }: { quiz: any }) {
       </p>
 
       {/* Options */}
-      <div className="space-y-2 flex-1 overflow-y-auto scrollbar-hide min-h-0">
+      <div className="space-y-2 flex-1 overflow-y-auto scrollbar-hide min-h-0 overscroll-contain touch-pan-y">
         {quiz.options.map((option: QuizOption, i: number) => {
           const isSelected = selectedOption === option.id;
           const showCorrect = showResult && option.isCorrect;
@@ -635,21 +635,23 @@ function DiagramContent({ card }: { card: any }) {
     let center = card.caption || 'Concept Map';
 
     for (const line of lines) {
-      // Extract node labels from common mermaid patterns
-      // mindmap: root text, then indented items
-      // flowchart: A[label] --> B[label]
-      const bracketMatch = line.match(/\[([^\]]+)\]/g);
-      if (bracketMatch) {
-        bracketMatch.forEach(m => nodes.push(m.slice(1, -1)));
+      // Improved regex to handle mermaid styles like id((text)), id[text], id([text])
+      // We look for content inside the innermost matching brackets
+      const matches = line.matchAll(/([(\[{]+)(.*?)([)\]}]+)/g);
+      for (const match of matches) {
+        // match[2] is the content
+        const content = match[2];
+        if (content && content.trim()) {
+          const text = content.trim();
+          // Avoid adding duplicates of center if possible, but dedup happens later
+          nodes.push(text);
+        }
       }
-      const parenMatch = line.match(/\(([^)]+)\)/g);
-      if (parenMatch) {
-        parenMatch.forEach(m => nodes.push(m.slice(1, -1)));
-      }
-      // mindmap root
-      if (line.startsWith('root(') || line.startsWith('root[')) {
-        const rootMatch = line.match(/root[\(\[]([^\)\]]+)[\)\]]/);
-        if (rootMatch) center = rootMatch[1];
+
+      // Explicit root check to set center
+      if (line.trim().startsWith('root')) {
+        const rootMatch = line.match(/root[^\w\s]*[\[\(\{]+(.*?)[\}\)\]]+/);
+        if (rootMatch && rootMatch[1]) center = rootMatch[1].trim();
       }
     }
 
