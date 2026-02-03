@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import structlog
+import json
 
 from backend.models.feed_schemas import (
     FeedItem,
@@ -341,7 +342,7 @@ class FeedService:
                 try:
                     # Only search if we really lack content
                     logger.info("FeedService: DB empty, trying Web Search", concept=concept.get("name"))
-                    web_mcqs = await self.web_quiz_agent.find_quizzes(
+                    web_mcqs, source_url = await self.web_quiz_agent.find_quizzes(
                         concept_name=concept.get("name"), 
                         domain=concept.get("domain", "General")
                     )
@@ -358,9 +359,9 @@ class FeedService:
                                 await pg_client.execute_update(
                                     """
                                     INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type, 
-                                                         options_json, correct_answer, explanation, created_at, source)
+                                                         options_json, correct_answer, explanation, created_at, source, source_url)
                                     VALUES (:id, :user_id, :concept_id, :question_text, 'mcq',
-                                            :options_json, :correct_answer, :explanation, NOW(), 'web_search')
+                                            :options_json, :correct_answer, :explanation, NOW(), 'web_search', :source_url)
                                     """,
                                     {
                                         "id": q_id,
@@ -370,6 +371,7 @@ class FeedService:
                                         "options_json": json.dumps([o.model_dump() for o in mcq.options]),
                                         "correct_answer": next((o.id for o in mcq.options if o.is_correct), "A"),
                                         "explanation": mcq.explanation,
+                                        "source_url": source_url,
                                     }
                                 )
                                 saved_count += 1
@@ -378,7 +380,8 @@ class FeedService:
                                         "question": mcq.question,
                                         "options": [o.model_dump() for o in mcq.options],
                                         "explanation": mcq.explanation,
-                                        "id": q_id
+                                        "id": q_id,
+                                        "source_url": source_url,
                                     }
                              except Exception as e:
                                  logger.warning("FeedService: Failed to save web MCQ", error=str(e))

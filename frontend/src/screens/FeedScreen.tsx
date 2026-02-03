@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Heart, Bookmark, Share2, ChevronRight, Lightbulb,
   CheckCircle, XCircle, Edit3, Image as ImageIcon, Map,
-  Sparkles, ArrowRight, Globe, Layers, X, Filter
+  Sparkles, ArrowRight, Globe, Layers, X, Filter, ExternalLink
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import type { FeedItem, QuizOption, ConceptShowcaseCard } from '../types';
@@ -25,25 +25,25 @@ export function FeedScreen() {
   // Filter feed items by topic if a topic filter is active
   const filteredItems = feedTopicFilter
     ? feedItems.filter((item) => {
-        const topic = feedTopicFilter.toLowerCase();
-        // Check various fields depending on item type
-        if ('concept' in item && item.concept) {
-          return (
-            item.concept.name?.toLowerCase().includes(topic) ||
-            item.concept.domain?.toLowerCase().includes(topic)
-          );
-        }
-        if ('relatedConcept' in item) {
-          return item.relatedConcept?.toLowerCase().includes(topic);
-        }
-        if ('conceptName' in item) {
-          return (
-            item.conceptName?.toLowerCase().includes(topic) ||
-            item.domain?.toLowerCase().includes(topic)
-          );
-        }
-        return false;
-      })
+      const topic = feedTopicFilter.toLowerCase();
+      // Check various fields depending on item type
+      if ('concept' in item && item.concept) {
+        return (
+          item.concept.name?.toLowerCase().includes(topic) ||
+          item.concept.domain?.toLowerCase().includes(topic)
+        );
+      }
+      if ('relatedConcept' in item) {
+        return item.relatedConcept?.toLowerCase().includes(topic);
+      }
+      if ('conceptName' in item) {
+        return (
+          item.conceptName?.toLowerCase().includes(topic) ||
+          item.domain?.toLowerCase().includes(topic)
+        );
+      }
+      return false;
+    })
     : feedItems;
 
   const displayItems = filteredItems.length > 0 ? filteredItems : feedItems;
@@ -312,11 +312,26 @@ function QuizContent({ quiz }: { quiz: any }) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-6 h-6 rounded-full bg-[#B6FF2E]/20 flex items-center justify-center">
-          <span className="text-xs text-[#B6FF2E]">?</span>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full bg-[#B6FF2E]/20 flex items-center justify-center">
+            <span className="text-xs text-[#B6FF2E]">?</span>
+          </div>
+          <span className="text-xs font-mono text-[#B6FF2E] uppercase tracking-wider">Quiz Time</span>
         </div>
-        <span className="text-xs font-mono text-[#B6FF2E] uppercase tracking-wider">Quiz Time</span>
+
+        {quiz.source_url && (
+          <a
+            href={quiz.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 text-[10px] text-white/50 hover:text-white/80 transition-colors"
+            title="View Source"
+          >
+            <ExternalLink className="w-3 h-3" />
+            Source
+          </a>
+        )}
       </div>
 
       {/* Question */}
@@ -729,9 +744,8 @@ function ConceptShowcaseContent({ card }: { card: ConceptShowcaseCard }) {
             {Array.from({ length: 10 }).map((_, i) => (
               <div
                 key={i}
-                className={`w-1.5 h-3 rounded-sm ${
-                  i < card.complexityScore ? 'bg-[#B6FF2E]' : 'bg-white/10'
-                }`}
+                className={`w-1.5 h-3 rounded-sm ${i < card.complexityScore ? 'bg-[#B6FF2E]' : 'bg-white/10'
+                  }`}
               />
             ))}
           </div>
