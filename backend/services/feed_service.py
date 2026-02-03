@@ -313,9 +313,9 @@ class FeedService:
 
     async def generate_feed_item(
         self,
+        user_id: str,
         concept: dict,
         item_type: FeedItemType,
-        user_id: str = "default_user", # Added user_id
     ) -> Optional[FeedItem]:
         """Generate a feed item of the specified type for a concept."""
         try:
@@ -744,7 +744,7 @@ class FeedService:
             
             item_type = random.choice(possible_types)
             
-            item = await self.generate_feed_item(concept, item_type, user_id=request.user_id)
+            item = await self.generate_feed_item(request.user_id, concept, item_type)
             if item:
                 feed_items.append(item)
             
