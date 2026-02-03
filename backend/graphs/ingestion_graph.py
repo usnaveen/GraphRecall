@@ -81,7 +81,8 @@ async def extract_concepts_node(state: IngestionState) -> dict:
                 {"user_id": user_id},
             )
             existing_concept_names = [c["name"] for c in existing if c.get("name")]
-        except Exception:
+        except Exception as e:
+            logger.warning("extract_concepts_node: Context retrieval failed", error=str(e))
             pass  # Continue without context if Neo4j is unavailable
 
         if existing_concept_names:
@@ -391,8 +392,9 @@ async def create_concepts_node(state: IngestionState) -> dict:
                                  properties={"strength": 0.8, "source": "extraction"}
                              )
                              relationships_created += 1
-                         except Exception:
-                             pass  # Skip if relationship creation fails
+                         except Exception as e:
+                            logger.error("create_concepts_node: Failed to create RELATED_TO relationship", from_id=cid, to_id=r_id, error=str(e), exc_info=True)
+                            # Skip if relationship creation fails
 
              # Handle prerequisites — search ALL existing concepts
              for prereq_name in concept.get("prerequisites", []):

@@ -168,6 +168,7 @@ async def get_3d_graph(
             
             result = await neo4j_client.execute_query(query, params)
             concepts = [r["concept"] for r in result]
+            logger.info("Graph3D: Concepts found", count=len(concepts))
         
         # Get relationship counts for sizing
         relationship_counts = {}
@@ -243,11 +244,15 @@ async def get_3d_graph(
             coalesce(r.strength, 1.0) as strength,
             elementId(r) as edge_id
         """
+
+        if len(node_ids) > 0:
+             logger.info("Graph3D: Querying edges for nodes", node_count=len(node_ids), sample_ids=node_ids[:5])
         
         edges_result = await neo4j_client.execute_query(
             edges_query,
             {"node_ids": node_ids, "user_id": user_id},
         )
+        logger.info("Graph3D: Edges found", count=len(edges_result))
         
         edges = [
             Graph3DEdge(

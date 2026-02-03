@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Settings, ChevronRight, BookOpen, FileText, Target,
   Flame, Download, Moon, ArrowLeft, Clock, Brain, Hash,
-  Bell, Zap, LogOut, Search, X
+  Bell, Zap, LogOut, Search, X, Trash2
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -312,6 +312,65 @@ function StatCard({
   );
 }
 
+// Note Item Component for Swipe-to-Delete
+function NoteItem({ note, onDelete }: { note: any; onDelete: (id: string) => void }) {
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  return (
+    <div className="relative group">
+      {/* Background Action Layer */}
+      <div className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4 mb-2">
+        <Trash2 className="w-5 h-5 text-red-500" />
+      </div>
+
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0, x: 0 }}
+        drag="x"
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={{ left: 0.5, right: 0.1 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.x < -100) {
+            // Swipe left threshold met
+            if (confirm("Delete this note?")) {
+              onDelete(note.id);
+            }
+          }
+        }}
+        whileHover={{ scale: 1.01 }}
+        whileTap={{ scale: 0.99 }}
+        className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors relative z-10 bg-[#07070A]" // Added bg to cover trash icon
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-lg bg-[#2EFFE6]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <FileText className="w-4 h-4 text-[#2EFFE6]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-medium text-white truncate">
+              {note.title || 'Untitled Note'}
+            </h4>
+            <p className="text-xs text-white/40 mt-1 line-clamp-2">
+              {note.content_text?.slice(0, 120) || 'No content'}
+            </p>
+            <div className="flex items-center gap-3 mt-2">
+              <span className="text-[10px] text-white/30 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {new Date(note.created_at).toLocaleDateString()}
+              </span>
+              {note.source_type && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/40">
+                  {note.source_type}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // Notes List View
 function NotesListView({
   notes,
@@ -320,19 +379,21 @@ function NotesListView({
 }: {
   notes: { id: string; title: string; content_text: string; source_type: string; created_at: string }[];
   onBack: () => void;
-  onFetch: () => void;
+  onFetch: () => Promise<void>;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const { deleteNote } = useAppStore();
 
   useEffect(() => {
-    if (notes.length === 0) {
+    let mounted = true;
+    const load = async () => {
       setIsLoading(true);
-      onFetch();
-      // Small delay then unload
-      const t = setTimeout(() => setIsLoading(false), 1500);
-      return () => clearTimeout(t);
-    }
+      await onFetch();
+      if (mounted) setIsLoading(false);
+    };
+    load();
+    return () => { mounted = false; };
   }, []);
 
   const filtered = notes.filter(
@@ -373,7 +434,7 @@ function NotesListView({
       </div>
 
       {/* Notes List */}
-      {isLoading && notes.length === 0 ? (
+      {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <div className="w-6 h-6 border-2 border-[#2EFFE6] border-t-transparent rounded-full animate-spin" />
         </div>
@@ -386,42 +447,73 @@ function NotesListView({
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((note, i) => (
-            <motion.div
-              key={note.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.03 }}
-              className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors"
-            >
-              <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-lg bg-[#2EFFE6]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <FileText className="w-4 h-4 text-[#2EFFE6]" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-white truncate">
-                    {note.title || 'Untitled Note'}
-                  </h4>
-                  <p className="text-xs text-white/40 mt-1 line-clamp-2">
-                    {note.content_text?.slice(0, 120) || 'No content'}
-                  </p>
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className="text-[10px] text-white/30 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {new Date(note.created_at).toLocaleDateString()}
-                    </span>
-                    {note.source_type && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/40">
-                        {note.source_type}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
+          <p className="text-xs text-white/30 text-center mb-2">Swipe left to delete</p>
+          {filtered.map((note) => (
+            <NoteItem key={note.id} note={note} onDelete={deleteNote} />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Concept Item Component for Swipe-to-Delete
+function ConceptItem({ concept, color, onTap, onDelete }: { concept: any; color: string; onTap: (name: string) => void; onDelete: (id: string) => void }) {
+  return (
+    <div className="relative group">
+      <div className="absolute inset-0 bg-red-500/20 rounded-xl flex items-center justify-end px-4 mb-2">
+        <Trash2 className="w-5 h-5 text-red-500" />
+      </div>
+
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0, x: 0 }}
+        drag="x"
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={{ left: 0.5, right: 0.1 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.x < -100) {
+            if (confirm("Delete this concept?")) {
+              onDelete(concept.id);
+            }
+          }
+        }}
+        onClick={() => onTap(concept.name)}
+        whileHover={{ scale: 1.01 }}
+        whileTap={{ scale: 0.99 }}
+        className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors cursor-pointer relative z-10 bg-[#07070A]"
+      >
+        <div className="flex items-start gap-3">
+          <div
+            className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+            style={{ backgroundColor: `${color}20` }}
+          >
+            <Brain className="w-4 h-4" style={{ color }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-medium text-white truncate">{concept.name}</h4>
+              <ChevronRight className="w-3 h-3 text-white/20 flex-shrink-0" />
+            </div>
+            <p className="text-xs text-white/40 mt-1 line-clamp-2">
+              {concept.definition || 'No definition'}
+            </p>
+            <div className="flex items-center gap-3 mt-2">
+              <span
+                className="text-[10px] px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: `${color}15`, color }}
+              >
+                {concept.domain}
+              </span>
+              <span className="text-[10px] text-white/30 flex items-center gap-1">
+                <Hash className="w-3 h-3" />
+                Complexity: {concept.complexity_score}/10
+              </span>
+            </div>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 }
@@ -434,20 +526,22 @@ function ConceptsListView({
 }: {
   concepts: { id: string; name: string; definition: string; domain: string; complexity_score: number }[];
   onBack: () => void;
-  onFetch: () => void;
+  onFetch: () => Promise<void>;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const { navigateToFeedWithTopic } = useAppStore();
+  const [isLoading, setIsLoading] = useState(true);
+  const { navigateToFeedWithTopic, deleteConcept } = useAppStore();
 
   useEffect(() => {
-    if (concepts.length === 0) {
+    let mounted = true;
+    const load = async () => {
       setIsLoading(true);
-      onFetch();
-      const t = setTimeout(() => setIsLoading(false), 1500);
-      return () => clearTimeout(t);
-    }
+      await onFetch();
+      if (mounted) setIsLoading(false);
+    };
+    load();
+    return () => { mounted = false; };
   }, []);
 
   const domains = [...new Set(concepts.map((c) => c.domain).filter(Boolean))].sort();
@@ -506,9 +600,8 @@ function ConceptsListView({
         <div className="flex gap-2 overflow-x-auto pb-3 mb-3 scrollbar-hide">
           <button
             onClick={() => setSelectedDomain(null)}
-            className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${
-              !selectedDomain ? 'bg-[#B6FF2E] text-black font-medium' : 'bg-white/5 text-white/60 hover:bg-white/10'
-            }`}
+            className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${!selectedDomain ? 'bg-[#B6FF2E] text-black font-medium' : 'bg-white/5 text-white/60 hover:bg-white/10'
+              }`}
           >
             All
           </button>
@@ -516,11 +609,10 @@ function ConceptsListView({
             <button
               key={domain}
               onClick={() => setSelectedDomain(selectedDomain === domain ? null : domain)}
-              className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${
-                selectedDomain === domain
+              className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${selectedDomain === domain
                   ? 'bg-[#B6FF2E] text-black font-medium'
                   : 'bg-white/5 text-white/60 hover:bg-white/10'
-              }`}
+                }`}
             >
               {domain}
             </button>
@@ -529,7 +621,7 @@ function ConceptsListView({
       )}
 
       {/* Concepts List */}
-      {isLoading && concepts.length === 0 ? (
+      {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <div className="w-6 h-6 border-2 border-[#B6FF2E] border-t-transparent rounded-full animate-spin" />
         </div>
@@ -542,47 +634,17 @@ function ConceptsListView({
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((concept, i) => {
+          <p className="text-xs text-white/30 text-center mb-2">Swipe left to delete</p>
+          {filtered.map((concept) => {
             const color = domainColors[concept.domain] || '#6B7280';
             return (
-              <motion.div
+              <ConceptItem
                 key={concept.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.03 }}
-                className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors cursor-pointer"
-                onClick={() => navigateToFeedWithTopic(concept.name)}
-              >
-                <div className="flex items-start gap-3">
-                  <div
-                    className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-                    style={{ backgroundColor: `${color}20` }}
-                  >
-                    <Brain className="w-4 h-4" style={{ color }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-medium text-white truncate">{concept.name}</h4>
-                      <ChevronRight className="w-3 h-3 text-white/20 flex-shrink-0" />
-                    </div>
-                    <p className="text-xs text-white/40 mt-1 line-clamp-2">
-                      {concept.definition || 'No definition'}
-                    </p>
-                    <div className="flex items-center gap-3 mt-2">
-                      <span
-                        className="text-[10px] px-2 py-0.5 rounded-full"
-                        style={{ backgroundColor: `${color}15`, color }}
-                      >
-                        {concept.domain}
-                      </span>
-                      <span className="text-[10px] text-white/30 flex items-center gap-1">
-                        <Hash className="w-3 h-3" />
-                        Complexity: {concept.complexity_score}/10
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
+                concept={concept}
+                color={color}
+                onTap={navigateToFeedWithTopic}
+                onDelete={deleteConcept}
+              />
             );
           })}
         </div>
