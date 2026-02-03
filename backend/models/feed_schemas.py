@@ -405,16 +405,9 @@ class Graph3DResponse(BaseModel):
     clusters: list[dict[str, Any]] = Field(
         default_factory=list, description="Domain clusters for grouping"
     )
+    communities: list[dict[str, Any]] = Field(
+        default_factory=list, description="Graph-based communities"
+    )
     total_nodes: int
     total_edges: int
 
-
-class Graph3DFilterRequest(BaseModel):
-    """Request for filtering 3D graph data."""
-
-    user_id: str
-    center_concept_id: Optional[str] = None  # Focus on specific concept
-    domains: Optional[list[str]] = None
-    min_mastery: Optional[float] = None
-    max_depth: int = Field(default=3, ge=1, le=5)
-    include_orphans: bool = False  # Concepts with no relationships
