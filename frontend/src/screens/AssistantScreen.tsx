@@ -644,7 +644,7 @@ export function AssistantScreen() {
 
           <motion.button
             whileTap={{ scale: 0.95 }}
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={!inputValue.trim()}
             className="w-9 h-9 rounded-full bg-[#B6FF2E] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#c5ff4d] transition-colors"
           >
