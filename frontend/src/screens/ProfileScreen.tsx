@@ -33,7 +33,14 @@ export function ProfileScreen() {
     return <ConceptsListView concepts={conceptsList} onBack={() => setCurrentView('main')} onFetch={fetchConcepts} />;
   }
   if (currentView === 'uploads') {
-    return <UploadsListView uploads={uploadsList} onBack={() => setCurrentView('main')} onFetch={fetchUploads} />;
+    const safeUploads = uploadsList.map(u => ({
+      ...u,
+      title: u.title || undefined,
+      description: u.description || undefined,
+      thumbnail_url: u.thumbnail_url || undefined,
+      // Ensure file_url is string, though it should be from interface
+    }));
+    return <UploadsListView uploads={safeUploads} onBack={() => setCurrentView('main')} onFetch={fetchUploads} />;
   }
 
   // Domain Progress from real data
@@ -370,11 +377,11 @@ function NoteItem({ note, onDelete }: { note: any; onDelete: (id: string) => voi
                 <Clock className="w-3 h-3" />
                 {new Date(note.created_at).toLocaleDateString()}
               </span>
-            {note.resource_type && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/40">
-                {note.resource_type}
-              </span>
-            )}
+              {note.resource_type && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/40">
+                  {note.resource_type}
+                </span>
+              )}
             </div>
           </div>
         </div>
