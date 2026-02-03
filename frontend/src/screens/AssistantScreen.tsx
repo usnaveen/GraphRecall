@@ -50,12 +50,12 @@ interface ChatConversation {
 }
 
 const expandTags = (text: string): string => {
-  if (text.startsWith('@search ')) return `Search my notes for: ${text.replace('@search ', '')}`;
-  if (text.startsWith('@summary ')) return `Summarize: ${text.replace('@summary ', '')}`;
-  if (text.startsWith('@quiz ')) return `Quiz me on: ${text.replace('@quiz ', '')}`;
-  if (text.startsWith('@path ')) return `Create a learning path for: ${text.replace('@path ', '')}`;
-  if (text.startsWith('@eli5 ')) return `Explain like I'm 5: ${text.replace('@eli5 ', '')}`;
-  if (text.startsWith('@connect ')) return `Find connections for: ${text.replace('@connect ', '')}`;
+  if (text.startsWith('@search ')) return `Search my knowledge graph for: ${text.replace('@search ', '')}. Prioritize my notes.`;
+  if (text.startsWith('@summary ')) return `Provide a comprehensive summary of '${text.replace('@summary ', '')}' based on my notes.`;
+  if (text.startsWith('@quiz ')) return `Generate a quiz to test my knowledge on: ${text.replace('@quiz ', '')}`;
+  if (text.startsWith('@path ')) return `Create a structured learning path for '${text.replace('@path ', '')}', starting from basics.`;
+  if (text.startsWith('@eli5 ')) return `Explain '${text.replace('@eli5 ', '')}' in simple terms (ELI5). Use analogies.`;
+  if (text.startsWith('@connect ')) return `Analyze how '${text.replace('@connect ', '')}' connects to other concepts in my graph.`;
   return text;
 };
 

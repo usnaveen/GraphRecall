@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Text, Sphere, Line } from "@react-three/drei";
 import * as THREE from "three";
@@ -6,8 +6,9 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 
-import { GraphLayout, Node3D, Link3D, calculateLinkThickness } from "../../lib/forceSimulation3d";
-import { Community } from "../../lib/graphData";
+import { calculateLinkThickness } from "../../lib/forceSimulation3d";
+import type { GraphLayout, Node3D, Link3D } from "../../lib/forceSimulation3d";
+import type { Community } from "../../lib/graphData";
 import GalaxyBackground from "./GalaxyBackground";
 
 const BLOOM_SCENE = 1;

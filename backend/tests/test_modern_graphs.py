@@ -29,19 +29,36 @@ def mock_dependencies():
     """
     # Create mock objects
     mock_neo4j_client = AsyncMock()
-    mock_neo4j_client.execute_query.return_value = []
+    mock_neo4j_client.execute_query = AsyncMock(return_value=[])
+    mock_neo4j_client.create_concept = AsyncMock(return_value={"c": {"id": "concept-1"}})
+    mock_neo4j_client.create_relationship = AsyncMock(return_value={})
     
     mock_pg_client = AsyncMock()
-    mock_pg_client.fetch.return_value = []
-    mock_pg_client.execute.return_value = None
+    mock_pg_client.fetch = AsyncMock(return_value=[])
+    mock_pg_client.execute = AsyncMock(return_value=None)
+    mock_pg_client.execute_insert = AsyncMock(return_value="note-1")
+    mock_pg_client.execute_update = AsyncMock(return_value=None)
+    mock_pg_client.execute_query = AsyncMock(return_value=[])
     
     mock_llm_instance = AsyncMock()
     mock_llm_instance.ainvoke.return_value = AIMessage(content='{"intent": "general", "entities": []}')
 
+    mock_concept = MagicMock()
+    mock_concept.model_dump.return_value = {
+        "name": "A",
+        "definition": "B",
+        "domain": "General",
+        "complexity_score": 5,
+        "related_concepts": [],
+        "prerequisites": [],
+    }
+    mock_extraction_result = MagicMock()
+    mock_extraction_result.concepts = [mock_concept]
+
     # Patch list
     patches = [
         # Chat Graph
-        patch("backend.graphs.chat_graph.ChatOpenAI", return_value=mock_llm_instance),
+        patch("backend.graphs.chat_graph.get_chat_model", return_value=mock_llm_instance),
         patch("backend.graphs.chat_graph.get_neo4j_client", new_callable=AsyncMock, return_value=mock_neo4j_client),
         patch("backend.graphs.chat_graph.get_postgres_client", new_callable=AsyncMock, return_value=mock_pg_client),
         
@@ -49,17 +66,19 @@ def mock_dependencies():
         # PATCH INSTANCES because they are initialized at module level
         patch("backend.graphs.ingestion_graph.llm_extraction", mock_llm_instance),
         patch("backend.graphs.ingestion_graph.llm_flashcard", mock_llm_instance),
-        patch("backend.graphs.ingestion_graph.ChatOpenAI", return_value=mock_llm_instance), # Just in case
         patch("backend.graphs.ingestion_graph.get_neo4j_client", new_callable=AsyncMock, return_value=mock_neo4j_client),
         patch("backend.graphs.ingestion_graph.get_postgres_client", new_callable=AsyncMock, return_value=mock_pg_client),
+        patch("backend.graphs.ingestion_graph.extraction_agent.extract", new_callable=AsyncMock, return_value=mock_extraction_result),
+        patch("backend.graphs.ingestion_graph.extraction_agent.extract_with_context", new_callable=AsyncMock, return_value=mock_extraction_result),
+        patch("backend.graphs.ingestion_graph.content_generator.generate_mcq_batch", new_callable=AsyncMock, return_value=[]),
         
         # Quiz Graph
-        patch("backend.graphs.quiz_graph.ChatOpenAI", return_value=mock_llm_instance),
+        patch("backend.graphs.quiz_graph.get_chat_model", return_value=mock_llm_instance),
         patch("backend.graphs.quiz_graph.get_neo4j_client", new_callable=AsyncMock, return_value=mock_neo4j_client),
         patch("backend.graphs.quiz_graph.get_postgres_client", new_callable=AsyncMock, return_value=mock_pg_client),
         
         # MCP Graph
-        patch("backend.graphs.mcp_graph.ChatOpenAI", return_value=mock_llm_instance),
+        patch("backend.graphs.mcp_graph.get_chat_model", return_value=mock_llm_instance),
         
         # Checkpointer (Global)
         patch("backend.graphs.checkpointer.get_checkpointer", return_value=MagicMock())

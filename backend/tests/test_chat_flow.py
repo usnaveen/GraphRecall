@@ -1,32 +1,32 @@
-import asyncio
-import os
-from dotenv import load_dotenv
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from langchain_core.messages import AIMessage
+
 from backend.graphs.chat_graph import run_chat
 
-load_dotenv()
 
+@pytest.mark.asyncio
 async def test_chat():
-    print("--- Testing Chat Graph Flow ---")
-    user_id = "test_user_001"
-    message = "What is Spaced Repetition?"
-    
-    print(f"Input: {message}")
-    
-    try:
-        response = await run_chat(
-            user_id=user_id,
-            message=message
-        )
-        
-        print("\n✅ Chat Response:")
-        print(response.get("response", "No response text found"))
-        print("\nRelated Concepts:")
-        print(response.get("related_concepts", []))
-        
-    except Exception as e:
-        print(f"\n❌ Chat Graph Failed: {e}")
-        import traceback
-        traceback.print_exc()
+    mock_llm = AsyncMock()
+    mock_llm.ainvoke.side_effect = [
+        AIMessage(content='{"intent": "general", "entities": []}'),
+        AIMessage(content="Spaced repetition is a learning technique."),
+    ]
 
-if __name__ == "__main__":
-    asyncio.run(test_chat())
+    mock_neo4j = AsyncMock()
+    mock_neo4j.execute_query.return_value = []
+
+    mock_pg = AsyncMock()
+    mock_pg.execute_query.return_value = []
+
+    with patch("backend.graphs.chat_graph.get_chat_model", return_value=mock_llm), \
+         patch("backend.graphs.chat_graph.get_neo4j_client", new_callable=AsyncMock, return_value=mock_neo4j), \
+         patch("backend.graphs.chat_graph.get_postgres_client", new_callable=AsyncMock, return_value=mock_pg):
+        response = await run_chat(
+            user_id="test_user_001",
+            message="What is Spaced Repetition?",
+        )
+
+    assert "response" in response
+    assert "Spaced repetition" in response["response"]
