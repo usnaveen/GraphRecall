@@ -71,6 +71,8 @@ class TestSynthesisAgent:
             agent = SynthesisAgent()
             agent.model_name = "gpt-4o-mini"
             agent.llm = mock_llm
+            mock_embeddings.aembed_documents = AsyncMock(return_value=[[0.1, 0.1, 0.1]])
+            mock_embeddings.aembed_query = AsyncMock(return_value=[0.1, 0.1, 0.1])
             agent.embeddings = mock_embeddings
             agent.similarity_threshold = 0.8
             agent._prompt_template = "Test: {new_concepts} {existing_concepts}"
@@ -104,9 +106,8 @@ class TestSynthesisAgent:
 
             # Mock embeddings to raise an error
             agent.embeddings = AsyncMock()
-            agent.embeddings.aembed_query = AsyncMock(
-                side_effect=Exception("API Error")
-            )
+            agent.embeddings.aembed_documents = AsyncMock(return_value=[[0.2, 0.2, 0.2]])
+            agent.embeddings.aembed_query = AsyncMock(side_effect=Exception("API Error"))
 
             result = await agent.analyze(
                 new_concepts=[sample_extracted_concepts[0]],

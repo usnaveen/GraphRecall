@@ -158,7 +158,7 @@ async function checkV2Health(): Promise<CheckResult> {
 interface ServiceDef {
   id: string;
   name: string;
-  icon: React.ElementType;
+  icon: any;
   group: 'infra' | 'api';
 }
 
@@ -181,9 +181,9 @@ function StatusRow({ service, result }: { service: ServiceDef; result: CheckResu
 
   const statusColor =
     result.status === 'ok' ? '#4ADE80' :
-    result.status === 'error' ? '#F87171' :
-    result.status === 'checking' ? '#EAB308' :
-    'rgba(255,255,255,0.2)';
+      result.status === 'error' ? '#F87171' :
+        result.status === 'checking' ? '#EAB308' :
+          'rgba(255,255,255,0.2)';
 
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl glass-surface mb-1.5">

@@ -11,7 +11,7 @@ interface LiquidDockProps {
 
 interface DockItem {
   id: TabType;
-  icon: React.ElementType;
+  icon: any;
   label: string;
 }
 
@@ -36,9 +36,9 @@ export function LiquidDock({
   const navStyle = isVertical
     ? {}
     : {
-        paddingBottom: 'clamp(1rem, env(safe-area-inset-bottom), 3rem)',
-        marginBottom: '0.5rem',
-      };
+      paddingBottom: 'clamp(1rem, env(safe-area-inset-bottom), 3rem)',
+      marginBottom: '0.5rem',
+    };
   const dockClasses = isVertical
     ? 'liquid-glass-dock rounded-3xl px-2 py-3 flex flex-col items-center gap-2 mx-2'
     : 'liquid-glass-dock rounded-full px-3 py-2 flex items-center gap-1 mx-4 w-fit max-w-[90vw] justify-center';
