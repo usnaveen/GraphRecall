@@ -391,14 +391,14 @@ class SpacedRepetitionService:
                 COALESCE(ps.interval_days, 1) as interval,
                 COALESCE(ps.repetition_count, 0) as repetition,
                 ps.last_reviewed as last_review,
-                COALESCE(ps.next_review, NOW()) as next_review,
+                COALESCE(ps.next_review_due, NOW()) as next_review,
                 COALESCE(ps.total_reviews, 0) as total_reviews,
                 COALESCE(ps.correct_streak, 0) as correct_streak,
                 COALESCE(ps.score, 0) as mastery_score
             FROM proficiency_scores ps
             WHERE ps.user_id = :user_id
-              AND (ps.next_review IS NULL OR ps.next_review <= :now)
-            ORDER BY ps.next_review ASC NULLS FIRST
+              AND (ps.next_review_due IS NULL OR ps.next_review_due <= :now)
+            ORDER BY ps.next_review_due ASC NULLS FIRST
             LIMIT :limit
         """
         
