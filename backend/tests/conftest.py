@@ -7,6 +7,8 @@ import pytest
 
 # Set test environment variables
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("GOOGLE_API_KEY", "test-key")
+os.environ.setdefault("GEMINI_API_KEY", "test-key")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USER", "neo4j")

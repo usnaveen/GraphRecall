@@ -302,7 +302,7 @@ function StatCard({
   color,
   onClick
 }: {
-  icon: React.ElementType;
+  icon: any;
   value: string | number;
   label: string;
   color: string;
@@ -954,7 +954,7 @@ function SettingItem({
   onToggle,
   onClick
 }: {
-  icon: React.ElementType;
+  icon: any;
   label: string;
   value?: string;
   action?: boolean;
