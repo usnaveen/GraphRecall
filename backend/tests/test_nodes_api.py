@@ -98,4 +98,4 @@ async def test_apply_links_creates_relationships(monkeypatch):
     response = await nodes_router.apply_links("node-1", request, current_user={"id": "user-1"})
 
     assert response["status"] == "linked"
-    assert response["created"] == ["RELATED_TO"]
+    assert response["links"] == [{"target_id": "node-2", "relationship_type": "RELATED_TO"}]

@@ -9,6 +9,8 @@ import pytest
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 os.environ.setdefault("GOOGLE_API_KEY", "test-key")
 os.environ.setdefault("GEMINI_API_KEY", "test-key")
+# Disable LangSmith tracing in tests to avoid network calls
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USER", "neo4j")
