@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { GraphNode, GraphEdge } from '../types';
 import { api } from '../services/api';
+import { useAppStore } from '../store/useAppStore';
 
 interface QuizQuestion {
   question: string;
@@ -371,6 +372,13 @@ export function GraphScreen() {
   const [linkedNotes, setLinkedNotes] = useState<any[]>([]);
   const [linkedNotesLoading, setLinkedNotesLoading] = useState(false);
   const [nodeConnections, setNodeConnections] = useState<any[]>([]);
+
+  // Resources Modal State
+  const [showResources, setShowResources] = useState(false);
+  const [resourceType, setResourceType] = useState<'note' | 'link' | 'concept'>('note');
+  const [selectedResourceTopic, setSelectedResourceTopic] = useState('');
+  const [resources, setResources] = useState<any[]>([]);
+  const [resourcesLoading, setResourcesLoading] = useState(false);
 
   // Note detail modal
   const [selectedNoteDetail, setSelectedNoteDetail] = useState<any | null>(null);
