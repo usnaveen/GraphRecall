@@ -1,27 +1,31 @@
 import { useState, useEffect } from 'react';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
 import {
-  Settings, ChevronRight, BookOpen, FileText, Target,
+  Settings, ChevronRight, ChevronDown, BookOpen, FileText, Target,
   Flame, Download, Moon, ArrowLeft, Clock, Brain, Hash,
-  Bell, Zap, LogOut, Search, X, Trash2, Image
+  Bell, Zap, LogOut, Search, X, Trash2, Image, HelpCircle
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { authService } from '../services/api';
+import { authService, feedService } from '../services/api';
 
-type ProfileView = 'main' | 'settings' | 'notes' | 'concepts' | 'uploads';
+type ProfileView = 'main' | 'settings' | 'notes' | 'concepts' | 'uploads' | 'quizzes';
 
 import { AgentDeck } from '../components/geekout/AgentDeck';
 
 export function ProfileScreen() {
   const [currentView, setCurrentView] = useState<ProfileView>('main');
   const [showGeekyFacts, setShowGeekyFacts] = useState(false);
+  const [quizCount, setQuizCount] = useState(0);
   const { userStats, fetchStats, notesList, conceptsList, uploadsList, fetchNotes, fetchConcepts, fetchUploads } = useAppStore();
   const { user, logout } = useAuthStore();
 
   useEffect(() => {
     fetchStats();
     fetchUploads();
+    feedService.getQuizHistory().then(data => {
+      if (data && data.quizzes) setQuizCount(data.quizzes.length);
+    }).catch(err => console.error("Failed to load quiz history count", err));
   }, []);
 
   if (currentView === 'settings') {
@@ -44,6 +48,10 @@ export function ProfileScreen() {
       // Ensure file_url is string, though it should be from interface
     }));
     return <UploadsListView uploads={safeUploads} onBack={() => setCurrentView('main')} onFetch={fetchUploads} />;
+  }
+
+  if (currentView === 'quizzes') {
+    return <QuizHistoryView onBack={() => setCurrentView('main')} />;
   }
 
   // Domain Progress from real data
@@ -155,7 +163,29 @@ export function ProfileScreen() {
         <p className="text-sm text-white/50">{user?.email || 'Learning since Jan 2026'}</p>
       </motion.div>
 
-      {/* Sections Removed per user request */}
+      {/* Quiz Stats */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+        className="mb-6"
+      >
+        <button
+          onClick={() => setCurrentView('quizzes')}
+          className="w-full glass-surface rounded-xl p-4 flex items-center justify-between hover:bg-white/5 transition-colors group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-[#9B59B6]/10 flex items-center justify-center">
+              <Brain className="w-6 h-6 text-[#9B59B6]" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-heading font-bold text-white text-lg">{quizCount}</h3>
+              <p className="text-sm text-white/50">Quizzes Created</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-white/30 group-hover:text-white/60 transition-colors" />
+        </button>
+      </motion.div>
 
       {/* Domain Progress */}
       <motion.div
@@ -998,5 +1028,105 @@ function SettingItem({
         )}
       </div>
     </button>
+  );
+}
+
+// Quiz History View
+function QuizHistoryView({
+  onBack,
+}: {
+  onBack: () => void;
+}) {
+  const [quizzes, setQuizzes] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [openTopic, setOpenTopic] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await feedService.getQuizHistory();
+        setQuizzes(data.quizzes || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  // Group by topic
+  const grouped: Record<string, any[]> = {};
+  quizzes.forEach(q => {
+    const topic = q.topic || 'General';
+    if (!grouped[topic]) grouped[topic] = [];
+    grouped[topic].push(q);
+  });
+
+  const topics = Object.keys(grouped).sort();
+
+  return (
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={onBack}
+          className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-white/60" />
+        </button>
+        <h2 className="font-heading text-lg font-bold text-white">Quiz History</h2>
+        <span className="ml-auto text-sm text-white/40">{quizzes.length} Questions</span>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-6 h-6 border-2 border-[#B6FF2E] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : topics.length === 0 ? (
+        <div className="text-center py-12">
+          <HelpCircle className="w-10 h-10 text-white/20 mx-auto mb-3" />
+          <p className="text-white/40 text-sm">No quizzes taken yet.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {topics.map(topic => (
+            <div key={topic} className="glass-surface rounded-xl overflow-hidden">
+              <button
+                onClick={() => setOpenTopic(openTopic === topic ? null : topic)}
+                className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#B6FF2E]/10 flex items-center justify-center">
+                    <Brain className="w-4 h-4 text-[#B6FF2E]" />
+                  </div>
+                  <span className="font-medium text-white">{topic}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-white/40">{grouped[topic].length} Qs</span>
+                  <ChevronDown className={`w-4 h-4 text-white/40 transition-transform ${openTopic === topic ? 'rotate-180' : ''}`} />
+                </div>
+              </button>
+
+              {openTopic === topic && (
+                <div className="p-4 space-y-3 bg-[#07070A]/50">
+                  {grouped[topic].map((q, i) => (
+                    <div key={i} className="p-3 rounded-lg border border-white/5 bg-white/5">
+                      <p className="text-sm text-white/80 mb-2">{q.question_text}</p>
+                      <div className="text-xs text-[#B6FF2E]">
+                        Answer: {q.correct_answer || 'Check options'}
+                      </div>
+                      <div className="text-[10px] text-white/30 mt-2 text-right">
+                        {new Date(q.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
