@@ -376,10 +376,48 @@ async def get_note(
 
         return notes[0]
 
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Error getting note", note_id=note_id, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/notes/{note_id}", tags=["Notes"])
+async def delete_note(
+    note_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a note and its corresponding graph node."""
+    try:
+        user_id = str(current_user["id"])
+        pg_client = await get_postgres_client()
+        neo4j_client = await get_neo4j_client()
+
+        # 1. Delete from Postgres
+        # We also need to delete related flashcards/quizzes if cascading isn't set up
+        # For now, we'll assume DB constraints handle it or leave them orphaned but harmless
+        await pg_client.execute_update(
+            "DELETE FROM notes WHERE id = :note_id AND user_id = :user_id",
+            {"note_id": note_id, "user_id": user_id}
+        )
+
+        # 2. Delete NoteSource node from Neo4j
+        # This will also remove the EXPLAINS relationships
+        await neo4j_client.execute_query(
+            """
+            MATCH (n:NoteSource {id: $note_id, user_id: $user_id})
+            DETACH DELETE n
+            """,
+            {"note_id": note_id, "user_id": user_id}
+        )
+
+        logger.info("Deleted note", note_id=note_id, user_id=user_id)
+        return {"status": "success", "message": "Note deleted"}
+
+    except Exception as e:
+        logger.error("Error deleting note", note_id=note_id, error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

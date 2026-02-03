@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Filter, ChevronDown, X, Target, BookOpen, Link2, FileText,
@@ -324,7 +324,7 @@ function hexToRgba(hex: string, alpha: number): string {
 /* ------------------------------------------------------------------ */
 
 export function GraphScreen() {
-  const { startQuizForTopic } = useAppStore();
+  const { startQuizForTopic, conceptsList, fetchConcepts } = useAppStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -336,7 +336,8 @@ export function GraphScreen() {
 
   // Real Data State
   const [nodes, setNodes] = useState<GraphNode[]>([]);
-  const [edges, setEdges] = useState<GraphEdge[]>([]);
+  // const [edges, setEdges] = useState<GraphEdge[]>([]); // Edges unused for now
+  const [edges] = useState<GraphEdge[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -379,22 +380,50 @@ export function GraphScreen() {
   /* ---------------------------------------------------------------- */
   /*  Fetch Graph Data on Mount                                       */
   /* ---------------------------------------------------------------- */
+  /* ---------------------------------------------------------------- */
+  /*  Fetch Graph Data on Mount (Persistence Fix)                     */
+  /* ---------------------------------------------------------------- */
   useEffect(() => {
-    const fetchGraph = async () => {
+    const loadData = async () => {
+      // If we have concepts in store, use them immediately
+      if (conceptsList.length > 0) {
+        setLoading(false);
+        return;
+      }
+
+      // Otherwise fetch
       try {
         setLoading(true);
-        const data = await api.graph.getGraph();
-        setNodes(data.nodes || []);
-        setEdges(data.edges || []);
+        await fetchConcepts();
       } catch (err) {
-        console.error("Failed to load graph:", err);
-        setError("Failed to load knowledge graph. Please try again.");
+        console.error("Failed to load concepts:", err);
+        setError("Failed to load knowledge graph.");
       } finally {
         setLoading(false);
       }
     };
-    fetchGraph();
-  }, []);
+    loadData();
+  }, [fetchConcepts, conceptsList.length]);
+
+  // Sync store concepts to local graph nodes
+  useEffect(() => {
+    if (conceptsList.length > 0) {
+      const graphNodes: GraphNode[] = conceptsList.map(c => ({
+        id: c.id,
+        name: c.name,
+        definition: c.definition, // This might need type extension if GraphNode is strict, but TS usually allows extra props if unused in target type
+        label: 'Concept',
+        size: c.complexity_score * 5 + 20,
+        complexity: c.complexity_score,
+        x: 0,
+        y: 0,
+        z: 0,
+        color: '#B6FF2E', // Default color, or map from domain
+        mastery: 0
+      } as unknown as GraphNode)); // Cast to avoid strict property checks if types are mismatching slightly
+      setNodes(graphNodes);
+    }
+  }, [conceptsList]);
 
   /* ---------------------------------------------------------------- */
   /*  Fetch linked notes when a node is selected                       */
@@ -774,8 +803,12 @@ export function GraphScreen() {
   /* ---------------------------------------------------------------- */
   /*  Quiz functions                                                   */
   /* ---------------------------------------------------------------- */
-  const handleQuizMe = async (topicName: string) => {
-    startQuizForTopic(topicName);
+  const handleQuizMe = async (topicName: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    await startQuizForTopic(topicName);
   };
 
   /* ---------------------------------------------------------------- */

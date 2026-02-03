@@ -47,10 +47,10 @@ interface AppState {
   setActiveTab: (tab: TabType) => void;
   navigateToFeedWithTopic: (topic: string) => void;
   clearFeedTopicFilter: () => void;
-  fetchFeed: () => Promise<void>;
+  fetchFeed: (forceRefresh?: boolean) => Promise<void>;
   fetchStats: () => Promise<void>;
   fetchNotes: () => Promise<void>;
-  fetchConcepts: () => Promise<void>;
+  fetchConcepts: (forceRefresh?: boolean) => Promise<void>;
   nextFeedItem: () => void;
   prevFeedItem: () => void;
   toggleLike: (itemId: string, itemType: string) => Promise<void>;
@@ -100,8 +100,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Data Fetching Actions
-  fetchFeed: async () => {
-    set({ isLoading: true });
+  fetchFeed: async (forceRefresh = false) => {
+    const state = get();
+    // Prevent refetch if we already have items and not forcing refresh
+    if (!forceRefresh && state.feedItems.length > 0) {
+      return;
+    }
+
+    set({ isLoading: true, error: null });
     try {
       // Create a timeout promise
       const timeoutPromise = new Promise((_, reject) => {
@@ -252,7 +258,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchConcepts: async () => {
+  fetchConcepts: async (forceRefresh = false) => {
+    const state = get();
+    // Cache check: don't refetch if we have data and aren't forcing a refresh
+    if (!forceRefresh && state.conceptsList.length > 0) {
+      return;
+    }
+
     try {
       const data = await conceptsService.listConcepts();
       // The graph3d endpoint returns nodes array
@@ -389,12 +401,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteNote: async (id: string) => {
     const previousNotes = get().notesList;
+    // Optimistic update
     set({ notesList: previousNotes.filter(n => n.id !== id) });
     try {
       await notesService.deleteNote(id);
+      // Also refresh stats/concepts as they might have changed
+      get().fetchStats();
+      get().fetchConcepts(true);
     } catch (error) {
       console.error("Failed to delete note:", error);
       set({ notesList: previousNotes }); // Rollback
+      throw error; // Re-throw so UI can show error
     }
   },
 

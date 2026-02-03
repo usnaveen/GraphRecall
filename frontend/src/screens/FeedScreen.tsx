@@ -67,7 +67,15 @@ export function FeedScreen() {
       <div className="h-[calc(100vh-180px)] flex items-center justify-center p-4">
         <div className="text-center bg-red-500/10 p-6 rounded-2xl border border-red-500/20">
           <p className="text-red-400 font-bold mb-2">Something went wrong</p>
-          <p className="text-red-300/70 text-sm font-mono break-all">{error}</p>
+          <p className="text-red-300/70 text-sm font-mono break-all mb-4">{error}</p>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => useAppStore.getState().fetchFeed(true)}
+            className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-sm font-medium transition-colors"
+          >
+            Retry
+          </motion.button>
         </div>
       </div>
     );
