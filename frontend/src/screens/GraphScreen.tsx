@@ -2,8 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Filter, ChevronDown, X, Target, BookOpen, Link2, FileText,
-  ZoomIn, ZoomOut, RotateCw, Loader2, Plus, Minus, Maximize,
-  RotateCcw, Share2, Brain, ChevronRight, Sparkles
+  ZoomIn, ZoomOut, RotateCw, Loader2, XCircle
 } from 'lucide-react';
 import type { GraphNode, GraphEdge } from '../types';
 import { api } from '../services/api';
