@@ -144,6 +144,12 @@ export const notesService = {
         if (!response.ok) throw new Error('Failed to fetch notes');
         return response.json();
     },
+
+    deleteNote: async (noteId: string) => {
+        const response = await authFetch(`${API_BASE}/notes/${noteId}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error('Failed to delete note');
+        return response.json();
+    }
 };
 
 export const conceptsService = {
@@ -153,6 +159,12 @@ export const conceptsService = {
         if (!response.ok) throw new Error('Failed to fetch concepts');
         return response.json();
     },
+
+    deleteConcept: async (conceptId: string) => {
+        const response = await authFetch(`${API_BASE}/concepts/${conceptId}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error('Failed to delete concept');
+        return response.json();
+    }
 };
 
 export const authService = {

@@ -31,6 +31,7 @@ interface AppState {
   itemsReviewedToday: number;
   dailyItemLimit: number;
   isLoading: boolean;
+  error: string | null;
 
   // Chat State
   chatMessages: ChatMessage[];
@@ -59,6 +60,8 @@ interface AppState {
   sendMessage: (text: string) => Promise<void>;
   resetFeed: () => void;
   startQuizForTopic: (topic: string) => Promise<void>;
+  deleteNote: (id: string) => Promise<void>;
+  deleteConcept: (id: string) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -72,6 +75,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   itemsReviewedToday: 0,
   dailyItemLimit: 20,
   isLoading: false,
+  error: null,
   chatMessages: [],
   notesList: [],
   conceptsList: [],
@@ -209,12 +213,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         feedItems: transformedItems,
         itemsReviewedToday: data.completed_today,
         dailyItemLimit: data.total_due_today + data.completed_today,
-        isLoading: false
+        isLoading: false,
+        error: null
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to fetch feed:", error);
-      // Ensure we stop loading even on error
-      set({ isLoading: false });
+      set({
+        isLoading: false,
+        error: `Feed Error: ${error.message || 'Unknown error'}`
+      });
     }
   },
 
@@ -379,4 +386,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ isLoading: false });
     }
   },
+
+  deleteNote: async (id: string) => {
+    const previousNotes = get().notesList;
+    set({ notesList: previousNotes.filter(n => n.id !== id) });
+    try {
+      await notesService.deleteNote(id);
+    } catch (error) {
+      console.error("Failed to delete note:", error);
+      set({ notesList: previousNotes }); // Rollback
+    }
+  },
+
+  deleteConcept: async (id: string) => {
+    const previousConcepts = get().conceptsList;
+    set({ conceptsList: previousConcepts.filter(c => c.id !== id) });
+    try {
+      await conceptsService.deleteConcept(id);
+    } catch (error) {
+      console.error("Failed to delete concept:", error);
+      set({ conceptsList: previousConcepts }); // Rollback
+    }
+  }
 }));

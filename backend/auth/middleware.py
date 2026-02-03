@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import structlog
+from datetime import datetime, timedelta, timezone
 from backend.auth.google_oauth import verify_google_token
 from backend.db.postgres_client import get_postgres_client
 
@@ -41,11 +42,25 @@ async def get_current_user(
         
         if result:
             user = result[0]
-            # Update last login
-            await pg_client.execute_update(
-                "UPDATE users SET last_login = NOW() WHERE id = :id",
-                {"id": user["id"]}
-            )
+            
+            # Optimization: Only update last_login if > 1 hour ago
+            should_update = True
+            last_login = user.get("last_login")
+            
+            if last_login:
+                # Ensure last_login is timezone-aware if possible, assuming UTC from DB
+                if last_login.tzinfo is None:
+                    last_login = last_login.replace(tzinfo=timezone.utc)
+                
+                if (datetime.now(timezone.utc) - last_login) < timedelta(hours=1):
+                    should_update = False
+            
+            if should_update:
+                await pg_client.execute_update(
+                    "UPDATE users SET last_login = NOW() WHERE id = :id",
+                    {"id": user["id"]}
+                )
+            
             return user
         
         # Create new user if doesn't exist
