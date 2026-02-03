@@ -11,8 +11,11 @@ import { authService } from '../services/api';
 
 type ProfileView = 'main' | 'settings' | 'notes' | 'concepts' | 'uploads';
 
+import { AgentDeck } from '../components/geekout/AgentDeck';
+
 export function ProfileScreen() {
   const [currentView, setCurrentView] = useState<ProfileView>('main');
+  const [showGeekyFacts, setShowGeekyFacts] = useState(false);
   const { userStats, fetchStats, notesList, conceptsList, uploadsList, fetchNotes, fetchConcepts, fetchUploads } = useAppStore();
   const { user, logout } = useAuthStore();
 
@@ -100,12 +103,24 @@ export function ProfileScreen() {
 
   return (
     <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1 pb-10">
+      {/* Geeky Facts Modal */}
+      {showGeekyFacts && <AgentDeck onClose={() => setShowGeekyFacts(false)} />}
+
       {/* Profile Header */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="text-center mb-6 relative"
       >
+        {/* Geeky Facts Button */}
+        <button
+          onClick={() => setShowGeekyFacts(true)}
+          className="absolute top-0 left-0 p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+          title="Geeky Facts"
+        >
+          <Brain className="w-5 h-5 text-[#B6FF2E]/80" />
+        </button>
+
         {/* Settings Button */}
         <button
           onClick={() => setCurrentView('settings')}
@@ -290,6 +305,11 @@ export function ProfileScreen() {
           Export Data
         </button>
       </motion.div>
+
+      {/* Help / Build Info */}
+      <div className="text-center pb-6">
+        <p className="text-xs text-white/20 font-mono">GraphRecall v0.2.1 • Built with Love</p>
+      </div>
     </div>
   );
 }
