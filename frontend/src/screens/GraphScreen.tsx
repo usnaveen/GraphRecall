@@ -330,6 +330,8 @@ function hexToRgba(hex: string, alpha: number): string {
 /* ------------------------------------------------------------------ */
 
 export function GraphScreen() {
+  const { startQuizForTopic } = useAppStore();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -364,24 +366,6 @@ export function GraphScreen() {
   // Keep refs in sync with state
   useEffect(() => { panRef.current = panOffset; }, [panOffset]);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-
-  // Quiz state
-  const [showQuiz, setShowQuiz] = useState(false);
-  const [quizLoading, setQuizLoading] = useState(false);
-  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [showAnswer, setShowAnswer] = useState(false);
-  const [quizScore, setQuizScore] = useState(0);
-  const [quizTopic, setQuizTopic] = useState('');
-  const [quizResearched, setQuizResearched] = useState(false);
-
-  // Resources Modal State
-  const [showResources, setShowResources] = useState(false);
-  const [resourceType, setResourceType] = useState<'note' | 'link' | 'concept'>('note');
-  const [selectedResourceTopic, setSelectedResourceTopic] = useState('');
-  const [resources, setResources] = useState<any[]>([]);
-  const [resourcesLoading, setResourcesLoading] = useState(false);
 
   // Linked notes for selected node (from graph focus API)
   const [linkedNotes, setLinkedNotes] = useState<any[]>([]);
@@ -766,57 +750,8 @@ export function GraphScreen() {
   /*  Quiz functions                                                   */
   /* ---------------------------------------------------------------- */
   const handleQuizMe = async (topicName: string) => {
-    setQuizLoading(true);
-    setQuizTopic(topicName);
-    setShowQuiz(true);
-    setCurrentQuestionIndex(0);
-    setQuizScore(0);
-    setSelectedAnswer(null);
-    setShowAnswer(false);
-
-    try {
-      const response = await api.post(`/feed/quiz/topic/${encodeURIComponent(topicName)}`, {
-        num_questions: 5,
-        force_research: false,
-      });
-
-      setQuizQuestions(response.data.questions || []);
-      setQuizResearched(response.data.researched || false);
-    } catch (error) {
-      console.error('Failed to generate quiz:', error);
-      setQuizQuestions([]);
-    } finally {
-      setQuizLoading(false);
-    }
+    startQuizForTopic(topicName);
   };
-
-  const handleAnswerSelect = (answer: string) => {
-    if (showAnswer) return;
-    setSelectedAnswer(answer);
-    setShowAnswer(true);
-
-    const currentQ = quizQuestions[currentQuestionIndex];
-    if (answer === currentQ.correct_answer) {
-      setQuizScore(prev => prev + 1);
-    }
-  };
-
-  const handleNextQuestion = () => {
-    if (currentQuestionIndex < quizQuestions.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
-      setSelectedAnswer(null);
-      setShowAnswer(false);
-    }
-  };
-
-  const handleCloseQuiz = () => {
-    setShowQuiz(false);
-    setQuizQuestions([]);
-    setCurrentQuestionIndex(0);
-    setQuizScore(0);
-  };
-
-  const currentQuestion = quizQuestions[currentQuestionIndex];
 
   /* ---------------------------------------------------------------- */
   /*  Loading / Error states                                           */
@@ -1138,163 +1073,7 @@ export function GraphScreen() {
         )}
       </AnimatePresence>
 
-      {/* Quiz Modal */}
-      <AnimatePresence>
-        {showQuiz && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.95 }}
-              className="bg-[#0a0a0f] border border-white/10 rounded-3xl w-full max-w-md max-h-[80vh] overflow-hidden"
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between p-4 border-b border-white/10">
-                <div>
-                  <h3 className="text-lg font-semibold text-white">Quiz: {quizTopic}</h3>
-                  {quizResearched && (
-                    <p className="text-xs text-[#B6FF2E] mt-0.5">Researched from web</p>
-                  )}
-                </div>
-                <button onClick={handleCloseQuiz}>
-                  <X className="w-5 h-5 text-white/60" />
-                </button>
-              </div>
 
-              {/* Content */}
-              <div className="p-6">
-                {quizLoading ? (
-                  <div className="flex flex-col items-center justify-center py-12">
-                    <Loader2 className="w-8 h-8 text-[#B6FF2E] animate-spin" />
-                    <p className="text-white/60 mt-4">Generating quiz...</p>
-                    <p className="text-xs text-white/40 mt-1">Searching your knowledge graph</p>
-                  </div>
-                ) : quizQuestions.length === 0 ? (
-                  <div className="text-center py-12">
-                    <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-                    <p className="text-white/80">No quiz questions generated</p>
-                    <p className="text-xs text-white/50 mt-1">Try adding more content about this topic</p>
-                  </div>
-                ) : currentQuestionIndex >= quizQuestions.length ? (
-                  <div className="text-center py-12">
-                    <div className="w-16 h-16 rounded-full bg-[#B6FF2E]/20 flex items-center justify-center mx-auto mb-4">
-                      <Check className="w-8 h-8 text-[#B6FF2E]" />
-                    </div>
-                    <h4 className="text-xl font-bold text-white">Quiz Complete!</h4>
-                    <p className="text-white/60 mt-2">
-                      Score: {quizScore}/{quizQuestions.length}
-                    </p>
-                    <button
-                      onClick={handleCloseQuiz}
-                      className="mt-6 px-6 py-3 bg-[#B6FF2E] text-black rounded-xl font-medium hover:bg-[#c5ff4d] transition-colors"
-                    >
-                      Close
-                    </button>
-                  </div>
-                ) : currentQuestion && (
-                  <>
-                    {/* Progress */}
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="text-xs text-white/50">
-                        Question {currentQuestionIndex + 1}/{quizQuestions.length}
-                      </span>
-                      <span className="text-xs text-[#B6FF2E]">
-                        Score: {quizScore}
-                      </span>
-                    </div>
-
-                    <div className="w-full h-1 bg-white/10 rounded-full mb-6">
-                      <div
-                        className="h-full bg-[#B6FF2E] rounded-full transition-all"
-                        style={{ width: `${((currentQuestionIndex + 1) / quizQuestions.length) * 100}%` }}
-                      />
-                    </div>
-
-                    {/* Question */}
-                    <p className="text-white font-medium mb-6 leading-relaxed">
-                      {currentQuestion.question}
-                    </p>
-
-                    {/* Options */}
-                    <div className="space-y-3">
-                      {currentQuestion.options.map((option, i) => {
-                        const isCorrect = option === currentQuestion.correct_answer;
-                        const isSelected = option === selectedAnswer;
-
-                        let bgColor = 'bg-white/5';
-                        let borderColor = 'border-white/10';
-                        let textColor = 'text-white/80';
-
-                        if (showAnswer) {
-                          if (isCorrect) {
-                            bgColor = 'bg-green-500/20';
-                            borderColor = 'border-green-500';
-                            textColor = 'text-green-400';
-                          } else if (isSelected && !isCorrect) {
-                            bgColor = 'bg-red-500/20';
-                            borderColor = 'border-red-500';
-                            textColor = 'text-red-400';
-                          }
-                        } else if (isSelected) {
-                          bgColor = 'bg-[#B6FF2E]/20';
-                          borderColor = 'border-[#B6FF2E]';
-                        }
-
-                        return (
-                          <button
-                            key={i}
-                            onClick={() => handleAnswerSelect(option)}
-                            disabled={showAnswer}
-                            className={`w-full p-4 rounded-xl ${bgColor} border ${borderColor} ${textColor} text-left text-sm transition-all hover:bg-white/10 disabled:cursor-default`}
-                          >
-                            {option}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Explanation */}
-                    {showAnswer && currentQuestion.explanation && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="mt-4 p-4 rounded-xl bg-white/5 border border-white/10"
-                      >
-                        <p className="text-xs text-white/50 mb-1">Explanation</p>
-                        <p className="text-sm text-white/80">{currentQuestion.explanation}</p>
-                      </motion.div>
-                    )}
-
-                    {/* Next Button */}
-                    {showAnswer && (
-                      <motion.button
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        onClick={handleNextQuestion}
-                        className="w-full mt-6 py-3 bg-[#B6FF2E] text-black rounded-xl font-medium hover:bg-[#c5ff4d] transition-colors flex items-center justify-center gap-2"
-                      >
-                        {currentQuestionIndex < quizQuestions.length - 1 ? (
-                          <>
-                            Next Question
-                            <Play className="w-4 h-4" />
-                          </>
-                        ) : (
-                          'View Results'
-                        )}
-                      </motion.button>
-                    )}
-                  </>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Note Detail Modal */}
       <AnimatePresence>
