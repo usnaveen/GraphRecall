@@ -16,9 +16,8 @@ type LinkSuggestion = {
 };
 
 export function GraphScreen() {
-  const { startQuizForTopic } = useAppStore();
+  const { startQuizForTopic, graphCache, setGraphCache } = useAppStore();
 
-  // const [graphData, setGraphData] = useState<GraphData | null>(null); // Unused
   const [layout, setLayout] = useState<GraphLayout | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +25,7 @@ export function GraphScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedNode, setSelectedNode] = useState<Node3D | null>(null);
   const [hoveredNode, setHoveredNode] = useState<Node3D | null>(null);
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [showCommunities, setShowCommunities] = useState(true);
   const [isolateCommunity, setIsolateCommunity] = useState(false);
 
@@ -52,6 +52,29 @@ export function GraphScreen() {
   const [linkedNotes, setLinkedNotes] = useState<any[]>([]);
   const [linkedNotesLoading, setLinkedNotesLoading] = useState(false);
   const [nodeConnections, setNodeConnections] = useState<any[]>([]);
+  const [connectionView, setConnectionView] = useState<"all" | "prereqs" | "children">("all");
+
+  const prerequisiteConnections = useMemo(
+    () =>
+      nodeConnections.filter(
+        (c) => c.relationship === "PREREQUISITE_OF" && c.direction === "incoming"
+      ),
+    [nodeConnections]
+  );
+
+  const childConnections = useMemo(
+    () =>
+      nodeConnections.filter(
+        (c) => c.relationship === "PREREQUISITE_OF" && c.direction === "outgoing"
+      ),
+    [nodeConnections]
+  );
+
+  const displayedConnections = useMemo(() => {
+    if (connectionView === "prereqs") return prerequisiteConnections;
+    if (connectionView === "children") return childConnections;
+    return nodeConnections;
+  }, [connectionView, nodeConnections, prerequisiteConnections, childConnections]);
 
   const openCreateModal = useCallback(
     (prefillName?: string, position?: { x: number; y: number; z: number }) => {
@@ -69,26 +92,36 @@ export function GraphScreen() {
       setError(null);
       const data = await api.graph.getGraph();
       const adapted = adaptGraphData(data);
-      // setGraphData(adapted);
       const sim = new ForceSimulation3D();
       const layoutResult = await sim.generateLayout(adapted);
       setLayout(layoutResult);
+      setGraphCache(adapted, layoutResult);
     } catch (err: any) {
       console.error("Failed to load graph:", err);
       setError("Failed to load knowledge graph.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [setGraphCache]);
 
   useEffect(() => {
+    const isCacheFresh =
+      graphCache.loadedAt && Date.now() - graphCache.loadedAt < 1000 * 60 * 5;
+
+    if (graphCache.data && graphCache.layout && isCacheFresh) {
+      setLayout(graphCache.layout);
+      setLoading(false);
+      return;
+    }
+
     loadGraph();
-  }, [loadGraph]);
+  }, [graphCache, loadGraph]);
 
   useEffect(() => {
     if (!selectedNode) {
       setLinkedNotes([]);
       setNodeConnections([]);
+      setConnectionView("all");
       return;
     }
     const fetchFocus = async () => {
@@ -96,7 +129,8 @@ export function GraphScreen() {
       try {
         const data = await api.graph.getFocus(selectedNode.id);
         setLinkedNotes(data.linked_notes || []);
-        setNodeConnections((data.connections || []).slice(0, 5));
+        setNodeConnections(data.connections || []);
+        setConnectionView("all");
       } catch (err) {
         console.error("Failed to fetch node focus:", err);
       } finally {
@@ -112,6 +146,19 @@ export function GraphScreen() {
     return new Set(layout.nodes.filter((n) => n.title.toLowerCase().includes(lower)).map((n) => n.id));
   }, [searchQuery, layout]);
 
+  const searchMatches = useMemo(() => {
+    if (!searchQuery || !layout?.nodes) return [];
+    const lower = searchQuery.toLowerCase();
+    return layout.nodes.filter((n) => n.title.toLowerCase().includes(lower));
+  }, [searchQuery, layout]);
+
+  const handleSearchFocus = useCallback(() => {
+    if (searchMatches.length === 0) return;
+    const match = searchMatches[0];
+    setSelectedNode(match);
+    setFocusNodeId(match.id);
+  }, [searchMatches]);
+
   const noSearchMatch = searchQuery.trim().length > 0 && highlightedIds.size === 0;
   const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
 
@@ -124,6 +171,12 @@ export function GraphScreen() {
     const count = layout?.nodes.length || 0;
     return count <= 220;
   }, [layout]);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFocusNodeId(null);
+    }
+  }, [searchQuery]);
 
   const handleShowResources = async (topicName: string, type: "note" | "link") => {
     setSelectedResourceTopic(topicName);
@@ -241,6 +294,11 @@ export function GraphScreen() {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              handleSearchFocus();
+            }
+          }}
           placeholder="Search concepts to quiz..."
           className="w-full pl-10 pr-4 py-3 rounded-full glass-surface text-white placeholder:text-white/40 focus:outline-none focus:border-[#B6FF2E]/50"
         />
@@ -273,7 +331,10 @@ export function GraphScreen() {
           layout={layout}
           selectedNode={selectedNode}
           hoveredNode={hoveredNode}
-          onNodeSelect={(node) => setSelectedNode(node)}
+          onNodeSelect={(node) => {
+            setSelectedNode(node);
+            if (node) setFocusNodeId(node.id);
+          }}
           onNodeHover={(node) => setHoveredNode(node)}
           showCommunities={showCommunities}
           searchTerm={searchQuery}
@@ -283,6 +344,8 @@ export function GraphScreen() {
           onEmptyContextMenu={(point) => {
             openCreateModal(undefined, point);
           }}
+          focusNodeId={focusNodeId}
+          pulseNodeId={focusNodeId || selectedNode?.id || null}
         />
 
         {/* Community toggle */}
@@ -407,18 +470,57 @@ export function GraphScreen() {
 
           {nodeConnections.length > 0 && (
             <div className="mt-3 pt-3 border-t border-white/10">
-              <p className="text-[10px] text-white/40 uppercase tracking-wider mb-2">Connected Concepts</p>
-              <div className="flex flex-wrap gap-1.5">
-                {nodeConnections.map((conn: any, i: number) => (
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] text-white/40 uppercase tracking-wider">Connected Concepts</p>
+                <div className="flex items-center gap-1">
                   <button
-                    key={i}
+                    onClick={() => setConnectionView("prereqs")}
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${
+                      connectionView === "prereqs" ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/60"
+                    }`}
+                  >
+                    Prereqs ({prerequisiteConnections.length})
+                  </button>
+                  <button
+                    onClick={() => setConnectionView("children")}
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${
+                      connectionView === "children" ? "bg-[#2EFFE6] text-black" : "bg-white/10 text-white/60"
+                    }`}
+                  >
+                    Children ({childConnections.length})
+                  </button>
+                  <button
+                    onClick={() => setConnectionView("all")}
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${
+                      connectionView === "all" ? "bg-white/20 text-white" : "bg-white/10 text-white/60"
+                    }`}
+                  >
+                    All
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {displayedConnections.map((conn: any, i: number) => (
+                  <button
+                    key={`${conn.concept?.id || i}-${conn.relationship}-${conn.direction}`}
                     onClick={() => {
                       const match = layout?.nodes.find((n) => n.id === conn.concept?.id);
-                      if (match) setSelectedNode(match);
+                      if (match) {
+                        setSelectedNode(match);
+                        setFocusNodeId(match.id);
+                      }
                     }}
                     className="px-2 py-1 rounded-full text-[10px] bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors flex items-center gap-1"
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#B6FF2E]" />
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        conn.relationship === "PREREQUISITE_OF" && conn.direction === "incoming"
+                          ? "bg-[#B6FF2E]"
+                          : conn.relationship === "PREREQUISITE_OF" && conn.direction === "outgoing"
+                          ? "bg-[#2EFFE6]"
+                          : "bg-white/40"
+                      }`}
+                    />
                     {conn.concept?.name}
                   </button>
                 ))}
