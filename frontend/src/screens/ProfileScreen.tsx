@@ -314,7 +314,8 @@ function StatCard({
 
 // Note Item Component for Swipe-to-Delete
 function NoteItem({ note, onDelete }: { note: any; onDelete: (id: string) => void }) {
-  const [showConfirm, setShowConfirm] = useState(false);
+  // const [showConfirm, setShowConfirm] = useState(false); // Removed unused declarations
+
 
   return (
     <div className="relative group">
@@ -610,8 +611,8 @@ function ConceptsListView({
               key={domain}
               onClick={() => setSelectedDomain(selectedDomain === domain ? null : domain)}
               className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors ${selectedDomain === domain
-                  ? 'bg-[#B6FF2E] text-black font-medium'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+                ? 'bg-[#B6FF2E] text-black font-medium'
+                : 'bg-white/5 text-white/60 hover:bg-white/10'
                 }`}
             >
               {domain}
