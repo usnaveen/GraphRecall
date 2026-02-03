@@ -257,7 +257,7 @@ export function BackendStatusPanel({ open, onOpenChange }: BackendStatusPanelPro
     const feedPromise = checkAuthEndpoint('/feed/due-count').then((r) =>
       setResults((prev) => ({ ...prev, 'feed-api': r })),
     );
-    const graphPromise = checkAuthEndpoint('/graph3d/domains').then((r) =>
+    const graphPromise = checkAuthEndpoint('/graph3d').then((r) =>
       setResults((prev) => ({ ...prev, 'graph-api': r })),
     );
     const chatPromise = checkAuthEndpoint('/chat/suggestions').then((r) =>

@@ -12,8 +12,8 @@ from backend.models.feed_schemas import (
     Graph3DNode,
     Graph3DEdge,
     Graph3DResponse,
-    Graph3DFilterRequest,
 )
+from backend.services.community_service import CommunityService
 
 logger = structlog.get_logger()
 
@@ -56,16 +56,6 @@ async def get_3d_graph(
         default=None,
         description="Focus on this concept and show its neighborhood",
     ),
-    domains: Optional[str] = Query(
-        default=None,
-        description="Comma-separated domains to filter",
-    ),
-    min_mastery: Optional[float] = Query(
-        default=None,
-        ge=0.0,
-        le=1.0,
-        description="Filter concepts by minimum mastery level",
-    ),
     max_depth: int = Query(
         default=3,
         ge=1,
@@ -79,8 +69,6 @@ async def get_3d_graph(
     Returns nodes and edges optimized for Three.js/React Three Fiber rendering.
     
     Features:
-    - Filter by domain
-    - Filter by mastery level
     - Focus on specific concept and its neighborhood
     - Cluster information for visual grouping
     
@@ -88,8 +76,6 @@ async def get_3d_graph(
     - Position (optional, can be calculated client-side)
     - Size based on complexity and connectivity
     - Color based on domain
-    - Mastery level for opacity/glow effects
-    
     Edge properties include:
     - Relationship type
     - Strength for line thickness
@@ -97,11 +83,6 @@ async def get_3d_graph(
     try:
         neo4j_client = await get_neo4j_client()
         pg_client = await get_postgres_client()
-        
-        # Parse domains filter
-        domain_list = None
-        if domains:
-            domain_list = [d.strip() for d in domains.split(",")]
         
         user_id = str(current_user["id"])
         
@@ -115,18 +96,12 @@ async def get_3d_graph(
             WHERE center <> related AND related.user_id = $user_id
             WITH DISTINCT related, center,
                  min(length(path)) as distance
-            %s
             RETURN related as concept, distance
             ORDER BY distance
             LIMIT 100
-            """ % (
-                max_depth,
-                f"WHERE related.domain IN $domains" if domain_list else "",
-            )
+            """ % max_depth
             
             params = {"center_id": center_concept_id, "user_id": user_id}
-            if domain_list:
-                params["domains"] = domain_list
             
             # Get center concept first
             center_result = await neo4j_client.execute_query(
@@ -148,13 +123,9 @@ async def get_3d_graph(
                 concepts.append(r["concept"])
                 
         else:
-            # Get all concepts (with optional filtering)
+            # Get all concepts
             where_clauses = ["c.user_id = $user_id"]
             params = {"user_id": user_id}
-            
-            if domain_list:
-                where_clauses.append("c.domain IN $domains")
-                params["domains"] = domain_list
             
             where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
             
@@ -202,13 +173,6 @@ async def get_3d_graph(
             
             for row in mastery_result:
                 mastery_levels[row["concept_id"]] = row["score"]
-        
-        # Filter by mastery if specified
-        if min_mastery is not None:
-            concepts = [
-                c for c in concepts
-                if mastery_levels.get(c.get("id"), 0) >= min_mastery
-            ]
         
         # Build nodes
         nodes = []
@@ -282,9 +246,9 @@ async def get_3d_graph(
         # k=None (default 1/sqrt(n)), iterations=50
         pos = nx.spring_layout(G, dim=3, seed=42, iterations=50, scale=400)
         
-        # Assign positions back to nodes
+        # Assign positions back to nodes (respect stored positions if present)
         for node in nodes:
-            if node.id in pos:
+            if node.id in pos and (node.x is None or node.y is None or node.z is None):
                 x, y, z = pos[node.id]
                 node.x = float(x)
                 node.y = float(y)
@@ -302,11 +266,16 @@ async def get_3d_graph(
             }
             for d in unique_domains
         ]
-                
+
+        # Communities (graph-based) if available
+        community_service = CommunityService()
+        communities = await community_service.get_communities(user_id)
+
         return Graph3DResponse(
             nodes=nodes,
             edges=edges,
             clusters=clusters,
+            communities=communities,
             total_nodes=len(nodes),
             total_edges=len(edges),
         )
@@ -470,44 +439,6 @@ async def focus_on_concept(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/domains")
-async def get_domains(
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Get all domains with their colors and concept counts.
-    
-    Useful for building filter UI.
-    """
-    try:
-        neo4j_client = await get_neo4j_client()
-        
-        result = await neo4j_client.execute_query(
-            """
-            MATCH (c:Concept)
-            WHERE c.user_id = $user_id
-            RETURN c.domain as domain, count(*) as count
-            ORDER BY count DESC
-            """,
-            {"user_id": str(current_user["id"])},
-        )
-        
-        domains = [
-            {
-                "domain": r["domain"] or "General",
-                "count": r["count"],
-                "color": get_domain_color(r["domain"] or "General"),
-            }
-            for r in result
-        ]
-        
-        return {"domains": domains}
-        
-    except Exception as e:
-        logger.error("Graph3D: Error getting domains", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.get("/search")
 async def search_for_3d_navigation(
     query: str = Query(..., min_length=1),
@@ -554,4 +485,18 @@ async def search_for_3d_navigation(
         
     except Exception as e:
         logger.error("Graph3D: Error searching", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+@router.post("/communities/recompute")
+async def recompute_communities(
+    current_user: dict = Depends(get_current_user),
+):
+    """Recompute communities using Louvain and persist them."""
+    try:
+        user_id = str(current_user["id"])
+        service = CommunityService()
+        communities = await service.compute_communities(user_id)
+        await service.persist_communities(user_id, communities)
+        return {"status": "recomputed", "count": len(communities)}
+    except Exception as e:
+        logger.error("Graph3D: Failed to recompute communities", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

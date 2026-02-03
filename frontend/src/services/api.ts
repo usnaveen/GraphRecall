@@ -320,3 +320,29 @@ export const api = {
         }
     }
 };
+
+export const nodesService = {
+    createNode: async (name: string, description?: string, position?: { x: number; y: number; z: number }) => {
+        const response = await authFetch(`${API_BASE}/nodes`, {
+            method: 'POST',
+            body: JSON.stringify({ name, description, position }),
+        });
+        if (!response.ok) throw new Error('Failed to create node');
+        return response.json();
+    },
+    suggestLinks: async (nodeId: string) => {
+        const response = await authFetch(`${API_BASE}/nodes/${encodeURIComponent(nodeId)}/suggest-links`, {
+            method: 'POST',
+        });
+        if (!response.ok) throw new Error('Failed to suggest links');
+        return response.json();
+    },
+    applyLinks: async (nodeId: string, links: { target_id: string; relationship_type: string; strength?: number }[]) => {
+        const response = await authFetch(`${API_BASE}/nodes/${encodeURIComponent(nodeId)}/link`, {
+            method: 'POST',
+            body: JSON.stringify({ links }),
+        });
+        if (!response.ok) throw new Error('Failed to apply links');
+        return response.json();
+    }
+};

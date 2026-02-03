@@ -42,6 +42,7 @@ try:
     from backend.routers.uploads import router as uploads_router
     from backend.routers.notes import router as notes_router
     from backend.routers.concepts import router as concepts_router
+    from backend.routers.nodes import router as nodes_router
     from backend.routers.ingest_v2 import router as ingest_v2_router
     from backend.routers.auth import router as auth_router
 except Exception as e:
@@ -52,6 +53,8 @@ except Exception as e:
     raise e
 
 # Configure structured logging
+from backend.config.observability import init_observability
+
 structlog.configure(
     processors=[
         structlog.processors.TimeStamper(fmt="iso"),
@@ -63,6 +66,9 @@ structlog.configure(
 )
 
 logger = structlog.get_logger()
+
+# Initialize Observability
+init_observability()
 
 
 @asynccontextmanager
@@ -169,6 +175,7 @@ app.include_router(graph3d_router)   # /api/graph3d - 3D visualization data
 app.include_router(uploads_router)   # /api/uploads - User screenshots/infographics
 app.include_router(notes_router)     # /api/notes - User notes
 app.include_router(concepts_router)  # /api/concepts - Concepts
+app.include_router(nodes_router)     # /api/nodes - Manual node creation/linking
 app.include_router(ingest_v2_router) # /api/v2 - LangGraph-powered ingestion
 app.include_router(auth_router)      # /auth - Google authentication
 
