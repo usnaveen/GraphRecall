@@ -165,20 +165,19 @@ function CommunityGlow({ community }: { community: Community }) {
 
   useFrame(() => {
     if (meshRef.current) {
-      const center = new THREE.Vector3(...bounds.center);
-      const dist = camera.position.distanceTo(center);
-      // Fade out when close (< 60), full opacity at distance
-      const opacity = Math.min(0.15, Math.max(0, (dist - 60) / 100));
+      // Global Zoom Check: visible only when zoomed out (Overview Mode)
+      const distToOrigin = camera.position.length();
+      // Fade out between 200 (visible) and 100 (hidden)
+      const fade = Math.min(1, Math.max(0, (distToOrigin - 100) / 100));
 
-      if (dist < 40) {
+      if (fade <= 0.01) {
         meshRef.current.visible = false;
       } else {
         meshRef.current.visible = true;
-        // Pulse effect
         const t = Date.now() * 0.001;
         const pulse = 0.9 + Math.sin(t) * 0.1;
         meshRef.current.scale.setScalar(pulse);
-        (meshRef.current.material as THREE.MeshBasicMaterial).opacity = opacity;
+        (meshRef.current.material as THREE.MeshBasicMaterial).opacity = 0.15 * fade;
       }
     }
   });
