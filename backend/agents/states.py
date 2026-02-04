@@ -19,7 +19,7 @@ class IngestionState(TypedDict, total=False):
     This state flows through the ingestion graph with conditional edges:
     START -> extract_concepts -> store_note -> find_related 
           -> (conditional) -> [synthesize -> user_review] OR [create_concepts]
-          -> link_synthesis -> generate_flashcards -> END
+          -> link_synthesis -> generate_term_cards -> END
     
     Following LangGraph best practices:
     - All fields are explicitly typed
@@ -53,7 +53,7 @@ class IngestionState(TypedDict, total=False):
     
     # Output fields
     created_concept_ids: list[str]  # Neo4j concept IDs
-    flashcard_ids: list[str]        # Generated flashcard IDs
+    term_card_ids: list[str]        # Generated term card IDs
     quiz_ids: list[str]             # Generated quiz IDs
 
     # Processing metadata (geekout facts for UI)
@@ -210,7 +210,7 @@ class ContentState(TypedDict, total=False):
     
     # Parallel Outputs
     mcqs: list[dict]
-    flashcards: list[dict]
+    term_cards: list[dict]
     diagram: dict  # {code, explanation}
     
     # Final Output

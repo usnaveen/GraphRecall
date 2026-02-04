@@ -499,7 +499,7 @@ async def generate_flashcards_node(state: IngestionState) -> dict:
     Node 7: Generate flashcards from extracted concepts.
     
     Input: extracted_concepts, note_id, user_id
-    Output: flashcard_ids
+    Output: term_card_ids
     """
     logger.info("generate_flashcards_node: Starting")
     
@@ -510,7 +510,7 @@ async def generate_flashcards_node(state: IngestionState) -> dict:
     raw_content = state.get("raw_content", "")
     
     if not concepts:
-        return {"flashcard_ids": []}
+        return {"term_card_ids": []}
     
     concept_names = [c.get("name", "") for c in concepts]
     
@@ -599,11 +599,11 @@ Return ONLY valid JSON:
             num_flashcards=len(card_ids),
         )
 
-        return {"flashcard_ids": card_ids, "processing_metadata": meta}
+        return {"term_card_ids": card_ids, "processing_metadata": meta}
         
     except Exception as e:
         logger.error("generate_flashcards_node: Failed", error=str(e))
-        return {"flashcard_ids": []}
+        return {"term_card_ids": []}
 
 
 async def generate_quiz_node(state: IngestionState) -> dict:
@@ -858,7 +858,7 @@ async def run_ingestion(
         content_hash: SHA-256 hash of content for deduplication
     
     Returns:
-        Dict with note_id, concept_ids, flashcard_ids, thread_id
+        Dict with note_id, concept_ids, term_card_ids, thread_id
     """
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
@@ -875,7 +875,7 @@ async def run_ingestion(
         "needs_synthesis": False,
         "synthesis_completed": False,
         "created_concept_ids": [],
-        "flashcard_ids": [],
+        "term_card_ids": [],
         "quiz_ids": [],
         "error": None,
     }
@@ -912,14 +912,14 @@ async def run_ingestion(
             "run_ingestion: Complete",
             note_id=result.get("note_id"),
             num_concepts=len(result.get("created_concept_ids", [])),
-            num_flashcards=len(result.get("flashcard_ids", [])),
+            num_flashcards=len(result.get("term_card_ids", [])),
         )
         
         return {
             "note_id": result.get("note_id"),
             "concepts": result.get("extracted_concepts", []),
             "concept_ids": result.get("created_concept_ids", []),
-            "flashcard_ids": result.get("flashcard_ids", []),
+            "term_card_ids": result.get("term_card_ids", []),
             "quiz_ids": result.get("quiz_ids", []),
             "processing_metadata": result.get("processing_metadata", {}),
             "status": "completed",
@@ -933,7 +933,7 @@ async def run_ingestion(
             "note_id": note_id,
             "concepts": [],
             "concept_ids": [],
-            "flashcard_ids": [],
+            "term_card_ids": [],
             "status": "error",
             "thread_id": thread_id,
             "error": str(e),
@@ -996,7 +996,7 @@ async def resume_ingestion(
         return {
             "note_id": result.get("note_id"),
             "concept_ids": result.get("created_concept_ids", []),
-            "flashcard_ids": result.get("flashcard_ids", []),
+            "term_card_ids": result.get("term_card_ids", []),
             "status": "completed" if not user_cancelled else "cancelled",
             "thread_id": thread_id,
         }
