@@ -15,6 +15,7 @@ from backend.models.feed_schemas import (
     FillBlankQuestion,
     TermCard,
     MermaidDiagram,
+    CodeChallengeQuestion,
 )
 from backend.agents.mermaid_agent import MermaidAgent
 
