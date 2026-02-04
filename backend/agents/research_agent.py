@@ -185,7 +185,7 @@ class WebResearchAgent:
             for r in search_results[:5]
         ])
         
-        prompt = f"""You are a knowledge synthesis expert creating study notes.
+        base_prompt = f"""You are a knowledge synthesis expert creating study notes.
 
 TOPIC: {topic}
 
@@ -208,49 +208,59 @@ Return JSON:
     ]
 }}"""
         
-        try:
-            response = await self.synthesizer.ainvoke(prompt)
-            content = response.content.strip()
-            
-            # Extract JSON from potential markdown wrapping
-            json_str = content
-            if "```json" in content:
-                json_str = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                json_str = content.split("```")[1].split("```")[0].strip()
-            
-            # Clean up potential leading/trailing garbage
-            if not json_str.startswith("{"):
-                start_idx = json_str.find("{")
-                if start_idx != -1:
-                    json_str = json_str[start_idx:]
-            if not json_str.endswith("}"):
-                end_idx = json_str.rfind("}")
-                if end_idx != -1:
-                    json_str = json_str[:end_idx+1]
+        last_error = None
+        for attempt in range(2):
+            try:
+                prompt = base_prompt
+                if attempt > 0:
+                    prompt += "\n\nIMPORTANT: The previous response was truncated or invalid JSON. Ensure the JSON is valid and strictly closed."
+                
+                response = await self.synthesizer.ainvoke(prompt)
+                content = response.content.strip()
+                
+                # Extract JSON from potential markdown wrapping
+                json_str = content
+                if "```json" in content:
+                    json_str = content.split("```json")[1].split("```")[0].strip()
+                elif "```" in content:
+                    json_str = content.split("```")[1].split("```")[0].strip()
+                
+                # Clean up potential leading/trailing garbage
+                if not json_str.startswith("{"):
+                    start_idx = json_str.find("{")
+                    if start_idx != -1:
+                        json_str = json_str[start_idx:]
+                if not json_str.endswith("}"):
+                    end_idx = json_str.rfind("}")
+                    if end_idx != -1:
+                        json_str = json_str[:end_idx+1]
 
-            data = json.loads(json_str)
-            
-            return ResearchResult(
-                topic=topic,
-                summary=data.get("summary", ""),
-                key_points=data.get("key_points", []),
-                sources=[
-                    {"url": r["url"], "title": r["title"]}
-                    for r in search_results[:5]
-                ],
-                note_content=data.get("note_content", ""),
-            )
-            
-        except Exception as e:
-            logger.error("synthesize_notes failed", error=str(e), partial_content=content[:200])
-            return ResearchResult(
-                topic=topic,
-                summary=f"Research on {topic}",
-                key_points=[],
-                sources=[],
-                note_content=f"# {topic}\n\nResearch synthesis failed. Please try again.",
-            )
+                data = json.loads(json_str)
+                
+                return ResearchResult(
+                    topic=topic,
+                    summary=data.get("summary", ""),
+                    key_points=data.get("key_points", []),
+                    sources=[
+                        {"url": r["url"], "title": r["title"]}
+                        for r in search_results[:5]
+                    ],
+                    note_content=data.get("note_content", ""),
+                )
+                
+            except Exception as e:
+                last_error = e
+                logger.warning("synthesize_notes attempt failed", attempt=attempt+1, error=str(e))
+        
+        # Fallback if both attempts fail
+        logger.error("synthesize_notes failed after retries", error=str(last_error))
+        return ResearchResult(
+            topic=topic,
+            summary=f"Research on {topic}",
+            key_points=[],
+            sources=[],
+            note_content=f"# {topic}\n\nResearch synthesis failed. Please try again.",
+        )
     
     async def save_research_note(
         self,
