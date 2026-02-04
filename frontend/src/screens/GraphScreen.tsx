@@ -416,8 +416,13 @@ export function GraphScreen() {
           <div className="flex items-start justify-between mb-3">
             <div>
               <h3 className="font-heading font-bold text-white">{selectedNode.title}</h3>
+              {selectedNode.definition && (
+                <p className="text-xs text-white/70 mt-1 line-clamp-2 leading-relaxed">
+                  {selectedNode.definition}
+                </p>
+              )}
               {selectedNode.community && (
-                <p className="text-[11px] text-white/40 mt-1">
+                <p className="text-[10px] text-white/30 mt-1">
                   Community: {selectedNode.community.title} • {selectedNode.community.size} nodes
                 </p>
               )}
