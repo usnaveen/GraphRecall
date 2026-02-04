@@ -355,7 +355,7 @@ class FeedService:
                         "source_url": row.get("source_url"),
                     }
 
-            elif item_type == FeedItemType.FLASHCARD:
+            elif item_type == FeedItemType.TERM_CARD:
                  # Get random Flashcard
                 result = await self.pg_client.execute_query(
                     """
@@ -425,7 +425,7 @@ class FeedService:
             content = None
             
             # 1. Try fetching from DB first
-            if item_type in [FeedItemType.MCQ, FeedItemType.FLASHCARD] and concept.get("id"):
+            if item_type in [FeedItemType.MCQ, FeedItemType.TERM_CARD] and concept.get("id"):
                  content = await self._get_db_content(concept.get("id"), item_type, user_id)
                  
             if content:
@@ -601,7 +601,7 @@ class FeedService:
                     "hint": fill_blank.hint,
                 }
                 
-            elif item_type == FeedItemType.FLASHCARD:
+            elif item_type == FeedItemType.TERM_CARD:
                 flashcards = await asyncio.wait_for(
                     self.content_generator.generate_flashcards(
                         concept_name=concept["name"],
@@ -709,7 +709,7 @@ class FeedService:
             ),
             FeedItem(
                 id=str(uuid.uuid4()),
-                item_type=FeedItemType.FLASHCARD,
+                item_type=FeedItemType.TERM_CARD,
                 content={
                     "front": "What learning technique involves testing yourself on material rather than re-reading?",
                     "back": "Active Recall - retrieving information from memory strengthens long-term retention far more than passive review.",
@@ -722,7 +722,7 @@ class FeedService:
             ),
             FeedItem(
                 id=str(uuid.uuid4()),
-                item_type=FeedItemType.FLASHCARD,
+                item_type=FeedItemType.TERM_CARD,
                 content={
                     "front": "What is Spaced Repetition?",
                     "back": "A learning technique that reviews material at increasing intervals. Items you know well are shown less often; items you struggle with appear more frequently.",
@@ -735,7 +735,7 @@ class FeedService:
             ),
             FeedItem(
                 id=str(uuid.uuid4()),
-                item_type=FeedItemType.FLASHCARD,
+                item_type=FeedItemType.TERM_CARD,
                 content={
                     "front": "How does a Knowledge Graph help learning?",
                     "back": "A Knowledge Graph connects concepts through relationships, showing prerequisites and related ideas. This mirrors how the brain organizes information -- through associations, not isolation.",
@@ -875,7 +875,7 @@ class FeedService:
                     FeedItemType.MCQ,
                     FeedItemType.FILL_BLANK,
                     FeedItemType.MCQ,
-                    FeedItemType.FLASHCARD, 
+                    FeedItemType.TERM_CARD, 
                     FeedItemType.MERMAID_DIAGRAM,
                 ]
                 if t in allowed_types
