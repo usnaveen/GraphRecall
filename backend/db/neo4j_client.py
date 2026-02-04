@@ -36,9 +36,10 @@ class Neo4jClient:
         self._driver = AsyncGraphDatabase.driver(
             self.settings.neo4j_uri,
             auth=(self.settings.neo4j_user, self.settings.neo4j_password),
-            max_connection_lifetime=3600,
+            max_connection_lifetime=200,
             max_connection_pool_size=50,
-            connection_acquisition_timeout=60,
+            connection_acquisition_timeout=30,
+            keep_alive=True,
         )
 
         # Verify connectivity
