@@ -54,24 +54,7 @@ export function ProfileScreen() {
     return <QuizHistoryView onBack={() => setCurrentView('main')} />;
   }
 
-  // Domain Progress from real data
-  const domainColors: Record<string, string> = {
-    "Machine Learning": "#7C3AED",
-    "Mathematics": "#3B82F6",
-    "Computer Science": "#10B981",
-    "Database Systems": "#F59E0B",
-    "System Design": "#EF4444",
-    "Programming": "#06B6D4",
-    "General": "#6B7280",
-  };
 
-  const domainProgress = userStats.domainProgress
-    ? Object.entries(userStats.domainProgress).map(([name, progress]) => ({
-      name,
-      progress: Math.round(progress), // Ensure integer
-      color: domainColors[name] || '#6B7280' // Default gray
-    })).sort((a, b) => b.progress - a.progress)
-    : [];
 
   // Heatmap generation from real activity
   const generateHeatmap = () => {
@@ -163,76 +146,41 @@ export function ProfileScreen() {
         <p className="text-sm text-white/50">{user?.email || 'Learning since Jan 2026'}</p>
       </motion.div>
 
-      {/* Quiz Stats */}
+      {/* Stats Grid */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15 }}
-        className="mb-6"
+        className="grid grid-cols-2 gap-3 mb-6"
       >
-        <button
+        <StatsCard
+          icon={Target}
+          count={quizCount}
+          label="Quizzes"
           onClick={() => setCurrentView('quizzes')}
-          className="w-full glass-surface rounded-xl p-4 flex items-center justify-between hover:bg-white/5 transition-colors group"
-        >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-[#9B59B6]/10 flex items-center justify-center">
-              <Brain className="w-6 h-6 text-[#9B59B6]" />
-            </div>
-            <div className="text-left">
-              <h3 className="font-heading font-bold text-white text-lg">{quizCount}</h3>
-              <p className="text-sm text-white/50">Quizzes Created</p>
-            </div>
-          </div>
-          <ChevronRight className="w-5 h-5 text-white/30 group-hover:text-white/60 transition-colors" />
-        </button>
-      </motion.div>
-
-      {/* Domain Progress */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="mb-6"
-      >
-        <h3 className="font-heading font-semibold text-white mb-3 px-1">Learning Progress</h3>
-
-        {domainProgress.length > 0 ? (
-          <div className="space-y-3">
-            {domainProgress.map((domain, i) => (
-              <div key={domain.name} className="glass-surface rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-white/80">{domain.name}</span>
-                  <span className="text-sm font-mono" style={{ color: domain.color }}>
-                    {domain.progress}%
-                  </span>
-                </div>
-                <div className="flex gap-1">
-                  {Array.from({ length: 10 }).map((_, j) => (
-                    <motion.div
-                      key={j}
-                      initial={{ scaleX: 0 }}
-                      animate={{ scaleX: 1 }}
-                      transition={{ delay: i * 0.1 + j * 0.02, duration: 0.3 }}
-                      className={`flex-1 h-2 rounded-full ${j < Math.ceil(domain.progress / 10)
-                        ? ''
-                        : 'bg-white/10'
-                        }`}
-                      style={
-                        j < Math.ceil(domain.progress / 10)
-                          ? { backgroundColor: domain.color }
-                          : {}
-                      }
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="glass-surface rounded-xl p-6 text-center">
-            <p className="text-white/40 text-sm">No progress data yet. Start adding notes!</p>
-          </div>
-        )}
+          color="#9B59B6"
+        />
+        <StatsCard
+          icon={BookOpen}
+          count={notesList.length}
+          label="Notes"
+          onClick={() => setCurrentView('notes')}
+          color="#B6FF2E"
+        />
+        <StatsCard
+          icon={Brain}
+          count={conceptsList.length}
+          label="Concepts"
+          onClick={() => setCurrentView('concepts')}
+          color="#2EFFE6"
+        />
+        <StatsCard
+          icon={Image}
+          count={uploadsList.length}
+          label="Resources"
+          onClick={() => setCurrentView('uploads')}
+          color="#FF6B6B"
+        />
       </motion.div>
 
       {/* Activity Heatmap */}
@@ -1128,5 +1076,38 @@ function QuizHistoryView({
         </div>
       )}
     </div>
+  );
+}
+
+// Stats Card
+function StatsCard({
+  icon: Icon,
+  count,
+  label,
+  onClick,
+  color
+}: {
+  icon: any;
+  count: number;
+  label: string;
+  onClick: () => void;
+  color: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="glass-surface rounded-xl p-4 flex flex-col items-center justify-center gap-2 hover:bg-white/5 transition-colors group"
+    >
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
+        style={{ backgroundColor: `${color}20` }}
+      >
+        <Icon className="w-5 h-5" style={{ color }} />
+      </div>
+      <div className="text-center">
+        <h3 className="font-heading font-bold text-white text-xl">{count}</h3>
+        <p className="text-xs text-white/50">{label}</p>
+      </div>
+    </button>
   );
 }

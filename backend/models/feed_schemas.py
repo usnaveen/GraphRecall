@@ -195,6 +195,7 @@ class FeedResponse(BaseModel):
     items: list[FeedItem]
     total_due_today: int
     completed_today: int
+    daily_goal: int = 20
     streak_days: int
     domains: list[str] = Field(default_factory=list, description="Available domains to filter")
 
@@ -349,6 +350,7 @@ class UserStats(BaseModel):
     # Spaced repetition stats
     due_today: int = 0
     completed_today: int = 0
+    daily_goal: int = 20
     overdue: int = 0
 
     last_activity: Optional[datetime] = None

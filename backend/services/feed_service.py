@@ -27,6 +27,8 @@ from backend.services.spaced_repetition import SpacedRepetitionService
 
 from backend.agents.content_generator import ContentGeneratorAgent
 from backend.agents.web_quiz_agent import WebQuizAgent
+from backend.agents.web_research_agent import WebResearchAgent
+from backend.config.llm import get_chat_model
 
 logger = structlog.get_logger()
 
@@ -987,3 +989,182 @@ class FeedService:
                 "FeedService: Error recording interaction",
                 error=str(e),
             )
+
+    async def get_daily_goal(self, user_id: str) -> int:
+        """
+        Calculate fixed daily goal:
+        Goal = (Total Scheduled Due Now) + (Scheduled Items Completed Today)
+        Excludes items created Today if they are ad-hoc.
+        """
+        try:
+            # 1. Current Due (SR)
+            due_result = await self.sr_service.get_due_items(user_id)
+            current_due_count = len(due_result)
+            
+            # 2. Completed Today (Scheduled Only)
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            completed_total = await self.get_completed_today(user_id)
+            
+            # Count ad-hoc completed (Created today)
+            adhoc_completed = 0
+            try:
+                # Check quizzes (approximation)
+                q_res = await self.pg_client.execute_query(
+                    """
+                    SELECT COUNT(*) as cnt 
+                    FROM study_sessions s
+                    JOIN quizzes q ON (s.item_id = q.id AND s.item_type='quiz')
+                    WHERE s.user_id = :uid 
+                      AND s.reviewed_at >= :today
+                      AND q.created_at >= :today
+                      AND q.source = 'batch_gen'
+                    """,
+                    {"uid": user_id, "today": today_start}
+                )
+                if q_res: adhoc_completed += q_res[0]["cnt"]
+            except Exception:
+                pass
+
+            # Subtract ad-hoc from total completed
+            completed_scheduled = max(0, completed_total - adhoc_completed)
+            
+            # If current_due is 0, goal is completed_scheduled.
+            return current_due_count + completed_scheduled
+        except Exception as e:
+            logger.error("get_daily_goal error", error=str(e))
+            return 20
+
+    async def ensure_weekly_buffer(self, user_id: str):
+        """
+        Background task: Checks a random concept and ensures quiz buffer exists.
+        """
+        try:
+            # Pick a random concept
+            res = await self.neo4j_client.execute_query(
+                "MATCH (c:Concept) WHERE rand() < 0.2 RETURN c.name as name LIMIT 1"
+            )
+            if not res: return
+            
+            topic = res[0]["name"]
+            
+            # Check existing quiz count
+            cnt_res = await self.pg_client.execute_query(
+                "SELECT count(*) as c FROM quizzes WHERE question_text ILIKE :topic OR explanation ILIKE :topic",
+                {"topic": f"%{topic}%"}
+            )
+            count = cnt_res[0]["c"] if cnt_res else 0
+            
+            if count < 5:
+                logger.info("Buffer: Low questions, generating", topic=topic, count=count)
+                await self.generate_quiz_batch(topic, user_id, target_size=10)
+                
+        except Exception as e:
+            logger.warning("ensure_weekly_buffer error", error=str(e))
+
+    async def generate_quiz_batch(self, topic_name: str, user_id: str, target_size: int = 20, force_research: bool = False):
+        """Generates a batch of quizzes for the given topic."""
+        try:
+            # Step 0: Resolve Topic to Concept ID
+            concept_id = None
+            try:
+                concept_res = await self.neo4j_client.execute_query(
+                    "MATCH (c:Concept) WHERE toLower(c.name) = toLower($name) RETURN c.id as id LIMIT 1",
+                    {"name": topic_name}
+                )
+                if concept_res:
+                    concept_id = concept_res[0]["id"]
+            except Exception:
+                pass
+
+            # Step 1: Check existing
+            existing_pool = []
+            if concept_id:
+                db_quizzes = await self.pg_client.execute_query(
+                    "SELECT id FROM quizzes WHERE concept_id = :cid LIMIT 50",
+                    {"cid": concept_id}
+                )
+                existing_pool = db_quizzes
+
+            needed = target_size - len(existing_pool)
+            
+            if needed <= 0 and not force_research:
+                return {"status": "sufficient", "count": len(existing_pool)}
+
+            # Generate logic
+            research_agent = WebResearchAgent(self.neo4j_client, self.pg_client)
+            
+            research_result = await research_agent.research_topic(
+                topic=topic_name,
+                user_id=user_id,
+                force=force_research,
+            )
+            
+            content_parts = []
+            # Gather Notes
+            notes = await self.pg_client.execute_query(
+                "SELECT content_text FROM notes WHERE user_id = :uid AND (content_text ILIKE :pat OR title ILIKE :pat) LIMIT 5",
+                {"uid": user_id, "pat": f"%{topic_name}%"}
+            )
+            for note in notes:
+                content_parts.append(note.get("content_text", "")[:2000])
+
+             # Gather Concepts
+            concepts = await self.neo4j_client.execute_query(
+                "MATCH (c:Concept) WHERE toLower(c.name) CONTAINS toLower($topic) RETURN c.name, c.definition LIMIT 5",
+                {"topic": topic_name}
+            )
+            for c in concepts:
+                content_parts.append(f"{c['name']}: {c['definition']}")
+
+            if research_result.get("summary"):
+                content_parts.append(research_result["summary"])
+            
+            content_text = "\n\n".join(content_parts)
+            
+            # LLM
+            llm = get_chat_model(temperature=0.7)
+            batch_size = max(5, needed + 5)
+            
+            prompt = f"""Generate {batch_size} multiple choice quiz questions about {topic_name}.
+CONTENT: {content_text[:6000]}
+Return JSON {{ "questions": [ {{ "question": "...", "options": [], "correct_answer": "...", "explanation": "..." }} ] }}.
+Rules: Exactly {batch_size} questions."""
+
+            response = await llm.ainvoke(prompt)
+            raw = response.content.strip()
+             # Clean JSON
+            if raw.startswith("```json"):
+                raw = raw.split("```json")[1].split("```")[0].strip()
+            elif raw.startswith("```"):
+                raw = raw.split("```")[1].split("```")[0].strip()
+            
+            data = json.loads(raw)
+            new_questions = data.get("questions", [])
+            
+            saved_count = 0
+            for q in new_questions:
+                q_id = str(uuid.uuid4())
+                await self.pg_client.execute_update(
+                    """
+                    INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type, 
+                                            options_json, correct_answer, explanation, created_at, source)
+                    VALUES (:id, :uid, :cid, :q_text, 'mcq', :opts, :correct, :exp, NOW(), 'batch_gen')
+                    """,
+                    {
+                        "id": q_id,
+                        "uid": user_id,
+                        "cid": concept_id,
+                        "q_text": q["question"],
+                        "opts": json.dumps(q["options"]),
+                        "correct": q["correct_answer"],
+                        "exp": q["explanation"]
+                    }
+                )
+                saved_count += 1
+            
+            return {"status": "generated", "generated": saved_count}
+            
+        except Exception as e:
+            logger.error("generate_quiz_batch error", error=str(e))
+            return {"status": "error", "error": str(e)}

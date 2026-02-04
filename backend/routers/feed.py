@@ -1,6 +1,8 @@
 """Feed Router - Active Recall Feed Endpoints."""
 
 import json
+import uuid
+import random
 from typing import Optional
 
 import structlog
@@ -79,7 +81,13 @@ async def get_feed(
             domains=parsed_domains,
         )
         
-        return await feed_service.get_feed(request)
+        response = await feed_service.get_feed(request)
+        
+        # Inject Daily Goal & Trigger Pre-gen Buffer
+        response.daily_goal = await feed_service.get_daily_goal(request.user_id)
+        asyncio.create_task(feed_service.ensure_weekly_buffer(request.user_id))
+        
+        return response
         
     except HTTPException:
         raise
@@ -162,6 +170,7 @@ async def get_user_stats(
         sr_stats = await sr_service.get_user_stats(user_id)
         streak = await feed_service.get_user_streak(user_id)
         completed_today = await feed_service.get_completed_today(user_id)
+        daily_goal = await feed_service.get_daily_goal(user_id)
         domains = await feed_service.get_user_domains(user_id)
         
         # Get concept count from Neo4j
@@ -203,6 +212,7 @@ async def get_user_stats(
             daily_activity=daily_activity,
             due_today=sr_stats.get("due_today", 0),
             completed_today=completed_today,
+            daily_goal=daily_goal,
             overdue=sr_stats.get("overdue", 0),
         )
         
@@ -348,7 +358,8 @@ async def toggle_save(
 class TopicQuizRequest(BaseModel):
     """Request for generating a quiz on a topic."""
     user_id: str = "00000000-0000-0000-0000-000000000001"
-    num_questions: int = 5
+    # Target pool size (internal preference, user doesn't specify)
+    target_pool_size: int = 20
     force_research: bool = False
 
 
@@ -369,145 +380,25 @@ async def generate_topic_quiz(
     """
     Generate a quiz on a specific topic.
     
-    1. Searches for resources linked to the topic
-    2. If insufficient resources, uses web research to create notes
-    3. Generates MCQ questions from the content
-    4. Returns quiz questions
-    
-    Use this from the Graph view to quiz yourself on any topic.
+    Delegates to FeedService for batch generation.
+    Returns a subset of questions for immediate practice.
     """
     try:
         pg_client = await get_postgres_client()
         neo4j_client = await get_neo4j_client()
-        
-        research_agent = WebResearchAgent(neo4j_client, pg_client)
-        
-        # Step 1: Check if we have enough resources
         user_id = str(current_user["id"])
-        research_result = await research_agent.research_topic(
-            topic=topic_name,
+        
+        feed_service = FeedService(pg_client, neo4j_client)
+        
+        return await feed_service.generate_quiz_batch(
+            topic_name=topic_name,
             user_id=user_id,
-            force=request.force_research,
+            target_size=request.target_pool_size,
+            force_research=request.force_research,
         )
-        
-        # Step 2: Gather content for quiz generation
-        content_parts = []
-        
-        # Get notes related to topic
-        notes_query = """
-        SELECT title, content_text, resource_type
-        FROM notes
-        WHERE user_id = :user_id
-          AND (content_text ILIKE :topic_pattern OR title ILIKE :topic_pattern)
-        LIMIT 5
-        """
-        
-        notes = await pg_client.execute_query(
-            notes_query,
-            {"user_id": request.user_id, "topic_pattern": f"%{topic_name}%"}
-        )
-        
-        for note in notes:
-            content_parts.append(note.get("content_text", "")[:2000])
-        
-        # Get concept definitions from Neo4j
-        concepts = await neo4j_client.execute_query(
-            """
-            MATCH (c:Concept)
-            WHERE toLower(c.name) CONTAINS toLower($topic)
-            RETURN c.name as name, c.definition as definition
-            LIMIT 5
-            """,
-            {"topic": topic_name}
-        )
-        
-        for concept in concepts:
-            if concept.get("definition"):
-                content_parts.append(f"{concept['name']}: {concept['definition']}")
-        
-        # Add research summary if available
-        if research_result.get("researched") and research_result.get("summary"):
-            content_parts.append(research_result["summary"])
-            content_parts.extend(research_result.get("key_points", []))
-        
-        if not content_parts or len(content_parts) < 2:
-            # Fallback: Content insufficient, trigger deep research
-            logger.info("generate_topic_quiz: Content insufficient, forcing research", topic=topic_name)
-            
-            research_result = await research_agent.research_topic(
-                topic=topic_name,
-                user_id=user_id,
-                force=True, # Force research since we need content
-            )
-            
-            if research_result.get("summary"):
-                content_parts.append(research_result["summary"])
-                content_parts.extend(research_result.get("key_points", []))
-            else:
-                 # Last resort fallback if research fails
-                 content_parts.append(f"Generate general knowledge questions about {topic_name}.")
-        
-        # Step 3: Generate quiz questions using LLM (Gemini)
-        llm = get_chat_model(temperature=0.5)
-        
-        content_text = "\n\n".join(content_parts)
-        
-        prompt = f"""Generate {request.num_questions} multiple choice quiz questions about {topic_name}.
 
-CONTENT TO USE:
-{content_text[:4000]}
-
-Return JSON:
-{{
-    "questions": [
-        {{
-            "question": "What is...?",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
-            "correct_answer": "Option A",
-            "explanation": "Brief explanation of why this is correct"
-        }}
-    ]
-}}
-
-Rules:
-1. Questions should test understanding, not just memorization
-2. Make wrong options plausible but clearly incorrect
-3. Keep explanations concise
-4. Base questions ONLY on the provided content"""
-        
-        response = await llm.ainvoke(prompt)
-        content = response.content.strip()
-        
-        # Handle markdown code blocks
-        if content.startswith("```json"):
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif content.startswith("```"):
-            content = content.split("```")[1].split("```")[0].strip()
-        
-        data = json.loads(content)
-        questions = data.get("questions", [])
-        
-        logger.info(
-            "generate_topic_quiz",
-            topic=topic_name,
-            num_questions=len(questions),
-            researched=research_result.get("researched", False),
-        )
-        
-        return {
-            "topic": topic_name,
-            "questions": questions,
-            "num_questions": len(questions),
-            "sources_used": len(content_parts),
-            "researched": research_result.get("researched", False),
-            "research_note_id": research_result.get("note_id"),
-        }
-        
     except HTTPException:
         raise
-    except json.JSONDecodeError as e:
-        logger.error("Quiz generation: JSON parse error", error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to generate quiz questions")
     except Exception as e:
         logger.error("Quiz generation: Error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
