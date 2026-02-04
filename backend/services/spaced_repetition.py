@@ -12,10 +12,10 @@ When a user reviews an item, they rate their recall quality (0-5):
 - 5: Perfect recall
 """
 
+import structlog
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-
-import structlog
 from pydantic import BaseModel
 
 from backend.models.feed_schemas import DifficultyLevel, SM2Data, ReviewResult
@@ -308,6 +308,25 @@ class SpacedRepetitionService:
                 "streak": new_streak,
             },
         )
+
+        # Log study session for activity tracking (Streak & Heatmap)
+        await self.pg_client.execute_insert(
+            """
+            INSERT INTO study_sessions 
+                (id, user_id, concept_id, reviewed_at, is_correct, difficulty, response_time_ms)
+            VALUES 
+                (:id, :user_id, :concept_id, :reviewed_at, :is_correct, :difficulty, :response_time_ms)
+            """,
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": review.user_id,
+                "concept_id": review.item_id,
+                "reviewed_at": now,
+                "is_correct": quality >= 3,
+                "difficulty": review.difficulty,
+                "response_time_ms": review.response_time_ms,
+            }
+        )
         
         logger.info(
             "SpacedRepetitionService: Review recorded",
@@ -493,3 +512,48 @@ class SpacedRepetitionService:
         except Exception as e:
             logger.error("SpacedRepetitionService: Error getting stats", error=str(e))
             return {}
+    async def get_upcoming_schedule(self, user_id: str, days: int = 30) -> list[dict]:
+        """Get count of items due for each day in the future."""
+        try:
+            today = datetime.now(timezone.utc).date()
+            
+            query = """
+                SELECT 
+                    DATE(next_review) as review_date,
+                    COUNT(*) as count
+                FROM proficiency_scores
+                WHERE user_id = :user_id
+                  AND next_review >= :today
+                GROUP BY DATE(next_review)
+                ORDER BY review_date ASC
+                LIMIT :days
+            """
+            
+            params = {
+                "user_id": user_id,
+                "today": today,
+                "days": days
+            }
+            
+            result = await self.pg_client.execute_query(query, params)
+            
+            schedule = []
+            for row in result:
+                d = row["review_date"]
+                if hasattr(d, 'date'):
+                     d = d.date()
+                
+                # Ensure it's string format YYYY-MM-DD
+                date_str = d.isoformat() if hasattr(d, 'isoformat') else str(d)
+                if 'T' in date_str:
+                    date_str = date_str.split('T')[0]
+
+                schedule.append({
+                    "date": date_str,
+                    "count": row["count"]
+                })
+                
+            return schedule
+        except Exception as e:
+            logger.error("SR Service: Error getting schedule", error=str(e))
+            return []

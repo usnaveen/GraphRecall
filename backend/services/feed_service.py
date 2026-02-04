@@ -66,32 +66,36 @@ class FeedService:
     async def get_user_streak(self, user_id: str) -> int:
         """Get the user's current streak in days."""
         try:
+            # Calculate streak: consecutive days ending today or yesterday
             result = await self.pg_client.execute_query(
                 """
                 WITH daily_activity AS (
                     SELECT DISTINCT DATE(reviewed_at) as activity_date
                     FROM study_sessions
                     WHERE user_id = :user_id
-                    ORDER BY activity_date DESC
-                )
-                SELECT COUNT(*) as streak
-                FROM (
+                    ORDER BY activity_date ASC
+                ),
+                groups AS (
                     SELECT activity_date,
-                           activity_date - ROW_NUMBER() OVER (ORDER BY activity_date DESC)::int as grp
+                           activity_date - (ROW_NUMBER() OVER (ORDER BY activity_date ASC) * INTERVAL '1 day') as grp
                     FROM daily_activity
-                ) grouped
-                WHERE grp = (
-                    SELECT activity_date - ROW_NUMBER() OVER (ORDER BY activity_date DESC)::int
-                    FROM daily_activity
-                    ORDER BY activity_date DESC
-                    LIMIT 1
+                ),
+                streak_stats AS (
+                    SELECT COUNT(*) as streak_days, MAX(activity_date) as last_activity
+                    FROM groups
+                    GROUP BY grp
                 )
+                SELECT streak_days
+                FROM streak_stats
+                WHERE last_activity >= CURRENT_DATE - INTERVAL '1 day'
+                ORDER BY last_activity DESC
+                LIMIT 1
                 """,
                 {"user_id": user_id},
             )
             
             if result:
-                return result[0].get("streak", 0)
+                return result[0].get("streak_days", 0)
             return 0
         except Exception as e:
             logger.warning("FeedService: Error getting streak", error=str(e))
@@ -283,7 +287,7 @@ class FeedService:
             # Fetch quizzes
             quizzes = await self.pg_client.execute_query(
                 """
-                SELECT id, question_text, question_type, created_at, concept_id
+                SELECT id, question_text, question_type, options_json, correct_answer, explanation, created_at, concept_id
                 FROM quizzes
                 WHERE user_id = :user_id
                 ORDER BY created_at DESC
@@ -291,6 +295,19 @@ class FeedService:
                 """,
                 {"user_id": user_id}
             )
+            
+            # Enrich with concept names in bulk (simplified)
+            # ... (keep existing)
+
+            # Parse options_json
+            for q in quizzes:
+                if q.get("options_json"):
+                     try:
+                         q["options"] = json.loads(q["options_json"])
+                     except:
+                         q["options"] = []
+                else:
+                    q["options"] = []
             
             # Enrich with concept names from Neo4j in bulk? 
             # For now, we will return list. Frontend can maybe show "General" or we try to fetch names.

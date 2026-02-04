@@ -522,5 +522,21 @@ async def get_resources_for_concept(
         }
         
     except Exception as e:
-        logger.error("Get resources: Error", error=str(e))
+@router.get("/schedule")
+async def get_active_recall_schedule(
+    current_user: dict = Depends(get_current_user),
+    days: int = Query(default=30, le=60),
+):
+    """
+    Get upcoming review schedule for the calendar.
+    Returns counts of items due per day.
+    """
+    try:
+        pg_client = await get_postgres_client()
+        sr_service = SpacedRepetitionService(pg_client)
+        
+        return await sr_service.get_upcoming_schedule(str(current_user["id"]), days)
+        
+    except Exception as e:
+        logger.error("Feed: Error getting schedule", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

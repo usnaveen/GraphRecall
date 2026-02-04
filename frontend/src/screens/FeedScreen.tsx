@@ -19,8 +19,17 @@ export function FeedScreen() {
     nextFeedItem,
     prevFeedItem,
     toggleLike,
-    toggleSave
+    toggleSave,
+    feedMode,
+    quizHistory,
+    fetchQuizHistory
   } = useAppStore();
+
+  useEffect(() => {
+    if (feedMode === 'history') {
+      fetchQuizHistory();
+    }
+  }, [feedMode]);
 
   // Filter feed items by topic if a topic filter is active
   const filteredItems = feedTopicFilter
@@ -136,6 +145,46 @@ export function FeedScreen() {
         <div className="text-center">
           <p className="text-white/60 text-lg mb-2">No items in your feed</p>
           <p className="text-white/40 text-sm">Start by adding some notes to your knowledge graph!</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Continuous Feed / History View
+  if (feedMode === 'history') {
+    return (
+      <div className="h-[calc(100vh-140px)] overflow-y-auto pb-20 px-2 scrollbar-hide pt-2">
+        <div className="max-w-lg mx-auto space-y-6">
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-[#2EFFE6]" />
+              <span className="text-sm font-heading font-bold text-white">Your Quiz Feed</span>
+            </div>
+            <span className="text-xs text-white/30 font-mono">{quizHistory.length} Items</span>
+          </div>
+
+          {quizHistory.length === 0 ? (
+            <div className="text-center py-20 bg-white/5 rounded-2xl border border-white/5">
+              <Sparkles className="w-8 h-8 text-white/20 mx-auto mb-3" />
+              <p className="text-white/40">No quizzes generated yet.</p>
+            </div>
+          ) : (
+            quizHistory.map((item, i) => (
+              <motion.div
+                key={`${item.id}-${i}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: Math.min(i * 0.05, 0.5) }}
+                className="recall-card p-5 relative"
+              >
+                <FeedCardContent item={item} />
+              </motion.div>
+            ))
+          )}
+
+          <div className="h-10 text-center text-xs text-white/20 font-mono uppercase tracking-widest pt-4">
+            End of Feed
+          </div>
         </div>
       </div>
     );
