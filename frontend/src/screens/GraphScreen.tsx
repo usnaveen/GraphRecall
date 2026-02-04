@@ -286,13 +286,16 @@ export function GraphScreen() {
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative mb-4"
+        className="relative mb-4 z-50"
       >
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
         <input
           type="text"
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            if (e.target.value === "") setSelectedNode(null);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               handleSearchFocus();
@@ -301,10 +304,33 @@ export function GraphScreen() {
           placeholder="Search concepts to quiz..."
           className="w-full pl-10 pr-4 py-3 rounded-full glass-surface text-white placeholder:text-white/40 focus:outline-none focus:border-[#B6FF2E]/50"
         />
+
+        {/* Autocomplete Suggestions */}
+        {searchQuery.trim() && searchMatches.length > 0 && !selectedNode && (
+          <div className="absolute top-full left-4 right-4 mt-2 bg-[#1a1a1f] border border-white/10 rounded-xl overflow-hidden shadow-2xl max-h-60 overflow-y-auto z-50">
+            {searchMatches.slice(0, 5).map((node) => (
+              <button
+                key={node.id}
+                onClick={() => {
+                  setSearchQuery(node.title);
+                  setSelectedNode(node);
+                  setFocusNodeId(node.id);
+                }}
+                className="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors flex items-center justify-between group"
+              >
+                <span className="text-sm text-white group-hover:text-[#B6FF2E] transition-colors">{node.title}</span>
+                {node.community && (
+                  <span className="text-[10px] text-white/30">{node.community.title}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
         {searchQuery.trim() && (
           <button
             onClick={() => startQuizForTopic(searchQuery)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 px-3 py-1.5 bg-[#B6FF2E] text-black rounded-full text-xs font-medium hover:bg-[#c5ff4d] transition-colors"
+            className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 px-3 py-1.5 bg-[#B6FF2E] text-black rounded-full text-xs font-medium hover:bg-[#c5ff4d] transition-colors shadow-lg"
           >
             <Target className="w-3 h-3" />
             Quiz Me

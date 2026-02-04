@@ -230,12 +230,13 @@ function GraphScene({
     const controls = controlsRef.current;
     const target = new THREE.Vector3(focusNode.x, focusNode.y, focusNode.z);
     const currentTarget = controls?.target ? controls.target.clone() : new THREE.Vector3(0, 0, 0);
-    const currentDistance = camera.position.distanceTo(currentTarget);
-    const distance = Math.min(320, Math.max(80, currentDistance || 120));
+
+    // Zoom closer for better visibility, especially on mobile
+    const distance = isMobile ? 60 : 80;
     const direction = camera.position.clone().sub(currentTarget).normalize();
     const desiredPosition = target.clone().add(direction.multiplyScalar(distance));
     focusRef.current = { target, position: desiredPosition, active: true };
-  }, [focusNode, camera]);
+  }, [focusNode, camera, isMobile]);
 
   useFrame(() => {
     if (!focusRef.current?.active) return;

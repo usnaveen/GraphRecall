@@ -102,7 +102,7 @@ export const feedService = {
             `${API_BASE}/feed/quiz/topic/${encodeURIComponent(topic)}`,
             {
                 method: 'POST',
-                body: JSON.stringify({ num_questions: 5, force_research: false })
+                body: JSON.stringify({ force_research: false })
             }
         );
         if (!response.ok) throw new Error('Failed to generate quiz');
