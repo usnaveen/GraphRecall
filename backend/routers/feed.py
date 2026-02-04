@@ -522,6 +522,9 @@ async def get_resources_for_concept(
         }
         
     except Exception as e:
+        logger.error("Feed: Error getting resources", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/schedule")
 async def get_active_recall_schedule(
     current_user: dict = Depends(get_current_user),
