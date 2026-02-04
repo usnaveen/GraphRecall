@@ -449,7 +449,8 @@ Guidelines:
     
     try:
         formatted = prompt.format_messages(history=history)
-        response = await llm.ainvoke(formatted)
+        # Add tag for streaming filter in chat router
+        response = await llm.with_config({"tags": ["final_response"]}).ainvoke(formatted)
         
         logger.info("generate_response_node: Complete")
         
