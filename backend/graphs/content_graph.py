@@ -87,7 +87,7 @@ async def generate_flashcards_node(state: ContentState) -> dict:
     """
     concepts = state.get("concepts", [])
     if not concepts:
-        return {"flashcards": []}
+        return {"term_cards": []}
         
     logger.info("generate_flashcards: Starting")
     
@@ -103,9 +103,9 @@ Output JSON: {{ "cards": [{{ "front": "...", "back": "..." }}] }}"""
     try:
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         data = json.loads(response.content)
-        return {"flashcards": data.get("cards", [])}
+        return {"term_cards": data.get("cards", [])}
     except:
-        return {"flashcards": []}
+        return {"term_cards": []}
 
 
 async def generate_diagram_node(state: ContentState) -> dict:
@@ -133,16 +133,16 @@ async def aggregate_node(state: ContentState) -> dict:
     Node 3: Aggregate parallel results.
     """
     mcqs = state.get("mcqs", [])
-    cards = state.get("flashcards", [])
+    cards = state.get("term_cards", [])
     diagram = state.get("diagram", {})
     
     logger.info("aggregate: Compiling final pack")
     
     final_pack = {
-        "summary": f"Generated {len(mcqs)} questions, {len(cards)} cards, and 1 diagram.",
+        "summary": f"Generated {len(mcqs)} questions, {len(cards)} term cards, and 1 diagram.",
         "content": {
             "mcqs": mcqs,
-            "flashcards": cards,
+            "term_cards": cards,
             "diagram": diagram
         }
     }
