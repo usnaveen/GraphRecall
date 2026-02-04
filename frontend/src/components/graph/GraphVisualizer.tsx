@@ -92,7 +92,7 @@ function Node({
   );
 }
 
-function Link({ link, isHighlighted }: { link: Link3D; isHighlighted: boolean }) {
+function Link({ link, isHighlighted, sourceNodeId, targetNodeId }: { link: Link3D; isHighlighted: boolean; sourceNodeId?: string; targetNodeId?: string }) {
   const lineRef = useRef<any>(null);
   const points = useMemo(() => {
     return [
@@ -104,6 +104,18 @@ function Link({ link, isHighlighted }: { link: Link3D; isHighlighted: boolean })
   const thickness = useMemo(() => calculateLinkThickness(link.weight), [link.weight]);
   const baseOpacity = isHighlighted ? 0.9 : 0.5;
 
+  // Determine color based on relationship direction relative to selected node
+  let color = isHighlighted ? "#ffffff" : "#888888";
+  if (isHighlighted) {
+    if (sourceNodeId && link.source.id === sourceNodeId) {
+      // Outgoing (Child) -> Cyan/Green
+      color = "#2EFFE6";
+    } else if (targetNodeId && link.target.id === targetNodeId) {
+      // Incoming (Parent) -> Purple/Pink
+      color = "#DF2EFF";
+    }
+  }
+
   useFrame(({ clock }) => {
     if (!lineRef.current) return;
     const t = (Math.sin(clock.elapsedTime * 3) + 1) / 2;
@@ -112,13 +124,14 @@ function Link({ link, isHighlighted }: { link: Link3D; isHighlighted: boolean })
     if (lineRef.current.material.linewidth !== undefined) {
       lineRef.current.material.linewidth = (isHighlighted ? thickness * 2 : thickness) * (1 + pulse * 0.4);
     }
+    lineRef.current.material.color.set(color);
   });
   return (
     <Line
       ref={lineRef}
       points={points}
-      color={isHighlighted ? "#ffffff" : "#888888"}
-      lineWidth={isHighlighted ? thickness * 2 : thickness}
+      color={color}
+      lineWidth={isHighlighted ? thickness * 2.5 : thickness}
       transparent
       opacity={baseOpacity}
     />
@@ -136,6 +149,49 @@ function CommunityBoundary({ community }: { community: Community }) {
         transparent
         opacity={community.computedOpacity || 0.12}
         wireframe
+      />
+    </mesh>
+  );
+}
+
+function CommunityGlow({ community }: { community: Community }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
+
+  if (!community.computedBounds) return null;
+  const bounds = community.computedBounds;
+
+  const radius = Math.max(...bounds.size) * 0.6;
+
+  useFrame(() => {
+    if (meshRef.current) {
+      const center = new THREE.Vector3(...bounds.center);
+      const dist = camera.position.distanceTo(center);
+      // Fade out when close (< 60), full opacity at distance
+      const opacity = Math.min(0.15, Math.max(0, (dist - 60) / 100));
+
+      if (dist < 40) {
+        meshRef.current.visible = false;
+      } else {
+        meshRef.current.visible = true;
+        // Pulse effect
+        const t = Date.now() * 0.001;
+        const pulse = 0.9 + Math.sin(t) * 0.1;
+        meshRef.current.scale.setScalar(pulse);
+        (meshRef.current.material as THREE.MeshBasicMaterial).opacity = opacity;
+      }
+    }
+  });
+
+  return (
+    <mesh ref={meshRef} position={bounds.center}>
+      <sphereGeometry args={[radius, 32, 32]} />
+      <meshBasicMaterial
+        color={community.computedColor || "#2A2A35"}
+        transparent
+        opacity={0.1}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
       />
     </mesh>
   );
@@ -274,14 +330,19 @@ function GraphScene({
             <meshBasicMaterial transparent opacity={0} />
           </mesh>
         )}
-        {showCommunities && visibleCommunities.map((c) => <CommunityBoundary key={c.id} community={c} />)}
+        {showCommunities && visibleCommunities.map((c) => (
+          <group key={c.id}>
+            <CommunityBoundary community={c} />
+            <CommunityGlow community={c} />
+          </group>
+        ))}
         {visibleLinks.map((link) => {
           const isHighlighted =
             (selectedNode && (link.source.id === selectedNode.id || link.target.id === selectedNode.id)) ||
             (hoveredNode && (link.source.id === hoveredNode.id || link.target.id === hoveredNode.id));
           const isPulse =
             !!pulseNodeId && (link.source.id === pulseNodeId || link.target.id === pulseNodeId);
-          return <Link key={link.id} link={link} isHighlighted={!!isHighlighted || isPulse} />;
+          return <Link key={link.id} link={link} isHighlighted={!!isHighlighted || isPulse} sourceNodeId={selectedNode?.id} targetNodeId={selectedNode?.id} />;
         })}
         {visibleNodes.map((node) => (
           <Node
@@ -297,7 +358,16 @@ function GraphScene({
         ))}
       </group>
 
-      <OrbitControls ref={controlsRef} enablePan enableZoom enableRotate />
+      <OrbitControls
+        ref={controlsRef}
+        enablePan
+        enableZoom
+        enableRotate
+        minDistance={isMobile ? 5 : 20}
+        maxDistance={500}
+        zoomSpeed={isMobile ? 2.0 : 1.0}
+        rotateSpeed={isMobile ? 1.2 : 0.8}
+      />
       <Bloom strength={isMobile ? 0.4 : 0.9} />
     </>
   );

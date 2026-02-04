@@ -4,7 +4,7 @@ import * as THREE from "three";
 
 export default function GalaxyBackground() {
   const positions = useMemo(() => {
-    const count = 1200;
+    const count = 300;
     const arr = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
       const r = 400 * Math.cbrt(Math.random());

@@ -3,6 +3,7 @@ export interface Entity {
   title: string;
   type: string;
   description: string;
+  definition?: string;
   frequency: number;
   degree: number;
   size?: number;

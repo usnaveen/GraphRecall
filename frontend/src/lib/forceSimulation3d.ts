@@ -22,6 +22,7 @@ export interface Link3D {
   target: Node3D;
   weight: number;
   description: string;
+  type?: string;
 }
 
 export interface GraphLayout {
@@ -43,15 +44,15 @@ export interface ForceConfig {
 }
 
 export const defaultForceConfig: ForceConfig = {
-  chargeStrength: -100,
-  linkDistance: 30,
-  linkStrength: 0.2,
-  collisionRadius: 6,
-  communityStrength: 0.2,
-  centerStrength: 0.02,
-  spread3D: 150,
-  levelSpacing: 40,
-  sphericalConstraint: 0.05,
+  chargeStrength: -60,
+  linkDistance: 25,
+  linkStrength: 0.4,
+  collisionRadius: 5,
+  communityStrength: 0.1,
+  centerStrength: 0.15,
+  spread3D: 100,
+  levelSpacing: 30,
+  sphericalConstraint: 0.1,
 };
 
 export const calculateNodeSize = (degree: number, frequency: number) => {
@@ -195,6 +196,7 @@ export class ForceSimulation3D {
           target: targetNode,
           weight: rel.weight,
           description: rel.description,
+          type: (rel as any).type || "RELATED",
         };
       })
       .filter((link): link is Link3D => link !== null);
