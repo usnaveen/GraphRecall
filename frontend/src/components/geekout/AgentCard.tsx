@@ -98,12 +98,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, index, onRemove }) 
                     <div className="bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-xs font-mono text-zinc-300">
                         #{agent.number}
                     </div>
-                    <div className="flex gap-2">
-                        {agent.isRAG && (
-                            <div className="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#B6FF2E] text-black border border-[#B6FF2E]">
-                                RAG CORE
-                            </div>
-                        )}
+                    <div className="flex flex-col items-end gap-2">
                         <div className={`
                  px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider
                  ${agent.rarity === 'legendary' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50' :
@@ -112,6 +107,11 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, index, onRemove }) 
                `}>
                             {RARITY_LABELS[agent.rarity]}
                         </div>
+                        {agent.isRAG && (
+                            <div className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#B6FF2E] text-black border border-[#B6FF2E] shadow-lg shadow-[#B6FF2E]/20">
+                                RAG CORE
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -130,7 +130,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, index, onRemove }) 
                         </p>
 
                         {/* Tech Specs */}
-                        <div className="space-y-3 bg-black/40 p-3 rounded-xl border border-white/5 backdrop-blur-sm">
+                        <div className="space-y-3 bg-black/80 p-4 rounded-2xl border border-white/5 backdrop-blur-md">
                             {(agent.tools && agent.tools.length > 0) && (
                                 <div>
                                     <div className="text-[10px] uppercase text-zinc-500 mb-1 font-bold">Tools & Access</div>
@@ -170,7 +170,10 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, index, onRemove }) 
                             {/* Footer Info */}
                             <div className="pt-2 mt-2 border-t border-white/5 flex justify-between text-[10px] text-zinc-600 font-mono">
                                 <span>{agent.model}</span>
-                                <span>{agent.createdDate}</span>
+                                <div className="flex gap-3">
+                                    {agent.commitSha && <span>SHA: {agent.commitSha}</span>}
+                                    <span>{agent.createdDate}</span>
+                                </div>
                             </div>
                         </div>
                     </div>

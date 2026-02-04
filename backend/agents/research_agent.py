@@ -9,10 +9,12 @@ This agent:
 
 import json
 import uuid
+import re
 from datetime import datetime
 from typing import Optional
 
 import structlog
+from langchain_core.output_parsers import JsonOutputParser
 from backend.config.llm import get_chat_model
 from pydantic import BaseModel
 
@@ -194,7 +196,9 @@ WEB RESEARCH RESULTS:
 
 Create comprehensive study notes from this research.
 
-Return JSON:
+Return ONLY raw JSON (no markdown formatting, no code blocks).
+Ensure all strings are properly escaped, especially double quotes inside the content.
+
 {{
     "summary": "2-3 sentence overview of the topic",
     "key_points": [
@@ -202,7 +206,7 @@ Return JSON:
         "Important point 2",
         "Important point 3"
     ],
-    "note_content": "Full markdown notes with sections, examples, and key concepts. Include citations like [1], [2] referencing sources.",
+    "note_content": "Full markdown notes with sections, examples, and key concepts. Include citations like [1], [2] referencing sources. Escape any double quotes inside this string.",
     "definitions": [
         {{"term": "Key Term", "definition": "Clear definition"}}
     ]
@@ -218,24 +222,21 @@ Return JSON:
                 response = await self.synthesizer.ainvoke(prompt)
                 content = response.content.strip()
                 
-                # Extract JSON from potential markdown wrapping
-                json_str = content
-                if "```json" in content:
-                    json_str = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    json_str = content.split("```")[1].split("```")[0].strip()
-                
-                # Clean up potential leading/trailing garbage
-                if not json_str.startswith("{"):
-                    start_idx = json_str.find("{")
-                    if start_idx != -1:
-                        json_str = json_str[start_idx:]
-                if not json_str.endswith("}"):
-                    end_idx = json_str.rfind("}")
-                    if end_idx != -1:
-                        json_str = json_str[:end_idx+1]
-
-                data = json.loads(json_str)
+                # Use JsonOutputParser for robust parsing
+                try:
+                    parser = JsonOutputParser()
+                    data = parser.parse(content)
+                except Exception:
+                    # Fallback: Manual cleanup for common LLM errors
+                    json_str = content
+                    if "```json" in content:
+                        json_str = content.split("```json")[1].split("```")[0].strip()
+                    elif "```" in content:
+                        json_str = content.split("```")[1].split("```")[0].strip()
+                    
+                    # Clean control characters
+                    json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_str)
+                    data = json.loads(json_str)
                 
                 return ResearchResult(
                     topic=topic,

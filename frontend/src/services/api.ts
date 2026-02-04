@@ -76,6 +76,13 @@ export const feedService = {
         return response.json();
     },
 
+    /** Get upcoming schedule */
+    getSchedule: async (days: number = 30) => {
+        const response = await authFetch(`${API_BASE}/feed/schedule?days=${days}`);
+        if (!response.ok) throw new Error('Failed to fetch schedule');
+        return response.json();
+    },
+
     /** Toggle like status for a card */
     likeItem: async (itemId: string, itemType: string) => {
         const response = await authFetch(

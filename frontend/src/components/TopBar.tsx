@@ -1,13 +1,14 @@
 import { motion } from 'framer-motion';
-import { Flame, Wifi, WifiOff } from 'lucide-react';
+import { Flame, Wifi, WifiOff, Layers, ChevronDown } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useEffect, useState } from 'react';
 import { BackendStatusPanel } from './BackendStatusPanel';
 
 export function TopBar() {
-  const { itemsReviewedToday, dailyItemLimit, userStats, setActiveTab } = useAppStore();
+  const { itemsReviewedToday, dailyItemLimit, userStats, setActiveTab, feedMode, setFeedMode } = useAppStore();
   const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
   const [statusPanelOpen, setStatusPanelOpen] = useState(false);
+  const [feedMenuOpen, setFeedMenuOpen] = useState(false);
   const progressPercent = (itemsReviewedToday / dailyItemLimit) * 100;
 
   // Check backend connection on mount
@@ -74,25 +75,59 @@ export function TopBar() {
             )}
           </button>
 
-          {/* Progress Pill */}
-          <button
-            onClick={() => setActiveTab('feed')}
-            className="glass-surface-highlight rounded-full px-4 py-1.5 flex items-center gap-3 cursor-pointer hover:bg-white/10 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progressPercent}%` }}
-                  transition={{ duration: 0.8, delay: 0.3 }}
-                  className="h-full bg-gradient-to-r from-[#B6FF2E] to-[#2EFFE6] rounded-full"
-                />
+          {/* Progress Pill / Feed Toggle */}
+          <div className="relative">
+            <button
+              onClick={() => setFeedMenuOpen(!feedMenuOpen)}
+              className="glass-surface-highlight rounded-full px-4 py-1.5 flex items-center gap-2 cursor-pointer hover:bg-white/10 transition-colors"
+            >
+              <div className="flex flex-col items-end mr-1">
+                <span className="text-[9px] text-white/40 uppercase font-bold tracking-wider leading-none mb-0.5">
+                  {feedMode === 'daily' ? 'Daily Goal' : 'Card Feed'}
+                </span>
+                <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progressPercent}%` }}
+                    className="h-full bg-gradient-to-r from-[#B6FF2E] to-[#2EFFE6] rounded-full"
+                  />
+                </div>
               </div>
-            </div>
-            <span className="text-xs font-mono text-white/80">
-              {itemsReviewedToday}/{dailyItemLimit}
-            </span>
-          </button>
+              <ChevronDown className={`w-3 h-3 text-white/40 transition-transform ${feedMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown Menu */}
+            {/* Dropdown Menu */}
+            {feedMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setFeedMenuOpen(false)} />
+                <div className="absolute top-full mt-2 right-0 w-48 glass-surface rounded-xl border border-white/10 overflow-hidden shadow-2xl z-50 flex flex-col p-1">
+                  <button
+                    onClick={() => {
+                      setFeedMode('daily');
+                      setActiveTab('feed');
+                      setFeedMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'daily' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+                  >
+                    <Flame className="w-3.5 h-3.5 text-[#B6FF2E]" />
+                    Today's Cards
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFeedMode('history');
+                      setActiveTab('feed');
+                      setFeedMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'history' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+                  >
+                    <Layers className="w-3.5 h-3.5 text-[#2EFFE6]" />
+                    Card Feed
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Streak */}
@@ -106,6 +141,6 @@ export function TopBar() {
 
       {/* Backend Status Panel */}
       <BackendStatusPanel open={statusPanelOpen} onOpenChange={setStatusPanelOpen} />
-    </motion.header>
+    </motion.header >
   );
 }
