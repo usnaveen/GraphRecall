@@ -79,7 +79,7 @@ function AuthenticatedApp() {
       <TopBar />
 
       {/* Main Content */}
-      <main className="pt-16 pb-28 px-4 min-h-screen lg:pb-10 lg:pr-24 lg:px-8">
+      <main className="pt-16 pb-32 px-4 min-h-screen lg:px-8">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -94,18 +94,11 @@ function AuthenticatedApp() {
         </AnimatePresence>
       </main>
 
-      {/* Bottom Liquid Glass Dock */}
+      {/* Liquid Glass Dock - Centered at the bottom for all views */}
       <LiquidDock
         activeTab={activeTab}
         onTabChange={setActiveTab}
         orientation="horizontal"
-        className="lg:hidden"
-      />
-      <LiquidDock
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        orientation="vertical"
-        className="hidden lg:flex"
       />
     </div>
   );
