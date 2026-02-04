@@ -42,7 +42,7 @@ class FeedService:
         self.sr_service = SpacedRepetitionService(pg_client)
         self.content_generator = ContentGeneratorAgent()
         self.web_quiz_agent = WebQuizAgent()
-        self.llm_timeout_seconds = 25
+        self.llm_timeout_seconds = 8
 
     def _basic_concept_showcase(self, concept: dict) -> dict:
         """Fallback concept showcase content without LLM calls."""
@@ -861,13 +861,13 @@ class FeedService:
         # Determine content type distribution
         allowed_types = request.item_types or list(FeedItemType)
 
-        # Prevent long-running LLM calls from timing out the feed endpoint
-        start_time = time.monotonic()
-        llm_budget = 3
-        max_llm_seconds = 12
+        # Parallelize generation
+        tasks = []
         
-        # Generate items for due concepts
-        for concept in due_concepts[:request.max_items]:
+        # Limit candidates to prevents spawning too many parallel LLM calls (e.g. max 5)
+        candidates = due_concepts[:min(request.max_items, 10)]
+        
+        for concept in candidates:
             # Randomly select a content type
             possible_types = [
                 t for t in [
@@ -875,8 +875,7 @@ class FeedService:
                     FeedItemType.MCQ,
                     FeedItemType.FILL_BLANK,
                     FeedItemType.MCQ,
-                    FeedItemType.FILL_BLANK,
-                    FeedItemType.FLASHCARD,
+                    FeedItemType.FLASHCARD, 
                     FeedItemType.MERMAID_DIAGRAM,
                 ]
                 if t in allowed_types
@@ -886,18 +885,37 @@ class FeedService:
                 continue
             
             item_type = random.choice(possible_types)
-
-            allow_llm = llm_budget > 0 and (time.monotonic() - start_time) < max_llm_seconds
-            item = await self.generate_feed_item(
-                request.user_id,
-                concept,
-                item_type,
-                allow_llm=allow_llm,
+            
+            tasks.append(
+                asyncio.create_task(
+                    self.generate_feed_item(
+                        request.user_id,
+                        concept,
+                        item_type,
+                        allow_llm=True, # We control timeout via asyncio.wait
+                    )
+                )
             )
-            if item:
-                feed_items.append(item)
-
-            if allow_llm:
+            
+        if tasks:
+            # Wait for tasks with a hard global timeout (9s for Vercel Hobby tier safety)
+            done, pending = await asyncio.wait(tasks, timeout=9.0)
+            
+            for task in done:
+                try:
+                    res = await task
+                    if res:
+                        feed_items.append(res)
+                except Exception as e:
+                    logger.warning("FeedService: Task failed", error=str(e))
+            
+            # Cancel pending tasks to free resources
+            for task in pending:
+                task.cancel()
+                
+            if not feed_items and not due_concepts:
+                 # Only if we truly have nothing and no due concepts
+                 pass
                 llm_budget -= 1
             
             # Stop if we have enough items
