@@ -16,13 +16,14 @@ from pydantic import BaseModel, Field
 class FeedItemType(str, Enum):
     """Types of items that can appear in the feed."""
 
-    FLASHCARD = "flashcard"
+    TERM_CARD = "flashcard"  # Renamed for user-facing "Term Card"
     MCQ = "mcq"
     FILL_BLANK = "fill_blank"
     INFOGRAPHIC = "infographic"  # User uploaded
-    MERMAID_DIAGRAM = "mermaid_diagram"
+    MERMAID_DIAGRAM = "diagram"
     SCREENSHOT = "screenshot"  # User uploaded
     CONCEPT_SHOWCASE = "concept_showcase"
+    CODE_CHALLENGE = "code_challenge"
 
 
 class DifficultyLevel(str, Enum):
@@ -35,12 +36,12 @@ class DifficultyLevel(str, Enum):
 
 
 # ============================================================================
-# Flashcard Models
+# Term Card Models (Formerly Flashcards)
 # ============================================================================
 
 
-class FlashcardBase(BaseModel):
-    """Base flashcard model."""
+class TermCardBase(BaseModel):
+    """Base term card model."""
 
     concept_id: str = Field(..., description="ID of the related concept")
     front: str = Field(..., description="Front of the card (question/term)")
@@ -48,15 +49,15 @@ class FlashcardBase(BaseModel):
     card_type: str = Field(default="basic", description="Type: basic, cloze, or image")
 
 
-class FlashcardCreate(FlashcardBase):
-    """Model for creating a flashcard."""
+class TermCardCreate(TermCardBase):
+    """Model for creating a term card."""
 
     user_id: str
     note_id: Optional[str] = None
 
 
-class Flashcard(FlashcardBase):
-    """Full flashcard model with metadata."""
+class TermCard(TermCardBase):
+    """Full term card model with metadata."""
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     user_id: str
@@ -97,6 +98,19 @@ class FillBlankQuestion(BaseModel):
     sentence: str = Field(..., description="Sentence with _____ for blanks")
     answers: list[str] = Field(..., description="Correct answers for blanks")
     hint: Optional[str] = None
+    difficulty: int = Field(default=5, ge=1, le=10)
+
+
+class CodeChallengeQuestion(BaseModel):
+    """Code completion or CLI command challenge."""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    concept_id: str
+    language: str  # sql, python, bash, docker, etc.
+    instruction: str
+    initial_code: Optional[str] = None
+    solution_code: str
+    explanation: str
     difficulty: int = Field(default=5, ge=1, le=10)
 
 

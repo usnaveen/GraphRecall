@@ -355,6 +355,126 @@ Output JSON format:
             raise
     
     # =========================================================================
+    # Mixed Batch Generation
+    # =========================================================================
+
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
+    )
+    async def generate_mixed_batch(
+        self,
+        topic: str,
+        definition: str,
+        related_concepts: list[str] = [],
+        count: int = 10,
+    ) -> list[dict]:
+        """
+        Generate a diverse mix of study content in a single LLM call.
+        Includes: MCQ, Term Cards, Fill-blanks, Code Challenges, and Showcases.
+        """
+        prompt = f"""Generate {count} diverse study items for the topic: {topic}.
+        
+DEFINITION: {definition}
+RELATED: {', '.join(related_concepts[:5])}
+
+Requirements:
+1. Create a HEALTHY MIX of the following 5 types:
+   - 'mcq': Multiple choice question.
+   - 'term_card': Term on front, detailed definition/explanation on back.
+   - 'fill_blank': Sentence with _____ for a key word.
+   - 'code_challenge': SQL query, NumPy/Pandas line, CLI command, or Docker instruction.
+   - 'concept_showcase': Engaging visual metaphor, tagline, and emoji.
+
+2. Structure each item in a way that matches its type requirements.
+
+Output JSON format:
+{{
+    "items": [
+        {{
+            "type": "mcq",
+            "content": {{ "question": "...", "options": [{{ "id": "A", "text": "...", "is_correct": true }}, ...], "explanation": "..." }}
+        }},
+        {{
+            "type": "term_card",
+            "content": {{ "front": "The Term", "back": "Detailed explanation..." }}
+        }},
+        {{
+            "type": "fill_blank",
+            "content": {{ "sentence": "...", "answers": ["word"], "hint": "..." }}
+        }},
+        {{
+            "type": "code_challenge",
+            "content": {{ 
+                "language": "sql|python|bash|docker", 
+                "instruction": "...", 
+                "initial_code": "optional", 
+                "solution_code": "...", 
+                "explanation": "..." 
+            }}
+        }},
+        {{
+            "type": "concept_showcase",
+            "content": {{ 
+                "tagline": "...", 
+                "visual_metaphor": "...", 
+                "key_points": [], 
+                "emoji_icon": "..." 
+            }}
+        }}
+    ]
+}}
+Rules: Exactly {count} items total. Variety is key."""
+
+        try:
+            response = await self.llm.ainvoke(prompt)
+            data = _parse_llm_json(response)
+            return data.get("items", [])
+        except Exception as e:
+            logger.error("ContentGenerator: Mixed batch generation failed", error=str(e))
+            raise
+
+    # =========================================================================
+    # Specialized Generation
+    # =========================================================================
+
+    async def generate_code_challenge(
+        self,
+        topic: str,
+        definition: str,
+        difficulty: int = 5
+    ) -> CodeChallengeQuestion:
+        """Specifically generate a code-related challenge."""
+        prompt = f"""Generate a code completion or command-line challenge for: {topic}.
+CONTEXT: {definition}
+DIFFICULTY: {difficulty}/10
+
+Respond with JSON:
+{{
+    "language": "python|sql|bash|docker|css",
+    "instruction": "What is the command to...",
+    "initial_code": "optional starting point",
+    "solution_code": "The correct answer",
+    "explanation": "Why this is correct",
+    "difficulty": {difficulty}
+}}"""
+        try:
+            response = await self.llm.ainvoke(prompt)
+            parsed = _parse_llm_json(response)
+            return CodeChallengeQuestion(
+                concept_id="",
+                language=parsed["language"],
+                instruction=parsed["instruction"],
+                initial_code=parsed.get("initial_code"),
+                solution_code=parsed["solution_code"],
+                explanation=parsed["explanation"],
+                difficulty=parsed.get("difficulty", difficulty)
+            )
+        except Exception as e:
+            logger.error("ContentGenerator: Code challenge failed", error=str(e))
+            raise
+    
+    # =========================================================================
     # Concept Showcase Generation
     # =========================================================================
     

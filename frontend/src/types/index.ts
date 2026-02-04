@@ -1,6 +1,6 @@
 export type TabType = 'feed' | 'graph' | 'create' | 'assistant' | 'profile';
 
-export type CardType = 'flashcard' | 'quiz' | 'fillblank' | 'screenshot' | 'diagram' | 'concept_showcase';
+export type CardType = 'term_card' | 'quiz' | 'fillblank' | 'screenshot' | 'diagram' | 'concept_showcase' | 'code_challenge';
 
 export interface Concept {
   id: string;
@@ -30,9 +30,9 @@ export interface QuizCard {
   source_url?: string;
 }
 
-export interface Flashcard {
+export interface TermCard {
   id: string;
-  type: 'flashcard';
+  type: 'term_card' | 'flashcard';
   concept: Concept;
   source_url?: string;
 }
@@ -44,6 +44,17 @@ export interface FillBlankCard {
   answer: string;
   hint: string;
   relatedConcept: string;
+}
+
+export interface CodeCard {
+  id: string;
+  type: 'code_challenge';
+  language: string;
+  instruction: string;
+  initialCode?: string;
+  solutionCode: string;
+  explanation: string;
+  relatedConcept?: string;
 }
 
 export interface ScreenshotCard {
@@ -82,7 +93,7 @@ export interface ConceptShowcaseCard {
   relatedConcepts: string[];
 }
 
-export type FeedItem = Flashcard | QuizCard | FillBlankCard | ScreenshotCard | DiagramCard | ConceptShowcaseCard;
+export type FeedItem = TermCard | QuizCard | FillBlankCard | ScreenshotCard | DiagramCard | ConceptShowcaseCard | CodeCard;
 
 export interface DailyActivity {
   date: string;

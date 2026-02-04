@@ -1067,7 +1067,7 @@ class FeedService:
 
     async def ensure_weekly_buffer(self, user_id: str):
         """
-        Background task: Checks a random concept and ensures quiz buffer exists.
+        Background task: Checks a random concept and ensures diversified content buffer exists.
         """
         try:
             # Pick a random concept
@@ -1078,123 +1078,121 @@ class FeedService:
             
             topic = res[0]["name"]
             
-            # Check existing quiz count
+            # Check existing item count (approximate by checking quizzes)
             cnt_res = await self.pg_client.execute_query(
-                "SELECT count(*) as c FROM quizzes WHERE question_text ILIKE :topic OR explanation ILIKE :topic",
-                {"topic": f"%{topic}%"}
+                "SELECT count(*) as c FROM quizzes WHERE concept_id IN (SELECT id FROM proficiency_scores WHERE user_id = :uid)",
+                {"uid": user_id}
             )
             count = cnt_res[0]["c"] if cnt_res else 0
             
-            if count < 5:
-                logger.info("Buffer: Low questions, generating", topic=topic, count=count)
-                await self.generate_quiz_batch(topic, user_id, target_size=10)
+            if count < 20:
+                logger.info("Buffer: Low content, generating mixed batch", topic=topic, count=count)
+                await self.generate_content_batch(topic, user_id, target_size=15)
                 
         except Exception as e:
             logger.warning("ensure_weekly_buffer error", error=str(e))
 
-    async def generate_quiz_batch(self, topic_name: str, user_id: str, target_size: int = 20, force_research: bool = False):
-        """Generates a batch of quizzes for the given topic."""
+    async def generate_content_batch(self, topic_name: str, user_id: str, target_size: int = 15, force_research: bool = False):
+        """Generates a diversified batch of content (MCQs, Term Cards, Code, etc.) for a topic."""
         try:
             # Step 0: Resolve Topic to Concept ID
             concept_id = None
+            concept_def = ""
             try:
                 concept_res = await self.neo4j_client.execute_query(
-                    "MATCH (c:Concept) WHERE toLower(c.name) = toLower($name) RETURN c.id as id LIMIT 1",
+                    "MATCH (c:Concept) WHERE toLower(c.name) = toLower($name) RETURN c.id as id, c.definition as def LIMIT 1",
                     {"name": topic_name}
                 )
                 if concept_res:
                     concept_id = concept_res[0]["id"]
+                    concept_def = concept_res[0]["def"]
             except Exception:
                 pass
 
-            # Step 1: Check existing
-            existing_pool = []
-            if concept_id:
-                db_quizzes = await self.pg_client.execute_query(
-                    "SELECT id FROM quizzes WHERE concept_id = :cid LIMIT 50",
-                    {"cid": concept_id}
-                )
-                existing_pool = db_quizzes
-
-            needed = target_size - len(existing_pool)
-            
-            if needed <= 0 and not force_research:
-                return {"status": "sufficient", "count": len(existing_pool)}
-
             # Generate logic
             research_agent = WebResearchAgent(self.neo4j_client, self.pg_client)
-            
             research_result = await research_agent.research_topic(
                 topic=topic_name,
                 user_id=user_id,
                 force=force_research,
             )
             
-            content_parts = []
-            # Gather Notes
-            notes = await self.pg_client.execute_query(
-                "SELECT content_text FROM notes WHERE user_id = :uid AND (content_text ILIKE :pat OR title ILIKE :pat) LIMIT 5",
-                {"uid": user_id, "pat": f"%{topic_name}%"}
+            content_text = concept_def + "\n" + (research_result.get("summary") or "")
+            
+            # Use Mixed Generator
+            new_items = await self.content_generator.generate_mixed_batch(
+                topic=topic_name,
+                definition=content_text[:6000],
+                count=target_size
             )
-            for note in notes:
-                content_parts.append(note.get("content_text", "")[:2000])
-
-            # Gather Concepts
-            concepts = await self.neo4j_client.execute_query(
-                "MATCH (c:Concept) WHERE toLower(c.name) CONTAINS toLower($topic) RETURN c.name as name, c.definition as definition LIMIT 5",
-                {"topic": topic_name}
-            )
-            for c in concepts:
-                content_parts.append(f"{c['name']}: {c['definition']}")
-
-            if research_result.get("summary"):
-                content_parts.append(research_result["summary"])
-            
-            content_text = "\n\n".join(content_parts)
-            
-            # LLM
-            llm = get_chat_model(temperature=0.7)
-            batch_size = max(5, needed + 5)
-            
-            prompt = f"""Generate {batch_size} multiple choice quiz questions about {topic_name}.
-CONTENT: {content_text[:6000]}
-Return JSON {{ "questions": [ {{ "question": "...", "options": [], "correct_answer": "...", "explanation": "..." }} ] }}.
-Rules: Exactly {batch_size} questions."""
-
-            response = await llm.ainvoke(prompt)
-            raw = response.content.strip()
-             # Clean JSON
-            if raw.startswith("```json"):
-                raw = raw.split("```json")[1].split("```")[0].strip()
-            elif raw.startswith("```"):
-                raw = raw.split("```")[1].split("```")[0].strip()
-            
-            data = json.loads(raw)
-            new_questions = data.get("questions", [])
             
             saved_count = 0
-            for q in new_questions:
-                q_id = str(uuid.uuid4())
-                await self.pg_client.execute_update(
-                    """
-                    INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type, 
-                                            options_json, correct_answer, explanation, created_at, source)
-                    VALUES (:id, :uid, :cid, :q_text, 'mcq', :opts, :correct, :exp, NOW(), 'batch_gen')
-                    """,
-                    {
-                        "id": q_id,
-                        "uid": user_id,
-                        "cid": concept_id,
-                        "q_text": q["question"],
-                        "opts": json.dumps(q["options"]),
-                        "correct": q["correct_answer"],
-                        "exp": q["explanation"]
-                    }
-                )
-                saved_count += 1
+            for item in new_items:
+                itype = item.get("type")
+                content = item.get("content")
+                if not content: continue
+
+                try:
+                    item_id = str(uuid.uuid4())
+                    
+                    if itype in ["mcq", "fill_blank", "code_challenge"]:
+                        # Save to quizzes table
+                        await self.pg_client.execute_update(
+                            """
+                            INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type, 
+                                                options_json, correct_answer, explanation, created_at, source, 
+                                                language, initial_code)
+                            VALUES (:id, :uid, :cid, :q_text, :q_type, :opts, :correct, :exp, NOW(), 'batch_gen', :lang, :icode)
+                            """,
+                            {
+                                "id": item_id,
+                                "uid": user_id,
+                                "cid": concept_id,
+                                "q_text": content.get("question") or content.get("instruction") or content.get("sentence"),
+                                "q_type": itype,
+                                "opts": json.dumps(content.get("options", [])),
+                                "correct": str(content.get("is_correct") or content.get("solution_code") or content.get("answers", [""])[0]),
+                                "exp": content.get("explanation", ""),
+                                "lang": content.get("language"),
+                                "icode": content.get("initial_code")
+                            }
+                        )
+                    elif itype == "term_card":
+                        # Save to flashcards table
+                        await self.pg_client.execute_update(
+                            """
+                            INSERT INTO flashcards (id, user_id, concept_id, front_content, back_content, created_at, source)
+                            VALUES (:id, :uid, :cid, :front, :back, NOW(), 'batch_gen')
+                            """,
+                            {
+                                "id": item_id,
+                                "uid": user_id,
+                                "cid": concept_id,
+                                "front": content.get("front"),
+                                "back": content.get("back")
+                            }
+                        )
+                    else:
+                        # Save to generated_content table
+                        await self.pg_client.execute_update(
+                            """
+                            INSERT INTO generated_content (id, user_id, concept_id, content_type, content_json, created_at)
+                            VALUES (:id, :uid, :cid, :ctype, :cjson, NOW())
+                            """,
+                            {
+                                "id": item_id,
+                                "uid": user_id,
+                                "cid": concept_id or "unknown",
+                                "ctype": itype,
+                                "cjson": json.dumps(content)
+                            }
+                        )
+                    saved_count += 1
+                except Exception as e:
+                    logger.warning("FeedService: Failed to save batch item", type=itype, error=str(e))
             
             return {"status": "generated", "generated": saved_count}
             
         except Exception as e:
-            logger.error("generate_quiz_batch error", error=str(e))
+            logger.error("generate_content_batch error", error=str(e))
             return {"status": "error", "error": str(e)}
