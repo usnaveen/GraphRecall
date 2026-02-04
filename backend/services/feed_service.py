@@ -1109,9 +1109,9 @@ class FeedService:
             for note in notes:
                 content_parts.append(note.get("content_text", "")[:2000])
 
-             # Gather Concepts
+            # Gather Concepts
             concepts = await self.neo4j_client.execute_query(
-                "MATCH (c:Concept) WHERE toLower(c.name) CONTAINS toLower($topic) RETURN c.name, c.definition LIMIT 5",
+                "MATCH (c:Concept) WHERE toLower(c.name) CONTAINS toLower($topic) RETURN c.name as name, c.definition as definition LIMIT 5",
                 {"topic": topic_name}
             )
             for c in concepts:
