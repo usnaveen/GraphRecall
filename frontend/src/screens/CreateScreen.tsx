@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, Image, FileText, Link2, Check,
-  Save, AlertCircle, Cpu, Database, Brain, Zap,
+  Save, AlertCircle, Cpu, Database, Brain, Zap, Sparkles,
   FileType, HardDrive, Layers, GitBranch, Youtube, MessageSquare
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -729,9 +729,9 @@ export function CreateScreen() {
                 </div>
                 <div className="flex items-center gap-2 text-white/80">
                   <div className="w-4 h-4 rounded-full bg-[#9B59B6]/20 flex items-center justify-center">
-                    <Check className="w-3 h-3 text-[#9B59B6]" />
+                    <Sparkles className="w-4 h-4 text-white/40" />
                   </div>
-                  <span>{processingMeta.flashcards_generated || 0} flashcards generated</span>
+                  <span>{processingMeta.flashcards_generated || 0} term cards generated</span>
                 </div>
                 {processingMeta.domains_detected && processingMeta.domains_detected.length > 0 && (
                   <div className="flex items-center gap-2 text-white/80">
@@ -850,7 +850,7 @@ function GeekoutPanel({ meta }: { meta: ProcessingMeta }) {
     facts.push({ icon: GitBranch, label: 'Relationships', value: `${meta.relationships_created} created`, color: 'text-[#2EFFE6]' });
   }
   if (meta.flashcards_generated) {
-    facts.push({ icon: Zap, label: 'Flashcards', value: `${meta.flashcards_generated} generated`, color: 'text-pink-400' });
+    facts.push({ icon: Zap, label: 'Term Cards', value: `${meta.flashcards_generated} generated`, color: 'text-pink-400' });
   }
 
   if (facts.length === 0) return null;
