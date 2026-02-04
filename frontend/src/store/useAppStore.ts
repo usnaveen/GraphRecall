@@ -255,7 +255,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         feedItems: transformedItems,
         itemsReviewedToday: data.completed_today,
-        dailyItemLimit: data.total_due_today + data.completed_today,
+        dailyItemLimit: data.daily_goal !== undefined ? data.daily_goal : (data.total_due_today + data.completed_today),
         isLoading: false,
         error: null
       });

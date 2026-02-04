@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { BackendStatusPanel } from './BackendStatusPanel';
 
 export function TopBar() {
-  const { itemsReviewedToday, dailyItemLimit, userStats } = useAppStore();
+  const { itemsReviewedToday, dailyItemLimit, userStats, setActiveTab } = useAppStore();
   const [backendStatus, setBackendStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
   const [statusPanelOpen, setStatusPanelOpen] = useState(false);
   const progressPercent = (itemsReviewedToday / dailyItemLimit) * 100;
@@ -75,7 +75,10 @@ export function TopBar() {
           </button>
 
           {/* Progress Pill */}
-          <div className="glass-surface-highlight rounded-full px-4 py-1.5 flex items-center gap-3">
+          <button
+            onClick={() => setActiveTab('feed')}
+            className="glass-surface-highlight rounded-full px-4 py-1.5 flex items-center gap-3 cursor-pointer hover:bg-white/10 transition-colors"
+          >
             <div className="flex items-center gap-2">
               <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
                 <motion.div
@@ -89,7 +92,7 @@ export function TopBar() {
             <span className="text-xs font-mono text-white/80">
               {itemsReviewedToday}/{dailyItemLimit}
             </span>
-          </div>
+          </button>
         </div>
 
         {/* Streak */}
