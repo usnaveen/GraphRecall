@@ -93,6 +93,7 @@ interface AppState {
   deleteNote: (id: string) => Promise<void>;
   deleteConcept: (id: string) => Promise<void>;
   deleteUpload: (id: string) => Promise<void>;
+  submitReview: (itemId: string, itemType: string, difficulty: 'again' | 'hard' | 'good' | 'easy', autoAdvance?: boolean) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -393,6 +394,40 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ savedItems: newSaved });
     } catch (error) {
       console.error("Failed to toggle save:", error);
+    }
+  },
+
+  submitReview: async (itemId: string, itemType: string, difficulty: 'again' | 'hard' | 'good' | 'easy', autoAdvance = true) => {
+    const state = get();
+    try {
+      // adapt types for backend
+      let backendType = itemType;
+      if (itemType === 'flashcard' || itemType === 'term_card') backendType = 'flashcard';
+      if (itemType === 'quiz') backendType = 'mcq';
+      if (itemType === 'fillblank') backendType = 'fill_blank';
+
+      // Record review in backend
+      await feedService.recordReview(itemId, backendType, difficulty);
+
+      // Update local stats
+      set({
+        itemsReviewedToday: state.itemsReviewedToday + 1,
+      });
+
+      // Fetch stats asynchronously to update streak/heatmap
+      get().fetchStats();
+
+      // Move to next item if requested
+      if (autoAdvance) {
+        get().nextFeedItem();
+      }
+
+    } catch (error) {
+      console.error("Failed to submit review:", error);
+      // If error (e.g. network), should we act?
+      if (autoAdvance) {
+        get().nextFeedItem();
+      }
     }
   },
 
