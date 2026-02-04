@@ -41,7 +41,7 @@ export function LiquidDock({
     };
   const dockClasses = isVertical
     ? 'liquid-glass-dock rounded-3xl px-2 py-3 flex flex-col items-center gap-2 mx-2'
-    : 'liquid-glass-dock rounded-full px-3 py-2 flex items-center gap-1 mx-4 w-fit max-w-[90vw] justify-center';
+    : 'liquid-glass-dock rounded-full px-4 py-2 flex items-center gap-4 mx-4 w-fit max-w-[90vw] justify-center';
   const tooltipClass = isVertical
     ? 'absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-black/80 rounded-md text-[10px] text-white/80 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none'
     : 'absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-black/80 rounded-md text-[10px] text-white/80 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none';

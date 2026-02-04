@@ -434,14 +434,9 @@ function QuizContent({ quiz }: { quiz: any }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-[#B6FF2E]/20 flex items-center justify-center">
-            <span className="text-xs text-[#B6FF2E]">?</span>
-          </div>
-          <span className="text-xs font-mono text-[#B6FF2E] uppercase tracking-wider">Quiz Time</span>
-        </div>
+      {/* Subtle Header */}
+      <div className="flex items-center justify-between mb-2 min-h-[24px]">
+        <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">Quiz Card</span>
 
         {quiz.source_url && (
           <a
@@ -457,76 +452,96 @@ function QuizContent({ quiz }: { quiz: any }) {
         )}
       </div>
 
-      {/* Question */}
-      <p className="text-white text-lg font-medium mb-6">
-        {quiz.question}
-      </p>
+      {/* Grouped Question Block */}
+      <div className="flex-1 flex flex-col justify-center my-2">
+        <h3 className="text-xl md:text-2xl font-bold text-white leading-relaxed mb-6">
+          {quiz.question}
+        </h3>
 
-      {/* Options */}
-      <div className="space-y-2 flex-1 overflow-y-auto scrollbar-hide min-h-0 overscroll-contain touch-pan-y">
-        {quiz.options.map((option: QuizOption, i: number) => {
-          const isSelected = selectedOption === option.id;
-          const showCorrect = showResult && option.isCorrect;
-          const showWrong = showResult && isSelected && !option.isCorrect;
+        {/* Options */}
+        <div className="space-y-3">
+          {quiz.options.map((option: QuizOption, i: number) => {
+            const isSelected = selectedOption === option.id;
+            const showCorrect = showResult && option.isCorrect;
+            const showWrong = showResult && isSelected && !option.isCorrect;
 
-          return (
-            <motion.button
-              key={option.id}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.05 }}
-              onClick={() => handleSelect(option.id)}
-              disabled={showResult}
-              className={`
-                w-full p-3 rounded-xl text-left text-sm transition-all duration-200
-                ${showCorrect
-                  ? 'bg-green-500/20 border border-green-500/50 text-green-400'
-                  : showWrong
-                    ? 'bg-red-500/20 border border-red-500/50 text-red-400'
-                    : isSelected
-                      ? 'bg-[#B6FF2E]/20 border border-[#B6FF2E]/50 text-[#B6FF2E]'
-                      : 'bg-white/5 border border-white/10 text-white/80 hover:bg-white/10'
-                }
-              `}
-            >
-              <div className="flex items-center gap-3">
-                <span className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-xs font-mono shrink-0">
-                  {String.fromCharCode(65 + i)}
-                </span>
-                <span className="flex-1">{option.text}</span>
-                {showCorrect && <CheckCircle className="w-4 h-4 ml-auto shrink-0" />}
-                {showWrong && <XCircle className="w-4 h-4 ml-auto shrink-0" />}
-              </div>
-            </motion.button>
-          );
-        })}
+            // Determine styling classes
+            let wrapperClass = "group w-full p-4 rounded-xl text-left transition-all duration-200 border relative overflow-hidden";
+            let textClass = "";
+            let indicatorClass = "w-6 h-6 rounded-full border flex items-center justify-center text-[10px] font-mono shrink-0 transition-colors";
+
+            if (showCorrect) {
+              wrapperClass += " bg-green-500/20 border-green-500/50";
+              textClass = "text-green-400 font-medium";
+              indicatorClass += " bg-green-500 border-transparent text-[#07070A]";
+            } else if (showWrong) {
+              wrapperClass += " bg-red-500/10 border-red-500/50";
+              textClass = "text-red-400";
+              indicatorClass += " border-red-500 text-red-500";
+            } else if (isSelected) {
+              wrapperClass += " bg-white/10 border-white/40";
+              textClass = "text-white";
+              indicatorClass += " bg-white text-[#07070A] border-transparent";
+            } else {
+              wrapperClass += " bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20";
+              textClass = "text-white/70 group-hover:text-white";
+              indicatorClass += " border-white/20 text-white/40 group-hover:border-white/40 group-hover:text-white/60";
+            }
+
+            return (
+              <motion.button
+                key={option.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 + 0.1 }}
+                onClick={() => handleSelect(option.id)}
+                disabled={showResult}
+                className={wrapperClass}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={indicatorClass}>
+                    {showCorrect ? <CheckCircle className="w-3.5 h-3.5" /> : (
+                      showWrong ? <XCircle className="w-3.5 h-3.5" /> : String.fromCharCode(65 + i)
+                    )}
+                  </div>
+                  <span className={`flex-1 text-sm ${textClass}`}>{option.text}</span>
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Result or Submit */}
-      {showResult ? (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-4 p-3 rounded-xl bg-white/5"
-        >
-          <p className={`text-sm ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
-            {isCorrect ? '✅ Correct!' : '❌ Incorrect'}
-          </p>
-          <p className="text-xs text-white/60 mt-1">{quiz.explanation}</p>
-        </motion.div>
-      ) : (
-        <button
-          onClick={handleSubmit}
-          disabled={!selectedOption}
-          className="mt-4 w-full py-3 rounded-xl bg-[#B6FF2E] text-[#07070A] font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#c5ff4d] transition-colors"
-        >
-          Submit Answer
-        </button>
-      )}
+      {/* Footer / Submit */}
+      <div className="mt-4 pt-2">
+        {showResult ? (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="p-4 rounded-xl bg-white/5 border border-white/10"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              {isCorrect ? <CheckCircle className="w-4 h-4 text-green-400" /> : <Lightbulb className="w-4 h-4 text-[#B6FF2E]" />}
+              <span className="text-xs font-bold text-white/50 uppercase">Explanation</span>
+            </div>
+            <p className="text-sm text-white/80 leading-relaxed">{quiz.explanation}</p>
+          </motion.div>
+        ) : (
+          <button
+            onClick={handleSubmit}
+            disabled={!selectedOption}
+            className="w-full py-3.5 rounded-xl bg-[#B6FF2E] text-[#07070A] font-bold text-sm uppercase tracking-wide disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#c5ff4d] transition-all transform active:scale-98 shadow-[0_0_20px_rgba(182,255,46,0.2)] hover:shadow-[0_0_30px_rgba(182,255,46,0.4)]"
+          >
+            Check Answer
+          </button>
+        )}
+      </div>
 
-      <p className="text-xs text-white/40 mt-3 text-center">
-        Related: {quiz.relatedConcept}
-      </p>
+      <div className="mt-3 flex justify-center">
+        <span className="text-[10px] text-white/30">
+          Related: {quiz.relatedConcept || quiz.conceptName || "General"}
+        </span>
+      </div>
     </div>
   );
 }
