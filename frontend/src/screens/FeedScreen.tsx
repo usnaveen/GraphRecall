@@ -60,7 +60,7 @@ export function FeedScreen() {
   const currentItem = displayItems[adjustedIndex];
   const isLiked = currentItem && likedItems.has(currentItem.id);
   const isSaved = currentItem && savedItems.has(currentItem.id);
-  const canReact = currentItem && ['flashcard', 'quiz'].includes(currentItem.type);
+  const canReact = currentItem && ['term_card', 'flashcard', 'quiz', 'fillblank', 'code_challenge', 'screenshot', 'diagram', 'concept_showcase'].includes(currentItem.type);
 
   const handleSwipe = (direction: 'up' | 'down') => {
     if (direction === 'up') {
@@ -218,7 +218,7 @@ export function FeedScreen() {
       )}
 
       {/* Card Container */}
-      <div className="flex-1 relative flex items-center justify-center">
+      <div className="flex-1 relative flex items-center justify-center p-4">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentItem.id}
@@ -226,16 +226,16 @@ export function FeedScreen() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -40, scale: 0.92 }}
             transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-md mx-auto"
+            className="w-full max-w-md mx-auto h-[70vh] flex flex-col"
           >
-            <div className="recall-card p-5 max-h-[70vh] min-h-[400px] flex flex-col overflow-hidden">
-              {/* Card Content */}
-              <div className="flex-1">
+            <div className="recall-card p-5 flex flex-col overflow-hidden h-full">
+              {/* Card Content - Now Scrollable */}
+              <div className="flex-1 overflow-y-auto scrollbar-hide pr-1 overscroll-contain">
                 <FeedCardContent item={currentItem} />
               </div>
 
               {/* Instagram-style Action Bar */}
-              <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="mt-4 pt-4 border-t border-white/10 shrink-0">
                 <div className="flex items-center justify-between">
                   {/* Left: Like, Save, Share */}
                   <div className="flex items-center gap-4">
@@ -248,63 +248,49 @@ export function FeedScreen() {
                           className="flex items-center gap-1.5 group"
                         >
                           <motion.div
-                            animate={isLiked ? { scale: [1, 1.3, 1] } : {}}
-                            transition={{ duration: 0.3 }}
+                            className={`p-2 rounded-full transition-colors ${isLiked ? 'bg-red-500/10' : 'bg-white/5 group-hover:bg-white/10'}`}
                           >
                             <Heart
-                              className={`w-6 h-6 transition-all duration-200 ${isLiked
-                                ? 'fill-red-500 text-red-500'
-                                : 'text-white/60 group-hover:text-white'
-                                }`}
+                              className={`w-5 h-5 ${isLiked ? 'fill-red-500 text-red-500' : 'text-white/40 group-hover:text-white/60'}`}
                             />
                           </motion.div>
-                          <span className={`text-sm ${isLiked ? 'text-red-400' : 'text-white/60'}`}>
-                            {isLiked ? 'Liked' : 'Like'}
-                          </span>
                         </motion.button>
 
                         {/* Save Button */}
                         <motion.button
                           whileTap={{ scale: 0.85 }}
                           onClick={() => toggleSave(currentItem.id, currentItem.type)}
-                          className="flex items-center gap-1.5 group"
+                          className="flex items-center gap- group"
                         >
-                          <Bookmark
-                            className={`w-6 h-6 transition-all duration-200 ${isSaved
-                              ? 'fill-[#B6FF2E] text-[#B6FF2E]'
-                              : 'text-white/60 group-hover:text-white'
-                              }`}
-                          />
-                          <span className={`text-sm ${isSaved ? 'text-[#B6FF2E]' : 'text-white/60'}`}>
-                            {isSaved ? 'Saved' : 'Save'}
-                          </span>
+                          <motion.div
+                            className={`p-2 rounded-full transition-colors ${isSaved ? 'bg-[#B6FF2E]/10' : 'bg-white/5 group-hover:bg-white/10'}`}
+                          >
+                            <Bookmark
+                              className={`w-5 h-5 ${isSaved ? 'fill-[#B6FF2E] text-[#B6FF2E]' : 'text-white/40 group-hover:text-white/60'}`}
+                            />
+                          </motion.div>
                         </motion.button>
                       </>
                     )}
 
-                    {/* Share Button */}
                     <motion.button
                       whileTap={{ scale: 0.85 }}
                       onClick={handleShare}
-                      className="flex items-center gap-1.5 group"
+                      className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60 transition-colors"
                     >
-                      <Share2 className="w-6 h-6 text-white/60 group-hover:text-white transition-colors" />
-                      <span className="text-sm text-white/60">Share</span>
+                      <Share2 className="w-5 h-5" />
                     </motion.button>
                   </div>
 
-                  {/* Right: Next/Related */}
-                  <div className="flex items-center gap-2">
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => nextFeedItem()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#B6FF2E]/10 border border-[#B6FF2E]/30 text-[#B6FF2E] text-sm font-medium hover:bg-[#B6FF2E]/20 transition-colors"
-                    >
-                      Next
-                      <ChevronRight className="w-4 h-4" />
-                    </motion.button>
-                  </div>
+                  {/* Right: Next Button */}
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={nextFeedItem}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#B6FF2E] text-[#07070A] font-bold text-xs uppercase tracking-wider hover:bg-[#c5ff4d] transition-all shadow-lg shadow-[#B6FF2E]/20"
+                  >
+                    <span>Next</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </motion.button>
                 </div>
               </div>
             </div>
@@ -339,12 +325,15 @@ export function FeedScreen() {
 // Feed Card Content Component
 function FeedCardContent({ item }: { item: FeedItem }) {
   switch (item.type) {
+    case 'term_card':
     case 'flashcard':
-      return <FlashcardContent concept={item.concept} />;
+      return <TermCardContent concept={item.concept} />;
     case 'quiz':
       return <QuizContent quiz={item} />;
     case 'fillblank':
       return <FillBlankContent card={item} />;
+    case 'code_challenge':
+      return <CodeContent card={item} />;
     case 'screenshot':
       return <ScreenshotContent card={item} />;
     case 'diagram':
@@ -356,60 +345,128 @@ function FeedCardContent({ item }: { item: FeedItem }) {
   }
 }
 
-// Flashcard Content
-function FlashcardContent({ concept }: { concept: any }) {
+// Term Card Content (was Flashcard)
+function TermCardContent({ concept }: { concept: any }) {
+  const [isFlipped, setIsFlipped] = useState(false);
+
   return (
     <div className="flex flex-col h-full">
-      {/* Eyebrow */}
       <div className="flex items-center gap-2 mb-4">
-        <Lightbulb className="w-4 h-4 text-[#B6FF2E]" />
-        <span className="text-xs font-mono text-[#B6FF2E] uppercase tracking-wider">Concept</span>
+        <Layers className="w-4 h-4 text-[#B6FF2E]" />
+        <span className="text-xs font-mono text-[#B6FF2E] uppercase tracking-wider">Term Card</span>
       </div>
 
-      {/* Title */}
-      <h2 className="font-heading text-2xl font-bold text-white mb-4">
-        {concept.name}
-      </h2>
-
-      {/* Definition */}
-      <p className="text-white/80 text-base leading-relaxed mb-6">
-        {concept.definition}
-      </p>
-
-      {/* Prerequisites */}
-      <div className="mt-auto">
-        <p className="text-xs text-white/50 mb-2">Prerequisites</p>
-        <div className="flex flex-wrap gap-2">
-          {concept.prerequisites.map((prereq: string, i: number) => (
-            <motion.span
-              key={i}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.05 }}
-              className="px-3 py-1 rounded-full text-xs font-medium bg-white/5 border border-white/10 text-white/70"
-            >
-              {prereq}
-            </motion.span>
-          ))}
-        </div>
-      </div>
-
-      {/* Footer Info */}
-      <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/5">
-        <span className="text-xs text-white/50">{concept.domain}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-white/50">Complexity:</span>
-          <div className="flex gap-0.5">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <div
-                key={i}
-                className={`w-1.5 h-3 rounded-sm ${i < concept.complexity ? 'bg-[#B6FF2E]' : 'bg-white/10'
-                  }`}
-              />
-            ))}
+      <motion.div
+        onClick={() => setIsFlipped(!isFlipped)}
+        className="flex-1 cursor-pointer perspective-1000 group min-h-[300px]"
+      >
+        <motion.div
+          animate={{ rotateY: isFlipped ? 180 : 0 }}
+          transition={{ duration: 0.6, type: "spring", stiffness: 260, damping: 20 }}
+          className="relative w-full h-full preserve-3d"
+        >
+          {/* Front */}
+          <div className="absolute inset-0 backface-hidden flex flex-col items-center justify-center p-6 rounded-2xl bg-white/[0.03] border border-white/10 group-hover:border-white/20 transition-colors">
+            <h3 className="text-3xl font-bold text-white text-center mb-4">{concept.name}</h3>
+            <p className="text-xs text-white/30 uppercase tracking-widest font-mono">Tap to reveal definition</p>
           </div>
+
+          {/* Back */}
+          <div
+            className="absolute inset-0 backface-hidden flex flex-col p-6 rounded-2xl bg-[#B6FF2E]/5 border border-[#B6FF2E]/20 overflow-y-auto"
+            style={{ transform: 'rotateY(180deg)' }}
+          >
+            <h4 className="text-sm font-mono text-[#B6FF2E] mb-3 uppercase tracking-wider">Definition</h4>
+            <p className="text-lg text-white/90 leading-relaxed overflow-y-auto">
+              {concept.definition}
+            </p>
+
+            <div className="mt-auto pt-6 border-t border-white/5 space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-white/50">Complexity:</span>
+                <div className="flex gap-0.5">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`w-1.5 h-3 rounded-sm ${i < concept.complexity ? 'bg-[#B6FF2E]' : 'bg-white/10'
+                        }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </div>
+  );
+}
+
+// Code Content
+function CodeContent({ card }: { card: any }) {
+  const [showSolution, setShowSolution] = useState(false);
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex items-center justify-between mb-4 shrink-0">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-[#2EFFE6]" />
+          <span className="text-xs font-mono text-[#2EFFE6] uppercase tracking-wider">Code Challenge</span>
+        </div>
+        <span className="px-2 py-0.5 rounded bg-white/5 text-[10px] text-white/50 font-mono uppercase">{card.language}</span>
+      </div>
+
+      <div className="flex-1 flex flex-col h-full overscroll-contain">
+        <h3 className="text-lg font-bold text-white mb-4 leading-tight shrink-0">
+          {card.instruction}
+        </h3>
+
+        {card.initialCode && (
+          <div className="mb-4 p-4 rounded-xl bg-black/40 border border-white/5 font-mono text-sm text-cyan-400 overflow-x-auto shrink-0">
+            <pre>{card.initialCode}</pre>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto scrollbar-hide">
+          {showSolution ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="flex flex-col"
+            >
+              <div className="p-4 rounded-xl bg-[#2EFFE6]/10 border border-[#2EFFE6]/30 font-mono text-sm text-[#2EFFE6] mb-4 overflow-x-auto whitespace-pre shrink-0">
+                {card.solutionCode}
+              </div>
+              <div className="p-4 rounded-xl bg-white/5 border border-white/10 shrink-0">
+                <p className="text-xs font-bold text-white/40 uppercase mb-2">Explanation</p>
+                <p className="text-sm text-white/80 leading-relaxed">{card.explanation}</p>
+              </div>
+            </motion.div>
+          ) : (
+            <div className="flex-1 flex flex-col justify-center items-center p-8 rounded-xl bg-white/[0.02] border border-dashed border-white/10 group-hover:border-white/20 transition-all min-h-[200px]">
+              <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-4">
+                <Sparkles className="w-6 h-6 text-white/20" />
+              </div>
+              <p className="text-sm text-white/40 text-center italic">Try the challenge in your head or editor...</p>
+            </div>
+          )}
         </div>
       </div>
+
+      {!showSolution && (
+        <button
+          onClick={() => setShowSolution(true)}
+          className="mt-6 w-full py-4 rounded-xl bg-[#2EFFE6] text-[#07070A] font-bold text-sm uppercase tracking-wider hover:bg-[#4dffeb] transition-all transform active:scale-98 shadow-[0_0_20px_rgba(46,255,230,0.2)] shrink-0"
+        >
+          Reveal Solution
+        </button>
+      )}
+
+      {card.relatedConcept && (
+        <p className="text-[10px] text-white/30 mt-4 text-center italic shrink-0">
+          Focus: {card.relatedConcept}
+        </p>
+      )}
     </div>
   );
 }
