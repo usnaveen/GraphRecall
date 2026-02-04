@@ -74,7 +74,7 @@ async def seed_content(file_path: str):
         log("✅ Ingestion Complete!")
         log(f"   - Note ID: {result.get('note_id')}")
         log(f"   - Concepts Created: {len(result.get('concept_ids', []))}")
-        log(f"   - Flashcards Created: {len(result.get('flashcard_ids', []))}")
+        log(f"   - Flashcards Created: {len(result.get('term_card_ids', []))}")
         
         # 2. Trigger Feed Generation
         log("\n🔄 generating Feed and Stats...")
@@ -116,7 +116,7 @@ async def seed_content(file_path: str):
         print("✅ Ingestion Complete!")
         print(f"   - Note ID: {result.get('note_id')}")
         print(f"   - Concepts Created: {len(result.get('concept_ids', []))}")
-        print(f"   - Flashcards Created: {len(result.get('flashcard_ids', []))}")
+        print(f"   - Flashcards Created: {len(result.get('term_card_ids', []))}")
         
         # 2. Trigger Feed Generation
         print("\n🔄 generating Feed and Stats...")
