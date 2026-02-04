@@ -916,11 +916,6 @@ class FeedService:
             if not feed_items and not due_concepts:
                  # Only if we truly have nothing and no due concepts
                  pass
-                llm_budget -= 1
-            
-            # Stop if we have enough items
-            if len(feed_items) >= request.max_items:
-                break
         
         # Add user uploads if allowed
         if (
