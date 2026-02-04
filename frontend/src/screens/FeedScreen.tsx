@@ -6,7 +6,7 @@ import {
   Sparkles, ArrowRight, Globe, Layers, X, Filter, ExternalLink
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import type { FeedItem, QuizOption, ConceptShowcaseCard } from '../types';
+import type { FeedItem, QuizOption, ConceptShowcaseCard, TermCard } from '../types';
 
 export function FeedScreen() {
   const {
@@ -327,7 +327,7 @@ function FeedCardContent({ item }: { item: FeedItem }) {
   switch (item.type) {
     case 'term_card':
     case 'flashcard':
-      return <TermCardContent concept={item.concept} />;
+      return <TermCardContent item={item} />;
     case 'quiz':
       return <QuizContent quiz={item} />;
     case 'fillblank':
@@ -346,8 +346,10 @@ function FeedCardContent({ item }: { item: FeedItem }) {
 }
 
 // Term Card Content (was Flashcard)
-function TermCardContent({ concept }: { concept: any }) {
+function TermCardContent({ item }: { item: TermCard }) {
   const [isFlipped, setIsFlipped] = useState(false);
+  const { submitReview } = useAppStore();
+  const concept = item.concept;
 
   return (
     <div className="flex flex-col h-full">
@@ -366,33 +368,43 @@ function TermCardContent({ concept }: { concept: any }) {
           className="relative w-full h-full preserve-3d"
         >
           {/* Front */}
-          <div className="absolute inset-0 backface-hidden flex flex-col items-center justify-center p-6 rounded-2xl bg-white/[0.03] border border-white/10 group-hover:border-white/20 transition-colors">
+          <div className="absolute inset-0 backface-hidden flex flex-col items-center justify-center p-6 rounded-3xl glass-surface border border-white/10 group-hover:border-[#B6FF2E]/30 transition-colors shadow-2xl">
             <h3 className="text-3xl font-bold text-white text-center mb-4">{concept.name}</h3>
-            <p className="text-xs text-white/30 uppercase tracking-widest font-mono">Tap to reveal definition</p>
+            <div className="absolute bottom-8 flex flex-col items-center gap-2 opacity-40">
+              <span className="text-[10px] uppercase tracking-[0.2em]">Tap to Flip</span>
+              <div className="w-8 h-1 bg-white/20 rounded-full" />
+            </div>
           </div>
 
           {/* Back */}
           <div
-            className="absolute inset-0 backface-hidden flex flex-col p-6 rounded-2xl bg-[#B6FF2E]/5 border border-[#B6FF2E]/20 overflow-y-auto"
+            className="absolute inset-0 backface-hidden flex flex-col p-6 rounded-3xl bg-gradient-to-br from-[#1A1A1A] to-[#0A0A0A] border border-[#B6FF2E]/20 overflow-hidden"
             style={{ transform: 'rotateY(180deg)' }}
           >
-            <h4 className="text-sm font-mono text-[#B6FF2E] mb-3 uppercase tracking-wider">Definition</h4>
-            <p className="text-lg text-white/90 leading-relaxed overflow-y-auto">
-              {concept.definition}
-            </p>
+            <div className="overflow-y-auto flex-1 pr-2 scrollbar-hide">
+              <h4 className="text-xs font-mono text-[#B6FF2E] mb-3 uppercase tracking-wider opacity-60">Definition</h4>
+              <p className="text-lg text-white/90 leading-relaxed font-medium">
+                {concept.definition}
+              </p>
+            </div>
 
-            <div className="mt-auto pt-6 border-t border-white/5 space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-white/50">Complexity:</span>
-                <div className="flex gap-0.5">
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className={`w-1.5 h-3 rounded-sm ${i < concept.complexity ? 'bg-[#B6FF2E]' : 'bg-white/10'
-                        }`}
-                    />
-                  ))}
-                </div>
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <p className="text-center text-xs text-white/40 mb-3 uppercase tracking-wider">How well did you know this?</p>
+              <div className="grid grid-cols-4 gap-2" onClick={(e) => e.stopPropagation()}>
+                {[
+                  { label: 'Again', value: 'again', color: 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20' },
+                  { label: 'Hard', value: 'hard', color: 'bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20' },
+                  { label: 'Good', value: 'good', color: 'bg-[#B6FF2E]/10 text-[#B6FF2E] border-[#B6FF2E]/20 hover:bg-[#B6FF2E]/20' },
+                  { label: 'Easy', value: 'easy', color: 'bg-[#2EFFE6]/10 text-[#2EFFE6] border-[#2EFFE6]/20 hover:bg-[#2EFFE6]/20' }
+                ].map((btn) => (
+                  <button
+                    key={btn.value}
+                    onClick={() => submitReview(item.id, item.type, btn.value as any, true)}
+                    className={`py-3 rounded-xl border text-xs font-bold uppercase transition-all active:scale-95 ${btn.color}`}
+                  >
+                    {btn.label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -476,6 +488,8 @@ function QuizContent({ quiz }: { quiz: any }) {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
 
+  const { submitReview } = useAppStore();
+
   const handleSelect = (optionId: string) => {
     if (showResult) return;
     setSelectedOption(optionId);
@@ -484,6 +498,9 @@ function QuizContent({ quiz }: { quiz: any }) {
   const handleSubmit = () => {
     if (selectedOption) {
       setShowResult(true);
+      // Auto-submit review without advancing
+      const correct = quiz.options.find((o: QuizOption) => o.id === selectedOption)?.isCorrect;
+      submitReview(quiz.id, 'quiz', correct ? 'good' : 'again', false);
     }
   };
 
