@@ -27,7 +27,7 @@ from backend.services.spaced_repetition import SpacedRepetitionService
 
 from backend.agents.content_generator import ContentGeneratorAgent
 from backend.agents.web_quiz_agent import WebQuizAgent
-from backend.agents.web_research_agent import WebResearchAgent
+from backend.agents.research_agent import WebResearchAgent
 from backend.config.llm import get_chat_model
 
 logger = structlog.get_logger()
