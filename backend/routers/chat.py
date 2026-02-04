@@ -737,10 +737,19 @@ async def stream_chat(
                 
                 # Stream partial tokens from the LLM
                 if kind == "on_chat_model_stream":
+                    tags = event.get("tags", [])
                     content = event["data"]["chunk"].content
-                    if content:
+                    if not content:
+                        continue
+                        
+                    # Only append to main message content if it's the final response
+                    if "final_response" in tags:
                         full_content += content
                         yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
+                    else:
+                        # Otherwise, send as a status update (keeps the "loading" feel but clean)
+                        # This avoids the "JSON in message" problem
+                        yield f"data: {json.dumps({'type': 'status', 'content': 'Analyzing intent...'})}\n\n"
                 
                 # Notify about tool usage (searching graph/notes)
                 elif kind == "on_tool_start":
