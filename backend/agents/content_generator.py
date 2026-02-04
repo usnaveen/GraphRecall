@@ -13,7 +13,7 @@ from backend.models.feed_schemas import (
     MCQQuestion,
     MCQOption,
     FillBlankQuestion,
-    Flashcard,
+    TermCard,
     MermaidDiagram,
 )
 from backend.agents.mermaid_agent import MermaidAgent
