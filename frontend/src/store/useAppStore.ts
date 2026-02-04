@@ -56,6 +56,14 @@ interface AppState {
   conceptsList: ConceptItem[];
   uploadsList: UploadItem[];
 
+  // Feed Modes
+  feedMode: 'daily' | 'history';
+  quizHistory: FeedItem[];
+  activeRecallSchedule: { date: string; count: number }[];
+  setFeedMode: (mode: 'daily' | 'history') => void;
+  fetchSchedule: () => Promise<void>;
+  fetchQuizHistory: () => Promise<void>;
+
   // Graph cache (persist between tab switches)
   graphCache: {
     data: GraphData | null;
@@ -114,6 +122,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     accuracy: 0,
     streakDays: 0
   },
+
+  feedMode: 'history',
+  quizHistory: [],
+  activeRecallSchedule: [],
 
   // Navigation Actions
   setActiveTab: (tab: TabType) => {
@@ -488,6 +500,41 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error("Failed to delete upload:", error);
       set({ uploadsList: previousUploads });
+    }
+  },
+
+  // Feed Mode & History
+  setFeedMode: (mode: 'daily' | 'history') => set({ feedMode: mode }),
+
+  fetchSchedule: async () => {
+    try {
+      const schedule = await feedService.getSchedule();
+      set({ activeRecallSchedule: schedule });
+    } catch (error) {
+      console.error("Failed to fetch schedule:", error);
+    }
+  },
+
+  fetchQuizHistory: async () => {
+    try {
+      const data = await feedService.getQuizHistory();
+      // Transform to FeedItems
+      const items: FeedItem[] = (data.quizzes || []).map((q: any) => ({
+        id: q.id,
+        type: 'quiz',
+        question: q.question_text,
+        options: (Array.isArray(q.options) ? q.options : []).map((opt: string, i: number) => ({
+          id: String.fromCharCode(65 + i),
+          text: opt,
+          isCorrect: opt === q.correct_answer
+        })),
+        explanation: q.explanation,
+        relatedConcept: q.topic,
+        source_url: ''
+      }));
+      set({ quizHistory: items });
+    } catch (error) {
+      console.error("Failed to fetch quiz history:", error);
     }
   }
 }));
