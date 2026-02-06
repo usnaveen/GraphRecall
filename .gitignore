@@ -80,3 +80,8 @@ postgres_data/
 *.pem
 *.key
 credentials.json
+
+# reference folders
+3dGraphReference/
+sample_data/
+sample_content/
