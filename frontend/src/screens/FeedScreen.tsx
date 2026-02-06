@@ -345,71 +345,65 @@ function FeedCardContent({ item }: { item: FeedItem }) {
   }
 }
 
-// Term Card Content (was Flashcard)
+// Term Card Content (Restored to Legacy Design)
 function TermCardContent({ item }: { item: TermCard }) {
-  const [isFlipped, setIsFlipped] = useState(false);
   const { submitReview } = useAppStore();
   const concept = item.concept;
+  const isLiked = useAppStore(s => s.likedItems.has(item.id));
+  const isSaved = useAppStore(s => s.savedItems.has(item.id));
 
   return (
     <div className="flex flex-col h-full">
+      {/* Eyebrow */}
       <div className="flex items-center gap-2 mb-4">
-        <Layers className="w-4 h-4 text-[#B6FF2E]" />
-        <span className="text-xs font-mono text-[#B6FF2E] uppercase tracking-wider">Term Card</span>
+        <Lightbulb className="w-4 h-4 text-[#B6FF2E]" />
+        <span className="text-xs font-mono text-[#B6FF2E] uppercase tracking-wider">Concept</span>
       </div>
 
-      <motion.div
-        onClick={() => setIsFlipped(!isFlipped)}
-        className="flex-1 cursor-pointer perspective-1000 group min-h-[300px]"
-      >
-        <motion.div
-          animate={{ rotateY: isFlipped ? 180 : 0 }}
-          transition={{ duration: 0.6, type: "spring", stiffness: 260, damping: 20 }}
-          className="relative w-full h-full preserve-3d"
-        >
-          {/* Front */}
-          <div className="absolute inset-0 backface-hidden flex flex-col items-center justify-center p-6 rounded-3xl glass-surface border border-white/10 group-hover:border-[#B6FF2E]/30 transition-colors shadow-2xl">
-            <h3 className="text-3xl font-bold text-white text-center mb-4">{concept.name}</h3>
-            <div className="absolute bottom-8 flex flex-col items-center gap-2 opacity-40">
-              <span className="text-[10px] uppercase tracking-[0.2em]">Tap to Flip</span>
-              <div className="w-8 h-1 bg-white/20 rounded-full" />
-            </div>
-          </div>
+      {/* Title */}
+      <h2 className="font-heading text-2xl font-bold text-white mb-4">
+        {concept.name}
+      </h2>
 
-          {/* Back */}
-          <div
-            className="absolute inset-0 backface-hidden flex flex-col p-6 rounded-3xl bg-gradient-to-br from-[#1A1A1A] to-[#0A0A0A] border border-[#B6FF2E]/20 overflow-hidden"
-            style={{ transform: 'rotateY(180deg)' }}
-          >
-            <div className="overflow-y-auto flex-1 pr-2 scrollbar-hide">
-              <h4 className="text-xs font-mono text-[#B6FF2E] mb-3 uppercase tracking-wider opacity-60">Definition</h4>
-              <p className="text-lg text-white/90 leading-relaxed font-medium">
-                {concept.definition}
-              </p>
-            </div>
+      {/* Definition */}
+      <p className="text-white/80 text-base leading-relaxed mb-6">
+        {concept.definition}
+      </p>
 
-            <div className="mt-4 pt-4 border-t border-white/10">
-              <p className="text-center text-xs text-white/40 mb-3 uppercase tracking-wider">How well did you know this?</p>
-              <div className="grid grid-cols-4 gap-2" onClick={(e) => e.stopPropagation()}>
-                {[
-                  { label: 'Again', value: 'again', color: 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20' },
-                  { label: 'Hard', value: 'hard', color: 'bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20' },
-                  { label: 'Good', value: 'good', color: 'bg-[#B6FF2E]/10 text-[#B6FF2E] border-[#B6FF2E]/20 hover:bg-[#B6FF2E]/20' },
-                  { label: 'Easy', value: 'easy', color: 'bg-[#2EFFE6]/10 text-[#2EFFE6] border-[#2EFFE6]/20 hover:bg-[#2EFFE6]/20' }
-                ].map((btn) => (
-                  <button
-                    key={btn.value}
-                    onClick={() => submitReview(item.id, item.type, btn.value as any, true)}
-                    className={`py-3 rounded-xl border text-xs font-bold uppercase transition-all active:scale-95 ${btn.color}`}
-                  >
-                    {btn.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+      {/* Prerequisites */}
+      <div className="mt-auto">
+        <p className="text-xs text-white/50 mb-2">Prerequisites</p>
+        <div className="flex flex-wrap gap-2">
+          {concept.prerequisites?.map((prereq: string, i: number) => (
+            <motion.span
+              key={i}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: i * 0.05 }}
+              className="px-3 py-1 rounded-full text-xs font-medium bg-white/5 border border-white/10 text-white/70"
+            >
+              {prereq}
+            </motion.span>
+          ))}
+        </div>
+      </div>
+
+      {/* Footer Info */}
+      <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/5">
+        <span className="text-xs text-white/50">{concept.domain}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-white/50">Complexity:</span>
+          <div className="flex gap-0.5">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div
+                key={i}
+                className={`w-1.5 h-3 rounded-sm ${i < (concept.complexity || 5) ? 'bg-[#B6FF2E]' : 'bg-white/10'
+                  }`}
+              />
+            ))}
           </div>
-        </motion.div>
-      </motion.div>
+        </div>
+      </div>
     </div>
   );
 }
