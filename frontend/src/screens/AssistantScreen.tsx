@@ -604,24 +604,16 @@ export function AssistantScreen() {
 
               {/* Sources */}
               {message.sources && message.sources.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-white/10">
-                  <p className="text-[10px] text-white/40 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <BookOpen className="w-3 h-3" />
-                    Verified Sources
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
+                <div className="mt-3 pt-3 border-t border-white/10">
+                  <p className="text-xs text-white/50 mb-1">Sources</p>
+                  <div className="flex flex-wrap gap-1">
                     {message.sources.map((source: string, j: number) => (
-                      <button
+                      <span
                         key={j}
-                        onClick={() => {
-                          const { setActiveTab } = useAppStore.getState();
-                          setActiveTab('profile');
-                        }}
-                        className="px-2.5 py-1 rounded-md text-[10px] bg-[#2EFFE6]/5 text-[#2EFFE6] border border-[#2EFFE6]/10 hover:bg-[#2EFFE6]/10 transition-colors cursor-pointer flex items-center gap-1"
+                        className="px-2 py-0.5 rounded-full text-[10px] bg-white/10 text-white/60"
                       >
-                        <Link2 className="w-2.5 h-2.5" />
-                        <span className="truncate max-w-[150px]">{source}</span>
-                      </button>
+                        {source}
+                      </span>
                     ))}
                   </div>
                 </div>
