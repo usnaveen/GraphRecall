@@ -134,6 +134,78 @@ class Note(NoteBase):
     model_config = {"from_attributes": True}
 
 
+
+# ============================================================================
+# Chunk Models (Hierarchical)
+# ============================================================================
+
+
+class ChunkLevel(str, Enum):
+    """Level of the chunk in hierarchy."""
+
+    PARENT = "parent"
+    CHILD = "child"
+
+
+class ChunkBase(BaseModel):
+    """Base model for a document chunk."""
+
+    content: str
+    chunk_index: Optional[int] = None
+    chunk_level: ChunkLevel = ChunkLevel.CHILD
+    source_location: Optional[dict[str, Any]] = None
+
+
+class ChunkCreate(ChunkBase):
+    """Model for creating a chunk."""
+
+    note_id: UUID
+    parent_chunk_id: Optional[UUID] = None
+    embedding: Optional[list[float]] = None
+
+
+class Chunk(ChunkBase):
+    """Full chunk model."""
+
+    id: UUID
+    note_id: UUID
+    parent_chunk_id: Optional[UUID] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ============================================================================
+# Proposition Models
+# ============================================================================
+
+
+class PropositionBase(BaseModel):
+    """Base model for an atomic proposition."""
+
+    content: str
+    confidence: float = 0.0
+    is_atomic: bool = True
+
+
+class PropositionCreate(PropositionBase):
+    """Model for creating a proposition."""
+
+    note_id: UUID
+    chunk_id: UUID
+
+
+class Proposition(PropositionBase):
+    """Full proposition model."""
+
+    id: UUID
+    note_id: UUID
+    chunk_id: UUID
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ============================================================================
 # Graph Operation Models
 # ============================================================================

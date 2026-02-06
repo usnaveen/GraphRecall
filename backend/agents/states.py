@@ -35,6 +35,11 @@ class IngestionState(TypedDict, total=False):
     
     # Processing fields (updated by nodes)
     note_id: Optional[str]
+    file_type: Optional[str]  # pdf, pptx, md, etc.
+    parsed_document: Optional[dict]  # {markdown_content, images, metadata}
+    chunks: list[dict]  # [{id, content, parent_id, ...}]
+    propositions: list[dict] # Added for Phase 3
+    
     extracted_concepts: list[dict]  # [{name, description, domain, ...}]
     related_concepts: list[dict]    # Existing concepts found via similarity
     
