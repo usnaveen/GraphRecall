@@ -47,18 +47,325 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from backend.agents.extraction import ExtractionAgent
 from backend.agents.synthesis import SynthesisAgent
 from backend.agents.content_generator import ContentGeneratorAgent
+from backend.services.ingestion import DocumentParserService, HierarchicalChunker
 
 # Initialize agents
 extraction_agent = ExtractionAgent(temperature=0.2)
 synthesis_agent = SynthesisAgent()
 content_generator = ContentGeneratorAgent()
 
+# Initialize services
+parser_service = DocumentParserService()
+chunker_service = HierarchicalChunker()
+embedding_service = EmbeddingService()
+proposition_agent = PropositionExtractionAgent()
+
+# ... (parse_node, chunk_node, embed_node remain unchanged) ...
+
+async def extract_propositions_node(state: IngestionState) -> dict:
+    """
+    Node 0d: Extract atomic propositions from chunks (Phase 3).
+    """
+    logger.info("extract_propositions_node: Starting")
+    chunks = state.get("chunks", [])
+    if not chunks:
+        return {}
+        
+    all_propositions = []
+    
+    # Process each chunk group (Parent + Children)
+    # We typically extract propositions from Child chunks for precision
+    for group in chunks:
+        child_contents = group.get("child_contents", [])
+        child_ids = group.get("child_ids", [])
+        
+        for i, (content, child_id) in enumerate(zip(child_contents, child_ids)):
+            # Construct a temporary Chunk object for the agent
+            # We use the pre-generated ID from chunk_node
+            try:
+                temp_chunk = Chunk(
+                    id=uuid.UUID(child_id),
+                    note_id=uuid.UUID(str(state["note_id"])),
+                    content=content,
+                    chunk_index=i,
+                    created_at=datetime.now(timezone.utc)
+                )
+                
+                # Extract propositions
+                props = await proposition_agent.extract_propositions(temp_chunk)
+                
+                if props:
+                    # Append needed metadata to verify saving later
+                    # Convert Pydantic to dict for state storage
+                    props_dicts = []
+                    for p in props:
+                        p_dict = p.model_dump()
+                        p_dict["id"] = str(uuid.uuid4()) # Generate ID ensuring consistency
+                        props_dicts.append(p_dict)
+                        
+                    all_propositions.extend(props_dicts)
+                    
+            except Exception as e:
+                logger.warning("extract_propositions_node: Failed for chunk", chunk_id=child_id, error=str(e))
+                continue
+
+    logger.info("extract_propositions_node: Extracted propositions", count=len(all_propositions))
+    return {"propositions": all_propositions}
+async def parse_node(state: IngestionState) -> dict:
+    """
+    Node 0a: Parse document into Markdown.
+    """
+    logger.info("parse_node: Starting")
+    raw_content = state.get("raw_content", "")
+    filename = state.get("title", "unknown")
+    file_type = state.get("file_type", "txt")
+    
+    try:
+        # Convert string content to bytes if needed (simple hack for now)
+        # In real scenario, we might pass file path or bytes buffer
+        content_bytes = raw_content.encode("utf-8")
+        
+        parsed = await parser_service.parse_document(content_bytes, filename, file_type)
+        
+        meta = state.get("processing_metadata") or {}
+        meta["parser"] = parsed.metadata.get("source", "simple")
+        meta["pages"] = parsed.metadata.get("pages", 1)
+        
+        return {
+            "parsed_document": parsed.model_dump(),
+            "processing_metadata": meta
+        }
+    except Exception as e:
+        logger.error("parse_node: Failed", error=str(e))
+        return {"error": str(e)}
+
+async def chunk_node(state: IngestionState) -> dict:
+    """
+    Node 0b: Split parsed document into Hierarchical Chunks.
+    """
+    logger.info("chunk_node: Starting")
+    
+    parsed = state.get("parsed_document")
+    if not parsed:
+        return {"chunks": []}
+        
+    # Reconstruct ParsedDocument object
+    from backend.services.ingestion.parser_service import ParsedDocument
+    doc_obj = ParsedDocument(**parsed)
+    
+    note_id = state.get("note_id") or str(uuid.uuid4())
+    
+    # Generate chunks
+    chunks = chunker_service.chunk(doc_obj, uuid.UUID(note_id))
+    
+    # Enrich chunks with UUIDs immediately to support downstream linkage (Propositions, Embeddings)
+    # The chunker returns a list of dictionaries. We'll inject 'id' and 'child_ids' here.
+    for group in chunks:
+        # Generate ID for parent
+        group["parent_id"] = str(uuid.uuid4())
+        
+        # Generate IDs for children
+        child_ids = [str(uuid.uuid4()) for _ in group["child_contents"]]
+        group["child_ids"] = child_ids
+    
+    # Store note_id in state if it wasn't there
+    return {"chunks": chunks, "note_id": note_id}
+
+async def embed_node(state: IngestionState) -> dict:
+    """
+    Node 0c: Generate embeddings for child chunks.
+    """
+    logger.info("embed_node: Starting")
+    chunks = state.get("chunks", [])
+    if not chunks:
+        return {}
+
+    # Collect all child texts for batch embedding
+    all_child_texts = []
+    # Map (parent_idx, child_idx) -> flat_index
+    index_map = []
+    
+    for p_idx, group in enumerate(chunks):
+        for c_idx, content in enumerate(group["child_contents"]):
+            all_child_texts.append(content)
+            index_map.append((p_idx, c_idx))
+            
+    if not all_child_texts:
+        return {}
+        
+    embeddings = await embedding_service.embed_batch(all_child_texts)
+    
+    # Re-assign to chunks structure
+    # We need to make sure 'chunks' in state is mutable or we create a new one
+    # The chunker returned dicts, so we can modify them in place if we are careful,
+    # but cleaner to rebuild or attach.
+    
+    # Let's attach 'child_embeddings' list to each group
+    # Initialize lists
+    for group in chunks:
+        group["child_embeddings"] = []
+        
+    for i, emb in enumerate(embeddings):
+        p_idx, c_idx = index_map[i]
+        # Ensure the list is long enough (it should be growing in order)
+        # Actually, since we iterate in order, we can just append
+        chunks[p_idx]["child_embeddings"].append(emb)
+        
+    return {"chunks": chunks}
+
+async def save_chunks_node(state: IngestionState) -> dict:
+    """
+    Node 0d: Save generated chunks to PostgreSQL.
+    """
+    chunks = state.get("chunks", [])
+    if not chunks:
+        return {}
+        
+    logger.info("save_chunks_node: Saving chunks", count=len(chunks))
+    
+    try:
+        pg_client = await get_postgres_client()
+        saved_count = 0
+        
+        for parent_group in chunks:
+            # Use pre-generated ID or fallback (though chunk_node should guarantee it now)
+            parent_id = parent_group.get("parent_id") or str(uuid.uuid4())
+            parent_text = parent_group["parent_content"]
+            
+            # Save Parent Chunk
+            await pg_client.execute_update(
+                """
+                INSERT INTO chunks (id, note_id, content, chunk_level, chunk_index, created_at)
+                VALUES (:id, :note_id, :content, 'parent', :index, :created_at)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                {
+                    "id": parent_id,
+                    "note_id": state["note_id"],
+                    "content": parent_text,
+                    "index": parent_group["parent_index"],
+                    "created_at": datetime.now(timezone.utc)
+                }
+            )
+            saved_count += 1
+            
+            # Save Child Chunks
+            child_contents = parent_group["child_contents"]
+            child_embeddings = parent_group.get("child_embeddings", [None] * len(child_contents))
+            child_ids = parent_group.get("child_ids", [str(uuid.uuid4()) for _ in child_contents])
+            
+            for i, (child_text, embedding, child_id) in enumerate(zip(child_contents, child_embeddings, child_ids)):
+                
+                # Dynamic query based on whether embedding exists
+                if embedding:
+                    await pg_client.execute_update(
+                        """
+                        INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, embedding, created_at)
+                        VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :embedding, :created_at)
+                        ON CONFLICT (id) DO NOTHING
+                        """,
+                        {
+                            "id": child_id,
+                            "note_id": state["note_id"],
+                            "parent_id": parent_id,
+                            "content": child_text,
+                            "index": i,
+                            "embedding": str(embedding),
+                            "created_at": datetime.now(timezone.utc)
+                        }
+                    )
+                else:
+                    await pg_client.execute_update(
+                        """
+                        INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, created_at)
+                        VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :created_at)
+                        ON CONFLICT (id) DO NOTHING
+                        """,
+                        {
+                            "id": child_id,
+                            "note_id": state["note_id"],
+                            "parent_id": parent_id,
+                            "content": child_text,
+                            "index": i,
+                            "created_at": datetime.now(timezone.utc)
+                        }
+                    )
+                saved_count += 1
+        
+        # Save Propositions (if any)
+        propositions = state.get("propositions", [])
+        if propositions:
+            logger.info("save_chunks_node: Saving propositions", count=len(propositions))
+            for prop in propositions:
+                # Use pre-generated ID if available
+                prop_id = prop.get("id") or str(uuid.uuid4())
+                
+                await pg_client.execute_update(
+                    """
+                    INSERT INTO propositions (id, note_id, chunk_id, content, confidence, is_atomic, created_at)
+                    VALUES (:id, :note_id, :chunk_id, :content, :confidence, :is_atomic, :created_at)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    {
+                        "id": prop_id,
+                        "note_id": str(prop["note_id"]),
+                        "chunk_id": str(prop["chunk_id"]),
+                        "content": prop["content"],
+                        "confidence": prop["confidence"],
+                        "is_atomic": prop["is_atomic"],
+                        "created_at": datetime.now(timezone.utc)
+                    }
+                )
+        
+        # Save Propositions (if any)
+        propositions = state.get("propositions", [])
+        if propositions:
+            logger.info("save_chunks_node: Saving propositions", count=len(propositions))
+            for prop in propositions:
+                await pg_client.execute_update(
+                    """
+                    INSERT INTO propositions (id, note_id, chunk_id, content, confidence, is_atomic, created_at)
+                    VALUES (:id, :note_id, :chunk_id, :content, :confidence, :is_atomic, :created_at)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    {
+                        "id": str(uuid.uuid4()), # Generate ID for proposition here
+                        "note_id": str(prop["note_id"]),
+                        "chunk_id": str(prop["chunk_id"]),
+                        "content": prop["content"],
+                        "confidence": prop["confidence"],
+                        "is_atomic": prop["is_atomic"],
+                        "created_at": datetime.now(timezone.utc)
+                    }
+                )
+                
+        logger.info("save_chunks_node: Saved chunks", saved=saved_count, propositions_saved=len(propositions))
+                
+        logger.info("save_chunks_node: Saved chunks", saved=saved_count)
+        return {}
+        
+    except Exception as e:
+        logger.error("save_chunks_node: Failed", error=str(e))
+        return {"error": str(e)}
+
 async def extract_concepts_node(state: IngestionState) -> dict:
     """
     Node 1: Extract concepts from raw content using ExtractionAgent.
     """
-    content = state.get("raw_content", "")
-    logger.info("extract_concepts_node: Starting", content_length=len(content))
+    logger.info("extract_concepts_node: Starting")
+
+    # Prefer chunks context if available (better context management)
+    chunks = state.get("chunks", [])
+    if chunks:
+        # Concatenate parent chunks for extraction context
+        # In Phase 2/3, we might iterate per parent chunk. For now, concat for global context.
+        # Check struct format from chunker (list of dicts)
+        contents = [c.get("parent_content", "") for c in chunks]
+        content = "\n\n".join(contents)
+    else:
+        content = state.get("raw_content", "")
+        
+    logger.info("extract_concepts_node: Content prepared", length=len(content))
     
     is_image = content.startswith("data:image")
 
@@ -433,6 +740,34 @@ async def create_concepts_node(state: IngestionState) -> dict:
                     {"note_id": note_id, "concept_id": cid},
                 )
         
+        # Link note to propositions (Phase 3)
+        propositions = state.get("propositions", [])
+        if note_id and propositions:
+            logger.info("create_concepts_node: Syncing propositions to Neo4j", count=len(propositions))
+            
+            # Prepare params for batch creation
+            prop_params = []
+            for p in propositions:
+                # Use existing ID if available (should be set in extract_propositions_node)
+                p_id = str(p.get("id")) if p.get("id") else str(uuid.uuid4())
+                prop_params.append({
+                    "id": p_id,
+                    "content": p.get("content", "")[:500],
+                    "confidence": p.get("confidence", 0.0)
+                })
+
+            await neo4j.execute_query(
+                """
+                MERGE (n:NoteSource {id: $note_id})
+                WITH n
+                UNWIND $props AS p
+                MERGE (prop:Proposition {id: p.id})
+                SET prop.content = p.content, prop.confidence = p.confidence
+                MERGE (n)-[r:HAS_PROPOSITION]->(prop)
+                """,
+                {"note_id": note_id, "props": prop_params}
+            )
+        
         # Enrich processing metadata with graph stats
         meta = state.get("processing_metadata") or {}
         meta["concepts_created"] = len(concept_ids)
@@ -512,9 +847,30 @@ async def generate_flashcards_node(state: IngestionState) -> dict:
     if not concepts:
         return {"term_card_ids": []}
     
-    concept_names = [c.get("name", "") for c in concepts]
+    propositions = state.get("propositions", [])
     
-    prompt = f"""Generate flashcards from this note.
+    # PHASE 4: PROPOSITION-ENHANCED GENERATION
+    # If we have atomic propositions, use them for high-precision cards
+    if propositions:
+        logger.info("generate_flashcards_node: Using propositions for generation", count=len(propositions))
+        try:
+            # Generate Cloze Deletion cards from atomic facts
+            flashcards_dicts = await content_generator.generate_cloze_from_propositions(
+                propositions, 
+                count=5
+            )
+        except Exception as e:
+            logger.error("generate_flashcards_node: Proposition generation failed, falling back", error=str(e))
+            flashcards_dicts = []
+    else:
+        # Fallback to legacy generation (using raw content)
+        flashcards_dicts = [] # Placeholder to trigger legacy flow if I keep it? 
+        # Actually let's just use the legacy flow if prop generation fails or is empty.
+    
+    # Legacy flow (if no propositions or they failed)
+    if not propositions or not flashcards_dicts:
+        concept_names = [c.get("name", "") for c in concepts]
+        prompt = f"""Generate flashcards from this note.
 
 Content:
 {raw_content[:2000]}
@@ -532,30 +888,37 @@ Return ONLY valid JSON:
 {{
     "flashcards": [
         {{
-            "question": "Text with [___] for the missing term",
-            "answer": "The missing term",
+            "front": "Text with [___] for the missing term",
+            "back": "The missing term",
             "concept": "Related concept name"
         }}
     ]
 }}
 """
-    
+        try:
+            response = await llm_flashcard.ainvoke(prompt)
+            content = response.content.strip()
+            
+            if content.startswith("```json"):
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif content.startswith("```"):
+                content = content.split("```")[1].split("```")[0].strip()
+            
+            data = json.loads(content)
+            flashcards_dicts = data.get("flashcards", [])
+        except Exception as e:
+             logger.error("generate_flashcards_node: Legacy generation failed", error=str(e))
+             return {"term_card_ids": []}
+
+    # Save cards (Unified path)
+    if not flashcards_dicts:
+        return {"term_card_ids": []}
+        
     try:
-        response = await llm_flashcard.ainvoke(prompt)
-        content = response.content.strip()
-        
-        if content.startswith("```json"):
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif content.startswith("```"):
-            content = content.split("```")[1].split("```")[0].strip()
-        
-        data = json.loads(content)
-        flashcards = data.get("flashcards", [])
-        
         pg_client = await get_postgres_client()
         card_ids = []
         
-        for card in flashcards:
+        for card in flashcards_dicts:
             card_id = str(uuid.uuid4())
             concept_name = card.get("concept", "")
             
@@ -579,8 +942,8 @@ Return ONLY valid JSON:
                     "id": card_id,
                     "user_id": user_id,
                     "concept_id": concept_id,
-                    "front_content": card.get("question", ""),
-                    "back_content": card.get("answer", ""),
+                    "front_content": card.get("front") or card.get("question", ""),
+                    "back_content": card.get("back") or card.get("answer", ""),
                     "difficulty": 0.5,
                     "source_note_ids": [note_id] if note_id else [],
                     "created_at": datetime.now(timezone.utc),
@@ -592,7 +955,8 @@ Return ONLY valid JSON:
         # Enrich processing metadata
         meta = state.get("processing_metadata") or {}
         meta["flashcards_generated"] = len(card_ids)
-        meta["flashcard_agent"] = "Gemini (temp=0.3)"
+        if propositions:
+             meta["flashcard_mode"] = "proposition_cloze"
 
         logger.info(
             "generate_flashcards_node: Complete",
@@ -602,7 +966,7 @@ Return ONLY valid JSON:
         return {"term_card_ids": card_ids, "processing_metadata": meta}
         
     except Exception as e:
-        logger.error("generate_flashcards_node: Failed", error=str(e))
+        logger.error("generate_flashcards_node: Save failed", error=str(e))
         return {"term_card_ids": []}
 
 
@@ -629,10 +993,23 @@ async def generate_quiz_node(state: IngestionState) -> dict:
             if c.get("name") and c.get("definition")
         ]
         
+        # Prepare concepts with propositions context
+        propositions = state.get("propositions", [])
+        prop_contents = [p["content"] for p in propositions if "content" in p]
+        
+        enriched_concepts = []
+        for c in valid_concepts:
+            # Shallow copy to avoid mutating state
+            c_copy = c.copy()
+            # Attach ALL propositions for this note as context (simple approach)
+            # In future, we could filter by keyword relevance to the concept
+            c_copy["propositions"] = prop_contents
+            enriched_concepts.append(c_copy)
+            
         # Batch generate MCQs using ContentGeneratorAgent
         # We generate 2 MCQs per concept to populate the DB
         mcqs = await content_generator.generate_mcq_batch(
-            valid_concepts, 
+            enriched_concepts, 
             num_per_concept=2
         )
         
@@ -777,7 +1154,14 @@ def create_ingestion_graph(enable_interrupts: bool = True):
     builder = StateGraph(IngestionState)
     
     # Add nodes
+    builder.add_node("parse", parse_node)
+    builder.add_node("chunk", chunk_node)
+    builder.add_node("extract_propositions", extract_propositions_node)
+    builder.add_node("embed_chunks", embed_node)
+    builder.add_node("save_chunks", save_chunks_node)
     builder.add_node("extract_concepts", extract_concepts_node)
+    
+    # ... existing nodes ...
     builder.add_node("store_note", store_note_node)
     builder.add_node("find_related", find_related_node)
     builder.add_node("synthesize", synthesize_node)
@@ -787,9 +1171,16 @@ def create_ingestion_graph(enable_interrupts: bool = True):
     builder.add_node("generate_flashcards", generate_flashcards_node)
     builder.add_node("generate_quiz", generate_quiz_node)
     
-    # Linear edges (always executed)
-    builder.add_edge(START, "extract_concepts")
-    builder.add_edge("extract_concepts", "store_note")
+    # New Flow:
+    # START -> parse -> chunk -> extract_propositions -> embed_chunks -> save_chunks -> extract_concepts -> ...
+    
+    builder.add_edge(START, "parse")
+    builder.add_edge("parse", "chunk")
+    builder.add_edge("chunk", "extract_propositions")
+    builder.add_edge("extract_propositions", "embed_chunks")
+    builder.add_edge("embed_chunks", "save_chunks")
+    builder.add_edge("save_chunks", "extract_concepts")
+    builder.add_edge("extract_concepts", "store_note")  # Continues to legacy flow
     builder.add_edge("store_note", "find_related")
     
     # Conditional edge: Route based on overlap detection
