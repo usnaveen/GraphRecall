@@ -81,6 +81,7 @@ class ContentGeneratorAgent:
         related_concepts: list[str],
         difficulty: int = 5,
         num_options: int = 4,
+        propositions: list[str] = [],
     ) -> MCQQuestion:
         """
         Generate a multiple choice question for a concept.
@@ -109,6 +110,10 @@ Requirements:
 4. Distractors should be plausible but clearly wrong if you understand the concept
 5. For higher difficulty: use application/analysis questions instead of recall
 6. Include a brief explanation of why the correct answer is right
+7. Use the SUPPORTING FACTS (if provided) to ensure accuracy
+
+SUPPORTING FACTS:
+{'- ' + chr(10).join(propositions[:5]) if propositions else 'None provided (General knowledge)'}
 
 Output JSON format:
 {{
@@ -173,6 +178,7 @@ Output JSON format:
                         concept_definition=concept["definition"],
                         related_concepts=concept.get("related_concepts", []),
                         difficulty=int(concept.get("complexity_score", 5)),
+                        propositions=concept.get("propositions", []),
                     )
                     mcq.concept_id = concept.get("id", "")
                     all_mcqs.append(mcq)
@@ -311,6 +317,50 @@ Output JSON format:
         except Exception as e:
             logger.error("ContentGenerator: Flashcard generation failed", error=str(e))
             raise
+
+    async def generate_cloze_from_propositions(
+        self,
+        propositions: list[dict], # [{content, confidence, ...}]
+        count: int = 5
+    ) -> list[dict]:
+        """
+        Generate high-quality Cloze Deletion flashcards from atomic propositions.
+        """
+        # Filter for high confidence propositions
+        valid_props = [p["content"] for p in propositions if p.get("confidence", 0) > 0.7]
+        if not valid_props:
+            return []
+            
+        selected_props = valid_props[:10] # Limit context size
+        
+        prompt = f"""Generate {count} Cloze Deletion flashcards based STRICTLY on these facts.
+
+FACTS:
+{'- ' + chr(10).join(selected_props)}
+
+Instructions:
+1. Select the most important facts.
+2. Create a sentence where the KEYWORD is replaced by [___].
+3. The context must be sufficient to answer the question.
+4. DO NOT hallucinate info not in the facts.
+
+Output JSON format:
+{{
+    "flashcards": [
+        {{
+            "front": "Sentence with [___]...",
+            "back": "Answer",
+            "concept": "Derived from fact"
+        }}
+    ]
+}}"""
+        try:
+            response = await self.llm.ainvoke(prompt)
+            parsed = _parse_llm_json(response)
+            return parsed.get("flashcards", [])
+        except Exception as e:
+            logger.error("ContentGenerator: Cloze generation failed", error=str(e))
+            return []
     
     # =========================================================================
     # Mermaid Diagram Generation

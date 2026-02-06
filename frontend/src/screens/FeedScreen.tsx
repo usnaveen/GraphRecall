@@ -347,10 +347,10 @@ function FeedCardContent({ item }: { item: FeedItem }) {
 
 // Term Card Content (Restored to Legacy Design)
 function TermCardContent({ item }: { item: TermCard }) {
-  const { submitReview } = useAppStore();
+  // const { submitReview } = useAppStore();
   const concept = item.concept;
-  const isLiked = useAppStore(s => s.likedItems.has(item.id));
-  const isSaved = useAppStore(s => s.savedItems.has(item.id));
+  // const isLiked = useAppStore(s => s.likedItems.has(item.id));
+  // const isSaved = useAppStore(s => s.savedItems.has(item.id));
 
   return (
     <div className="flex flex-col h-full">
