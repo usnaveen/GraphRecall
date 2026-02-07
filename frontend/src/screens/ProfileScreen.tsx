@@ -190,55 +190,7 @@ export function ProfileScreen() {
       </motion.div>
 
       {/* Calendar Schedule */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="mb-6"
-      >
-        <div className="flex items-center justify-between px-1 mb-3">
-          <h3 className="font-heading font-semibold text-white">Recall Schedule</h3>
-          <span className="text-xs text-white/40">Next 14 Days</span>
-        </div>
-
-        <div className="glass-surface rounded-xl p-4 overflow-x-auto scrollbar-hide">
-          <div className="flex gap-2 min-w-max">
-            {Array.from({ length: 14 }).map((_, i) => {
-              const d = new Date();
-              d.setDate(d.getDate() + i);
-              const dateStr = d.toISOString().split('T')[0];
-              const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-              const dayNum = d.getDate();
-
-              const scheduled = (activeRecallSchedule || []).find(s => s.date === dateStr);
-              const count = scheduled ? scheduled.count : 0;
-              const isToday = i === 0;
-
-              return (
-                <div
-                  key={i}
-                  className={`
-                             flex flex-col items-center justify-between w-14 h-20 rounded-lg p-2 border transition-all
-                             ${isToday ? 'bg-white/10 border-white/20' : 'bg-black/20 border-white/5'}
-                             ${count > 0 ? 'hover:border-[#B6FF2E]/50 cursor-pointer' : 'opacity-60'}
-                           `}
-                >
-                  <span className="text-[10px] text-white/40 uppercase">{dayName}</span>
-                  <span className={`text-sm font-bold ${isToday ? 'text-white' : 'text-white/70'}`}>{dayNum}</span>
-
-                  {count > 0 ? (
-                    <div className="mt-1 px-1.5 py-0.5 rounded-full bg-[#B6FF2E]/20 border border-[#B6FF2E]/30">
-                      <span className="text-[9px] font-bold text-[#B6FF2E]">{count}</span>
-                    </div>
-                  ) : (
-                    <div className="w-1 h-1 rounded-full bg-white/10 mt-2" />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </motion.div>
+      <CalendarSchedule activeRecallSchedule={activeRecallSchedule} />
 
       {/* Activity Heatmap */}
       <motion.div
@@ -297,6 +249,105 @@ export function ProfileScreen() {
         <p className="text-xs text-white/20 font-mono">GraphRecall v0.2.1 • Built with Love</p>
       </div>
     </div >
+  );
+}
+
+// Calendar Schedule Component with topic expansion
+function CalendarSchedule({ activeRecallSchedule }: { activeRecallSchedule: { date: string; count: number; topics?: string[] }[] }) {
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2 }}
+      className="mb-6"
+    >
+      <div className="flex items-center justify-between px-1 mb-3">
+        <h3 className="font-heading font-semibold text-white">Recall Schedule</h3>
+        <span className="text-xs text-white/40">Next 14 Days</span>
+      </div>
+
+      <div className="glass-surface rounded-xl p-4 overflow-x-auto scrollbar-hide">
+        <div className="flex gap-2 min-w-max">
+          {Array.from({ length: 14 }).map((_, i) => {
+            const d = new Date();
+            d.setDate(d.getDate() + i);
+            const dateStr = d.toISOString().split('T')[0];
+            const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+            const dayNum = d.getDate();
+
+            const scheduled = (activeRecallSchedule || []).find(s => s.date === dateStr);
+            const count = scheduled ? scheduled.count : 0;
+            const isToday = i === 0;
+            const isExpanded = expandedDate === dateStr;
+
+            return (
+              <div
+                key={i}
+                onClick={() => {
+                  if (count > 0) setExpandedDate(isExpanded ? null : dateStr);
+                }}
+                className={`
+                  flex flex-col items-center justify-between w-14 h-20 rounded-lg p-2 border transition-all
+                  ${isToday ? 'bg-white/10 border-white/20' : 'bg-black/20 border-white/5'}
+                  ${count > 0 ? 'hover:border-[#B6FF2E]/50 cursor-pointer' : 'opacity-60'}
+                  ${isExpanded ? 'border-[#B6FF2E]/60 bg-[#B6FF2E]/5' : ''}
+                `}
+              >
+                <span className="text-[10px] text-white/40 uppercase">{dayName}</span>
+                <span className={`text-sm font-bold ${isToday ? 'text-white' : 'text-white/70'}`}>{dayNum}</span>
+
+                {count > 0 ? (
+                  <div className="mt-1 px-1.5 py-0.5 rounded-full bg-[#B6FF2E]/20 border border-[#B6FF2E]/30">
+                    <span className="text-[9px] font-bold text-[#B6FF2E]">{count}</span>
+                  </div>
+                ) : (
+                  <div className="w-1 h-1 rounded-full bg-white/10 mt-2" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Topic chips for expanded date */}
+        {expandedDate && (() => {
+          const scheduled = (activeRecallSchedule || []).find(s => s.date === expandedDate);
+          const topics = scheduled?.topics || [];
+          if (topics.length === 0) return null;
+
+          const dateLabel = new Date(expandedDate + 'T00:00:00').toLocaleDateString('en-US', {
+            weekday: 'long', month: 'short', day: 'numeric'
+          });
+
+          return (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-3 pt-3 border-t border-white/10"
+            >
+              <p className="text-[10px] text-white/40 mb-2">{dateLabel} — {scheduled?.count} topics</p>
+              <div className="flex flex-wrap gap-1.5">
+                {topics.map((topic, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 rounded-full text-[10px] bg-[#B6FF2E]/10 text-[#B6FF2E] border border-[#B6FF2E]/20"
+                  >
+                    {topic}
+                  </span>
+                ))}
+                {(scheduled?.count || 0) > topics.length && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-white/5 text-white/40">
+                    +{(scheduled?.count || 0) - topics.length} more
+                  </span>
+                )}
+              </div>
+            </motion.div>
+          );
+        })()}
+      </div>
+    </motion.div>
   );
 }
 
@@ -957,6 +1008,39 @@ function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: ()
 
       {/* Settings Groups */}
       <div className="space-y-6">
+        {/* Spaced Repetition Algorithm */}
+        <SettingsGroup title="Recall Algorithm">
+          <div className="p-4 space-y-3">
+            <p className="text-xs text-white/50 mb-2">
+              Choose the spaced repetition algorithm used for scheduling your reviews.
+            </p>
+            <div className="flex gap-2">
+              {[
+                { key: 'sm2', label: 'SM-2', desc: 'Classic SuperMemo algorithm' },
+                { key: 'fsrs', label: 'FSRS', desc: 'Modern free scheduler' },
+              ].map((algo) => {
+                const active = (settings.sr_algorithm || 'sm2') === algo.key;
+                return (
+                  <button
+                    key={algo.key}
+                    onClick={() => updateSetting('sr_algorithm', algo.key)}
+                    className={`flex-1 p-3 rounded-xl border transition-all text-left ${
+                      active
+                        ? 'border-[#B6FF2E]/60 bg-[#B6FF2E]/10'
+                        : 'border-white/10 bg-white/5 hover:border-white/20'
+                    }`}
+                  >
+                    <span className={`text-sm font-semibold block ${active ? 'text-[#B6FF2E]' : 'text-white/70'}`}>
+                      {algo.label}
+                    </span>
+                    <span className="text-[10px] text-white/40 mt-0.5 block">{algo.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </SettingsGroup>
+
         {/* Daily Learning */}
         <SettingsGroup title="Daily Learning">
           <SettingItem
