@@ -6,7 +6,7 @@ import {
   Send, Search, BookOpen, Target,
   Map, Lightbulb, Link2, MoreVertical, X, Save,
   MessageSquare, Trash2, History, BookmarkPlus,
-  Cpu, Activity
+  Cpu, Activity, ChevronDown, ChevronUp, Info
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
@@ -64,7 +64,6 @@ export function AssistantScreen() {
     chatMessages,
     addChatMessage,
     clearChatMessages,
-    navigateToFeedWithTopic,
     quizOnTopic,
     fetchNotes,
     fetchConcepts,
@@ -86,12 +85,25 @@ export function AssistantScreen() {
   // Source-scoped filtering state
   const [selectedSources, setSelectedSources] = useState<{ id: string; title: string }[]>([]);
 
+  // Citation modal state
+  const [citationModal, setCitationModal] = useState<{ show: boolean; source?: { id: string; title: string; content?: string } }>({ show: false });
+
+  // Expanded metadata toggle per message
+  const [expandedMetadata, setExpandedMetadata] = useState<Set<string>>(new Set());
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
     scrollToBottom();
+  }, [chatMessages]);
+
+  // Debug: Log when messages change unexpectedly (blank screen debugging)
+  useEffect(() => {
+    if (chatMessages.length === 0) {
+      console.warn('[AssistantScreen] Messages cleared - potential blank screen cause');
+    }
   }, [chatMessages]);
 
   // Swipe-right handler — triggers save modal when user drags an assistant message right
@@ -288,7 +300,7 @@ export function AssistantScreen() {
                   const updatedMsg = { ...assistantMessage, content: fullContent, status: currentStatus };
                   addChatMessage(updatedMsg);
                 } else if (data.type === 'done') {
-                  // Backend sends objects: {id, title} for sources, {id, name} for concepts
+                  // Backend sends objects: {id, title, content} for sources, {id, name} for concepts
                   // Extract string values for display, but keep IDs for source-scoped chat
                   const mappedSources = (data.sources || []).map((s: any) =>
                     typeof s === 'string' ? s : s.title || s.name || String(s)
@@ -296,9 +308,11 @@ export function AssistantScreen() {
                   const mappedConcepts = (data.related_concepts || []).map((c: any) =>
                     typeof c === 'string' ? c : c.name || c.title || String(c)
                   );
-                  // Keep raw source objects for source-scoped filtering
+                  // Keep raw source objects with content for citation display
                   const rawSources = (data.sources || []).map((s: any) =>
-                    typeof s === 'string' ? { id: s, title: s } : { id: s.id || s.title, title: s.title || s.name || String(s) }
+                    typeof s === 'string'
+                      ? { id: s, title: s }
+                      : { id: s.id || s.title, title: s.title || s.name || String(s), content: s.content }
                   );
                   const finalMsg: ChatMessage = {
                     ...assistantMessage,
@@ -308,6 +322,7 @@ export function AssistantScreen() {
                     relatedConcepts: mappedConcepts,
                     serverId: data.message_id,
                     sourceObjects: rawSources,
+                    metadata: data.metadata || {},
                   };
                   addChatMessage(finalMsg);
                   if (data.conversation_id) {
@@ -607,6 +622,41 @@ export function AssistantScreen() {
                 </div>
               )}
 
+              {/* Meta Message - Collapsible retrieval info */}
+              {message.role === 'assistant' && message.metadata && !message.status && (
+                <div className="mb-3">
+                  <button
+                    onClick={() => {
+                      const newSet = new Set(expandedMetadata);
+                      if (newSet.has(message.id)) {
+                        newSet.delete(message.id);
+                      } else {
+                        newSet.add(message.id);
+                      }
+                      setExpandedMetadata(newSet);
+                    }}
+                    className="flex items-center gap-1.5 text-[10px] text-white/40 hover:text-white/60 transition-colors"
+                  >
+                    <Info className="w-3 h-3" />
+                    <span>Intent: {message.metadata.intent || 'general'}</span>
+                    <span>•</span>
+                    <span>{message.metadata.documents_retrieved || 0} docs</span>
+                    <span>•</span>
+                    <span>{message.metadata.nodes_retrieved || 0} nodes</span>
+                    {expandedMetadata.has(message.id) ? (
+                      <ChevronUp className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                  </button>
+                  {expandedMetadata.has(message.id) && message.metadata.entities && message.metadata.entities.length > 0 && (
+                    <div className="mt-1 text-[10px] text-white/30">
+                      Entities: {message.metadata.entities.join(', ')}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Content */}
               <div className="text-sm text-white/90">
                 {message.role === 'user' ? (
@@ -657,14 +707,18 @@ export function AssistantScreen() {
                 </div>
               )}
 
-              {/* Related Concepts */}
+              {/* Related Concepts - Click to @mention */}
               {message.relatedConcepts && message.relatedConcepts.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {message.relatedConcepts.map((concept: string, j: number) => (
                     <button
                       key={j}
-                      onClick={() => navigateToFeedWithTopic(concept)}
+                      onClick={() => {
+                        setInputValue(`@${concept} `);
+                        inputRef.current?.focus();
+                      }}
                       className="px-2.5 py-1 rounded-full text-[10px] bg-[#B6FF2E]/5 text-[#B6FF2E] border border-[#B6FF2E]/10 hover:bg-[#B6FF2E]/10 transition-colors"
+                      title="Click to ask about this concept"
                     >
                       {concept}
                     </button>
@@ -790,6 +844,51 @@ export function AssistantScreen() {
           </div>
         </motion.div>
       </div>
+      {/* Citation Modal */}
+      <AnimatePresence>
+        {citationModal.show && citationModal.source && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+            onClick={() => setCitationModal({ show: false })}
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="bg-[#1a1a1f] border border-white/10 rounded-2xl p-6 max-w-lg w-full max-h-[70vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">{citationModal.source.title}</h3>
+                <button
+                  onClick={() => setCitationModal({ show: false })}
+                  className="p-1 rounded-full hover:bg-white/10"
+                >
+                  <X className="w-5 h-5 text-white/60" />
+                </button>
+              </div>
+              <div className="text-sm text-white/70 leading-relaxed">
+                {citationModal.source.content || 'No content available'}
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedSources(prev => [...prev, {
+                    id: citationModal.source!.id,
+                    title: citationModal.source!.title,
+                  }]);
+                  setCitationModal({ show: false });
+                }}
+                className="mt-4 w-full py-2 rounded-lg bg-[#B6FF2E]/20 text-[#B6FF2E] text-sm font-medium hover:bg-[#B6FF2E]/30 transition-colors"
+              >
+                Focus chat on this source
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
