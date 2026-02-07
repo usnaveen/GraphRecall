@@ -120,8 +120,12 @@ async def record_review(
     """
     try:
         pg_client = await get_postgres_client()
-        sr_service = SpacedRepetitionService(pg_client)
-        
+        user_settings = (current_user.get("settings_json") or {})
+        if isinstance(user_settings, str):
+            user_settings = json.loads(user_settings)
+        algorithm = user_settings.get("sr_algorithm", "sm2")
+        sr_service = SpacedRepetitionService(pg_client, algorithm=algorithm)
+
         review = ReviewResult(
             item_id=item_id,
             item_type=item_type,
@@ -129,7 +133,7 @@ async def record_review(
             difficulty=difficulty,
             response_time_ms=response_time_ms,
         )
-        
+
         updated_data = await sr_service.record_review(review)
         
         return {
@@ -316,33 +320,70 @@ async def get_saved_items(
 async def get_quiz_history(
     current_user: dict = Depends(get_current_user),
 ):
-    """Get history of quizzes created for the user."""
+    """Get history of quizzes AND flashcards created for the user."""
     try:
         pg_client = await get_postgres_client()
         neo4j_client = await get_neo4j_client()
         feed_service = FeedService(pg_client, neo4j_client)
-        
-        quizzes = await feed_service.get_user_quizzes(str(current_user["id"]))
-        
-        # Helper to fetch concept names for grouping
-        # This is a bit expensive but necessary for "grouped by topic"
-        # We collect unique concept_ids
-        concept_ids = list(set(q["concept_id"] for q in quizzes if q.get("concept_id")))
-        
+        user_id = str(current_user["id"])
+
+        quizzes = await feed_service.get_user_quizzes(user_id)
+
+        # Also fetch flashcards
+        flashcards = []
+        try:
+            flashcards = await pg_client.execute_query(
+                """
+                SELECT id, front_content, back_content, concept_id, created_at
+                FROM flashcards
+                WHERE user_id = :uid
+                ORDER BY created_at DESC
+                LIMIT 50
+                """,
+                {"uid": user_id},
+            )
+        except Exception as e:
+            logger.warning("Failed to fetch flashcards for history", error=str(e))
+
+        # Collect all concept IDs
+        concept_ids = list(set(
+            q.get("concept_id") for q in (quizzes + flashcards) if q.get("concept_id")
+        ))
+
         concept_map = {}
         if concept_ids:
-             # Neo4j query
-             query = "MATCH (c:Concept) WHERE c.id IN $ids RETURN c.id as id, c.name as name"
-             result = await neo4j_client.execute_query(query, {"ids": concept_ids})
-             for row in result:
-                 concept_map[row["id"]] = row["name"]
-        
-        # Annotate quizzes
+            query = "MATCH (c:Concept) WHERE c.id IN $ids RETURN c.id as id, c.name as name"
+            result = await neo4j_client.execute_query(query, {"ids": concept_ids})
+            for row in result:
+                concept_map[row["id"]] = row["name"]
+
+        # Annotate quizzes with topic
         for q in quizzes:
-            q["topic"] = concept_map.get(q["concept_id"], "General Knowledge")
-            
-        return {"quizzes": quizzes}
-        
+            q["topic"] = concept_map.get(q.get("concept_id"), "General Knowledge")
+
+        # Convert flashcards to quiz-compatible format
+        flashcard_items = []
+        for f in flashcards:
+            flashcard_items.append({
+                "id": f["id"],
+                "question_text": f.get("front_content", ""),
+                "question_type": "flashcard",
+                "options": [],
+                "correct_answer": f.get("back_content", ""),
+                "explanation": "",
+                "concept_id": f.get("concept_id"),
+                "topic": concept_map.get(f.get("concept_id"), "General Knowledge"),
+                "created_at": str(f.get("created_at", "")),
+                "front_content": f.get("front_content", ""),
+                "back_content": f.get("back_content", ""),
+            })
+
+        # Merge and sort by created_at desc
+        all_items = quizzes + flashcard_items
+        all_items.sort(key=lambda x: str(x.get("created_at", "")), reverse=True)
+
+        return {"quizzes": all_items}
+
     except Exception as e:
         logger.error("Feed: Error getting quiz history", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -835,14 +876,17 @@ async def get_active_recall_schedule(
 ):
     """
     Get upcoming review schedule for the calendar.
-    Returns counts of items due per day.
+    Returns counts of items due per day, plus topic names.
     """
     try:
         pg_client = await get_postgres_client()
+        neo4j_client = await get_neo4j_client()
         sr_service = SpacedRepetitionService(pg_client)
-        
-        return await sr_service.get_upcoming_schedule(str(current_user["id"]), days)
-        
+
+        return await sr_service.get_upcoming_schedule_with_topics(
+            str(current_user["id"]), neo4j_client, days
+        )
+
     except Exception as e:
         logger.error("Feed: Error getting schedule", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

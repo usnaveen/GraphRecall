@@ -477,6 +477,141 @@ async def save_message_for_quiz(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class CreateCardRequest(BaseModel):
+    """Request to create a quiz or concept card from a chat message."""
+    output_type: str = "quiz"  # "quiz" or "concept_card"
+    topic: Optional[str] = None
+
+
+@router.post("/messages/{message_id}/create-card")
+async def create_card_from_message(
+    message_id: str,
+    request: CreateCardRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Create a quiz question or concept card from a chat message.
+
+    output_type:
+      - "quiz": generates an MCQ from the message content
+      - "concept_card": generates a flashcard from the message content
+
+    Returns the created item so the frontend can prepend it to the feed.
+    """
+    try:
+        pg_client = await get_postgres_client()
+        user_id = str(current_user["id"])
+
+        # Get the message content
+        message = await pg_client.execute_query(
+            """
+            SELECT cm.content, cm.role, cc.title as conversation_title
+            FROM chat_messages cm
+            JOIN chat_conversations cc ON cc.id = cm.conversation_id
+            WHERE cm.id = :message_id AND cc.user_id = :user_id
+            """,
+            {"message_id": message_id, "user_id": user_id},
+        )
+
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+
+        msg = message[0]
+        content = msg.get("content", "")
+        topic = request.topic or msg.get("conversation_title") or "Chat Response"
+
+        from backend.agents.content_generator import ContentGeneratorAgent
+        generator = ContentGeneratorAgent()
+
+        item_id = str(uuid.uuid4())
+
+        if request.output_type == "concept_card":
+            # Generate a flashcard
+            cards = await generator.generate_flashcards(
+                concept_name=topic,
+                concept_definition=content[:3000],
+                related_concepts=[],
+                num_cards=1,
+            )
+            if not cards:
+                raise HTTPException(status_code=500, detail="Failed to generate flashcard")
+
+            card = cards[0]
+            front = card.get("front") or card.get("term") or topic
+            back = card.get("back") or card.get("definition") or content[:500]
+
+            await pg_client.execute_insert(
+                """
+                INSERT INTO flashcards (id, user_id, concept_id, front_content, back_content, created_at, source)
+                VALUES (:id, :uid, NULL, :front, :back, NOW(), 'chat_message')
+                RETURNING id
+                """,
+                {"id": item_id, "uid": user_id, "front": front, "back": back},
+            )
+
+            return {
+                "id": item_id,
+                "type": "flashcard",
+                "front_content": front,
+                "back_content": back,
+                "topic": topic,
+                "source": "chat_message",
+            }
+
+        else:
+            # Generate MCQ
+            mcq = await generator.generate_mcq(
+                concept_name=topic,
+                concept_definition=content[:3000],
+                related_concepts=[],
+                difficulty="medium",
+            )
+
+            options_json = json.dumps([
+                {"id": opt.id, "text": opt.text, "is_correct": opt.is_correct}
+                for opt in mcq.options
+            ])
+            correct = next((o.text for o in mcq.options if o.is_correct), "")
+
+            await pg_client.execute_insert(
+                """
+                INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type,
+                                     options_json, correct_answer, explanation, created_at, source)
+                VALUES (:id, :uid, NULL, :q_text, 'mcq', :opts, :correct, :exp, NOW(), 'chat_message')
+                RETURNING id
+                """,
+                {
+                    "id": item_id,
+                    "uid": user_id,
+                    "q_text": mcq.question,
+                    "opts": options_json,
+                    "correct": correct,
+                    "exp": mcq.explanation,
+                },
+            )
+
+            return {
+                "id": item_id,
+                "type": "quiz",
+                "question_text": mcq.question,
+                "question_type": "mcq",
+                "options": [
+                    {"id": o.id, "text": o.text, "is_correct": o.is_correct}
+                    for o in mcq.options
+                ],
+                "correct_answer": correct,
+                "explanation": mcq.explanation,
+                "topic": topic,
+                "source": "chat_message",
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Chat: Error creating card from message", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class AddToKnowledgeRequest(BaseModel):
     """Request to add conversation to knowledge base."""
     title: Optional[str] = None
