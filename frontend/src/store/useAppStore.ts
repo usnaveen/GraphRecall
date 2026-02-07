@@ -678,7 +678,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           let opts: any[] = [];
           if (Array.isArray(q.options)) opts = q.options;
           else if (typeof q.options_json === 'string') {
-            try { opts = JSON.parse(q.options_json); } catch {}
+            try { opts = JSON.parse(q.options_json); } catch { }
           }
           return {
             id: q.id,
@@ -719,6 +719,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error("Failed to fetch quiz history:", error);
     }
+  },
+
+  addFeedItemToTop: (item: FeedItem) => {
+    set((state) => ({
+      feedItems: [item, ...state.feedItems],
+      currentFeedIndex: 0
+    }));
   },
 
   fetchSavedCards: async () => {
