@@ -933,10 +933,12 @@ async def stream_chat(
             )
 
             # Send final event with metadata
+            metadata = values.get("metadata", {})
             final_data = {
                 'type': 'done',
                 'sources': sources,
                 'related_concepts': related_concepts,
+                'metadata': metadata,
                 'message_id': assistant_message_id,
                 'conversation_id': conversation_id,
             }
