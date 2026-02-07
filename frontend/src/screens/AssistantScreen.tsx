@@ -6,12 +6,13 @@ import {
   Send, Search, BookOpen, Target,
   Map, Lightbulb, Link2, MoreVertical, X, Save,
   MessageSquare, Trash2, History, BookmarkPlus,
-  Cpu, Activity, ChevronDown, ChevronUp, Info
+  Cpu, Activity, ChevronDown, ChevronUp, Info,
+  Plus, FileQuestion, CreditCard, Loader2
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
-import type { ChatMessage } from '../types';
-import { api } from '../services/api';
+import type { ChatMessage, FeedItem } from '../types';
+import { api, chatService } from '../services/api';
 
 /**
  * Extract topic from "quiz me on X" style messages.
@@ -67,6 +68,7 @@ export function AssistantScreen() {
     quizOnTopic,
     fetchNotes,
     fetchConcepts,
+    addFeedItemToTop,
   } = useAppStore();
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -90,6 +92,61 @@ export function AssistantScreen() {
 
   // Expanded metadata toggle per message
   const [expandedMetadata, setExpandedMetadata] = useState<Set<string>>(new Set());
+
+  // Add to Feed state
+  const [addToFeedMsgId, setAddToFeedMsgId] = useState<string | null>(null);
+  const [addToFeedLoading, setAddToFeedLoading] = useState(false);
+
+  // Handler: create card from chat message
+  const handleCreateCard = async (_messageId: string, serverId: string | undefined, outputType: 'quiz' | 'concept_card') => {
+    if (!serverId) {
+      alert('This message has no server ID yet. Please wait for the response to complete.');
+      return;
+    }
+    setAddToFeedLoading(true);
+    try {
+      const result = await chatService.createCardFromMessage(serverId, outputType);
+      // Convert result to FeedItem and prepend to feed
+      let feedItem: FeedItem;
+      if (result.type === 'flashcard') {
+        feedItem = {
+          id: result.id,
+          type: 'flashcard',
+          concept: {
+            id: '',
+            name: result.topic || 'Chat Card',
+            definition: result.back_content || '',
+            domain: '',
+            complexity: 5,
+            prerequisites: [],
+            related: [],
+            mastery: 0,
+          },
+        };
+      } else {
+        feedItem = {
+          id: result.id,
+          type: 'quiz',
+          question: result.question_text || '',
+          options: (result.options || []).map((o: any, i: number) => ({
+            id: o.id || String.fromCharCode(65 + i),
+            text: o.text || '',
+            isCorrect: o.is_correct || false,
+          })),
+          explanation: result.explanation || '',
+          relatedConcept: result.topic || 'Chat',
+          source_url: '',
+        };
+      }
+      addFeedItemToTop(feedItem);
+      setAddToFeedMsgId(null);
+    } catch (err) {
+      console.error('Failed to create card:', err);
+      alert('Failed to create card. Please try again.');
+    } finally {
+      setAddToFeedLoading(false);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -361,11 +418,77 @@ export function AssistantScreen() {
   const showQuickActions = chatMessages.length <= 1;
 
   // Custom renderer for ReactMarkdown
-  const MarkdownComponents = {
-    p: ({ children }: any) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+  // Helper to parse citation references like [1], [2] and make them clickable
+  const renderTextWithCitations = (text: string, sourceObjects?: { id: string; title: string; content?: string }[]) => {
+    if (!text || typeof text !== 'string') return text;
+
+    const citationRegex = /\[(\d+)\]/g;
+    const parts: (string | React.ReactElement)[] = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = citationRegex.exec(text)) !== null) {
+      // Add text before the match
+      if (match.index > lastIndex) {
+        parts.push(text.slice(lastIndex, match.index));
+      }
+
+      const citationNum = parseInt(match[1], 10);
+      const sourceIndex = citationNum - 1; // Citations are 1-indexed
+      const source = sourceObjects?.[sourceIndex];
+
+      if (source) {
+        parts.push(
+          <button
+            key={`citation-${match.index}`}
+            onClick={() => setCitationModal({ show: true, source })}
+            className="inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold rounded-full bg-[#2EFFE6]/20 text-[#2EFFE6] hover:bg-[#2EFFE6]/30 hover:scale-110 transition-all cursor-pointer mx-0.5 align-text-top"
+            title={`View source: ${source.title}`}
+          >
+            {citationNum}
+          </button>
+        );
+      } else {
+        // No source found, render as plain text
+        parts.push(match[0]);
+      }
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : text;
+  };
+
+  // Factory to create markdown components with access to current message's sources
+  const createMarkdownComponents = (sourceObjects?: { id: string; title: string; content?: string }[]) => ({
+    p: ({ children }: any) => {
+      // Process children to look for text nodes with citations
+      const processChild = (child: any): any => {
+        if (typeof child === 'string') {
+          return renderTextWithCitations(child, sourceObjects);
+        }
+        return child;
+      };
+      const processed = Array.isArray(children) ? children.map(processChild) : processChild(children);
+      return <p className="mb-2 last:mb-0 leading-relaxed">{processed}</p>;
+    },
     ul: ({ children }: any) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
     ol: ({ children }: any) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
-    li: ({ children }: any) => <li>{children}</li>,
+    li: ({ children }: any) => {
+      const processChild = (child: any): any => {
+        if (typeof child === 'string') {
+          return renderTextWithCitations(child, sourceObjects);
+        }
+        return child;
+      };
+      const processed = Array.isArray(children) ? children.map(processChild) : processChild(children);
+      return <li>{processed}</li>;
+    },
     h1: ({ children }: any) => <h1 className="text-xl font-bold mb-2 mt-4">{children}</h1>,
     h2: ({ children }: any) => <h2 className="text-lg font-bold mb-2 mt-3">{children}</h2>,
     h3: ({ children }: any) => <h3 className="text-md font-bold mb-1 mt-2">{children}</h3>,
@@ -385,7 +508,7 @@ export function AssistantScreen() {
         {children}
       </a>
     ),
-  };
+  });
 
   return (
     <div className="h-[calc(100vh-180px)] flex flex-col relative">
@@ -664,7 +787,7 @@ export function AssistantScreen() {
                 ) : (
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
-                    components={MarkdownComponents}
+                    components={createMarkdownComponents(message.sourceObjects)}
                   >
                     {message.content}
                   </ReactMarkdown>
@@ -723,6 +846,46 @@ export function AssistantScreen() {
                       {concept}
                     </button>
                   ))}
+                </div>
+              )}
+
+              {/* Add to Feed Button — desktop-friendly alternative to swipe */}
+              {message.role === 'assistant' && message.content && !message.status && (
+                <div className="mt-3 pt-3 border-t border-white/5">
+                  {addToFeedMsgId === message.id ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleCreateCard(message.id, message.serverId, 'quiz')}
+                        disabled={addToFeedLoading}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#9B59B6]/15 text-[#9B59B6] text-xs font-medium hover:bg-[#9B59B6]/25 transition-colors disabled:opacity-50"
+                      >
+                        {addToFeedLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileQuestion className="w-3 h-3" />}
+                        Quiz
+                      </button>
+                      <button
+                        onClick={() => handleCreateCard(message.id, message.serverId, 'concept_card')}
+                        disabled={addToFeedLoading}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#2EFFE6]/15 text-[#2EFFE6] text-xs font-medium hover:bg-[#2EFFE6]/25 transition-colors disabled:opacity-50"
+                      >
+                        {addToFeedLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
+                        Concept Card
+                      </button>
+                      <button
+                        onClick={() => setAddToFeedMsgId(null)}
+                        className="p-2 rounded-lg bg-white/5 text-white/40 hover:bg-white/10 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setAddToFeedMsgId(message.id)}
+                      className="flex items-center gap-1.5 text-[10px] text-white/30 hover:text-[#B6FF2E] transition-colors"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Add to Feed</span>
+                    </button>
+                  )}
                 </div>
               )}
             </motion.div>

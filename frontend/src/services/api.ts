@@ -122,6 +122,7 @@ export const feedService = {
         onStatus: (status: string) => void,
         onDone: (data: { questions: any[]; topic: string; total: number; from_notes: number; from_web: number }) => void,
         onError: (error: string) => void,
+        allowWebSearch: boolean = true,  // If false, skips Tavily web search
     ) => {
         const token = getAuthToken();
         const response = await fetch(
@@ -132,7 +133,11 @@ export const feedService = {
                     'Content-Type': 'application/json',
                     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
                 },
-                body: JSON.stringify({ force_research: true, target_pool_size: 15 }),
+                body: JSON.stringify({
+                    force_research: true,
+                    target_pool_size: 15,
+                    allow_web_search: allowWebSearch,
+                }),
             }
         );
 

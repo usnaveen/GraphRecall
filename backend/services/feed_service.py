@@ -299,13 +299,20 @@ class FeedService:
             # Enrich with concept names in bulk (simplified)
             # ... (keep existing)
 
-            # Parse options_json
+            # Parse options_json (JSONB columns are auto-deserialized by the driver)
             for q in quizzes:
-                if q.get("options_json"):
-                     try:
-                         q["options"] = json.loads(q["options_json"])
-                     except:
-                         q["options"] = []
+                raw = q.get("options_json")
+                if raw:
+                    if isinstance(raw, list):
+                        # Already deserialized by JSONB driver
+                        q["options"] = raw
+                    elif isinstance(raw, str):
+                        try:
+                            q["options"] = json.loads(raw)
+                        except Exception:
+                            q["options"] = []
+                    else:
+                        q["options"] = []
                 else:
                     q["options"] = []
             
