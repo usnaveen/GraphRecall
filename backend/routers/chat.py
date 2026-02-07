@@ -723,6 +723,7 @@ async def stream_chat(
             initial_state: ChatState = {
                 "messages": [HumanMessage(content=request.message)],
                 "user_id": user_id,
+                "focused_source_ids": getattr(request, 'source_ids', None) or [],  # Source-scoped filtering
                 "graph_context": {},
                 "rag_context": [],
             }

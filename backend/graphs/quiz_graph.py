@@ -58,6 +58,9 @@ class QuizState(TypedDict, total=False):
     user_id: str
     num_questions: int
     
+    # User consent for web research (default: False)
+    allow_research: bool  # Must be explicitly True to enable web search
+    
     # Resources
     resources: list[dict]
     resource_count: int
@@ -74,6 +77,7 @@ class QuizState(TypedDict, total=False):
     
     # Error handling
     error: Optional[str]
+
 
 
 # ============================================================================
@@ -376,19 +380,27 @@ Output JSON:
 
 def route_by_sufficiency(state: QuizState) -> Literal["research", "generate_quiz"]:
     """
-    Route based on resource sufficiency.
+    Route based on resource sufficiency AND user consent.
     
-    This is the conditional edge function that demonstrates
-    LangGraph's branching capability.
+    Web research only happens if:
+    1. Resources are insufficient (needs_research = True)
+    2. User has explicitly consented (allow_research = True)
+    
+    This prevents unexpected web searches and API costs.
     """
     needs_research = state.get("needs_research", False)
+    allow_research = state.get("allow_research", False)  # Default: NO research
     
-    if needs_research:
-        logger.info("route_by_sufficiency: Routing to research")
+    if needs_research and allow_research:
+        logger.info("route_by_sufficiency: Routing to research (user consented)")
         return "research"
-    else:
-        logger.info("route_by_sufficiency: Routing to generate_quiz")
+    elif needs_research and not allow_research:
+        logger.info("route_by_sufficiency: Skipping research (no user consent, will use available resources)")
         return "generate_quiz"
+    else:
+        logger.info("route_by_sufficiency: Routing to generate_quiz (sufficient resources)")
+        return "generate_quiz"
+
 
 
 # ============================================================================
@@ -457,6 +469,7 @@ async def run_quiz_generation(
     topic: str,
     user_id: str = "default",
     num_questions: int = 5,
+    allow_research: bool = False,  # User must explicitly consent to web search
 ) -> dict:
     """
     Run the quiz generation workflow.
@@ -465,6 +478,8 @@ async def run_quiz_generation(
         topic: Topic to generate quiz about
         user_id: User ID
         num_questions: Number of questions to generate
+        allow_research: If True, allows web research when local resources are insufficient.
+                       Default is False - quiz will be generated with available resources only.
     
     Returns:
         Dict with questions and metadata
@@ -476,6 +491,7 @@ async def run_quiz_generation(
         "topic": topic,
         "user_id": user_id,
         "num_questions": num_questions,
+        "allow_research": allow_research,  # User consent flag
         "resources": [],
         "resource_count": 0,
         "needs_research": False,
@@ -487,6 +503,7 @@ async def run_quiz_generation(
         "run_quiz_generation: Starting",
         topic=topic,
         num_questions=num_questions,
+        allow_research=allow_research,
     )
     
     try:

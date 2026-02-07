@@ -67,52 +67,49 @@ proposition_agent = PropositionExtractionAgent()
 async def extract_propositions_node(state: IngestionState) -> dict:
     """
     Node 0d: Extract atomic propositions from chunks (Phase 3).
-    """
-    logger.info("extract_propositions_node: Starting")
-    chunks = state.get("chunks", [])
-    if not chunks:
-        return {}
-        
-    all_propositions = []
     
-    # Process each chunk group (Parent + Children)
-    # We typically extract propositions from Child chunks for precision
-    for group in chunks:
-        child_contents = group.get("child_contents", [])
-        child_ids = group.get("child_ids", [])
-        
-        for i, (content, child_id) in enumerate(zip(child_contents, child_ids)):
-            # Construct a temporary Chunk object for the agent
-            # We use the pre-generated ID from chunk_node
-            try:
-                temp_chunk = Chunk(
-                    id=uuid.UUID(child_id),
-                    note_id=uuid.UUID(str(state["note_id"])),
-                    content=content,
-                    chunk_index=i,
-                    created_at=datetime.now(timezone.utc)
-                )
-                
-                # Extract propositions
-                props = await proposition_agent.extract_propositions(temp_chunk)
-                
-                if props:
-                    # Append needed metadata to verify saving later
-                    # Convert Pydantic to dict for state storage
-                    props_dicts = []
-                    for p in props:
-                        p_dict = p.model_dump()
-                        p_dict["id"] = str(uuid.uuid4()) # Generate ID ensuring consistency
-                        props_dicts.append(p_dict)
-                        
-                    all_propositions.extend(props_dicts)
-                    
-            except Exception as e:
-                logger.warning("extract_propositions_node: Failed for chunk", chunk_id=child_id, error=str(e))
-                continue
+    DISABLED: Proposition extraction is expensive (1 LLM call per chunk).
+    The benefit is marginal - flashcard/quiz generation works well with concepts alone.
+    This node now returns empty propositions, allowing the fallback paths to be used.
+    
+    To re-enable: uncomment the original implementation below.
+    """
+    logger.info("extract_propositions_node: SKIPPED (disabled for cost optimization)")
+    return {"propositions": []}
+    
+    # --- ORIGINAL IMPLEMENTATION (disabled) ---
+    # logger.info("extract_propositions_node: Starting")
+    # chunks = state.get("chunks", [])
+    # if not chunks:
+    #     return {}
+    #     
+    # all_propositions = []
+    # 
+    # # Process each chunk group (Parent + Children)
+    # for group in chunks:
+    #     child_contents = group.get("child_contents", [])
+    #     child_ids = group.get("child_ids", [])
+    #     
+    #     for i, (content, child_id) in enumerate(zip(child_contents, child_ids)):
+    #         try:
+    #             temp_chunk = Chunk(
+    #                 id=uuid.UUID(child_id),
+    #                 note_id=uuid.UUID(str(state["note_id"])),
+    #                 content=content,
+    #                 chunk_index=i,
+    #                 created_at=datetime.now(timezone.utc)
+    #             )
+    #             props = await proposition_agent.extract_propositions(temp_chunk)
+    #             if props:
+    #                 props_dicts = [p.model_dump() | {"id": str(uuid.uuid4())} for p in props]
+    #                 all_propositions.extend(props_dicts)
+    #         except Exception as e:
+    #             logger.warning("extract_propositions_node: Failed", chunk_id=child_id, error=str(e))
+    #             continue
+    #
+    # logger.info("extract_propositions_node: Done", count=len(all_propositions))
+    # return {"propositions": all_propositions}
 
-    logger.info("extract_propositions_node: Extracted propositions", count=len(all_propositions))
-    return {"propositions": all_propositions}
 async def parse_node(state: IngestionState) -> dict:
     """
     Node 0a: Parse document into Markdown.
