@@ -1080,7 +1080,7 @@ class FeedService:
             
             # Check existing item count (approximate by checking quizzes)
             cnt_res = await self.pg_client.execute_query(
-                "SELECT count(*) as c FROM quizzes WHERE concept_id IN (SELECT id FROM proficiency_scores WHERE user_id = :uid)",
+                "SELECT count(*) as c FROM quizzes WHERE concept_id IN (SELECT concept_id FROM proficiency_scores WHERE user_id = :uid)",
                 {"uid": user_id}
             )
             count = cnt_res[0]["c"] if cnt_res else 0
