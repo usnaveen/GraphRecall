@@ -128,7 +128,14 @@ export interface ChatMessage {
   relatedConcepts?: string[];
   serverId?: string;
   /** Raw source objects from the backend, used for source-scoped chat filtering */
-  sourceObjects?: { id: string; title: string }[];
+  sourceObjects?: { id: string; title: string; content?: string }[];
+  /** Metadata about the retrieval process */
+  metadata?: {
+    intent?: string;
+    entities?: string[];
+    documents_retrieved?: number;
+    nodes_retrieved?: number;
+  };
 }
 
 export interface GraphNode {

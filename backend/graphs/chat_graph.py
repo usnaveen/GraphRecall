@@ -480,11 +480,12 @@ async def generate_response_node(state: ChatState) -> dict:
 
 **Instructions:** {instruction}
 
-Guidelines:
-1. Use the context from their notes when available
-2. Reference specific concepts by name
-3. If context is insufficient, suggest they add notes
-4. Be conversational but educational"""),
+**Citation Guidelines:**
+1. When referencing specific information from the context, include a citation number in brackets like [1], [2]
+2. Each citation should correspond to a source in the context
+3. Use citations to show where facts come from
+4. Be conversational but educational
+5. If context is insufficient, suggest they add notes"""),
         MessagesPlaceholder(variable_name="history"),
     ])
     
@@ -498,7 +499,7 @@ Guidelines:
         
         logger.info("generate_response_node: Complete")
         
-        # Return with AI message added to state
+        # Return with AI message added to state plus full metadata
         return {
             "messages": [AIMessage(content=response.content)],
             "related_concepts": [
@@ -506,9 +507,15 @@ Guidelines:
                 for c in graph_context.get("concepts", [])
             ],
             "sources": [
-                {"id": n.get("id"), "title": n.get("title")}
+                {"id": n.get("id"), "title": n.get("title"), "content": n.get("content", "")[:500]}
                 for n in rag_context
             ],
+            "metadata": {
+                "intent": intent,
+                "entities": state.get("entities", []),
+                "documents_retrieved": len(rag_context),
+                "nodes_retrieved": len(graph_context.get("concepts", [])),
+            },
         }
         
     except Exception as e:
@@ -641,6 +648,7 @@ async def run_chat(
             "response": response_text,
             "sources": result.get("sources", []),
             "related_concepts": result.get("related_concepts", []),
+            "metadata": result.get("metadata", {}),
             "thread_id": thread_id,
         }
         
@@ -650,6 +658,7 @@ async def run_chat(
             "response": "I encountered an error. Please try again.",
             "sources": [],
             "related_concepts": [],
+            "metadata": {},
             "thread_id": thread_id,
             "error": str(e),
         }

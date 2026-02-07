@@ -36,6 +36,7 @@ dependencies = [
     "python-multipart>=0.0.22",
     "google-auth>=2.48.0",
     "langchain-google-genai>=4.2.0",
+    "marker-pdf>=1.10.2",
 ]
 
 [project.optional-dependencies]
