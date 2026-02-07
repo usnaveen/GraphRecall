@@ -315,6 +315,10 @@ class ChatRequest(BaseModel):
     include_sources: bool = True
     max_context_concepts: int = Field(default=10, le=20)
     conversation_id: Optional[str] = None
+    source_ids: Optional[list[str]] = Field(
+        default=None, 
+        description="Optional list of note/concept IDs to scope retrieval to"
+    )
 
 
 class ChatResponse(BaseModel):

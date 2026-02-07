@@ -82,6 +82,9 @@ export function AssistantScreen() {
   const [swipingMessageId, setSwipingMessageId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Source-scoped filtering state
+  const [selectedSources, setSelectedSources] = useState<{ id: string; title: string }[]>([]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -248,6 +251,7 @@ export function AssistantScreen() {
           message: messageText, // Send expanded text
           user_id: '00000000-0000-0000-0000-000000000001',
           conversation_id: activeConversationId,
+          source_ids: selectedSources.length > 0 ? selectedSources.map(s => s.id) : undefined,
         }),
       });
 
@@ -607,14 +611,29 @@ export function AssistantScreen() {
                 <div className="mt-3 pt-3 border-t border-white/10">
                   <p className="text-xs text-white/50 mb-1">Sources</p>
                   <div className="flex flex-wrap gap-1">
-                    {message.sources.map((source: string, j: number) => (
-                      <span
-                        key={j}
-                        className="px-2 py-0.5 rounded-full text-[10px] bg-white/10 text-white/60"
-                      >
-                        {source}
-                      </span>
-                    ))}
+                    {message.sources.map((source: string, j: number) => {
+                      // Check if already selected
+                      const isSelected = selectedSources.some(s => s.title === source);
+                      return (
+                        <button
+                          key={j}
+                          onClick={() => {
+                            if (!isSelected) {
+                              // Add source to selection (use title as ID for now, ideally use actual ID)
+                              setSelectedSources(prev => [...prev, { id: source, title: source }]);
+                            }
+                          }}
+                          className={`px-2 py-0.5 rounded-full text-[10px] transition-colors cursor-pointer
+                              ${isSelected
+                              ? 'bg-[#22C55E]/20 text-[#22C55E] border border-[#22C55E]/30'
+                              : 'bg-white/10 text-white/60 hover:bg-[#22C55E]/10 hover:text-[#22C55E]'}
+                            `}
+                          title={isSelected ? 'Already selected' : 'Click to focus chat on this source'}
+                        >
+                          {source}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -698,25 +717,57 @@ export function AssistantScreen() {
           animate={{ opacity: 1, y: 0 }}
           className="relative"
         >
-          <div className="flex items-center gap-2 glass-surface rounded-full p-2 border border-white/10 focus-within:border-[#B6FF2E]/50 transition-colors bg-[#0a0a0f]">
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Message assistant..."
-              className="flex-1 bg-transparent text-white text-sm placeholder:text-white/30 focus:outline-none px-2 font-medium"
-            />
+          <div className="flex flex-col gap-2 glass-surface rounded-2xl p-2 border border-white/10 focus-within:border-[#B6FF2E]/50 transition-colors bg-[#0a0a0f]">
+            {/* Selected Sources Pills */}
+            {selectedSources.length > 0 && (
+              <div className="flex flex-wrap gap-1 px-1">
+                {selectedSources.map((source) => (
+                  <span
+                    key={source.id}
+                    className="group inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-[#22C55E]/20 text-[#22C55E] border border-[#22C55E]/30"
+                  >
+                    <span className="max-w-[100px] truncate">{source.title}</span>
+                    <button
+                      onClick={() => setSelectedSources(prev => prev.filter(s => s.id !== source.id))}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-400"
+                      title="Remove source"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                <button
+                  onClick={() => setSelectedSources([])}
+                  className="px-2 py-0.5 rounded-full text-[10px] text-white/40 hover:text-white/60 transition-colors"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
 
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={() => handleSend()}
-              disabled={!inputValue.trim()}
-              className="w-10 h-10 rounded-full bg-[#B6FF2E] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#c5ff4d] transition-colors text-black shadow-lg shadow-[#B6FF2E]/10"
-            >
-              <Send className="w-5 h-5" />
-            </motion.button>
+            {/* Input Row */}
+            <div className="flex items-center gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                placeholder={selectedSources.length > 0
+                  ? `Ask about ${selectedSources.length} source${selectedSources.length > 1 ? 's' : ''}...`
+                  : "Message assistant..."}
+                className="flex-1 bg-transparent text-white text-sm placeholder:text-white/30 focus:outline-none px-2 font-medium"
+              />
+
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={() => handleSend()}
+                disabled={!inputValue.trim()}
+                className="w-10 h-10 rounded-full bg-[#B6FF2E] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#c5ff4d] transition-colors text-black shadow-lg shadow-[#B6FF2E]/10"
+              >
+                <Send className="w-5 h-5" />
+              </motion.button>
+            </div>
           </div>
         </motion.div>
       </div>

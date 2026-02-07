@@ -55,6 +55,10 @@ class ChatState(TypedDict, total=False):
     # User context
     user_id: str
     
+    # Source-scoped filtering (optional)
+    # When provided, retrieval is limited to these specific note/concept IDs
+    focused_source_ids: list[str]
+    
     # Query analysis
     intent: str
     entities: list[str]
@@ -66,6 +70,7 @@ class ChatState(TypedDict, total=False):
     # Final outputs
     related_concepts: list[dict]
     sources: list[dict]
+
 
 
 # ============================================================================
@@ -311,15 +316,21 @@ async def get_context_node(state: ChatState) -> dict:
     Node 2: Retrieve context from knowledge graph and notes.
     
     Combines graph traversal with RAG retrieval.
+    Supports source-scoped filtering when focused_source_ids is provided.
     """
     entities = state.get("entities", [])
     user_id = state.get("user_id", "default")
     messages = state.get("messages", [])
+    focused_source_ids = state.get("focused_source_ids", [])  # Source-scoped filtering
     
     last_message = messages[-1] if messages else None
     query = last_message.content if last_message and hasattr(last_message, "content") else ""
     
-    logger.info("get_context_node: Retrieving context", entities=entities)
+    logger.info(
+        "get_context_node: Retrieving context",
+        entities=entities,
+        focused_sources=len(focused_source_ids) if focused_source_ids else 0,
+    )
     
     graph_context = {"concepts": [], "relationships": []}
     rag_context = []
@@ -330,39 +341,70 @@ async def get_context_node(state: ChatState) -> dict:
             neo4j = await get_neo4j_client()
             
             for entity in entities[:5]:
-                result = await neo4j.execute_query(
-                    """
-                    MATCH (c:Concept)
-                    WHERE toLower(c.name) CONTAINS toLower($name)
-                    RETURN c.id as id, c.name as name, c.definition as definition,
-                           c.domain as domain
-                    LIMIT 3
-                    """,
-                    {"name": entity}
-                )
+                # If source-scoped, filter concepts to only those in focused IDs
+                if focused_source_ids:
+                    result = await neo4j.execute_query(
+                        """
+                        MATCH (c:Concept)
+                        WHERE c.id IN $source_ids
+                          AND (toLower(c.name) CONTAINS toLower($name) 
+                               OR toLower(c.definition) CONTAINS toLower($name))
+                        RETURN c.id as id, c.name as name, c.definition as definition,
+                               c.domain as domain
+                        LIMIT 3
+                        """,
+                        {"name": entity, "source_ids": focused_source_ids}
+                    )
+                else:
+                    result = await neo4j.execute_query(
+                        """
+                        MATCH (c:Concept)
+                        WHERE toLower(c.name) CONTAINS toLower($name)
+                        RETURN c.id as id, c.name as name, c.definition as definition,
+                               c.domain as domain
+                        LIMIT 3
+                        """,
+                        {"name": entity}
+                    )
                 graph_context["concepts"].extend(result)
                 
         except Exception as e:
             logger.warning("get_context_node: Graph query failed", error=str(e))
     
-    # Get RAG context
+    # Get RAG context (notes)
     if query:
         try:
             pg_client = await get_postgres_client()
             
-            result = await pg_client.execute_query(
-                """
-                SELECT id, title, content_text as content, created_at
-                FROM notes
-                WHERE user_id = :user_id
-                  AND (title ILIKE :search_pattern OR content_text ILIKE :search_pattern)
-                LIMIT 3
-                """,
-                {
-                    "user_id": user_id,
-                    "search_pattern": f"%{query[:50]}%"
-                }
-            )
+            # If source-scoped, filter to specific note IDs only
+            if focused_source_ids:
+                result = await pg_client.execute_query(
+                    """
+                    SELECT id, title, content_text as content, created_at
+                    FROM notes
+                    WHERE user_id = :user_id
+                      AND id = ANY(:source_ids)
+                    LIMIT 5
+                    """,
+                    {
+                        "user_id": user_id,
+                        "source_ids": focused_source_ids
+                    }
+                )
+            else:
+                result = await pg_client.execute_query(
+                    """
+                    SELECT id, title, content_text as content, created_at
+                    FROM notes
+                    WHERE user_id = :user_id
+                      AND (title ILIKE :search_pattern OR content_text ILIKE :search_pattern)
+                    LIMIT 3
+                    """,
+                    {
+                        "user_id": user_id,
+                        "search_pattern": f"%{query[:50]}%"
+                    }
+                )
             rag_context = [dict(r) for r in result] if result else []
             
         except Exception as e:
@@ -372,12 +414,14 @@ async def get_context_node(state: ChatState) -> dict:
         "get_context_node: Complete",
         num_concepts=len(graph_context["concepts"]),
         num_notes=len(rag_context),
+        scoped=bool(focused_source_ids),
     )
     
     return {
         "graph_context": graph_context,
         "rag_context": rag_context,
     }
+
 
 
 async def generate_response_node(state: ChatState) -> dict:
@@ -544,6 +588,7 @@ async def run_chat(
     user_id: str,
     message: str,
     thread_id: Optional[str] = None,
+    focused_source_ids: Optional[list[str]] = None,  # Source-scoped filtering
 ) -> dict:
     """
     Run the chat workflow.
@@ -552,6 +597,8 @@ async def run_chat(
         user_id: User ID
         message: User's message
         thread_id: Optional thread ID for conversation persistence
+        focused_source_ids: Optional list of note/concept IDs to scope retrieval to.
+                           When provided, chat will ONLY use context from these sources.
     
     Returns:
         Dict with response, sources, and related_concepts
@@ -564,6 +611,7 @@ async def run_chat(
     initial_state: ChatState = {
         "messages": [HumanMessage(content=message)],
         "user_id": user_id,
+        "focused_source_ids": focused_source_ids or [],  # Pass to state
         "graph_context": {},
         "rag_context": [],
     }
@@ -573,6 +621,7 @@ async def run_chat(
         user_id=user_id,
         thread_id=thread_id,
         message_length=len(message),
+        focused_sources=len(focused_source_ids) if focused_source_ids else 0,
     )
     
     try:
