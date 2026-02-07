@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import html2canvas from 'html2canvas';
 import {
   Heart, Bookmark, Share2, ChevronRight, Lightbulb,
   CheckCircle, XCircle, Edit3, Image as ImageIcon, Map,
-  Sparkles, ArrowRight, Globe, Layers, X, Filter, ExternalLink
+  Sparkles, ArrowRight, Globe, Layers, X, Filter, ExternalLink,
+  Download, Check
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import type { FeedItem, QuizOption, ConceptShowcaseCard, TermCard } from '../types';
+import { MathText } from '../components/MathText';
+import 'katex/dist/katex.min.css';
 
 export function FeedScreen() {
   const {
@@ -22,12 +26,20 @@ export function FeedScreen() {
     toggleSave,
     feedMode,
     quizHistory,
-    fetchQuizHistory
+    savedCards,
+    fetchQuizHistory,
+    fetchSavedCards
   } = useAppStore();
+
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [shareToast, setShareToast] = useState<string | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
 
   useEffect(() => {
     if (feedMode === 'history') {
       fetchQuizHistory();
+    } else if (feedMode === 'saved') {
+      fetchSavedCards();
     }
   }, [feedMode]);
 
@@ -71,49 +83,78 @@ export function FeedScreen() {
   };
 
   const handleShare = async () => {
-    if (!currentItem) return;
-    let title = 'GraphRecall';
-    let text = 'Check this out from my GraphRecall feed.';
-    let url: string | undefined;
-
-    switch (currentItem.type) {
-      case 'flashcard':
-        title = currentItem.concept.name;
-        text = `${currentItem.concept.name}: ${currentItem.concept.definition}`;
-        break;
-      case 'quiz':
-        title = 'Quiz Question';
-        text = currentItem.question;
-        break;
-      case 'fillblank':
-        title = 'Fill in the Blank';
-        text = currentItem.sentence;
-        break;
-      case 'screenshot':
-        title = currentItem.title || 'Screenshot';
-        text = currentItem.description || 'Screenshot from my GraphRecall feed.';
-        url = currentItem.imageUrl;
-        break;
-      case 'diagram':
-        title = currentItem.caption || 'Concept Diagram';
-        text = currentItem.caption || 'Concept diagram from my GraphRecall feed.';
-        break;
-      case 'concept_showcase':
-        title = currentItem.conceptName;
-        text = currentItem.definition;
-        break;
-    }
+    if (!currentItem || !cardRef.current) return;
+    setIsCapturing(true);
 
     try {
-      if (navigator.share) {
-        await navigator.share({ title, text, url });
-      } else if (navigator.clipboard) {
-        const payload = url ? `${text}\n${url}` : text;
-        await navigator.clipboard.writeText(payload);
-        alert('Copied to clipboard');
+      // Capture the card as a canvas with a solid background
+      const canvas = await html2canvas(cardRef.current, {
+        backgroundColor: '#07070A',
+        scale: 2, // Higher resolution
+        useCORS: true,
+        logging: false,
+        // Add padding around the card
+        x: -16,
+        y: -16,
+        width: cardRef.current.offsetWidth + 32,
+        height: cardRef.current.offsetHeight + 32,
+      });
+
+      // Add watermark at the bottom
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.font = '14px Inter, system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(182, 255, 46, 0.6)';
+        ctx.textAlign = 'center';
+        ctx.fillText('graphrecall.app', canvas.width / 2, canvas.height - 12);
       }
+
+      // Convert to blob
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, 'image/png', 1.0)
+      );
+
+      if (!blob) {
+        throw new Error('Failed to create image');
+      }
+
+      // Generate filename
+      let name = 'graphrecall-card';
+      if (currentItem.type === 'quiz') name = `quiz-${currentItem.relatedConcept || 'question'}`;
+      else if (currentItem.type === 'flashcard') name = `flashcard-${currentItem.concept?.name || 'card'}`;
+      else if (currentItem.type === 'concept_showcase') name = `concept-${currentItem.conceptName || 'card'}`;
+      const filename = `${name.replace(/\s+/g, '-').toLowerCase()}.png`;
+
+      // Try native share with image first (mobile), fallback to download
+      if (navigator.share && navigator.canShare?.({ files: [new File([blob], filename, { type: 'image/png' })] })) {
+        const file = new File([blob], filename, { type: 'image/png' });
+        await navigator.share({
+          title: 'GraphRecall',
+          text: 'Check this out from GraphRecall!',
+          files: [file],
+        });
+        setShareToast('Shared!');
+      } else {
+        // Download as PNG
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setShareToast('PNG downloaded!');
+      }
+
+      // Auto-hide toast
+      setTimeout(() => setShareToast(null), 2500);
     } catch (err) {
       console.error('Share failed:', err);
+      setShareToast('Share failed');
+      setTimeout(() => setShareToast(null), 2500);
+    } finally {
+      setIsCapturing(false);
     }
   };
 
@@ -190,6 +231,52 @@ export function FeedScreen() {
     );
   }
 
+  // Saved Cards View
+  if (feedMode === 'saved') {
+    return (
+      <div className="h-[calc(100vh-140px)] overflow-y-auto pb-20 px-2 scrollbar-hide pt-2">
+        <div className="max-w-lg mx-auto space-y-6">
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-2">
+              <Bookmark className="w-4 h-4 text-[#B6FF2E]" />
+              <span className="text-sm font-heading font-bold text-white">Saved Cards</span>
+            </div>
+            <span className="text-xs text-white/30 font-mono">{savedCards.length} Items</span>
+          </div>
+
+          {savedCards.length === 0 ? (
+            <div className="text-center py-20 bg-white/5 rounded-2xl border border-white/5">
+              <Bookmark className="w-8 h-8 text-white/20 mx-auto mb-3" />
+              <p className="text-white/40">No saved cards yet.</p>
+              <p className="text-white/30 text-xs mt-1">Tap the bookmark icon on any card to save it here.</p>
+            </div>
+          ) : (
+            savedCards.map((item, i) => (
+              <motion.div
+                key={`saved-${item.id}-${i}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: Math.min(i * 0.05, 0.5) }}
+                className="recall-card p-5 relative"
+              >
+                {/* Saved badge */}
+                <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#B6FF2E]/10 border border-[#B6FF2E]/20">
+                  <Bookmark className="w-3 h-3 fill-[#B6FF2E] text-[#B6FF2E]" />
+                  <span className="text-[10px] text-[#B6FF2E] font-bold uppercase tracking-wider">Saved</span>
+                </div>
+                <FeedCardContent item={item} />
+              </motion.div>
+            ))
+          )}
+
+          <div className="h-10 text-center text-xs text-white/20 font-mono uppercase tracking-widest pt-4">
+            End of Saved
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-[calc(100vh-180px)] flex flex-col">
       {/* Topic Filter Banner */}
@@ -219,16 +306,16 @@ export function FeedScreen() {
 
       {/* Card Container */}
       <div className="flex-1 relative flex items-center justify-center p-4">
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="popLayout">
           <motion.div
             key={currentItem.id}
-            initial={{ opacity: 0, y: 40, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -40, scale: 0.92 }}
-            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
             className="w-full max-w-md mx-auto h-[70vh] flex flex-col"
           >
-            <div className="recall-card p-5 flex flex-col overflow-hidden h-full">
+            <div ref={cardRef} className="recall-card p-5 flex flex-col overflow-hidden h-full">
               {/* Card Content - Now Scrollable */}
               <div className="flex-1 overflow-y-auto scrollbar-hide pr-1 overscroll-contain">
                 <FeedCardContent item={currentItem} />
@@ -276,9 +363,14 @@ export function FeedScreen() {
                     <motion.button
                       whileTap={{ scale: 0.85 }}
                       onClick={handleShare}
-                      className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60 transition-colors"
+                      disabled={isCapturing}
+                      className={`p-2 rounded-full transition-colors ${isCapturing ? 'bg-[#B6FF2E]/10 text-[#B6FF2E]' : 'bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60'}`}
                     >
-                      <Share2 className="w-5 h-5" />
+                      {isCapturing ? (
+                        <Download className="w-5 h-5 animate-pulse" />
+                      ) : (
+                        <Share2 className="w-5 h-5" />
+                      )}
                     </motion.button>
                   </div>
 
@@ -297,6 +389,21 @@ export function FeedScreen() {
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* Share Toast Notification */}
+      <AnimatePresence>
+        {shareToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className="fixed bottom-32 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full bg-[#B6FF2E]/90 text-[#07070A] font-bold text-sm shadow-lg"
+          >
+            <Check className="w-4 h-4" />
+            {shareToast}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Swipe Hints */}
       <div className="flex justify-between items-center px-4 mt-4 text-white/40 text-xs">
@@ -523,7 +630,7 @@ function QuizContent({ quiz }: { quiz: any }) {
       {/* Grouped Question Block */}
       <div className="flex-1 flex flex-col justify-center my-2">
         <h3 className="text-xl md:text-2xl font-bold text-white leading-relaxed mb-6">
-          {quiz.question}
+          <MathText>{quiz.question}</MathText>
         </h3>
 
         {/* Options */}
@@ -572,7 +679,7 @@ function QuizContent({ quiz }: { quiz: any }) {
                       showWrong ? <XCircle className="w-3.5 h-3.5" /> : String.fromCharCode(65 + i)
                     )}
                   </div>
-                  <span className={`flex-1 text-sm ${textClass}`}>{option.text}</span>
+                  <span className={`flex-1 text-sm ${textClass}`}><MathText>{option.text}</MathText></span>
                 </div>
               </motion.button>
             );

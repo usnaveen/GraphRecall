@@ -7,7 +7,8 @@ import asyncio
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from backend.auth.middleware import get_current_user
 from backend.config.llm import get_chat_model
@@ -178,8 +179,8 @@ async def get_user_stats(
         total_concepts = 0
         try:
             result = await neo4j_client.execute_query(
-                "MATCH (c:Concept) RETURN count(c) as count",
-                {},
+                "MATCH (c:Concept {user_id: $user_id}) RETURN count(c) as count",
+                {"user_id": user_id},
             )
             if result:
                 total_concepts = result[0].get("count", 0)
@@ -219,6 +220,95 @@ async def get_user_stats(
         
     except Exception as e:
         logger.error("Feed: Error getting stats", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/saved")
+async def get_saved_items(
+    current_user: dict = Depends(get_current_user),
+):
+    """Get all saved quizzes and flashcards for the user."""
+    try:
+        pg_client = await get_postgres_client()
+        neo4j_client = await get_neo4j_client()
+        user_id = str(current_user["id"])
+
+        # Fetch saved quizzes
+        saved_quizzes = await pg_client.execute_query(
+            """
+            SELECT id, question_text, question_type, options_json, correct_answer, explanation, concept_id, source_url, created_at
+            FROM quizzes
+            WHERE user_id = :uid AND is_saved = TRUE
+            ORDER BY created_at DESC
+            """,
+            {"uid": user_id},
+        )
+
+        # Fetch saved flashcards
+        saved_flashcards = await pg_client.execute_query(
+            """
+            SELECT id, front_content, back_content, concept_id, created_at
+            FROM flashcards
+            WHERE user_id = :uid AND is_saved = TRUE
+            ORDER BY created_at DESC
+            """,
+            {"uid": user_id},
+        )
+
+        # Resolve concept names from Neo4j
+        concept_ids = list(
+            set(
+                q.get("concept_id")
+                for q in (saved_quizzes + saved_flashcards)
+                if q.get("concept_id")
+            )
+        )
+        concept_map = {}
+        if concept_ids:
+            try:
+                result = await neo4j_client.execute_query(
+                    "MATCH (c:Concept) WHERE c.id IN $ids RETURN c.id as id, c.name as name",
+                    {"ids": concept_ids},
+                )
+                for row in result:
+                    concept_map[row["id"]] = row["name"]
+            except Exception:
+                pass
+
+        items = []
+
+        for q in saved_quizzes:
+            opts = q.get("options_json")
+            if isinstance(opts, str):
+                opts = json.loads(opts)
+            items.append({
+                "id": q["id"],
+                "type": q.get("question_type", "mcq"),
+                "question_text": q["question_text"],
+                "options": opts or [],
+                "correct_answer": q.get("correct_answer", ""),
+                "explanation": q.get("explanation", ""),
+                "topic": concept_map.get(q.get("concept_id"), "General"),
+                "source_url": q.get("source_url", ""),
+                "created_at": str(q.get("created_at", "")),
+                "item_category": "quiz",
+            })
+
+        for f in saved_flashcards:
+            items.append({
+                "id": f["id"],
+                "type": "flashcard",
+                "front_content": f["front_content"],
+                "back_content": f["back_content"],
+                "topic": concept_map.get(f.get("concept_id"), "General"),
+                "created_at": str(f.get("created_at", "")),
+                "item_category": "flashcard",
+            })
+
+        return {"items": items, "total": len(items)}
+
+    except Exception as e:
+        logger.error("Feed: Error getting saved items", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -391,7 +481,7 @@ async def generate_topic_quiz(
         
         feed_service = FeedService(pg_client, neo4j_client)
         
-        return await feed_service.generate_quiz_batch(
+        return await feed_service.generate_content_batch(
             topic_name=topic_name,
             user_id=user_id,
             target_size=request.target_pool_size,
@@ -403,6 +493,219 @@ async def generate_topic_quiz(
     except Exception as e:
         logger.error("Quiz generation: Error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/quiz/topic/{topic_name}/stream")
+async def generate_topic_quiz_stream(
+    topic_name: str,
+    request: TopicQuizRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Generate a quiz on a topic with SSE streaming status updates.
+
+    Streams events:
+      - type: status  → progress updates (searching notes, web search, generating)
+      - type: done    → final result with questions array
+      - type: error   → error details
+    """
+    user_id = str(current_user["id"])
+
+    async def event_stream():
+        import json as _json
+
+        def sse(data: dict) -> str:
+            return f"data: {_json.dumps(data)}\n\n"
+
+        try:
+            pg_client = await get_postgres_client()
+            neo4j_client = await get_neo4j_client()
+            feed_service = FeedService(pg_client, neo4j_client)
+
+            # Step 1: Resolve concept
+            yield sse({"type": "status", "content": "🔍 Searching your knowledge graph..."})
+            concept_id = None
+            concept_def = ""
+            try:
+                concept_res = await neo4j_client.execute_query(
+                    "MATCH (c:Concept) WHERE toLower(c.name) = toLower($name) RETURN c.id as id, c.definition as def LIMIT 1",
+                    {"name": topic_name},
+                )
+                if concept_res:
+                    concept_id = concept_res[0]["id"]
+                    concept_def = concept_res[0].get("def") or ""
+                    yield sse({"type": "status", "content": f"📚 Found concept: {topic_name}"})
+                else:
+                    yield sse({"type": "status", "content": f"🌐 Topic not in your graph yet — searching the web..."})
+            except Exception:
+                pass
+
+            # Step 2: Check for existing quiz questions in DB
+            yield sse({"type": "status", "content": "📋 Checking for existing questions..."})
+            existing_questions = []
+            try:
+                existing = await pg_client.execute_query(
+                    """
+                    SELECT id, question_text, question_type, options_json, correct_answer, explanation, source_url
+                    FROM quizzes
+                    WHERE user_id = :uid
+                      AND (concept_id = :cid OR LOWER(question_text) LIKE :topic_pattern)
+                    ORDER BY created_at DESC
+                    LIMIT 30
+                    """,
+                    {
+                        "uid": user_id,
+                        "cid": concept_id or "__none__",
+                        "topic_pattern": f"%{topic_name.lower()}%",
+                    },
+                )
+                for q in existing:
+                    opts = q.get("options_json")
+                    if isinstance(opts, str):
+                        opts = _json.loads(opts)
+                    existing_questions.append({
+                        "id": q["id"],
+                        "question": q["question_text"],
+                        "question_type": q.get("question_type", "mcq"),
+                        "options": opts or [],
+                        "correct_answer": q.get("correct_answer", ""),
+                        "explanation": q.get("explanation", ""),
+                        "source_url": q.get("source_url", ""),
+                        "source": "notes",
+                    })
+            except Exception as e:
+                logger.warning("Quiz stream: error fetching existing", error=str(e))
+
+            if existing_questions:
+                yield sse({"type": "status", "content": f"✅ Found {len(existing_questions)} existing questions from your notes"})
+
+            # Step 3: Web research via Tavily
+            yield sse({"type": "status", "content": "🌐 Searching the web for quiz material..."})
+            research_result = {}
+            try:
+                from backend.agents.research_agent import WebResearchAgent
+                research_agent = WebResearchAgent(neo4j_client, pg_client)
+                research_result = await research_agent.research_topic(
+                    topic=topic_name,
+                    user_id=user_id,
+                    force=request.force_research,
+                )
+                if research_result.get("summary"):
+                    yield sse({"type": "status", "content": "📝 Web research complete — synthesising material..."})
+                else:
+                    yield sse({"type": "status", "content": "📝 Using available resources..."})
+            except Exception as e:
+                logger.warning("Quiz stream: research failed", error=str(e))
+                yield sse({"type": "status", "content": "⚠️ Web search unavailable — using local resources"})
+
+            # Step 4: Generate new questions
+            need_new = max(0, request.target_pool_size - len(existing_questions))
+            new_questions = []
+
+            if need_new > 0:
+                yield sse({"type": "status", "content": f"🧠 Generating {need_new} new questions..."})
+                try:
+                    content_text = concept_def + "\n" + (research_result.get("summary") or "")
+                    new_items = await feed_service.content_generator.generate_mixed_batch(
+                        topic=topic_name,
+                        definition=content_text[:6000],
+                        count=need_new,
+                    )
+
+                    for item in new_items:
+                        itype = item.get("type")
+                        content = item.get("content")
+                        if not content:
+                            continue
+
+                        item_id = str(uuid.uuid4())
+
+                        # Only return quiz-type items (MCQ, fill_blank, code_challenge)
+                        if itype in ["mcq", "fill_blank", "code_challenge"]:
+                            try:
+                                await pg_client.execute_update(
+                                    """
+                                    INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type,
+                                                        options_json, correct_answer, explanation, created_at, source,
+                                                        language, initial_code)
+                                    VALUES (:id, :uid, :cid, :q_text, :q_type, :opts, :correct, :exp, NOW(), 'batch_gen', :lang, :icode)
+                                    """,
+                                    {
+                                        "id": item_id,
+                                        "uid": user_id,
+                                        "cid": concept_id,
+                                        "q_text": content.get("question") or content.get("instruction") or content.get("sentence"),
+                                        "q_type": itype,
+                                        "opts": _json.dumps(content.get("options", [])),
+                                        "correct": str(content.get("is_correct") or content.get("solution_code") or content.get("answers", [""])[0]),
+                                        "exp": content.get("explanation", ""),
+                                        "lang": content.get("language"),
+                                        "icode": content.get("initial_code"),
+                                    },
+                                )
+                            except Exception as e:
+                                logger.warning("Quiz stream: save failed", error=str(e))
+
+                            new_questions.append({
+                                "id": item_id,
+                                "question": content.get("question") or content.get("instruction") or content.get("sentence") or "",
+                                "question_type": itype,
+                                "options": content.get("options", []),
+                                "correct_answer": str(content.get("is_correct") or content.get("solution_code") or content.get("answers", [""])[0]),
+                                "explanation": content.get("explanation", ""),
+                                "source": "web",
+                            })
+                        elif itype == "term_card":
+                            # Save flashcards too
+                            try:
+                                await pg_client.execute_update(
+                                    """
+                                    INSERT INTO flashcards (id, user_id, concept_id, front_content, back_content, created_at, source)
+                                    VALUES (:id, :uid, :cid, :front, :back, NOW(), 'batch_gen')
+                                    """,
+                                    {
+                                        "id": item_id,
+                                        "uid": user_id,
+                                        "cid": concept_id,
+                                        "front": content.get("front"),
+                                        "back": content.get("back"),
+                                    },
+                                )
+                            except Exception:
+                                pass
+
+                    yield sse({"type": "status", "content": f"✨ Generated {len(new_questions)} new questions"})
+
+                except Exception as e:
+                    logger.error("Quiz stream: generation failed", error=str(e))
+                    yield sse({"type": "status", "content": "⚠️ Question generation had issues — showing available questions"})
+
+            # Combine: notes-based first, then web-scraped
+            all_questions = existing_questions + new_questions
+            total = len(all_questions)
+
+            yield sse({
+                "type": "done",
+                "questions": all_questions,
+                "topic": topic_name,
+                "total": total,
+                "from_notes": len(existing_questions),
+                "from_web": len(new_questions),
+            })
+
+        except Exception as e:
+            logger.error("Quiz stream: Fatal error", error=str(e))
+            yield sse({"type": "error", "content": str(e)})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/resources/{concept_name}")

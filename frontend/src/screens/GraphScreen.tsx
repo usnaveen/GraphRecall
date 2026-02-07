@@ -106,7 +106,7 @@ export function GraphScreen() {
 
   useEffect(() => {
     const isCacheFresh =
-      graphCache.loadedAt && Date.now() - graphCache.loadedAt < 1000 * 60 * 5;
+      graphCache.loadedAt && Date.now() - graphCache.loadedAt < 1000 * 60 * 30;
 
     if (graphCache.data && graphCache.layout && isCacheFresh) {
       setLayout(graphCache.layout);
@@ -160,6 +160,13 @@ export function GraphScreen() {
 
   const noSearchMatch = searchQuery.trim().length > 0 && highlightedIds.size === 0;
   const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
+
+  // Reset isolation when selected node changes or is deselected
+  useEffect(() => {
+    if (!selectedNode) {
+      setIsolateCommunity(false);
+    }
+  }, [selectedNode]);
 
   const visibleNodeIds = useMemo(() => {
     if (!isolateCommunity || !selectedNode?.community) return undefined;
@@ -459,19 +466,23 @@ export function GraphScreen() {
             </button>
           </div>
           {selectedNode.community && (
-            <div className="mt-3 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+            <div className={`mt-3 flex items-center justify-between rounded-xl border px-3 py-2 transition-colors ${isolateCommunity ? 'border-[#B6FF2E]/30 bg-[#B6FF2E]/5' : 'border-white/10 bg-white/5'}`}>
               <div>
-                <p className="text-[10px] text-white/40 uppercase tracking-wider">Community Focus</p>
+                <p className="text-[10px] text-white/40 uppercase tracking-wider">
+                  {selectedNode.community.title || 'Community'}
+                </p>
                 <p className="text-xs text-white/70">
-                  {isolateCommunity ? "Showing only this community" : "Show only related nodes"}
+                  {isolateCommunity
+                    ? `Showing ${selectedNode.community.entity_ids.length} nodes`
+                    : `${selectedNode.community.entity_ids.length} related nodes`}
                 </p>
               </div>
               <button
                 onClick={() => setIsolateCommunity((v) => !v)}
-                className={`text-[10px] px-2.5 py-1 rounded-full ${isolateCommunity ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/70"
+                className={`text-[10px] px-2.5 py-1 rounded-full font-bold transition-colors ${isolateCommunity ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/70 hover:bg-white/20"
                   }`}
               >
-                {isolateCommunity ? "Isolating" : "Isolate"}
+                {isolateCommunity ? "Show All" : "Isolate"}
               </button>
             </div>
           )}
