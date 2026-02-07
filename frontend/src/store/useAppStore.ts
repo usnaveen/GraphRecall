@@ -60,11 +60,12 @@ interface AppState {
   feedMode: 'daily' | 'history' | 'saved';
   quizHistory: FeedItem[];
   savedCards: FeedItem[];
-  activeRecallSchedule: { date: string; count: number }[];
+  activeRecallSchedule: { date: string; count: number; topics?: string[] }[];
   setFeedMode: (mode: 'daily' | 'history' | 'saved') => void;
   fetchSchedule: () => Promise<void>;
   fetchQuizHistory: () => Promise<void>;
   fetchSavedCards: () => Promise<void>;
+  addFeedItemToTop: (item: FeedItem) => void;
 
   // Graph cache (persist between tab switches)
   graphCache: {
@@ -639,22 +640,81 @@ export const useAppStore = create<AppState>((set, get) => ({
   fetchQuizHistory: async () => {
     try {
       const data = await feedService.getQuizHistory();
-      // Transform to FeedItems
-      const items: FeedItem[] = (data.quizzes || []).map((q: any) => ({
-        id: q.id,
-        type: 'quiz',
-        question: q.question_text,
-        options: (Array.isArray(q.options) ? q.options : []).map((opt: any, i: number) => ({
-          id: typeof opt === 'string' ? String.fromCharCode(65 + i) : (opt.id || String.fromCharCode(65 + i)),
-          text: typeof opt === 'string' ? opt : (opt.text || opt.option || ''),
-          isCorrect: typeof opt === 'string'
-            ? opt === q.correct_answer
-            : (opt.is_correct || opt.isCorrect || false)
-        })),
-        explanation: q.explanation,
-        relatedConcept: q.topic,
-        source_url: ''
-      }));
+      // Transform to FeedItems based on question_type
+      const items: FeedItem[] = (data.quizzes || []).map((q: any) => {
+        const qType = q.question_type || 'mcq';
+
+        if (qType === 'flashcard') {
+          return {
+            id: q.id,
+            type: 'flashcard' as const,
+            concept: {
+              id: q.concept_id || '',
+              name: q.topic || 'Concept',
+              definition: q.back_content || q.correct_answer || '',
+              domain: '',
+              complexity: 5,
+              prerequisites: [],
+              related: [],
+              mastery: 0,
+            },
+            front: q.front_content || q.question_text || '',
+            back: q.back_content || q.correct_answer || '',
+          };
+        }
+
+        if (qType === 'fill_blank') {
+          return {
+            id: q.id,
+            type: 'fillblank' as const,
+            sentence: q.question_text || '',
+            answer: q.correct_answer || '',
+            hint: q.explanation || '',
+            relatedConcept: q.topic || 'General',
+          };
+        }
+
+        if (qType === 'code_challenge') {
+          let opts: any[] = [];
+          if (Array.isArray(q.options)) opts = q.options;
+          else if (typeof q.options_json === 'string') {
+            try { opts = JSON.parse(q.options_json); } catch {}
+          }
+          return {
+            id: q.id,
+            type: 'code_challenge' as const,
+            language: q.language || opts?.[0]?.language || 'javascript',
+            instruction: q.question_text || '',
+            initialCode: q.initial_code || '',
+            solutionCode: q.correct_answer || '',
+            explanation: q.explanation || '',
+            relatedConcept: q.topic || 'General',
+          };
+        }
+
+        // Default: MCQ / quiz
+        let options = q.options;
+        if (!Array.isArray(options) && typeof q.options_json === 'string') {
+          try { options = JSON.parse(q.options_json); } catch { options = []; }
+        }
+        if (!Array.isArray(options)) options = [];
+
+        return {
+          id: q.id,
+          type: 'quiz' as const,
+          question: q.question_text || '',
+          options: options.map((opt: any, i: number) => ({
+            id: typeof opt === 'string' ? String.fromCharCode(65 + i) : (opt.id || String.fromCharCode(65 + i)),
+            text: typeof opt === 'string' ? opt : (opt.text || opt.option || ''),
+            isCorrect: typeof opt === 'string'
+              ? opt === q.correct_answer
+              : (opt.is_correct || opt.isCorrect || false)
+          })),
+          explanation: q.explanation || '',
+          relatedConcept: q.topic || 'General',
+          source_url: q.source_url || '',
+        };
+      });
       set({ quizHistory: items });
     } catch (error) {
       console.error("Failed to fetch quiz history:", error);
