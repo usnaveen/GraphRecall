@@ -301,7 +301,7 @@ export function ProfileScreen() {
 }
 
 // Note Item Component for Swipe-to-Delete
-function NoteItem({ note, onDelete }: { note: any; onDelete: (id: string) => void }) {
+function NoteItem({ note, onDelete, onOpen }: { note: any; onDelete: (id: string) => void; onOpen: (note: any) => void }) {
   const x = useMotionValue(0);
   const backgroundOpacity = useTransform(x, [-120, -60, 0], [1, 0.6, 0]);
 
@@ -338,7 +338,8 @@ function NoteItem({ note, onDelete }: { note: any; onDelete: (id: string) => voi
         }}
         whileHover={{ scale: 1.01 }}
         whileTap={{ scale: 0.99 }}
-        className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors relative z-10 bg-[#07070A]"
+        onClick={() => onOpen(note)}
+        className="glass-surface rounded-xl p-4 hover:bg-white/5 transition-colors relative z-10 bg-[#07070A] cursor-pointer"
       >
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-lg bg-[#2EFFE6]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -387,12 +388,13 @@ function NotesListView({
   onBack,
   onFetch,
 }: {
-  notes: { id: string; title: string; content_text: string; resource_type: string; created_at: string }[];
+  notes: { id: string; title: string; content_text: string; resource_type: string; created_at: string; file_url?: string }[];
   onBack: () => void;
   onFetch: () => Promise<void>;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedNote, setSelectedNote] = useState<any>(null);
   const { deleteNote } = useAppStore();
 
   useEffect(() => {
@@ -457,11 +459,74 @@ function NotesListView({
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="text-xs text-white/30 text-center mb-2">Swipe left to delete</p>
+          <p className="text-xs text-white/30 text-center mb-2">Tap to open &middot; Swipe left to delete</p>
           {filtered.map((note) => (
-            <NoteItem key={note.id} note={note} onDelete={deleteNote} />
+            <NoteItem key={note.id} note={note} onDelete={deleteNote} onOpen={setSelectedNote} />
           ))}
         </div>
+      )}
+
+      {/* Note Detail Modal */}
+      {selectedNote && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedNote(null)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="bg-[#1a1a1f] border border-white/10 rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-white/10 shrink-0">
+              <div className="flex-1 min-w-0 mr-3">
+                <h3 className="text-lg font-semibold text-white truncate">
+                  {selectedNote.title || 'Untitled Note'}
+                </h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] text-white/40">
+                    {new Date(selectedNote.created_at).toLocaleDateString()}
+                  </span>
+                  {selectedNote.resource_type && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/40">
+                      {selectedNote.resource_type}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedNote.file_url && (
+                  <a
+                    href={selectedNote.file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-[#2EFFE6]/10 text-[#2EFFE6] text-xs font-medium hover:bg-[#2EFFE6]/20 transition-colors"
+                  >
+                    Open Original
+                  </a>
+                )}
+                <button
+                  onClick={() => setSelectedNote(null)}
+                  className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-5 h-5 text-white/60" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap">
+                {selectedNote.content_text || 'No content available'}
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
       )}
     </div>
   );

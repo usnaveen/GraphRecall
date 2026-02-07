@@ -1,5 +1,5 @@
-import { motion } from 'framer-motion';
-import { Flame, Wifi, WifiOff, Layers, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Flame, Wifi, WifiOff, Layers, ChevronDown, Bookmark } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useEffect, useState } from 'react';
 import { BackendStatusPanel } from './BackendStatusPanel';
@@ -97,36 +97,54 @@ export function TopBar() {
             </button>
 
             {/* Dropdown Menu */}
-            {/* Dropdown Menu */}
-            {feedMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setFeedMenuOpen(false)} />
-                <div className="absolute top-full mt-2 right-0 w-48 glass-surface rounded-xl border border-white/10 overflow-hidden shadow-2xl z-50 flex flex-col p-1">
-                  <button
-                    onClick={() => {
-                      setFeedMode('daily');
-                      setActiveTab('feed');
-                      setFeedMenuOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'daily' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+            <AnimatePresence>
+              {feedMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setFeedMenuOpen(false)} />
+                  <motion.div
+                    initial={{ opacity: 0, y: -5, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -5, scale: 0.95 }}
+                    transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                    className="absolute top-full mt-2 right-0 w-48 glass-surface rounded-xl border border-white/10 overflow-hidden shadow-2xl z-50 flex flex-col p-1"
                   >
-                    <Flame className="w-3.5 h-3.5 text-[#B6FF2E]" />
-                    Today's Cards
-                  </button>
-                  <button
-                    onClick={() => {
-                      setFeedMode('history');
-                      setActiveTab('feed');
-                      setFeedMenuOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'history' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
-                  >
-                    <Layers className="w-3.5 h-3.5 text-[#2EFFE6]" />
-                    Card Feed
-                  </button>
-                </div>
-              </>
-            )}
+                    <button
+                      onClick={() => {
+                        setFeedMode('daily');
+                        setActiveTab('feed');
+                        setFeedMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'daily' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+                    >
+                      <Flame className="w-3.5 h-3.5 text-[#B6FF2E]" />
+                      Today's Cards
+                    </button>
+                    <button
+                      onClick={() => {
+                        setFeedMode('history');
+                        setActiveTab('feed');
+                        setFeedMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'history' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+                    >
+                      <Layers className="w-3.5 h-3.5 text-[#2EFFE6]" />
+                      Card Feed
+                    </button>
+                    <button
+                      onClick={() => {
+                        setFeedMode('saved');
+                        setActiveTab('feed');
+                        setFeedMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'saved' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+                    >
+                      <Bookmark className="w-3.5 h-3.5 text-[#B6FF2E]" />
+                      Saved Cards
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 

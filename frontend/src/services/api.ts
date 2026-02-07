@@ -116,10 +116,76 @@ export const feedService = {
         return response.json();
     },
 
+    /** Generate quiz with SSE streaming status updates */
+    getTopicQuizStream: async (
+        topic: string,
+        onStatus: (status: string) => void,
+        onDone: (data: { questions: any[]; topic: string; total: number; from_notes: number; from_web: number }) => void,
+        onError: (error: string) => void,
+    ) => {
+        const token = getAuthToken();
+        const response = await fetch(
+            `${API_BASE}/feed/quiz/topic/${encodeURIComponent(topic)}/stream`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ force_research: true, target_pool_size: 15 }),
+            }
+        );
+
+        if (!response.ok) {
+            onError('Failed to start quiz generation');
+            return;
+        }
+
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+
+        if (!reader) {
+            onError('Stream not available');
+            return;
+        }
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.type === 'status') {
+                            onStatus(data.content);
+                        } else if (data.type === 'done') {
+                            onDone(data);
+                        } else if (data.type === 'error') {
+                            onError(data.content);
+                        }
+                    } catch {
+                        // Ignore parse errors
+                    }
+                }
+            }
+        }
+    },
+
     /** Get generated quiz history */
     getQuizHistory: async () => {
         const response = await authFetch(`${API_BASE}/feed/history/quizzes`);
         if (!response.ok) throw new Error('Failed to fetch quiz history');
+        return response.json();
+    },
+
+    /** Get saved/bookmarked items */
+    getSavedItems: async () => {
+        const response = await authFetch(`${API_BASE}/feed/saved`);
+        if (!response.ok) throw new Error('Failed to fetch saved items');
         return response.json();
     }
 };

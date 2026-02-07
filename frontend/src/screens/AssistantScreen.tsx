@@ -65,6 +65,7 @@ export function AssistantScreen() {
     addChatMessage,
     clearChatMessages,
     navigateToFeedWithTopic,
+    quizOnTopic,
     fetchNotes,
     fetchConcepts,
   } = useAppStore();
@@ -215,15 +216,16 @@ export function AssistantScreen() {
     setInputValue('');
     setIsTyping(true);
 
-    // If it's a quiz request, navigate to feed with the topic after a brief delay
+    // If it's a quiz request, start streaming quiz generation after chat response begins
+    // The quizOnTopic will update the assistant message status with progress
     if (quizTopic) {
-      // Still send to chat for record? Or just nav? User implies "Prompt will go on and work".
-      // We'll let it process normally but also Nav.
-      setTimeout(() => {
-        navigateToFeedWithTopic(quizTopic);
-      }, 1500); // Give time to see "Generating quiz..."
-
-      // We can also let the backend generation happen if we want a text response
+      // Wait for the chat SSE stream to finish, then start quiz generation
+      // We schedule it to run after the chat response completes
+      const startQuizGeneration = () => {
+        quizOnTopic(quizTopic);
+      };
+      // Use a microtask-style delay so the chat message appears first
+      setTimeout(startQuizGeneration, 500);
     }
 
     // Initial placeholder for assistant message
@@ -286,13 +288,26 @@ export function AssistantScreen() {
                   const updatedMsg = { ...assistantMessage, content: fullContent, status: currentStatus };
                   addChatMessage(updatedMsg);
                 } else if (data.type === 'done') {
+                  // Backend sends objects: {id, title} for sources, {id, name} for concepts
+                  // Extract string values for display, but keep IDs for source-scoped chat
+                  const mappedSources = (data.sources || []).map((s: any) =>
+                    typeof s === 'string' ? s : s.title || s.name || String(s)
+                  );
+                  const mappedConcepts = (data.related_concepts || []).map((c: any) =>
+                    typeof c === 'string' ? c : c.name || c.title || String(c)
+                  );
+                  // Keep raw source objects for source-scoped filtering
+                  const rawSources = (data.sources || []).map((s: any) =>
+                    typeof s === 'string' ? { id: s, title: s } : { id: s.id || s.title, title: s.title || s.name || String(s) }
+                  );
                   const finalMsg: ChatMessage = {
                     ...assistantMessage,
                     content: fullContent,
                     status: undefined, // Clear status when done
-                    sources: data.sources || [],
-                    relatedConcepts: data.related_concepts || [],
+                    sources: mappedSources,
+                    relatedConcepts: mappedConcepts,
                     serverId: data.message_id,
+                    sourceObjects: rawSources,
                   };
                   addChatMessage(finalMsg);
                   if (data.conversation_id) {
@@ -526,10 +541,10 @@ export function AssistantScreen() {
           </div>
         )}
 
-        {chatMessages.map((message: ChatMessage) => (
+        {chatMessages.map((message: ChatMessage, index: number) => (
           <motion.div
             key={message.id}
-            initial={{ opacity: 0, y: 10 }}
+            initial={index >= chatMessages.length - 2 ? { opacity: 0, y: 10 } : false}
             animate={{ opacity: 1, y: 0 }}
             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} relative overflow-visible group`}
           >
@@ -614,13 +629,17 @@ export function AssistantScreen() {
                     {message.sources.map((source: string, j: number) => {
                       // Check if already selected
                       const isSelected = selectedSources.some(s => s.title === source);
+                      // Use real ID from sourceObjects if available
+                      const sourceObj = message.sourceObjects?.find(s => s.title === source);
                       return (
                         <button
                           key={j}
                           onClick={() => {
                             if (!isSelected) {
-                              // Add source to selection (use title as ID for now, ideally use actual ID)
-                              setSelectedSources(prev => [...prev, { id: source, title: source }]);
+                              setSelectedSources(prev => [...prev, {
+                                id: sourceObj?.id || source,
+                                title: source,
+                              }]);
                             }
                           }}
                           className={`px-2 py-0.5 rounded-full text-[10px] transition-colors cursor-pointer

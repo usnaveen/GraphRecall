@@ -127,6 +127,8 @@ export interface ChatMessage {
   sources?: string[];
   relatedConcepts?: string[];
   serverId?: string;
+  /** Raw source objects from the backend, used for source-scoped chat filtering */
+  sourceObjects?: { id: string; title: string }[];
 }
 
 export interface GraphNode {

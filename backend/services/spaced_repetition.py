@@ -310,23 +310,26 @@ class SpacedRepetitionService:
         )
 
         # Log study session for activity tracking (Streak & Heatmap)
-        await self.pg_client.execute_insert(
-            """
-            INSERT INTO study_sessions 
-                (id, user_id, concept_id, reviewed_at, is_correct, difficulty, response_time_ms)
-            VALUES 
-                (:id, :user_id, :concept_id, :reviewed_at, :is_correct, :difficulty, :response_time_ms)
-            """,
-            {
-                "id": str(uuid.uuid4()),
-                "user_id": review.user_id,
-                "concept_id": review.item_id,
-                "reviewed_at": now,
-                "is_correct": quality >= 3,
-                "difficulty": review.difficulty,
-                "response_time_ms": review.response_time_ms,
-            }
-        )
+        try:
+            await self.pg_client.execute_insert(
+                """
+                INSERT INTO study_sessions
+                    (id, user_id, concept_id, reviewed_at, is_correct, item_type, response_time_ms)
+                VALUES
+                    (:id, :user_id, :concept_id, :reviewed_at, :is_correct, :item_type, :response_time_ms)
+                """,
+                {
+                    "id": str(uuid.uuid4()),
+                    "user_id": review.user_id,
+                    "concept_id": review.item_id,
+                    "reviewed_at": now,
+                    "is_correct": quality >= 3,
+                    "item_type": review.item_type,
+                    "response_time_ms": review.response_time_ms,
+                }
+            )
+        except Exception as e:
+            logger.warning("Failed to log study session", error=str(e))
         
         logger.info(
             "SpacedRepetitionService: Review recorded",

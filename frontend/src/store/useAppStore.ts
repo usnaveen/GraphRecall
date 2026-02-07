@@ -57,12 +57,14 @@ interface AppState {
   uploadsList: UploadItem[];
 
   // Feed Modes
-  feedMode: 'daily' | 'history';
+  feedMode: 'daily' | 'history' | 'saved';
   quizHistory: FeedItem[];
+  savedCards: FeedItem[];
   activeRecallSchedule: { date: string; count: number }[];
-  setFeedMode: (mode: 'daily' | 'history') => void;
+  setFeedMode: (mode: 'daily' | 'history' | 'saved') => void;
   fetchSchedule: () => Promise<void>;
   fetchQuizHistory: () => Promise<void>;
+  fetchSavedCards: () => Promise<void>;
 
   // Graph cache (persist between tab switches)
   graphCache: {
@@ -75,6 +77,7 @@ interface AppState {
   // Actions
   setActiveTab: (tab: TabType) => void;
   navigateToFeedWithTopic: (topic: string) => void;
+  quizOnTopic: (topic: string) => Promise<void>;
   clearFeedTopicFilter: () => void;
   fetchFeed: (forceRefresh?: boolean) => Promise<void>;
   fetchStats: () => Promise<void>;
@@ -126,6 +129,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   feedMode: 'history',
   quizHistory: [],
+  savedCards: [],
   activeRecallSchedule: [],
 
   // Navigation Actions
@@ -135,6 +139,86 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   navigateToFeedWithTopic: (topic: string) => {
     set({ activeTab: 'feed', feedTopicFilter: topic, currentFeedIndex: 0 });
+  },
+
+  quizOnTopic: async (topic: string) => {
+    try {
+      // Use streaming endpoint for real-time status updates in chat
+      await new Promise<void>((resolve, _reject) => {
+        feedService.getTopicQuizStream(
+          topic,
+          // onStatus — update the latest assistant message's status in chat
+          (status: string) => {
+            const messages = get().chatMessages;
+            const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+            if (lastAssistant) {
+              const updatedMsg: ChatMessage = {
+                ...lastAssistant,
+                status,
+              };
+              get().addChatMessage(updatedMsg);
+            }
+          },
+          // onDone — transform questions to FeedItems and navigate
+          (data) => {
+            const questions = data.questions || [];
+            if (questions.length > 0) {
+              const newItems: FeedItem[] = questions.map((q: any, index: number) => ({
+                id: q.id || `topic-quiz-${Date.now()}-${index}`,
+                type: 'quiz' as const,
+                question: q.question || q.question_text || '',
+                options: (q.options || []).map((o: any, i: number) => ({
+                  id: typeof o === 'string' ? String.fromCharCode(65 + i) : (o.id || String.fromCharCode(65 + i)),
+                  text: typeof o === 'string' ? o : (o.text || o.option || ''),
+                  isCorrect: typeof o === 'string'
+                    ? o === q.correct_answer
+                    : (o.is_correct || o.isCorrect || false)
+                })),
+                explanation: q.explanation || '',
+                relatedConcept: topic,
+                source_url: q.source_url || '',
+              }));
+
+              // Clear status from assistant message and add quiz summary
+              const messages = get().chatMessages;
+              const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+              if (lastAssistant) {
+                const summaryLine = `\n\n---\n📝 **Quiz ready!** ${data.from_notes || 0} from your notes, ${data.from_web || 0} newly generated. Switching to quiz mode...`;
+                const updatedMsg: ChatMessage = {
+                  ...lastAssistant,
+                  content: (lastAssistant.content || '') + summaryLine,
+                  status: undefined,
+                };
+                get().addChatMessage(updatedMsg);
+              }
+
+              const currentItems = get().feedItems;
+              // Short delay to let user see the summary
+              setTimeout(() => {
+                set({
+                  feedItems: [...newItems, ...currentItems],
+                  activeTab: 'feed',
+                  feedTopicFilter: topic,
+                  currentFeedIndex: 0,
+                });
+              }, 1200);
+            } else {
+              set({ activeTab: 'feed', feedTopicFilter: topic, currentFeedIndex: 0 });
+            }
+            resolve();
+          },
+          // onError
+          (error: string) => {
+            console.error('Quiz stream error:', error);
+            set({ activeTab: 'feed', feedTopicFilter: topic, currentFeedIndex: 0 });
+            resolve();
+          }
+        );
+      });
+    } catch (error) {
+      console.error('Failed to generate topic quiz:', error);
+      set({ activeTab: 'feed', feedTopicFilter: topic, currentFeedIndex: 0 });
+    }
   },
 
   clearFeedTopicFilter: () => {
@@ -191,10 +275,12 @@ export const useAppStore = create<AppState>((set, get) => ({
               id: item.id,
               type: 'quiz',
               question: content.question,
-              options: content.options.map((o: any) => ({
-                id: o.id,
-                text: o.text,
-                isCorrect: o.is_correct
+              options: (content.options || []).map((o: any, i: number) => ({
+                id: o.id || String.fromCharCode(65 + i),
+                text: typeof o === 'string' ? o : (o.text || o.option || ''),
+                isCorrect: typeof o === 'string'
+                  ? o === content.correct_answer
+                  : (o.is_correct || o.isCorrect || false)
               })),
               explanation: content.explanation,
               relatedConcept: concept_name,
@@ -539,7 +625,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Feed Mode & History
-  setFeedMode: (mode: 'daily' | 'history') => set({ feedMode: mode }),
+  setFeedMode: (mode: 'daily' | 'history' | 'saved') => set({ feedMode: mode }),
 
   fetchSchedule: async () => {
     try {
@@ -558,10 +644,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         id: q.id,
         type: 'quiz',
         question: q.question_text,
-        options: (Array.isArray(q.options) ? q.options : []).map((opt: string, i: number) => ({
-          id: String.fromCharCode(65 + i),
-          text: opt,
-          isCorrect: opt === q.correct_answer
+        options: (Array.isArray(q.options) ? q.options : []).map((opt: any, i: number) => ({
+          id: typeof opt === 'string' ? String.fromCharCode(65 + i) : (opt.id || String.fromCharCode(65 + i)),
+          text: typeof opt === 'string' ? opt : (opt.text || opt.option || ''),
+          isCorrect: typeof opt === 'string'
+            ? opt === q.correct_answer
+            : (opt.is_correct || opt.isCorrect || false)
         })),
         explanation: q.explanation,
         relatedConcept: q.topic,
@@ -570,6 +658,47 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ quizHistory: items });
     } catch (error) {
       console.error("Failed to fetch quiz history:", error);
+    }
+  },
+
+  fetchSavedCards: async () => {
+    try {
+      const data = await feedService.getSavedItems();
+      const items: FeedItem[] = (data.items || []).map((item: any) => {
+        if (item.item_category === 'flashcard' || item.type === 'flashcard') {
+          return {
+            id: item.id,
+            type: 'flashcard' as const,
+            concept: {
+              name: item.topic || 'Saved Card',
+              definition: item.back_content || '',
+              domain: '',
+              complexity: 5,
+            },
+            front: item.front_content || '',
+            back: item.back_content || '',
+          };
+        }
+        // Quiz types (mcq, fill_blank, code_challenge)
+        return {
+          id: item.id,
+          type: 'quiz' as const,
+          question: item.question_text || '',
+          options: (Array.isArray(item.options) ? item.options : []).map((opt: any, i: number) => ({
+            id: typeof opt === 'string' ? String.fromCharCode(65 + i) : (opt.id || String.fromCharCode(65 + i)),
+            text: typeof opt === 'string' ? opt : (opt.text || opt.option || ''),
+            isCorrect: typeof opt === 'string'
+              ? opt === item.correct_answer
+              : (opt.is_correct || opt.isCorrect || false),
+          })),
+          explanation: item.explanation || '',
+          relatedConcept: item.topic || 'General',
+          source_url: item.source_url || '',
+        };
+      });
+      set({ savedCards: items });
+    } catch (error) {
+      console.error("Failed to fetch saved cards:", error);
     }
   }
 }));

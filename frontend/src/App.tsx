@@ -11,12 +11,13 @@ import { ProfileScreen } from './screens/ProfileScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Get Google Client ID from environment
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 function AuthenticatedApp() {
-  const { activeTab, setActiveTab, fetchFeed, fetchStats, isLoading, feedItems } = useAppStore();
+  const { activeTab, setActiveTab, fetchFeed, fetchStats, fetchConcepts, isLoading, feedItems } = useAppStore();
 
   useEffect(() => {
     // Initial data fetch after authentication
@@ -24,6 +25,7 @@ function AuthenticatedApp() {
     if (feedItems.length === 0 && !isLoading) {
       fetchFeed();
       fetchStats();
+      fetchConcepts(); // Pre-load graph data for persistence
     }
   }, [fetchFeed, fetchStats]); // Removed feedItems/isLoading from deps to avoid re-triggering, or keep them but trust the check
 
@@ -80,16 +82,18 @@ function AuthenticatedApp() {
 
       {/* Main Content */}
       <main className="pt-16 pb-32 px-4 min-h-screen lg:px-8">
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="popLayout">
           <motion.div
             key={activeTab}
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
             className="max-w-lg mx-auto w-full lg:max-w-[1440px]"
           >
-            {renderScreen()}
+            <ErrorBoundary>
+              {renderScreen()}
+            </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </main>
