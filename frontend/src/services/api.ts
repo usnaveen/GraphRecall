@@ -215,6 +215,16 @@ export const chatService = {
         });
         if (!response.ok) throw new Error('Chat failed');
         return response.json();
+    },
+
+    /** Create a quiz or concept card from a chat message */
+    createCardFromMessage: async (messageId: string, outputType: 'quiz' | 'concept_card', topic?: string) => {
+        const response = await authFetch(`${API_BASE}/chat/messages/${messageId}/create-card`, {
+            method: 'POST',
+            body: JSON.stringify({ output_type: outputType, topic: topic || undefined })
+        });
+        if (!response.ok) throw new Error('Failed to create card');
+        return response.json();
     }
 };
 
