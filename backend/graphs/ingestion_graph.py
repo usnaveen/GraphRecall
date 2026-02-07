@@ -47,7 +47,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from backend.agents.extraction import ExtractionAgent
 from backend.agents.synthesis import SynthesisAgent
 from backend.agents.content_generator import ContentGeneratorAgent
+from backend.agents.content_generator import ContentGeneratorAgent
 from backend.services.ingestion import DocumentParserService, HierarchicalChunker
+from backend.services.ingestion.embedding_service import EmbeddingService
 
 # Initialize agents
 extraction_agent = ExtractionAgent(temperature=0.2)
