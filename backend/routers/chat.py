@@ -256,10 +256,28 @@ async def get_conversation(
             """,
             {"conversation_id": conversation_id},
         )
-        
+
+        # Serialize UUID/datetime fields for JSON
+        messages = [
+            {
+                "id": str(m["id"]),
+                "role": m["role"],
+                "content": m["content"],
+                "sources_json": m.get("sources_json") or [],
+                "created_at": str(m.get("created_at", "")),
+            }
+            for m in messages_result
+        ]
+
+        conv = conv_result[0]
         return {
-            "conversation": conv_result[0],
-            "messages": messages_result,
+            "conversation": {
+                "id": str(conv["id"]),
+                "title": conv.get("title") or "New Chat",
+                "created_at": str(conv.get("created_at", "")),
+                "updated_at": str(conv.get("updated_at", "")),
+            },
+            "messages": messages,
         }
         
     except HTTPException:
@@ -758,13 +776,13 @@ async def get_chat_history(
         conversations = [
             {
                 "id": str(row["id"]),
-                "title": row["title"],
+                "title": row["title"] or "New Chat",
                 "created_at": str(row["created_at"]),
                 "updated_at": str(row["updated_at"]),
-                "is_saved_to_knowledge": row["is_saved_to_knowledge"],
+                "is_saved_to_knowledge": row.get("is_saved_to_knowledge", False),
                 "summary": row.get("summary"),
-                "last_message": row.get("last_message", "")[:100] + "...",
-                "message_count": row.get("message_count", 0),
+                "last_message": ((row.get("last_message") or "")[:100] + "..."),
+                "message_count": row.get("message_count") or 0,
             }
             for row in result
         ]
