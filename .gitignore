@@ -85,3 +85,18 @@ credentials.json
 3dGraphReference/
 sample_data/
 sample_content/
+
+# Archive (deprecated code)
+_archive/
+
+# Orphaned/stale folders (permission issues)
+Context/
+~/
+
+# Debug outputs
+verify_output.txt
+*.log.txt
+
+# Editor/Project configs
+.cursorrules
+.claude/

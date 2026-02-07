@@ -168,7 +168,7 @@ class SpacedRepetitionService:
         result = await self.pg_client.execute_query(
             """
             SELECT 
-                item_id, item_type, user_id,
+                concept_id as item_id, item_type, user_id,
                 easiness_factor, interval_days, repetition_count,
                 last_review, next_review, total_reviews, correct_streak
             FROM proficiency_scores
