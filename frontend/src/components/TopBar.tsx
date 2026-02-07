@@ -23,142 +23,147 @@ export function TopBar() {
         } else {
           setBackendStatus('disconnected');
         }
-      } catch (error) {
+      } catch {
         setBackendStatus('disconnected');
       }
     };
 
     checkBackend();
-    // Re-check every 30 seconds
     const interval = setInterval(checkBackend, 30000);
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <motion.header
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className="fixed top-0 left-0 right-0 z-50 px-4 py-3 topbar-frosted-gradient"
-    >
-      <div className="max-w-lg mx-auto flex items-center justify-between relative z-10">
-        {/* Logo */}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 flex items-center justify-center rounded-lg overflow-hidden">
-            <img src="/logo.png" alt="GraphRecall Logo" className="w-full h-full object-contain" />
+    <>
+      {/* Edge frost gradient — purely decorative, behind everything */}
+      <div className="fixed top-0 left-0 right-0 z-40 h-24 topbar-frost-edge" />
+
+      {/* Floating top bar elements */}
+      <motion.header
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="fixed top-0 left-0 right-0 z-50 px-4 py-3"
+      >
+        <div className="max-w-lg mx-auto flex items-center justify-between">
+          {/* Logo Pill — glassmorphic */}
+          <div className="glass-pill rounded-full px-3 py-1.5 flex items-center gap-2">
+            <div className="w-6 h-6 flex items-center justify-center rounded-md overflow-hidden">
+              <img src="/logo.png" alt="GraphRecall Logo" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-heading font-semibold text-white text-sm hidden sm:block">
+              GraphRecall
+            </span>
           </div>
-          <span className="font-heading font-semibold text-white text-sm hidden sm:block">
-            GraphRecall
-          </span>
-        </div>
 
-        {/* Progress Pill & Backend Status */}
-        <div className="flex items-center gap-2">
-          {/* Backend Connection Indicator — click to open status panel */}
-          <button
-            onClick={() => setStatusPanelOpen(true)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-full glass-surface-highlight cursor-pointer hover:bg-white/15 transition-colors"
-            aria-label="Backend status"
-            title={backendStatus === 'connected' ? 'Backend connected' : backendStatus === 'disconnected' ? 'Backend disconnected' : 'Checking...'}
-          >
-            {backendStatus === 'connected' ? (
-              <Wifi className="w-3.5 h-3.5 text-green-400" />
-            ) : backendStatus === 'disconnected' ? (
-              <WifiOff className="w-3.5 h-3.5 text-red-400" />
-            ) : (
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-              >
-                <Wifi className="w-3.5 h-3.5 text-yellow-400" />
-              </motion.div>
-            )}
-          </button>
-
-          {/* Progress Pill / Feed Toggle */}
-          <div className="relative">
+          {/* Center: WiFi + Daily Goal Pill */}
+          <div className="flex items-center gap-2">
+            {/* Backend Connection — glassmorphic circle */}
             <button
-              onClick={() => setFeedMenuOpen(!feedMenuOpen)}
-              className="glass-surface-highlight rounded-full px-4 py-1.5 flex items-center gap-2 cursor-pointer hover:bg-white/10 transition-colors"
+              onClick={() => setStatusPanelOpen(true)}
+              className="glass-pill w-8 h-8 rounded-full flex items-center justify-center cursor-pointer hover:bg-white/15 transition-colors"
+              aria-label="Backend status"
+              title={backendStatus === 'connected' ? 'Backend connected' : backendStatus === 'disconnected' ? 'Backend disconnected' : 'Checking...'}
             >
-              <div className="flex flex-col items-end mr-1">
-                <span className="text-[9px] text-white/40 uppercase font-bold tracking-wider leading-none mb-0.5">
-                  {feedMode === 'daily' ? 'Daily Goal' : 'Card Feed'}
-                </span>
-                <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progressPercent}%` }}
-                    className="h-full bg-gradient-to-r from-[#B6FF2E] to-[#2EFFE6] rounded-full"
-                  />
-                </div>
-              </div>
-              <ChevronDown className={`w-3 h-3 text-white/40 transition-transform ${feedMenuOpen ? 'rotate-180' : ''}`} />
+              {backendStatus === 'connected' ? (
+                <Wifi className="w-3.5 h-3.5 text-green-400" />
+              ) : backendStatus === 'disconnected' ? (
+                <WifiOff className="w-3.5 h-3.5 text-red-400" />
+              ) : (
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                >
+                  <Wifi className="w-3.5 h-3.5 text-yellow-400" />
+                </motion.div>
+              )}
             </button>
 
-            {/* Dropdown Menu */}
-            <AnimatePresence>
-              {feedMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setFeedMenuOpen(false)} />
-                  <motion.div
-                    initial={{ opacity: 0, y: -5, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -5, scale: 0.95 }}
-                    transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                    className="absolute top-full mt-2 right-0 w-48 glass-surface rounded-xl border border-white/10 overflow-hidden shadow-2xl z-50 flex flex-col p-1"
-                  >
-                    <button
-                      onClick={() => {
-                        setFeedMode('daily');
-                        setActiveTab('feed');
-                        setFeedMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'daily' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+            {/* Feed Toggle Pill — glassmorphic */}
+            <div className="relative">
+              <button
+                onClick={() => setFeedMenuOpen(!feedMenuOpen)}
+                className="glass-pill rounded-full px-4 py-1.5 flex items-center gap-2 cursor-pointer hover:bg-white/12 transition-colors"
+              >
+                <div className="flex flex-col items-end mr-1">
+                  <span className="text-[9px] text-white/40 uppercase font-bold tracking-wider leading-none mb-0.5">
+                    {feedMode === 'daily' ? 'Daily Goal' : 'Card Feed'}
+                  </span>
+                  <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${progressPercent}%` }}
+                      className="h-full bg-gradient-to-r from-[#B6FF2E] to-[#2EFFE6] rounded-full"
+                    />
+                  </div>
+                </div>
+                <ChevronDown className={`w-3 h-3 text-white/40 transition-transform ${feedMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Dropdown Menu — glassmorphic */}
+              <AnimatePresence>
+                {feedMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setFeedMenuOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: -5, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -5, scale: 0.95 }}
+                      transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                      className="absolute top-full mt-2 right-0 w-48 glass-pill rounded-xl overflow-hidden z-50 flex flex-col p-1"
                     >
-                      <Flame className="w-3.5 h-3.5 text-[#B6FF2E]" />
-                      Today's Cards
-                    </button>
-                    <button
-                      onClick={() => {
-                        setFeedMode('history');
-                        setActiveTab('feed');
-                        setFeedMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'history' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
-                    >
-                      <Layers className="w-3.5 h-3.5 text-[#2EFFE6]" />
-                      Card Feed
-                    </button>
-                    <button
-                      onClick={() => {
-                        setFeedMode('saved');
-                        setActiveTab('feed');
-                        setFeedMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'saved' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
-                    >
-                      <Bookmark className="w-3.5 h-3.5 text-[#B6FF2E]" />
-                      Saved Cards
-                    </button>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
+                      <button
+                        onClick={() => {
+                          setFeedMode('daily');
+                          setActiveTab('feed');
+                          setFeedMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'daily' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+                      >
+                        <Flame className="w-3.5 h-3.5 text-[#B6FF2E]" />
+                        Today's Cards
+                      </button>
+                      <button
+                        onClick={() => {
+                          setFeedMode('history');
+                          setActiveTab('feed');
+                          setFeedMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'history' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+                      >
+                        <Layers className="w-3.5 h-3.5 text-[#2EFFE6]" />
+                        Card Feed
+                      </button>
+                      <button
+                        onClick={() => {
+                          setFeedMode('saved');
+                          setActiveTab('feed');
+                          setFeedMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-lg flex items-center gap-3 transition-colors ${feedMode === 'saved' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+                      >
+                        <Bookmark className="w-3.5 h-3.5 text-[#B6FF2E]" />
+                        Saved Cards
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Streak — glassmorphic circle */}
+          <div className="glass-pill rounded-full px-3 py-1.5 flex items-center gap-1.5">
+            <Flame className="w-4 h-4 text-orange-400 flame-animate" />
+            <span className="font-heading font-bold text-white text-sm">
+              {userStats.streakDays}
+            </span>
           </div>
         </div>
 
-        {/* Streak */}
-        <div className="flex items-center gap-1.5">
-          <Flame className="w-5 h-5 text-orange-400 flame-animate" />
-          <span className="font-heading font-bold text-white text-sm">
-            {userStats.streakDays}
-          </span>
-        </div>
-      </div>
-
-      {/* Backend Status Panel */}
-      <BackendStatusPanel open={statusPanelOpen} onOpenChange={setStatusPanelOpen} />
-    </motion.header >
+        {/* Backend Status Panel */}
+        <BackendStatusPanel open={statusPanelOpen} onOpenChange={setStatusPanelOpen} />
+      </motion.header>
+    </>
   );
 }
