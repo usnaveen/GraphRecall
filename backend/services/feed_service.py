@@ -387,7 +387,7 @@ class FeedService:
             # Simple text match for now
             result = await self.pg_client.execute_query(
                 """
-                SELECT id, chunk_text, diff 
+                SELECT id, chunk_text, difficulty 
                 FROM quiz_candidates
                 WHERE user_id = :user_id 
                   AND topic ILIKE :topic 
@@ -406,7 +406,7 @@ class FeedService:
                 )
                 return {
                     "text": row["chunk_text"],
-                    "difficulty": float(row.get("diff", 0.5))
+                    "difficulty": float(row.get("difficulty", 0.5))
                 }
             return None
         except Exception as e:
