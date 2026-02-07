@@ -376,37 +376,44 @@ async def get_context_node(state: ChatState) -> dict:
         try:
             pg_client = await get_postgres_client()
             
-            # If source-scoped, filter to specific note IDs only
+            # Retrieve chunk-level matches to surface images alongside text
             if focused_source_ids:
                 result = await pg_client.execute_query(
                     """
-                    SELECT id, title, content_text as content, created_at
-                    FROM notes
-                    WHERE user_id = :user_id
-                      AND id = ANY(:source_ids)
+                    SELECT c.id, c.content, c.images, c.chunk_index, n.title, n.id AS note_id
+                    FROM chunks c
+                    JOIN notes n ON c.note_id = n.id
+                    WHERE n.user_id = :user_id
+                      AND n.id = ANY(:source_ids)
                     LIMIT 5
                     """,
-                    {
-                        "user_id": user_id,
-                        "source_ids": focused_source_ids
-                    }
+                    {"user_id": user_id, "source_ids": focused_source_ids},
                 )
             else:
                 result = await pg_client.execute_query(
                     """
-                    SELECT id, title, content_text as content, created_at
-                    FROM notes
-                    WHERE user_id = :user_id
-                      AND (title ILIKE :search_pattern OR content_text ILIKE :search_pattern)
-                    LIMIT 3
+                    SELECT c.id, c.content, c.images, c.chunk_index, n.title, n.id AS note_id
+                    FROM chunks c
+                    JOIN notes n ON c.note_id = n.id
+                    WHERE n.user_id = :user_id
+                      AND (c.content ILIKE :search_pattern OR n.title ILIKE :search_pattern)
+                    ORDER BY n.updated_at DESC
+                    LIMIT 5
                     """,
-                    {
-                        "user_id": user_id,
-                        "search_pattern": f"%{query[:50]}%"
-                    }
+                    {"user_id": user_id, "search_pattern": f"%{query[:50]}%"},
                 )
-            rag_context = [dict(r) for r in result] if result else []
-            
+
+            rag_context = []
+            for row in result or []:
+                images = row.get("images")
+                if isinstance(images, str):
+                    try:
+                        images = json.loads(images)
+                    except Exception:
+                        images = []
+                row["images"] = images or []
+                rag_context.append(dict(row))
+
         except Exception as e:
             logger.warning("get_context_node: Notes query failed", error=str(e))
     
@@ -450,6 +457,7 @@ async def generate_response_node(state: ChatState) -> dict:
     if rag_context:
         notes_text = "\n".join([
             f"- {n.get('title', 'Note')}: {n.get('content', '')[:200]}..."
+            + (f\" [images: {len(n.get('images', []))}]\" if n.get('images') else \"\")
             for n in rag_context
         ])
         context_parts.append(f"**Relevant Notes:**\n{notes_text}")
@@ -507,7 +515,13 @@ async def generate_response_node(state: ChatState) -> dict:
                 for c in graph_context.get("concepts", [])
             ],
             "sources": [
-                {"id": n.get("id"), "title": n.get("title"), "content": n.get("content", "")[:500]}
+                {
+                    "id": n.get("id"),
+                    "title": n.get("title"),
+                    "content": n.get("content", "")[:500],
+                    "images": n.get("images", []),
+                    "note_id": n.get("note_id"),
+                }
                 for n in rag_context
             ],
             "metadata": {
@@ -515,6 +529,7 @@ async def generate_response_node(state: ChatState) -> dict:
                 "entities": state.get("entities", []),
                 "documents_retrieved": len(rag_context),
                 "nodes_retrieved": len(graph_context.get("concepts", [])),
+                "images_attached": sum(len(n.get("images", [])) for n in rag_context),
             },
         }
         
@@ -577,9 +592,14 @@ def create_chat_graph():
     builder.add_edge("generate_response", END)
     
     # Compile with checkpointer for conversation memory
-    checkpointer = get_checkpointer()
-    
-    return builder.compile(checkpointer=checkpointer)
+    # Conditional: Skip in LangGraph Studio (it provides its own), use in production
+    import sys
+    is_langgraph_api = "langgraph_api" in sys.modules
+    if is_langgraph_api:
+        return builder.compile()
+    else:
+        checkpointer = get_checkpointer()
+        return builder.compile(checkpointer=checkpointer)
 
 
 # Global graph instance
