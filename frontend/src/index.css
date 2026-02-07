@@ -79,6 +79,38 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
 }
 
+/* Frosted Gradient Bars — floating, no box */
+.topbar-frosted-gradient {
+  background: linear-gradient(
+    to bottom,
+    rgba(7, 7, 10, 0.95) 0%,
+    rgba(7, 7, 10, 0.8) 30%,
+    rgba(7, 7, 10, 0.4) 60%,
+    rgba(7, 7, 10, 0.1) 85%,
+    transparent 100%
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: none;
+  box-shadow: none;
+}
+
+.dock-frosted-gradient {
+  background: linear-gradient(
+    to top,
+    rgba(7, 7, 10, 0.95) 0%,
+    rgba(7, 7, 10, 0.8) 25%,
+    rgba(7, 7, 10, 0.4) 55%,
+    rgba(7, 7, 10, 0.1) 80%,
+    transparent 100%
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: none;
+  box-shadow: none;
+  padding-top: 2rem;
+}
+
 /* Neon Glows */
 .neon-glow {
   box-shadow: 0 0 18px rgba(182, 255, 46, 0.35);

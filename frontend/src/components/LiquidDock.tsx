@@ -32,16 +32,16 @@ export function LiquidDock({
   const isVertical = orientation === 'vertical';
   const navClasses = isVertical
     ? 'fixed right-4 top-1/2 -translate-y-1/2 z-50 flex justify-center'
-    : 'fixed bottom-0 left-0 right-0 z-50 flex justify-center pb-safe-area';
+    : 'fixed bottom-0 left-0 right-0 z-50 flex justify-center dock-frosted-gradient';
   const navStyle = isVertical
     ? {}
     : {
       paddingBottom: 'clamp(1rem, env(safe-area-inset-bottom), 3rem)',
-      marginBottom: '0.5rem',
+      marginBottom: '0',
     };
   const dockClasses = isVertical
     ? 'liquid-glass-dock rounded-3xl px-2 py-3 flex flex-col items-center gap-2 mx-2'
-    : 'liquid-glass-dock rounded-full px-4 py-2 flex items-center gap-4 mx-4 w-fit max-w-[90vw] justify-center';
+    : 'rounded-full px-4 py-2 flex items-center gap-4 mx-4 w-fit max-w-[90vw] justify-center relative z-10';
   const tooltipClass = isVertical
     ? 'absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-black/80 rounded-md text-[10px] text-white/80 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none'
     : 'absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-black/80 rounded-md text-[10px] text-white/80 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none';

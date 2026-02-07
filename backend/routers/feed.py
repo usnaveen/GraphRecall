@@ -493,6 +493,7 @@ class TopicQuizRequest(BaseModel):
     # Target pool size (internal preference, user doesn't specify)
     target_pool_size: int = 20
     force_research: bool = False
+    allow_web_search: bool = True  # If False, skip Tavily web search and use only local content
 
 
 class QuizQuestion(BaseModel):
@@ -605,7 +606,7 @@ async def generate_topic_quiz_stream(
                     if isinstance(opts, str):
                         opts = _json.loads(opts)
                     existing_questions.append({
-                        "id": q["id"],
+                        "id": str(q["id"]),
                         "question": q["question_text"],
                         "question_type": q.get("question_type", "mcq"),
                         "options": opts or [],
@@ -620,24 +621,27 @@ async def generate_topic_quiz_stream(
             if existing_questions:
                 yield sse({"type": "status", "content": f"✅ Found {len(existing_questions)} existing questions from your notes"})
 
-            # Step 3: Web research via Tavily
-            yield sse({"type": "status", "content": "🌐 Searching the web for quiz material..."})
+            # Step 3: Web research via Tavily (only if user consented)
             research_result = {}
-            try:
-                from backend.agents.research_agent import WebResearchAgent
-                research_agent = WebResearchAgent(neo4j_client, pg_client)
-                research_result = await research_agent.research_topic(
-                    topic=topic_name,
-                    user_id=user_id,
-                    force=request.force_research,
-                )
-                if research_result.get("summary"):
-                    yield sse({"type": "status", "content": "📝 Web research complete — synthesising material..."})
-                else:
-                    yield sse({"type": "status", "content": "📝 Using available resources..."})
-            except Exception as e:
-                logger.warning("Quiz stream: research failed", error=str(e))
-                yield sse({"type": "status", "content": "⚠️ Web search unavailable — using local resources"})
+            if request.allow_web_search:
+                yield sse({"type": "status", "content": "🌐 Searching the web for quiz material..."})
+                try:
+                    from backend.agents.research_agent import WebResearchAgent
+                    research_agent = WebResearchAgent(neo4j_client, pg_client)
+                    research_result = await research_agent.research_topic(
+                        topic=topic_name,
+                        user_id=user_id,
+                        force=request.force_research,
+                    )
+                    if research_result.get("summary"):
+                        yield sse({"type": "status", "content": "📝 Web research complete — synthesising material..."})
+                    else:
+                        yield sse({"type": "status", "content": "📝 Using available resources..."})
+                except Exception as e:
+                    logger.warning("Quiz stream: research failed", error=str(e))
+                    yield sse({"type": "status", "content": "⚠️ Web search unavailable — using local resources"})
+            else:
+                yield sse({"type": "status", "content": "📚 Using your notes only (web search skipped)"})
 
             # Step 4: Generate new questions
             need_new = max(0, request.target_pool_size - len(existing_questions))

@@ -142,7 +142,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ activeTab: 'feed', feedTopicFilter: topic, currentFeedIndex: 0 });
   },
 
-  quizOnTopic: async (topic: string) => {
+  quizOnTopic: async (topic: string, allowWebSearch: boolean = true) => {
     try {
       // Use streaming endpoint for real-time status updates in chat
       await new Promise<void>((resolve, _reject) => {
@@ -172,8 +172,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                   id: typeof o === 'string' ? String.fromCharCode(65 + i) : (o.id || String.fromCharCode(65 + i)),
                   text: typeof o === 'string' ? o : (o.text || o.option || ''),
                   isCorrect: typeof o === 'string'
-                    ? o === q.correct_answer
-                    : (o.is_correct || o.isCorrect || false)
+                    ? String.fromCharCode(65 + i) === q.correct_answer
+                    : (o.is_correct || o.isCorrect || o.id === q.correct_answer || false)
                 })),
                 explanation: q.explanation || '',
                 relatedConcept: topic,
@@ -213,7 +213,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             console.error('Quiz stream error:', error);
             set({ activeTab: 'feed', feedTopicFilter: topic, currentFeedIndex: 0 });
             resolve();
-          }
+          },
+          allowWebSearch,  // Pass web search consent
         );
       });
     } catch (error) {
@@ -280,8 +281,8 @@ export const useAppStore = create<AppState>((set, get) => ({
                 id: o.id || String.fromCharCode(65 + i),
                 text: typeof o === 'string' ? o : (o.text || o.option || ''),
                 isCorrect: typeof o === 'string'
-                  ? o === content.correct_answer
-                  : (o.is_correct || o.isCorrect || false)
+                  ? String.fromCharCode(65 + i) === content.correct_answer
+                  : (o.is_correct || o.isCorrect || o.id === content.correct_answer || false)
               })),
               explanation: content.explanation,
               relatedConcept: concept_name,
@@ -569,7 +570,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         options: q.options.map((opt: string, i: number) => ({
           id: String.fromCharCode(65 + i), // A, B, C, D
           text: opt,
-          isCorrect: opt === q.correct_answer
+          isCorrect: String.fromCharCode(65 + i) === q.correct_answer
         })),
         explanation: q.explanation,
         relatedConcept: topic,
@@ -707,8 +708,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             id: typeof opt === 'string' ? String.fromCharCode(65 + i) : (opt.id || String.fromCharCode(65 + i)),
             text: typeof opt === 'string' ? opt : (opt.text || opt.option || ''),
             isCorrect: typeof opt === 'string'
-              ? opt === q.correct_answer
-              : (opt.is_correct || opt.isCorrect || false)
+              ? String.fromCharCode(65 + i) === q.correct_answer
+              : (opt.is_correct || opt.isCorrect || opt.id === q.correct_answer || false)
           })),
           explanation: q.explanation || '',
           relatedConcept: q.topic || 'General',
@@ -755,8 +756,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             id: typeof opt === 'string' ? String.fromCharCode(65 + i) : (opt.id || String.fromCharCode(65 + i)),
             text: typeof opt === 'string' ? opt : (opt.text || opt.option || ''),
             isCorrect: typeof opt === 'string'
-              ? opt === item.correct_answer
-              : (opt.is_correct || opt.isCorrect || false),
+              ? String.fromCharCode(65 + i) === item.correct_answer
+              : (opt.is_correct || opt.isCorrect || opt.id === item.correct_answer || false),
           })),
           explanation: item.explanation || '',
           relatedConcept: item.topic || 'General',
