@@ -69,6 +69,13 @@ GraphRecall is a full-stack AI application that ingests your notes, articles, an
 - **Source citations** &mdash; Every response links back to the notes and concepts it used
 - **Conversation persistence** &mdash; Full history with the ability to save conversations as new notes
 
+### Bulk Book Ingestion (Image-Aware)
+- **scripts/ingest_book.py** ingests large OCR-parsed textbooks without per-chunk LLM calls.
+- Consumes markdown like `sample_content/The Hundred-Page Language Models Book /The Hundred-Page Language Models Book 2025 (1).md` plus figures in the adjacent `images/` folder.
+- Figures and captions are linked to each chunk and stored in the `chunks.images` JSONB column; images are served from `/api/images/{filename}` or uploaded via `--upload-images`.
+- Optional `--local-embeddings` uses sentence-transformers; `--extract-concepts` batches concept extraction to Neo4j.
+- The earlier parsing notebook lives at `notebooks/pdf_ocr_colab.ipynb` (source for the provided parsed book).
+
 ---
 
 ## Architecture Overview

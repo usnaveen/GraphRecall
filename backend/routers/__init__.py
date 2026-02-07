@@ -8,6 +8,7 @@ from backend.routers.uploads import router as uploads_router
 from backend.routers.notes import router as notes_router
 from backend.routers.concepts import router as concepts_router
 from backend.routers.nodes import router as nodes_router
+from backend.routers.images import router as images_router
 
 __all__ = [
     "feed_router",
@@ -18,4 +19,5 @@ __all__ = [
     "notes_router",
     "concepts_router",
     "nodes_router",
+    "images_router",
 ]
