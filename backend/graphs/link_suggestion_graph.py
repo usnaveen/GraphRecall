@@ -92,7 +92,7 @@ async def generate_links_node(state: LinkSuggestionState) -> dict:
     system = (
         "You are a graph linking assistant. Given a node and candidate concepts, "
         "return up to 5 suggested links with relationship_type and strength (0-1). "
-        "Use relationship types like RELATED_TO, PREREQUISITE_OF, DEPENDS_ON, EXPLAINS. "
+        "Use relationship types: PREREQUISITE_OF, RELATED_TO, SUBTOPIC_OF, PART_OF, BUILDS_ON. "
         "Return JSON: {\"links\": [{\"target_id\": \"...\", \"relationship_type\": \"...\", "
         "\"strength\": 0.7, \"reason\": \"...\"}]}"
     )
