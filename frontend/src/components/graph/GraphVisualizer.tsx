@@ -104,14 +104,23 @@ function Link({ link, isHighlighted, sourceNodeId, targetNodeId }: { link: Link3
   const thickness = useMemo(() => calculateLinkThickness(link.weight), [link.weight]);
   const baseOpacity = isHighlighted ? 0.9 : 0.5;
 
-  // Determine color based on relationship direction relative to selected node
+  // Determine color based on relationship type and direction
+  const REL_COLORS: Record<string, string> = {
+    PREREQUISITE_OF: "#2EFFE6",
+    SUBTOPIC_OF: "#9B59B6",
+    BUILDS_ON: "#F59E0B",
+    RELATED_TO: "#FFFFFF",
+    PART_OF: "#EC4899",
+  };
   let color = isHighlighted ? "#ffffff" : "#888888";
   if (isHighlighted) {
-    if (sourceNodeId && link.source.id === sourceNodeId) {
-      // Outgoing (Child) -> Cyan/Green
+    // Color by relationship type first, fallback to direction-based
+    const relType = link.description?.toUpperCase();
+    if (relType && REL_COLORS[relType]) {
+      color = REL_COLORS[relType];
+    } else if (sourceNodeId && link.source.id === sourceNodeId) {
       color = "#2EFFE6";
     } else if (targetNodeId && link.target.id === targetNodeId) {
-      // Incoming (Parent) -> Purple/Pink
       color = "#DF2EFF";
     }
   }

@@ -1,12 +1,31 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, X, Target, BookOpen, Link2, Plus, Loader2 } from "lucide-react";
+import { Search, X, Target, BookOpen, Link2, Plus, Loader2, ChevronDown } from "lucide-react";
 import { GraphVisualizer } from "../components/graph/GraphVisualizer";
 import type { GraphData, Community } from "../lib/graphData";
 import { ForceSimulation3D } from "../lib/forceSimulation3d";
 import type { GraphLayout, Node3D } from "../lib/forceSimulation3d";
 import { api, nodesService } from "../services/api";
 import { useAppStore } from "../store/useAppStore";
+
+const DOMAIN_OPTIONS = [
+  "General",
+  "Machine Learning",
+  "Mathematics",
+  "Computer Science",
+  "Database Systems",
+  "System Design",
+  "Programming",
+  "Statistics",
+];
+
+const REL_TYPE_COLORS: Record<string, string> = {
+  PREREQUISITE_OF: "#2EFFE6",
+  SUBTOPIC_OF: "#9B59B6",
+  BUILDS_ON: "#F59E0B",
+  RELATED_TO: "#FFFFFF",
+  PART_OF: "#EC4899",
+};
 
 type LinkSuggestion = {
   target_id: string;
@@ -43,16 +62,20 @@ export function GraphScreen() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newNodeName, setNewNodeName] = useState("");
   const [newNodeDesc, setNewNodeDesc] = useState("");
+  const [newNodeDomain, setNewNodeDomain] = useState("General");
+  const [newNodeParentId, setNewNodeParentId] = useState<string | null>(null);
+  const [parentSearchQuery, setParentSearchQuery] = useState("");
   const [creatingNode, setCreatingNode] = useState(false);
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [linkNodeId, setLinkNodeId] = useState<string | null>(null);
   const [pendingPosition, setPendingPosition] = useState<{ x: number; y: number; z: number } | null>(null);
+  const [expandDefinition, setExpandDefinition] = useState(false);
 
   const [linkedNotes, setLinkedNotes] = useState<any[]>([]);
   const [linkedNotesLoading, setLinkedNotesLoading] = useState(false);
   const [nodeConnections, setNodeConnections] = useState<any[]>([]);
-  const [connectionView, setConnectionView] = useState<"all" | "prereqs" | "children">("all");
+  const [connectionView, setConnectionView] = useState<"all" | "prereqs" | "children" | "subtopic" | "builds_on" | "related" | "part_of">("all");
 
   const prerequisiteConnections = useMemo(
     () =>
@@ -70,16 +93,43 @@ export function GraphScreen() {
     [nodeConnections]
   );
 
+  const subtopicConnections = useMemo(
+    () => nodeConnections.filter((c) => c.relationship === "SUBTOPIC_OF"),
+    [nodeConnections]
+  );
+
+  const buildsOnConnections = useMemo(
+    () => nodeConnections.filter((c) => c.relationship === "BUILDS_ON"),
+    [nodeConnections]
+  );
+
+  const relatedConnections = useMemo(
+    () => nodeConnections.filter((c) => c.relationship === "RELATED_TO"),
+    [nodeConnections]
+  );
+
+  const partOfConnections = useMemo(
+    () => nodeConnections.filter((c) => c.relationship === "PART_OF"),
+    [nodeConnections]
+  );
+
   const displayedConnections = useMemo(() => {
     if (connectionView === "prereqs") return prerequisiteConnections;
     if (connectionView === "children") return childConnections;
+    if (connectionView === "subtopic") return subtopicConnections;
+    if (connectionView === "builds_on") return buildsOnConnections;
+    if (connectionView === "related") return relatedConnections;
+    if (connectionView === "part_of") return partOfConnections;
     return nodeConnections;
-  }, [connectionView, nodeConnections, prerequisiteConnections, childConnections]);
+  }, [connectionView, nodeConnections, prerequisiteConnections, childConnections, subtopicConnections, buildsOnConnections, relatedConnections, partOfConnections]);
 
   const openCreateModal = useCallback(
     (prefillName?: string, position?: { x: number; y: number; z: number }) => {
       setNewNodeName(prefillName || "");
       setNewNodeDesc("");
+      setNewNodeDomain("General");
+      setNewNodeParentId(null);
+      setParentSearchQuery("");
       setPendingPosition(position || null);
       setShowCreateModal(true);
     },
@@ -161,12 +211,22 @@ export function GraphScreen() {
   const noSearchMatch = searchQuery.trim().length > 0 && highlightedIds.size === 0;
   const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
 
-  // Reset isolation when selected node changes or is deselected
+  // Reset isolation and expand when selected node changes or is deselected
   useEffect(() => {
     if (!selectedNode) {
       setIsolateCommunity(false);
     }
+    setExpandDefinition(false);
   }, [selectedNode]);
+
+  // Parent concept search results for create modal
+  const parentSearchResults = useMemo(() => {
+    if (!parentSearchQuery.trim() || !layout?.nodes) return [];
+    const lower = parentSearchQuery.toLowerCase();
+    return layout.nodes
+      .filter((n) => n.title.toLowerCase().includes(lower))
+      .slice(0, 5);
+  }, [parentSearchQuery, layout]);
 
   const visibleNodeIds = useMemo(() => {
     if (!isolateCommunity || !selectedNode?.community) return undefined;
@@ -214,11 +274,16 @@ export function GraphScreen() {
       const created = await nodesService.createNode(
         newNodeName.trim(),
         newNodeDesc.trim() || undefined,
-        pendingPosition || undefined
+        pendingPosition || undefined,
+        newNodeDomain,
+        newNodeParentId || undefined
       );
       setShowCreateModal(false);
       setNewNodeName("");
       setNewNodeDesc("");
+      setNewNodeDomain("General");
+      setNewNodeParentId(null);
+      setParentSearchQuery("");
       setPendingPosition(null);
 
       // Suggest links
@@ -288,7 +353,7 @@ export function GraphScreen() {
   }
 
   return (
-    <div className="h-[calc(100vh-180px)] lg:h-[calc(100vh-120px)] flex flex-col relative">
+    <div className="h-[calc(100vh-120px)] flex flex-col relative">
       {/* Search Bar */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -421,12 +486,22 @@ export function GraphScreen() {
           className="mt-4 glass-surface rounded-2xl p-4"
         >
           <div className="flex items-start justify-between mb-3">
-            <div>
+            <div className="flex-1 min-w-0 mr-2">
               <h3 className="font-heading font-bold text-white">{selectedNode.title}</h3>
               {selectedNode.definition && (
-                <p className="text-xs text-white/70 mt-1 line-clamp-2 leading-relaxed">
-                  {selectedNode.definition}
-                </p>
+                <button
+                  onClick={() => setExpandDefinition((v) => !v)}
+                  className="text-left w-full"
+                >
+                  <p className={`text-xs text-white/70 mt-1 leading-relaxed ${expandDefinition ? '' : 'line-clamp-2'}`}>
+                    {selectedNode.definition}
+                  </p>
+                  {selectedNode.definition.length > 100 && (
+                    <span className="text-[10px] text-[#B6FF2E]/60 mt-0.5 inline-block">
+                      {expandDefinition ? 'Show less' : 'Show more'}
+                    </span>
+                  )}
+                </button>
               )}
               {selectedNode.community && (
                 <p className="text-[10px] text-white/30 mt-1">
@@ -436,7 +511,7 @@ export function GraphScreen() {
             </div>
             <button
               onClick={() => setSelectedNode(null)}
-              className="p-1 rounded-full hover:bg-white/10 transition-colors"
+              className="p-1 rounded-full hover:bg-white/10 transition-colors shrink-0"
             >
               <X className="w-4 h-4 text-white/50" />
             </button>
@@ -488,25 +563,27 @@ export function GraphScreen() {
           )}
 
           {/* Relationship Buttons */}
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={() => setConnectionView(connectionView === 'prereqs' ? 'all' : 'prereqs')}
-              className={`flex-1 py-1.5 rounded-lg text-[10px] font-medium transition-colors border ${connectionView === 'prereqs'
-                ? 'bg-blue-500/20 text-blue-300 border-blue-500/50'
-                : 'bg-white/5 text-white/60 border-transparent hover:bg-white/10'
-                }`}
-            >
-              Prerequisites
-            </button>
-            <button
-              onClick={() => setConnectionView(connectionView === 'children' ? 'all' : 'children')}
-              className={`flex-1 py-1.5 rounded-lg text-[10px] font-medium transition-colors border ${connectionView === 'children'
-                ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
-                : 'bg-white/5 text-white/60 border-transparent hover:bg-white/10'
-                }`}
-            >
-              Children
-            </button>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {[
+              { key: "prereqs" as const, label: "Prereqs", count: prerequisiteConnections.length, color: "#2EFFE6" },
+              { key: "children" as const, label: "Children", count: childConnections.length, color: "#2EFFE6" },
+              { key: "subtopic" as const, label: "Subtopics", count: subtopicConnections.length, color: "#9B59B6" },
+              { key: "builds_on" as const, label: "Builds On", count: buildsOnConnections.length, color: "#F59E0B" },
+              { key: "related" as const, label: "Related", count: relatedConnections.length, color: "#FFFFFF" },
+              { key: "part_of" as const, label: "Part Of", count: partOfConnections.length, color: "#EC4899" },
+            ].filter((f) => f.count > 0).map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setConnectionView(connectionView === f.key ? 'all' : f.key)}
+                className={`px-2 py-1 rounded-lg text-[10px] font-medium transition-colors border ${connectionView === f.key
+                  ? 'border-current'
+                  : 'bg-white/5 text-white/60 border-transparent hover:bg-white/10'
+                  }`}
+                style={connectionView === f.key ? { color: f.color, backgroundColor: `${f.color}15`, borderColor: `${f.color}50` } : undefined}
+              >
+                {f.label} ({f.count})
+              </button>
+            ))}
           </div>
 
           {linkedNotesLoading ? (
@@ -535,54 +612,37 @@ export function GraphScreen() {
             <div className="mt-3 pt-3 border-t border-white/10">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-[10px] text-white/40 uppercase tracking-wider">Connected Concepts</p>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setConnectionView("prereqs")}
-                    className={`text-[10px] px-2 py-0.5 rounded-full ${connectionView === "prereqs" ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/60"
-                      }`}
-                  >
-                    Prereqs ({prerequisiteConnections.length})
-                  </button>
-                  <button
-                    onClick={() => setConnectionView("children")}
-                    className={`text-[10px] px-2 py-0.5 rounded-full ${connectionView === "children" ? "bg-[#2EFFE6] text-black" : "bg-white/10 text-white/60"
-                      }`}
-                  >
-                    Children ({childConnections.length})
-                  </button>
-                  <button
-                    onClick={() => setConnectionView("all")}
-                    className={`text-[10px] px-2 py-0.5 rounded-full ${connectionView === "all" ? "bg-white/20 text-white" : "bg-white/10 text-white/60"
-                      }`}
-                  >
-                    All
-                  </button>
-                </div>
+                <button
+                  onClick={() => setConnectionView("all")}
+                  className={`text-[10px] px-2 py-0.5 rounded-full ${connectionView === "all" ? "bg-white/20 text-white" : "bg-white/10 text-white/60"
+                    }`}
+                >
+                  All ({nodeConnections.length})
+                </button>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {displayedConnections.map((conn: any, i: number) => (
-                  <button
-                    key={`${conn.concept?.id || i}-${conn.relationship}-${conn.direction}`}
-                    onClick={() => {
-                      const match = layout?.nodes.find((n) => n.id === conn.concept?.id);
-                      if (match) {
-                        setSelectedNode(match);
-                        setFocusNodeId(match.id);
-                      }
-                    }}
-                    className="px-2 py-1 rounded-full text-[10px] bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors flex items-center gap-1"
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${conn.relationship === "PREREQUISITE_OF" && conn.direction === "incoming"
-                        ? "bg-[#B6FF2E]"
-                        : conn.relationship === "PREREQUISITE_OF" && conn.direction === "outgoing"
-                          ? "bg-[#2EFFE6]"
-                          : "bg-white/40"
-                        }`}
-                    />
-                    {conn.concept?.name}
-                  </button>
-                ))}
+                {displayedConnections.map((conn: any, i: number) => {
+                  const relColor = REL_TYPE_COLORS[conn.relationship] || "#FFFFFF";
+                  return (
+                    <button
+                      key={`${conn.concept?.id || i}-${conn.relationship}-${conn.direction}`}
+                      onClick={() => {
+                        const match = layout?.nodes.find((n) => n.id === conn.concept?.id);
+                        if (match) {
+                          setSelectedNode(match);
+                          setFocusNodeId(match.id);
+                        }
+                      }}
+                      className="px-2 py-1 rounded-full text-[10px] bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors flex items-center gap-1"
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: relColor }}
+                      />
+                      {conn.concept?.name}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -615,8 +675,62 @@ export function GraphScreen() {
                 value={newNodeDesc}
                 onChange={(e) => setNewNodeDesc(e.target.value)}
                 placeholder="Description (optional)"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-[#B6FF2E]/50 mb-4 h-24 resize-none"
+                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-[#B6FF2E]/50 mb-3 h-20 resize-none"
               />
+
+              {/* Domain Dropdown */}
+              <div className="relative mb-3">
+                <select
+                  value={newNodeDomain}
+                  onChange={(e) => setNewNodeDomain(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-[#B6FF2E]/50 appearance-none cursor-pointer"
+                >
+                  {DOMAIN_OPTIONS.map((d) => (
+                    <option key={d} value={d} className="bg-[#1a1a1f] text-white">
+                      {d}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" />
+              </div>
+
+              {/* Parent Concept Search */}
+              <div className="relative mb-4">
+                <input
+                  value={newNodeParentId ? parentSearchQuery : parentSearchQuery}
+                  onChange={(e) => {
+                    setParentSearchQuery(e.target.value);
+                    if (!e.target.value.trim()) setNewNodeParentId(null);
+                  }}
+                  placeholder="Parent concept (optional)"
+                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-[#B6FF2E]/50"
+                />
+                {newNodeParentId && (
+                  <button
+                    onClick={() => { setNewNodeParentId(null); setParentSearchQuery(""); }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-white/10"
+                  >
+                    <X className="w-3 h-3 text-white/40" />
+                  </button>
+                )}
+                {parentSearchQuery.trim() && !newNodeParentId && parentSearchResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1a1f] border border-white/10 rounded-xl overflow-hidden shadow-xl z-50 max-h-40 overflow-y-auto">
+                    {parentSearchResults.map((node) => (
+                      <button
+                        key={node.id}
+                        onClick={() => {
+                          setNewNodeParentId(node.id);
+                          setParentSearchQuery(node.title);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-white/5 transition-colors text-sm text-white/80"
+                      >
+                        {node.title}
+                        {node.domain && <span className="text-[10px] text-white/30 ml-2">{node.domain}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="flex gap-3">
                 <button
                   onClick={() => {

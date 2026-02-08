@@ -417,10 +417,10 @@ export const api = {
 };
 
 export const nodesService = {
-    createNode: async (name: string, description?: string, position?: { x: number; y: number; z: number }) => {
+    createNode: async (name: string, description?: string, position?: { x: number; y: number; z: number }, domain?: string, parent_concept_id?: string) => {
         const response = await authFetch(`${API_BASE}/nodes`, {
             method: 'POST',
-            body: JSON.stringify({ name, description, position }),
+            body: JSON.stringify({ name, description, position, domain, parent_concept_id }),
         });
         if (!response.ok) throw new Error('Failed to create node');
         return response.json();
