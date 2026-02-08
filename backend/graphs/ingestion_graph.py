@@ -680,6 +680,41 @@ async def create_concepts_node(state: IngestionState) -> dict:
         all_name_to_id = {**existing_name_to_id, **name_to_id}
 
         relationships_created = 0
+
+        async def upsert_relationship(
+            from_id: str,
+            to_id: str,
+            rel_type: str,
+            base_strength: float,
+            source: str = "extraction",
+            increment: float = 0.1,
+        ) -> None:
+            await neo4j.execute_query(
+                f"""
+                MATCH (from:Concept {{id: $from_id, user_id: $uid}})
+                MATCH (to:Concept {{id: $to_id, user_id: $uid}})
+                MERGE (from)-[r:{rel_type}]->(to)
+                ON CREATE SET r.strength = $base_strength,
+                              r.source = $source,
+                              r.mention_count = 1,
+                              r.created_at = datetime()
+                ON MATCH SET r.mention_count = coalesce(r.mention_count, 1) + 1,
+                             r.strength = CASE
+                                 WHEN coalesce(r.strength, $base_strength) + $increment > 1.0 THEN 1.0
+                                 ELSE coalesce(r.strength, $base_strength) + $increment
+                             END,
+                             r.source = coalesce(r.source, $source),
+                             r.updated_at = datetime()
+                """,
+                {
+                    "from_id": from_id,
+                    "to_id": to_id,
+                    "uid": user_id,
+                    "base_strength": base_strength,
+                    "increment": increment,
+                    "source": source,
+                },
+            )
         for concept, cid in zip(concepts, concept_ids):
              # Handle related_concepts — search ALL existing concepts, not just current batch
              for related_name in concept.get("related_concepts", []):
@@ -691,12 +726,11 @@ async def create_concepts_node(state: IngestionState) -> dict:
                      r_id = all_name_to_id.get(r_name.lower())
                      if r_id and r_id != cid:
                          try:
-                             await neo4j.create_relationship(
-                                 from_concept_id=cid,
-                                 to_concept_id=r_id,
-                                 relationship_type="RELATED_TO",
-                                 user_id=user_id,
-                                 properties={"strength": 0.8, "source": "extraction"}
+                             await upsert_relationship(
+                                 from_id=cid,
+                                 to_id=r_id,
+                                 rel_type="RELATED_TO",
+                                 base_strength=0.8,
                              )
                              relationships_created += 1
                          except Exception as e:
@@ -713,12 +747,11 @@ async def create_concepts_node(state: IngestionState) -> dict:
                      p_id = all_name_to_id.get(p_name.lower())
                      if p_id and p_id != cid:
                          try:
-                             await neo4j.create_relationship(
-                                 from_concept_id=p_id,
-                                 to_concept_id=cid,
-                                 relationship_type="PREREQUISITE_OF",
-                                 user_id=user_id,
-                                 properties={"strength": 0.9, "source": "extraction"}
+                             await upsert_relationship(
+                                 from_id=p_id,
+                                 to_id=cid,
+                                 rel_type="PREREQUISITE_OF",
+                                 base_strength=0.9,
                              )
                              relationships_created += 1
                          except Exception:
@@ -730,12 +763,11 @@ async def create_concepts_node(state: IngestionState) -> dict:
                  parent_id = all_name_to_id.get(parent_topic.lower())
                  if parent_id and parent_id != cid:
                      try:
-                         await neo4j.create_relationship(
-                             from_concept_id=cid,
-                             to_concept_id=parent_id,
-                             relationship_type="SUBTOPIC_OF",
-                             user_id=user_id,
-                             properties={"strength": 1.0, "source": "extraction"}
+                         await upsert_relationship(
+                             from_id=cid,
+                             to_id=parent_id,
+                             rel_type="SUBTOPIC_OF",
+                             base_strength=1.0,
                          )
                          relationships_created += 1
                      except Exception:
@@ -748,12 +780,11 @@ async def create_concepts_node(state: IngestionState) -> dict:
                      s_id = all_name_to_id.get(s_name.lower())
                      if s_id and s_id != cid:
                          try:
-                             await neo4j.create_relationship(
-                                 from_concept_id=s_id,
-                                 to_concept_id=cid,
-                                 relationship_type="SUBTOPIC_OF",
-                                 user_id=user_id,
-                                 properties={"strength": 1.0, "source": "extraction"}
+                             await upsert_relationship(
+                                 from_id=s_id,
+                                 to_id=cid,
+                                 rel_type="SUBTOPIC_OF",
+                                 base_strength=1.0,
                              )
                              relationships_created += 1
                          except Exception:

@@ -286,11 +286,14 @@ class Neo4jClient:
             MATCH path = (seed)-[rels*1..$max_hops]-(neighbor:Concept {{user_id: $user_id}})
             WHERE ALL(rel IN rels WHERE type(rel) IN $rel_types)
             {allowed_clause}
-            WITH neighbor, min(length(path)) AS hops
+            WITH neighbor,
+                 length(path) AS hops,
+                 reduce(s = 1.0, rel IN rels | s * coalesce(rel.strength, 0.5)) AS strength_score
+            WITH neighbor, min(hops) AS hops, max(strength_score) AS strength_score
             RETURN neighbor.id AS id, neighbor.name AS name, neighbor.definition AS definition,
                    neighbor.domain AS domain, neighbor.complexity_score AS complexity,
                    neighbor.confidence AS confidence, hops AS hops
-            ORDER BY hops ASC
+            ORDER BY strength_score DESC, hops ASC
             LIMIT $neighbor_limit
             """
             neighbor_params = {
