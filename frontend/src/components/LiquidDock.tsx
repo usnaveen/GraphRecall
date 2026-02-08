@@ -51,9 +51,6 @@ export function LiquidDock({
 
   return (
     <>
-      {/* Edge frost gradient — purely decorative, behind the dock */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 h-24 dock-frost-edge" />
-
       {/* Floating glassmorphic dock */}
       <motion.nav
         initial={{ opacity: 0, y: 50 }}
@@ -62,7 +59,7 @@ export function LiquidDock({
         className={`fixed bottom-0 left-0 right-0 z-50 flex justify-center ${className}`}
         style={{
           paddingBottom: 'clamp(1rem, env(safe-area-inset-bottom), 3rem)',
-          marginBottom: '0.5rem',
+          marginBottom: '0.75rem',
         }}
       >
         <div className="liquid-glass-dock rounded-full px-4 py-2 flex items-center gap-4 mx-4 w-fit max-w-[90vw] justify-center">
