@@ -6,6 +6,7 @@ from typing import Any
 
 import networkx as nx
 
+from backend.config.llm import get_chat_model
 from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
 
@@ -112,12 +113,59 @@ class CommunityService:
                     },
                 )
 
+    async def generate_community_summaries(self, user_id: str) -> None:
+        """Generate LLM summaries for each community and persist to Postgres."""
+        communities = await self.get_communities(user_id)
+        if not communities:
+            return
+
+        neo4j = await get_neo4j_client()
+        pg = await get_postgres_client()
+        llm = get_chat_model(temperature=0.1)
+
+        for community in communities:
+            concept_ids = community.get("entity_ids", [])
+            if not concept_ids or len(concept_ids) < 2:
+                continue
+
+            concepts = await neo4j.execute_query(
+                """
+                MATCH (c:Concept)
+                WHERE c.id IN $ids AND c.user_id = $uid
+                RETURN c.name AS name, c.definition AS definition
+                """,
+                {"ids": concept_ids[:20], "uid": user_id},
+            )
+            if not concepts:
+                continue
+
+            concepts_text = "\n".join(
+                f"- {c['name']}: {(c.get('definition') or '')[:120]}"
+                for c in concepts
+            )
+
+            prompt = (
+                "Summarize this cluster of related concepts in 2-3 sentences. "
+                "Focus on the overarching theme and how the concepts connect.\n\n"
+                f"Concepts:\n{concepts_text}\n\nSummary:"
+            )
+
+            response = await llm.ainvoke(prompt)
+            summary = response.content.strip()
+            if not summary:
+                continue
+
+            await pg.execute_update(
+                "UPDATE communities SET summary = :summary WHERE id = :id",
+                {"summary": summary, "id": community["id"]},
+            )
+
     async def get_communities(self, user_id: str) -> list[dict[str, Any]]:
         """Fetch communities and node mappings from Postgres."""
         pg = await get_postgres_client()
         community_rows = await pg.execute_query(
             """
-            SELECT id, title, level, parent_id, size
+            SELECT id, title, level, parent_id, size, summary
             FROM communities
             WHERE user_id = :user_id
             ORDER BY size DESC
@@ -152,6 +200,7 @@ class CommunityService:
                     "children": [],
                     "entity_ids": mapping.get(cid, []),
                     "size": row.get("size") or len(mapping.get(cid, [])),
+                    "summary": row.get("summary"),
                 }
             )
         return communities

@@ -16,6 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from backend.auth.middleware import get_current_user
 from backend.agents.scanner_agent import ScannerAgent
+from backend.db.postgres_client import get_postgres_client
+from backend.services.community_service import CommunityService
 
 from backend.graphs.ingestion_graph import (
     run_ingestion,
@@ -27,6 +29,16 @@ logger = structlog.get_logger()
 scanner_agent = ScannerAgent()
 
 router = APIRouter(prefix="/api/v2", tags=["V2 Ingestion"])
+
+
+async def _recompute_communities(user_id: str) -> None:
+    try:
+        service = CommunityService()
+        communities = await service.compute_communities(user_id)
+        await service.persist_communities(user_id, communities)
+        await service.generate_community_summaries(user_id)
+    except Exception as e:
+        logger.warning("Background community recompute failed", error=str(e))
 
 
 # ============================================================================
@@ -159,6 +171,9 @@ async def ingest_note(
                 num_flashcards=len(result.get("flashcard_ids", [])),
             )
         
+        if status == "completed":
+            asyncio.create_task(_recompute_communities(user_id))
+
         if status == "completed" or (status == "awaiting_review" and result.get("note_id")):
              # Trigger Lazy Quiz Scanner in background
              note_id = result.get("note_id")

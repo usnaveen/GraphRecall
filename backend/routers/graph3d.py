@@ -496,6 +496,7 @@ async def recompute_communities(
         service = CommunityService()
         communities = await service.compute_communities(user_id)
         await service.persist_communities(user_id, communities)
+        await service.generate_community_summaries(user_id)
         return {"status": "recomputed", "count": len(communities)}
     except Exception as e:
         logger.error("Graph3D: Failed to recompute communities", error=str(e))
