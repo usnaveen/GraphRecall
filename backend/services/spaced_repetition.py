@@ -272,9 +272,11 @@ class SpacedRepetitionService:
         result = await self.pg_client.execute_query(
             """
             SELECT
-                concept_id as item_id, item_type, user_id,
+                concept_id as item_id, user_id,
                 easiness_factor, interval_days, repetition_count,
-                last_review, next_review, total_reviews, correct_streak,
+                last_reviewed as last_review,
+                next_review_due as next_review,
+                total_reviews, correct_streak,
                 stability, difficulty_fsrs, reps_fsrs
             FROM proficiency_scores
             WHERE user_id = :user_id
@@ -326,7 +328,7 @@ class SpacedRepetitionService:
             """
             INSERT INTO proficiency_scores
                 (user_id, concept_id, score, easiness_factor, interval_days,
-                 repetition_count, next_review, total_reviews, correct_streak)
+                 repetition_count, next_review_due, total_reviews, correct_streak)
             VALUES
                 (:user_id, :item_id, 0.0, :ef, :interval, :rep, :next_review, 0, 0)
             ON CONFLICT (user_id, concept_id) DO NOTHING
@@ -412,8 +414,8 @@ class SpacedRepetitionService:
                 SET
                     score = :score,
                     interval_days = :interval,
-                    last_review = :last_review,
-                    next_review = :next_review,
+                    last_reviewed = :last_review,
+                    next_review_due = :next_review,
                     total_reviews = total_reviews + 1,
                     correct_streak = :streak,
                     stability = :stability,
@@ -468,8 +470,8 @@ class SpacedRepetitionService:
                     easiness_factor = :ef,
                     interval_days = :interval,
                     repetition_count = :rep,
-                    last_review = :last_review,
-                    next_review = :next_review,
+                    last_reviewed = :last_review,
+                    next_review_due = :next_review,
                     total_reviews = total_reviews + 1,
                     correct_streak = :streak,
                     updated_at = NOW()
@@ -658,8 +660,8 @@ class SpacedRepetitionService:
         # Get counts
         stats_query = """
             SELECT 
-                COUNT(*) FILTER (WHERE next_review <= :now) as due_count,
-                COUNT(*) FILTER (WHERE next_review < :today_start) as overdue_count,
+                COUNT(*) FILTER (WHERE next_review_due <= :now) as due_count,
+                COUNT(*) FILTER (WHERE next_review_due < :today_start) as overdue_count,
                 COUNT(*) FILTER (WHERE last_reviewed >= :today_start) as reviewed_today,
                 AVG(score) as avg_mastery,
                 MAX(correct_streak) as max_streak
