@@ -35,9 +35,6 @@ export function TopBar() {
 
   return (
     <>
-      {/* Edge frost gradient — purely decorative, behind everything */}
-      <div className="fixed top-0 left-0 right-0 z-40 h-20 topbar-frost-edge" />
-
       {/* Floating top bar elements */}
       <motion.header
         initial={{ opacity: 0, y: -20 }}

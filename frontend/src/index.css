@@ -76,37 +76,14 @@
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
-}
-
-/* Frosted edge gradients — subtle fade at screen edges only */
-.topbar-frost-edge {
-  background: linear-gradient(
-    to bottom,
-    rgba(7, 7, 10, 0.55) 0%,
-    rgba(7, 7, 10, 0.25) 45%,
-    rgba(7, 7, 10, 0) 100%
-  );
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  pointer-events: none;
-}
-
-.dock-frost-edge {
-  background: linear-gradient(
-    to top,
-    rgba(7, 7, 10, 0.55) 0%,
-    rgba(7, 7, 10, 0.25) 45%,
-    rgba(7, 7, 10, 0) 100%
-  );
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  pointer-events: none;
+  box-shadow:
+    0 -8px 40px rgba(7, 7, 10, 0.6),
+    0 20px 60px rgba(0, 0, 0, 0.55);
 }
 
 /* Content should bleed under the frosted edges */
 .content-bleed {
-  padding-top: clamp(1.5rem, calc(env(safe-area-inset-top) + 0.75rem), 3.5rem);
+  padding-top: clamp(3.5rem, calc(env(safe-area-inset-top) + 3rem), 5rem);
   padding-bottom: clamp(4.5rem, calc(env(safe-area-inset-bottom) + 4rem), 8rem);
 }
 
