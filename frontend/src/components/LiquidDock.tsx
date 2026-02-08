@@ -52,7 +52,7 @@ export function LiquidDock({
   return (
     <>
       {/* Edge frost gradient — purely decorative, behind the dock */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 h-28 dock-frost-edge" />
+      <div className="fixed bottom-0 left-0 right-0 z-40 h-24 dock-frost-edge" />
 
       {/* Floating glassmorphic dock */}
       <motion.nav
