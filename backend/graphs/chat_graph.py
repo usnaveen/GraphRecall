@@ -434,7 +434,9 @@ async def get_context_node(state: ChatState) -> dict:
             if focused_source_ids:
                 result = await pg_client.execute_query(
                     """
-                    SELECT c.id, c.content, c.images, c.chunk_index, n.title, n.id AS note_id
+                    SELECT c.id, c.content, c.images, c.chunk_index,
+                           c.page_start, c.page_end,
+                           n.title, n.id AS note_id
                     FROM chunks c
                     JOIN notes n ON c.note_id = n.id
                     WHERE n.user_id = :user_id
@@ -446,7 +448,9 @@ async def get_context_node(state: ChatState) -> dict:
             else:
                 result = await pg_client.execute_query(
                     """
-                    SELECT c.id, c.content, c.images, c.chunk_index, n.title, n.id AS note_id
+                    SELECT c.id, c.content, c.images, c.chunk_index,
+                           c.page_start, c.page_end,
+                           n.title, n.id AS note_id
                     FROM chunks c
                     JOIN notes n ON c.note_id = n.id
                     WHERE n.user_id = :user_id
@@ -533,11 +537,22 @@ async def generate_response_node(state: ChatState) -> dict:
         context_parts.append(f"**Relationships:**\n{rels_text}")
     
     if rag_context:
-        notes_text = "\n".join([
-            f"- {n.get('title', 'Note')}: {n.get('content', '')[:200]}..."
-            + (f" [images: {len(n.get('images', []))}]" if n.get("images") else "")
-            for n in rag_context
-        ])
+        note_lines = []
+        for n in rag_context:
+            page_start = n.get("page_start")
+            page_end = n.get("page_end")
+            page_text = ""
+            if page_start:
+                page_text = (
+                    f" (p. {page_start}-{page_end})"
+                    if page_end and page_end != page_start
+                    else f" (p. {page_start})"
+                )
+            note_lines.append(
+                f"- {n.get('title', 'Note')}{page_text}: {n.get('content', '')[:200]}..."
+                + (f" [images: {len(n.get('images', []))}]" if n.get("images") else "")
+            )
+        notes_text = "\n".join(note_lines)
         context_parts.append(f"**Relevant Notes:**\n{notes_text}")
     
     context = "\n\n".join(context_parts) if context_parts else "No specific context found."
@@ -599,6 +614,8 @@ async def generate_response_node(state: ChatState) -> dict:
                     "content": n.get("content", "")[:500],
                     "images": n.get("images", []),
                     "note_id": n.get("note_id"),
+                    "page_start": n.get("page_start"),
+                    "page_end": n.get("page_end"),
                 }
                 for n in rag_context
             ],
