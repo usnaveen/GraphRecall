@@ -12,6 +12,8 @@ export interface Concept {
   related: string[];
   mastery: number;
   lastReviewed?: Date;
+  parent_topic?: string;
+  subtopics?: string[];
 }
 
 export interface QuizOption {

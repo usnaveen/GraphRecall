@@ -18,6 +18,8 @@ router = APIRouter(prefix="/api/nodes", tags=["Nodes"])
 class CreateNodeRequest(BaseModel):
     name: str
     description: Optional[str] = None
+    domain: Optional[str] = None  # e.g. "Machine Learning", "Mathematics"
+    parent_concept_id: Optional[str] = None  # ID of parent concept for SUBTOPIC_OF
     position: Optional[dict] = None  # {x,y,z}
 
 
@@ -65,6 +67,7 @@ async def create_node(
         import uuid
         concept_id = str(uuid.uuid4())
         position = request.position or {}
+        domain = request.domain or "General"
         result = await neo4j.execute_query(
             query,
             {
@@ -72,7 +75,7 @@ async def create_node(
                 "user_id": user_id,
                 "name": request.name,
                 "definition": request.description or "",
-                "domain": "General",
+                "domain": domain,
                 "complexity_score": 5.0,
                 "x": position.get("x"),
                 "y": position.get("y"),
@@ -86,6 +89,27 @@ async def create_node(
                 node = dict(node._properties)
         except Exception:
             pass
+
+        # Create SUBTOPIC_OF relationship if parent specified
+        if request.parent_concept_id:
+            try:
+                node_id = node.get("id") or concept_id
+                await neo4j.execute_query(
+                    """
+                    MATCH (child:Concept {id: $child_id, user_id: $user_id})
+                    MATCH (parent:Concept {id: $parent_id, user_id: $user_id})
+                    MERGE (child)-[r:SUBTOPIC_OF]->(parent)
+                    SET r.strength = 1.0, r.source = 'user_created'
+                    RETURN type(r) as relationship
+                    """,
+                    {
+                        "child_id": node_id,
+                        "parent_id": request.parent_concept_id,
+                        "user_id": user_id,
+                    },
+                )
+            except Exception as e:
+                logger.warning("Nodes: Failed to create SUBTOPIC_OF", error=str(e))
 
         # Initialize proficiency_scores (best-effort)
         try:
