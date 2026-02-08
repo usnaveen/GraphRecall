@@ -230,12 +230,14 @@ async def save_chunks_node(state: IngestionState) -> dict:
             # Use pre-generated ID or fallback (though chunk_node should guarantee it now)
             parent_id = parent_group.get("parent_id") or str(uuid.uuid4())
             parent_text = parent_group["parent_content"]
+            parent_page_start = parent_group.get("parent_page_start")
+            parent_page_end = parent_group.get("parent_page_end")
             
             # Save Parent Chunk
             await pg_client.execute_update(
                 """
-                INSERT INTO chunks (id, note_id, content, chunk_level, chunk_index, created_at)
-                VALUES (:id, :note_id, :content, 'parent', :index, :created_at)
+                INSERT INTO chunks (id, note_id, content, chunk_level, chunk_index, page_start, page_end, created_at)
+                VALUES (:id, :note_id, :content, 'parent', :index, :page_start, :page_end, :created_at)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 {
@@ -243,6 +245,8 @@ async def save_chunks_node(state: IngestionState) -> dict:
                     "note_id": state["note_id"],
                     "content": parent_text,
                     "index": parent_group["parent_index"],
+                    "page_start": parent_page_start,
+                    "page_end": parent_page_end,
                     "created_at": datetime.now(timezone.utc)
                 }
             )
@@ -252,15 +256,19 @@ async def save_chunks_node(state: IngestionState) -> dict:
             child_contents = parent_group["child_contents"]
             child_embeddings = parent_group.get("child_embeddings", [None] * len(child_contents))
             child_ids = parent_group.get("child_ids", [str(uuid.uuid4()) for _ in child_contents])
+            child_page_starts = parent_group.get("child_page_starts", [None] * len(child_contents))
+            child_page_ends = parent_group.get("child_page_ends", [None] * len(child_contents))
             
             for i, (child_text, embedding, child_id) in enumerate(zip(child_contents, child_embeddings, child_ids)):
+                page_start = child_page_starts[i] if i < len(child_page_starts) else None
+                page_end = child_page_ends[i] if i < len(child_page_ends) else None
                 
                 # Dynamic query based on whether embedding exists
                 if embedding:
                     await pg_client.execute_update(
                         """
-                        INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, embedding, created_at)
-                        VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :embedding, :created_at)
+                        INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, embedding, created_at)
+                        VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :page_start, :page_end, :embedding, :created_at)
                         ON CONFLICT (id) DO NOTHING
                         """,
                         {
@@ -269,6 +277,8 @@ async def save_chunks_node(state: IngestionState) -> dict:
                             "parent_id": parent_id,
                             "content": child_text,
                             "index": i,
+                            "page_start": page_start,
+                            "page_end": page_end,
                             "embedding": str(embedding),
                             "created_at": datetime.now(timezone.utc)
                         }
@@ -276,8 +286,8 @@ async def save_chunks_node(state: IngestionState) -> dict:
                 else:
                     await pg_client.execute_update(
                         """
-                        INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, created_at)
-                        VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :created_at)
+                        INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, created_at)
+                        VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :page_start, :page_end, :created_at)
                         ON CONFLICT (id) DO NOTHING
                         """,
                         {
@@ -286,6 +296,8 @@ async def save_chunks_node(state: IngestionState) -> dict:
                             "parent_id": parent_id,
                             "content": child_text,
                             "index": i,
+                            "page_start": page_start,
+                            "page_end": page_end,
                             "created_at": datetime.now(timezone.utc)
                         }
                     )
