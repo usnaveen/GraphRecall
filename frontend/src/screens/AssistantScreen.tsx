@@ -511,7 +511,7 @@ export function AssistantScreen() {
   });
 
   return (
-    <div className="h-[calc(100vh-180px)] flex flex-col relative">
+    <div className="h-[calc(100vh-120px)] flex flex-col relative">
       {knowledgeStatus && (
         <div
           className={`absolute top-0 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full text-xs font-medium ${knowledgeStatus.type === 'success'
@@ -947,13 +947,13 @@ export function AssistantScreen() {
       </AnimatePresence>
 
       {/* Input Bar */}
-      <div className="p-4 pt-0">
+      <div className="px-4 pb-2">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="relative"
         >
-          <div className="flex flex-col gap-2 glass-surface rounded-2xl p-2 border border-white/10 focus-within:border-[#B6FF2E]/50 transition-colors bg-[#0a0a0f]">
+          <div className="flex flex-col gap-2 glass-surface rounded-full p-2 border border-white/10 focus-within:border-[#B6FF2E]/50 transition-colors bg-[#0a0a0f]">
             {/* Selected Sources Pills */}
             {selectedSources.length > 0 && (
               <div className="flex flex-wrap gap-1 px-1">

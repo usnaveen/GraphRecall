@@ -88,16 +88,17 @@ export function FeedScreen() {
 
     try {
       // Capture the card as a canvas with a solid background
-      const canvas = await html2canvas(cardRef.current, {
+      const el = cardRef.current;
+      const rect = el.getBoundingClientRect();
+      const canvas = await html2canvas(el, {
         backgroundColor: '#07070A',
         scale: 2, // Higher resolution
         useCORS: true,
         logging: false,
-        // Add padding around the card
-        x: -16,
-        y: -16,
-        width: cardRef.current.offsetWidth + 32,
-        height: cardRef.current.offsetHeight + 32,
+        width: rect.width,
+        height: rect.height,
+        scrollX: 0,
+        scrollY: -window.scrollY,
       });
 
       // Add watermark at the bottom
@@ -162,7 +163,7 @@ export function FeedScreen() {
   const { error } = useAppStore();
   if (error) {
     return (
-      <div className="h-[calc(100vh-180px)] flex items-center justify-center p-4">
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center p-4">
         <div className="text-center bg-red-500/10 p-6 rounded-2xl border border-red-500/20">
           <p className="text-red-400 font-bold mb-2">Something went wrong</p>
           <p className="text-red-300/70 text-sm font-mono break-all mb-4">{error}</p>
@@ -182,7 +183,7 @@ export function FeedScreen() {
   // Empty state
   if (!feedItems.length) {
     return (
-      <div className="h-[calc(100vh-180px)] flex items-center justify-center">
+      <div className="h-[calc(100vh-120px)] flex items-center justify-center">
         <div className="text-center">
           <p className="text-white/60 text-lg mb-2">No items in your feed</p>
           <p className="text-white/40 text-sm">Start by adding some notes to your knowledge graph!</p>
@@ -278,7 +279,7 @@ export function FeedScreen() {
   }
 
   return (
-    <div className="h-[calc(100vh-180px)] flex flex-col">
+    <div className="h-[calc(100vh-120px)] flex flex-col">
       {/* Topic Filter Banner */}
       {feedTopicFilter && (
         <motion.div
@@ -335,10 +336,10 @@ export function FeedScreen() {
                           className="flex items-center gap-1.5 group"
                         >
                           <motion.div
-                            className={`p-2 rounded-full transition-colors ${isLiked ? 'bg-red-500/10' : 'bg-white/5 group-hover:bg-white/10'}`}
+                            className={`p-2 rounded-full transition-colors ${isLiked ? 'bg-[#B6FF2E]/10' : 'bg-white/5 group-hover:bg-white/10'}`}
                           >
                             <Heart
-                              className={`w-5 h-5 ${isLiked ? 'fill-red-500 text-red-500' : 'text-white/40 group-hover:text-white/60'}`}
+                              className={`w-5 h-5 ${isLiked ? 'fill-[#B6FF2E] text-[#B6FF2E]' : 'text-white/40 group-hover:text-white/60'}`}
                             />
                           </motion.div>
                         </motion.button>
@@ -364,7 +365,7 @@ export function FeedScreen() {
                       whileTap={{ scale: 0.85 }}
                       onClick={handleShare}
                       disabled={isCapturing}
-                      className={`p-2 rounded-full transition-colors ${isCapturing ? 'bg-[#B6FF2E]/10 text-[#B6FF2E]' : 'bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60'}`}
+                      className={`p-2 rounded-full transition-colors flex items-center justify-center ${isCapturing ? 'bg-[#B6FF2E]/10 text-[#B6FF2E]' : 'bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60'}`}
                     >
                       {isCapturing ? (
                         <Download className="w-5 h-5 animate-pulse" />
