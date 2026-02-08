@@ -32,9 +32,9 @@ from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
 from backend.graphs.checkpointer import get_checkpointer
 
-# Try to import Tavily for web search
+# Try to import Tavily for web search (updated to new langchain-tavily package)
 try:
-    from langchain_community.tools.tavily_search import TavilySearchResults
+    from langchain_tavily import TavilySearch
     TAVILY_AVAILABLE = True
 except ImportError:
     TAVILY_AVAILABLE = False
@@ -164,7 +164,7 @@ async def web_search_for_topic(query: str) -> str:
     
     if TAVILY_AVAILABLE:
         try:
-            tavily = TavilySearchResults(max_results=3)
+            tavily = TavilySearch(max_results=3)
             results = await tavily.ainvoke(query)
             
             output = "## Web Research Results:\n\n"
@@ -281,7 +281,7 @@ async def research_node(state: QuizState) -> dict:
         return {"research_results": []}
     
     try:
-        tavily = TavilySearchResults(max_results=5)
+        tavily = TavilySearch(max_results=5)
         results = await tavily.ainvoke(f"{topic} explained concepts")
         
         research_results = [

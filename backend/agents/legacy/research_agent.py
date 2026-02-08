@@ -18,9 +18,9 @@ from pydantic import BaseModel
 
 logger = structlog.get_logger()
 
-# Try to import Tavily, fall back to web search simulation
+# Try to import Tavily (updated to new langchain-tavily package)
 try:
-    from langchain_community.tools.tavily_search import TavilySearchResults
+    from langchain_tavily import TavilySearch
     TAVILY_AVAILABLE = True
 except ImportError:
     TAVILY_AVAILABLE = False
@@ -70,7 +70,7 @@ class WebResearchAgent:
         
         # Initialize search tool
         if TAVILY_AVAILABLE:
-            self.search_tool = TavilySearchResults(max_results=max_results)
+            self.search_tool = TavilySearch(max_results=max_results)
         else:
             self.search_tool = None
     

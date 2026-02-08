@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
 import structlog
-from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_tavily import TavilySearch
 from langchain_core.messages import SystemMessage, HumanMessage
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -25,7 +25,7 @@ class WebQuizAgent:
         self.llm = get_chat_model(temperature=0.2, json_mode=True)
         # Initialize search tool - expects TAVILY_API_KEY in env
         try:
-            self.search = TavilySearchResults(max_results=3)
+            self.search = TavilySearch(max_results=3)
         except Exception as e:
             logger.warning("WebQuizAgent: Tavily not configured", error=str(e))
             self.search = None
