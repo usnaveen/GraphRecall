@@ -99,7 +99,7 @@ export function ProfileScreen() {
 
 
   return (
-    <div className="h-[calc(100vh-120px)] overflow-y-auto pr-1 pb-10 scrollbar-hide">
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1 pb-10 scrollbar-hide">
       {/* Geeky Facts Modal */}
       {showGeekyFacts && <AgentDeck onClose={() => setShowGeekyFacts(false)} />}
 
@@ -466,7 +466,7 @@ function NotesListView({
   );
 
   return (
-    <div className="h-[calc(100vh-120px)] overflow-y-auto pr-1">
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
         <button
@@ -698,7 +698,7 @@ function UploadsListView({
   );
 
   return (
-    <div className="h-[calc(100vh-120px)] overflow-y-auto pr-1">
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
         <button
@@ -885,7 +885,7 @@ function ConceptsListView({
   };
 
   return (
-    <div className="h-[calc(100vh-120px)] overflow-y-auto pr-1">
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
         <button
@@ -994,7 +994,7 @@ function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: ()
   };
 
   return (
-    <div className="h-[calc(100vh-120px)] overflow-y-auto pr-1">
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button
@@ -1220,7 +1220,7 @@ function QuizHistoryView({
   const topics = Object.keys(grouped).sort();
 
   return (
-    <div className="h-[calc(100vh-120px)] overflow-y-auto pr-1">
+    <div className="h-[calc(100vh-180px)] overflow-y-auto pr-1">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
         <button
