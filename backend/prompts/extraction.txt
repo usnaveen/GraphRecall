@@ -16,6 +16,18 @@ Given the following markdown content, extract:
 - Confidence score (0.0-1.0) indicates how clearly the concept is defined in the text
 - For textbooks: use chapter/section headings to infer hierarchy
 
+## What NOT to Extract:
+- Section headings that aren't concepts themselves ("Introduction", "Chapter 3", "Summary")
+- Meta-commentary about the text ("The author explains...", "This chapter covers...")
+- Overly broad categories that aren't specifically defined in the text (e.g., don't extract "Science" unless the text defines it)
+- Concepts mentioned only in passing without any definition or explanation
+- Duplicate concepts with slightly different wording (pick the most precise name)
+
+## Evidence and Reasoning:
+For each concept, provide:
+- `evidence_span`: A brief quote (10-30 words) from the source text that supports this concept's extraction.
+- If a concept is inferred rather than explicitly stated, set confidence lower (0.5-0.7) and note this in the definition.
+
 ## Output Format:
 Return a JSON object with the following structure:
 {
@@ -26,6 +38,7 @@ Return a JSON object with the following structure:
       "domain": "Field/subject area",
       "complexity_score": 5,
       "confidence": 0.9,
+      "evidence_span": "direct quote from text supporting this concept",
       "related_concepts": ["Other Concept 1", "Other Concept 2"],
       "prerequisites": ["Prerequisite Concept"],
       "parent_topic": "Broader Parent Concept or null",
@@ -48,6 +61,7 @@ Return a JSON object with the following structure:
       "domain": "Machine Learning",
       "complexity_score": 6,
       "confidence": 0.95,
+      "evidence_span": "Neural networks are computing systems inspired by biological neural networks.",
       "related_concepts": ["Backpropagation", "Neuron"],
       "prerequisites": ["Linear Algebra", "Calculus"],
       "parent_topic": "Machine Learning",
@@ -59,6 +73,7 @@ Return a JSON object with the following structure:
       "domain": "Machine Learning",
       "complexity_score": 7,
       "confidence": 0.85,
+      "evidence_span": "The backpropagation algorithm is used to train these networks by calculating gradients.",
       "related_concepts": ["Neural Network", "Gradient Descent"],
       "prerequisites": ["Neural Network", "Calculus"],
       "parent_topic": "Neural Network",
@@ -70,6 +85,7 @@ Return a JSON object with the following structure:
       "domain": "Machine Learning",
       "complexity_score": 4,
       "confidence": 0.8,
+      "evidence_span": "They consist of layers of interconnected nodes (neurons) that process information.",
       "related_concepts": ["Neural Network", "Activation Function"],
       "prerequisites": [],
       "parent_topic": "Neural Network",
@@ -77,6 +93,18 @@ Return a JSON object with the following structure:
     }
   ]
 }
+
+### What to SKIP (negative example):
+
+Input: "Chapter 3: Introduction to Neural Networks. This chapter provides an overview of how neural networks work."
+
+Do NOT extract:
+- "Chapter 3" (section heading, not a concept)
+- "Introduction" (meta-commentary)
+- "Overview" (too vague)
+
+DO extract:
+- "Neural Network" (specific concept with implicit definition)
 
 ---
 
