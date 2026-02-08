@@ -35,16 +35,16 @@ export function TopBar() {
 
   return (
     <>
-      {/* Floating top bar elements */}
+      {/* Floating top bar elements — no background bar, pills float independently */}
       <motion.header
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-        className="fixed top-0 left-0 right-0 z-50 px-4 py-3"
+        className="fixed top-0 left-0 right-0 z-50 px-4 py-3 pointer-events-none"
       >
         <div className="max-w-lg mx-auto flex items-center justify-between">
           {/* Logo Pill — glassmorphic */}
-          <div className="glass-pill rounded-full px-3 py-1.5 flex items-center gap-2">
+          <div className="glass-pill rounded-full px-3 py-1.5 flex items-center gap-2 pointer-events-auto">
             <div className="w-6 h-6 flex items-center justify-center rounded-md overflow-hidden">
               <img src="/logo.png" alt="GraphRecall Logo" className="w-full h-full object-contain" />
             </div>
@@ -54,7 +54,7 @@ export function TopBar() {
           </div>
 
           {/* Center: WiFi + Daily Goal Pill */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pointer-events-auto">
             {/* Backend Connection — glassmorphic circle */}
             <button
               onClick={() => setStatusPanelOpen(true)}
@@ -150,7 +150,7 @@ export function TopBar() {
           </div>
 
           {/* Streak — glassmorphic circle */}
-          <div className="glass-pill rounded-full px-3 py-1.5 flex items-center gap-1.5">
+          <div className="glass-pill rounded-full px-3 py-1.5 flex items-center gap-1.5 pointer-events-auto">
             <Flame className="w-4 h-4 text-orange-400 flame-animate" />
             <span className="font-heading font-bold text-white text-sm">
               {userStats.streakDays}

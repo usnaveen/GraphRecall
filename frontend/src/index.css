@@ -72,13 +72,13 @@
 
 /* Liquid Glass Dock */
 .liquid-glass-dock {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   box-shadow:
-    0 -8px 40px rgba(7, 7, 10, 0.6),
-    0 20px 60px rgba(0, 0, 0, 0.55);
+    0 4px 30px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* Content should bleed under the frosted edges */
@@ -89,11 +89,13 @@
 
 /* Glassmorphic floating pill for topbar items */
 .glass-pill {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 /* Neon Glows */

@@ -51,18 +51,18 @@ export function LiquidDock({
 
   return (
     <>
-      {/* Floating glassmorphic dock */}
+      {/* Floating glassmorphic dock — no background, just the pill */}
       <motion.nav
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
-        className={`fixed bottom-0 left-0 right-0 z-50 flex justify-center ${className}`}
+        className={`fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none ${className}`}
         style={{
-          paddingBottom: 'clamp(1rem, env(safe-area-inset-bottom), 3rem)',
-          marginBottom: '0.75rem',
+          paddingBottom: 'clamp(0.75rem, env(safe-area-inset-bottom), 2.5rem)',
+          marginBottom: '0.5rem',
         }}
       >
-        <div className="liquid-glass-dock rounded-full px-4 py-2 flex items-center gap-4 mx-4 w-fit max-w-[90vw] justify-center">
+        <div className="liquid-glass-dock rounded-full px-4 py-2 flex items-center gap-4 w-fit max-w-[90vw] justify-center pointer-events-auto">
           {dockItems.map((item, index) => renderDockItem(item, index, activeTab, onTabChange, tooltipClass, isVertical))}
         </div>
       </motion.nav>
