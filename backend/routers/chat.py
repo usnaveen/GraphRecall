@@ -582,7 +582,7 @@ async def create_card_from_message(
                 concept_name=topic,
                 concept_definition=content[:3000],
                 related_concepts=[],
-                difficulty="medium",
+                difficulty=5,
             )
 
             options_json = json.dumps([
