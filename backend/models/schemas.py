@@ -81,6 +81,10 @@ class ConceptCreate(ConceptBase):
     confidence: float = Field(
         default=0.8, ge=0.0, le=1.0, description="Extraction confidence score"
     )
+    evidence_span: Optional[str] = Field(
+        default=None,
+        description="Brief quote from source text supporting this concept",
+    )
     related_concepts: list[str] = Field(
         default_factory=list, description="Names of related concepts"
     )
