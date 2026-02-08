@@ -225,15 +225,23 @@ Follow this workflow:
 
 Be thorough but concise. Always cite sources."""
 
-    # Get checkpointer for persistence
-    checkpointer = get_checkpointer()
-    
-    # Create the ReAct agent
-    agent = create_react_agent(
-        model=model,
-        tools=tools,
-        checkpointer=checkpointer,
-    )
+    # Conditional checkpointer: Skip in LangGraph Studio (it provides its own), use in production
+    import sys
+    is_langgraph_api = "langgraph_api" in sys.modules
+    if is_langgraph_api:
+        # Running in LangGraph Studio/Cloud - persistence is automatic
+        agent = create_react_agent(
+            model=model,
+            tools=tools,
+        )
+    else:
+        # Local dev or production - use our checkpointer for persistence
+        checkpointer = get_checkpointer()
+        agent = create_react_agent(
+            model=model,
+            tools=tools,
+            checkpointer=checkpointer,
+        )
     
     return agent
 

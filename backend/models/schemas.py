@@ -55,6 +55,8 @@ class RelationshipType(str, Enum):
     PREREQUISITE_OF = "PREREQUISITE_OF"
     RELATED_TO = "RELATED_TO"
     BUILDS_ON = "BUILDS_ON"
+    SUBTOPIC_OF = "SUBTOPIC_OF"
+    PART_OF = "PART_OF"
 
 
 # ============================================================================
@@ -84,6 +86,12 @@ class ConceptCreate(ConceptBase):
     )
     prerequisites: list[str] = Field(
         default_factory=list, description="Names of prerequisite concepts"
+    )
+    parent_topic: Optional[str] = Field(
+        default=None, description="Broader parent concept name (for SUBTOPIC_OF relationship)"
+    )
+    subtopics: list[str] = Field(
+        default_factory=list, description="Narrower subtopic concept names"
     )
 
 

@@ -451,9 +451,14 @@ def create_quiz_graph():
     builder.add_edge("generate_quiz", END)
     
     # Compile with checkpointer
-    checkpointer = get_checkpointer()
-    
-    return builder.compile(checkpointer=checkpointer)
+    # Conditional: Skip in LangGraph Studio (it provides its own), use in production
+    import sys
+    is_langgraph_api = "langgraph_api" in sys.modules
+    if is_langgraph_api:
+        return builder.compile()
+    else:
+        checkpointer = get_checkpointer()
+        return builder.compile(checkpointer=checkpointer)
 
 
 # Global graph instance

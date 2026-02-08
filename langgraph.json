@@ -8,5 +8,9 @@
         "content": "./backend/graphs/content_graph.py:content_graph",
         "verify": "./backend/graphs/mcp_graph.py:mcp_graph"
     },
-    "env": ".env"
+    "env": ".env",
+    "python_version": "3.11",
+    "dependencies": [
+        "."
+    ]
 }
