@@ -4,9 +4,10 @@ Designed for bulk ingestion without LLM calls. It:
 - Parses markdown, keeping headings to preserve hierarchy hints.
 - Detects image references (e.g., `![](_page_16_Figure_7.jpeg)`).
 - Finds nearby figure captions (preceding or following lines).
-- Normalizes filename extension mismatches (.jpeg ⇢ .png when files exist).
+- Normalizes filename extension mismatches (.jpeg -> .png when files exist).
 - Returns chunks with text + image metadata, avoiding splits between figures
   and their captions.
+- Supports configurable overlap (default 15%) for better retrieval at boundaries.
 
 Note: We previously generated the parsed book via the notebook in
 `notebooks/pdf_ocr_colab.ipynb`; this chunker consumes that markdown export.
@@ -46,9 +47,11 @@ class BookChunker:
     def __init__(
         self,
         max_chars: int = 1400,
+        overlap_ratio: float = 0.15,
         heading_weight: bool = True,
     ) -> None:
         self.max_chars = max_chars
+        self.overlap_ratio = overlap_ratio
         self.heading_weight = heading_weight
 
     def chunk_markdown(
@@ -118,18 +121,19 @@ class BookChunker:
 
         flush_para()
 
+        # --- Assemble chunks with overlap ---
         chunks: List[Chunk] = []
-        buf_text: list[str] = []
+        buf_units: list[dict] = []  # units in current chunk
         buf_images: list[ImageInfo] = []
         buf_headings: list[str] = []
         current_len = 0
 
         def flush_chunk():
-            nonlocal buf_text, buf_images, buf_headings, current_len
-            if not buf_text:
+            nonlocal buf_units, buf_images, buf_headings, current_len
+            if not buf_units:
                 return
             chunk_index = len(chunks)
-            text = "\n\n".join(buf_text).strip()
+            text = "\n\n".join(u["text"] for u in buf_units).strip()
             chunks.append(
                 Chunk(
                     index=chunk_index,
@@ -138,10 +142,26 @@ class BookChunker:
                     headings=list(buf_headings),
                 )
             )
-            buf_text = []
-            buf_images = []
-            buf_headings = []
-            current_len = 0
+
+            # Compute overlap: keep trailing units that fit within overlap budget
+            overlap_chars = int(self.max_chars * self.overlap_ratio)
+            carry_units: list[dict] = []
+            carry_images: list[ImageInfo] = []
+            carry_len = 0
+            for u in reversed(buf_units):
+                u_len = len(u.get("text", ""))
+                if carry_len + u_len > overlap_chars:
+                    break
+                # Don't carry over figures into overlap (they'd duplicate)
+                if u.get("type") == "figure":
+                    break
+                carry_units.insert(0, u)
+                carry_len += u_len + 2
+
+            buf_units = carry_units
+            buf_images = list(carry_images)
+            buf_headings = list(buf_headings)  # Keep heading context
+            current_len = carry_len
 
         for unit in units:
             unit_text = unit.get("text", "").strip()
@@ -152,10 +172,10 @@ class BookChunker:
 
             # Ensure figures are not split; if overflow would occur and we already
             # have text, flush first.
-            if projected > self.max_chars and buf_text:
+            if projected > self.max_chars and buf_units:
                 flush_chunk()
 
-            buf_text.append(unit_text)
+            buf_units.append(unit)
             buf_images.extend(unit.get("images", []))
             # Track the deepest headings seen in this chunk for metadata
             if unit.get("headings"):
@@ -207,4 +227,3 @@ class BookChunker:
             if match:
                 return match.group("caption").strip()
         return None
-

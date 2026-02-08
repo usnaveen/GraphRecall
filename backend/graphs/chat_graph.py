@@ -457,7 +457,7 @@ async def generate_response_node(state: ChatState) -> dict:
     if rag_context:
         notes_text = "\n".join([
             f"- {n.get('title', 'Note')}: {n.get('content', '')[:200]}..."
-            + (f\" [images: {len(n.get('images', []))}]\" if n.get('images') else \"\")
+            + (f" [images: {len(n.get('images', []))}]" if n.get("images") else "")
             for n in rag_context
         ])
         context_parts.append(f"**Relevant Notes:**\n{notes_text}")

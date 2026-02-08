@@ -131,6 +131,8 @@ Content:
                         confidence=float(c.get("confidence", 0.8)),
                         related_concepts=c.get("related_concepts", []),
                         prerequisites=c.get("prerequisites", []),
+                        parent_topic=c.get("parent_topic"),
+                        subtopics=c.get("subtopics", []),
                     )
                     concepts.append(concept)
                 except Exception as e:
@@ -190,3 +192,100 @@ Content:
 
         augmented_content = content + context
         return await self.extract(augmented_content)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
+    async def consolidate_relationships(
+        self,
+        all_concepts: list[ConceptCreate],
+        book_title: str = "",
+    ) -> list[dict]:
+        """
+        Second pass: Discover cross-chunk relationships between all extracted concepts.
+
+        Inspired by the Microsoft GraphRAG approach — after extracting concepts from
+        individual chunks, run a consolidation pass over the full concept list to find
+        relationships that span chunk boundaries.
+
+        Args:
+            all_concepts: All concepts extracted across all chunks
+            book_title: Title of the source book for context
+
+        Returns:
+            List of relationship dicts: {from_concept, to_concept, type, reason}
+            type is one of: RELATED_TO, PREREQUISITE_OF, SUBTOPIC_OF, PART_OF, BUILDS_ON
+        """
+        import time
+
+        start_time = time.time()
+
+        # Build a summary of all concepts (names + short definitions)
+        concept_summaries = []
+        for c in all_concepts[:100]:  # Limit to 100 concepts to fit context
+            concept_summaries.append(f"- {c.name}: {c.definition[:120]}")
+        concepts_text = "\n".join(concept_summaries)
+
+        prompt = f"""You are a knowledge graph relationship expert. Given the following list of concepts extracted from "{book_title}", discover relationships BETWEEN them that may not have been captured during per-chunk extraction.
+
+Focus on:
+1. **PREREQUISITE_OF**: Concept A must be understood before Concept B
+2. **SUBTOPIC_OF**: Concept A is a narrower specialization of Concept B
+3. **PART_OF**: Concept A is a component/element of Concept B
+4. **BUILDS_ON**: Concept A extends or evolves from Concept B
+5. **RELATED_TO**: Concepts that are semantically related but not hierarchical
+
+## Concepts:
+{concepts_text}
+
+## Guidelines:
+- Look for relationships that CROSS topic boundaries (e.g., a concept from Chapter 3 prerequisite for Chapter 7)
+- Identify hierarchical structure: which concepts are parents/children of others
+- Do NOT repeat relationships that are already obvious from the concept definitions
+- Focus on non-obvious, high-value connections
+- Return at most 50 relationships
+
+## Output Format:
+Return a JSON object:
+{{
+  "relationships": [
+    {{
+      "from_concept": "Concept A Name",
+      "to_concept": "Concept B Name",
+      "type": "PREREQUISITE_OF",
+      "reason": "Brief explanation of why this relationship exists"
+    }}
+  ]
+}}
+"""
+
+        try:
+            response = await self.llm.ainvoke(prompt)
+            raw_response = response.content.strip()
+            if raw_response.startswith("```json"):
+                raw_response = raw_response.split("```json")[1].split("```")[0].strip()
+            elif raw_response.startswith("```"):
+                raw_response = raw_response.split("```")[1].split("```")[0].strip()
+
+            parsed = json.loads(raw_response)
+            relationships = parsed.get("relationships", [])
+
+            processing_time = (time.time() - start_time) * 1000
+            logger.info(
+                "ExtractionAgent: Consolidation complete",
+                num_relationships=len(relationships),
+                processing_time_ms=processing_time,
+            )
+
+            return relationships
+
+        except json.JSONDecodeError as e:
+            logger.error(
+                "ExtractionAgent: Failed to parse consolidation JSON",
+                error=str(e),
+            )
+            return []
+        except Exception as e:
+            logger.error("ExtractionAgent: Consolidation failed", error=str(e))
+            return []

@@ -723,6 +723,41 @@ async def create_concepts_node(state: IngestionState) -> dict:
                          except Exception:
                              pass
 
+             # Handle SUBTOPIC_OF (child -> parent)
+             parent_topic = concept.get("parent_topic")
+             if parent_topic and isinstance(parent_topic, str):
+                 parent_id = all_name_to_id.get(parent_topic.lower())
+                 if parent_id and parent_id != cid:
+                     try:
+                         await neo4j.create_relationship(
+                             from_concept_id=cid,
+                             to_concept_id=parent_id,
+                             relationship_type="SUBTOPIC_OF",
+                             user_id=user_id,
+                             properties={"strength": 1.0, "source": "extraction"}
+                         )
+                         relationships_created += 1
+                     except Exception:
+                         pass
+
+             # Handle subtopics (subtopic -> this concept)
+             for sub_name in concept.get("subtopics", []):
+                 s_name = sub_name if isinstance(sub_name, str) else sub_name.get("name", "")
+                 if isinstance(s_name, str):
+                     s_id = all_name_to_id.get(s_name.lower())
+                     if s_id and s_id != cid:
+                         try:
+                             await neo4j.create_relationship(
+                                 from_concept_id=s_id,
+                                 to_concept_id=cid,
+                                 relationship_type="SUBTOPIC_OF",
+                                 user_id=user_id,
+                                 properties={"strength": 1.0, "source": "extraction"}
+                             )
+                             relationships_created += 1
+                         except Exception:
+                             pass
+
         logger.info("create_concepts_node: Relationships created", count=relationships_created)
         
         # Link note to concepts
@@ -1213,7 +1248,15 @@ def create_ingestion_graph(enable_interrupts: bool = True):
     checkpointer = get_checkpointer()
     
     # Compile (interrupt() function handles pausing now, so no interrupt_before needed)
-    return builder.compile(checkpointer=checkpointer)
+    # Conditional checkpointer: Skip in LangGraph Studio (it provides its own), use in production
+    import sys
+    is_langgraph_api = "langgraph_api" in sys.modules
+    if is_langgraph_api:
+        # Running in LangGraph Studio/Cloud - persistence is automatic
+        return builder.compile()
+    else:
+        # Local dev or production - use our checkpointer for persistence
+        return builder.compile(checkpointer=checkpointer)
 
 
 # Global graph instance
