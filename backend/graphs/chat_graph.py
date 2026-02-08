@@ -322,6 +322,7 @@ async def get_context_node(state: ChatState) -> dict:
     user_id = state.get("user_id", "default")
     messages = state.get("messages", [])
     focused_source_ids = state.get("focused_source_ids", [])  # Source-scoped filtering
+    intent = state.get("intent", "general")
     
     last_message = messages[-1] if messages else None
     query = last_message.content if last_message and hasattr(last_message, "content") else ""
@@ -339,7 +340,8 @@ async def get_context_node(state: ChatState) -> dict:
     if entities:
         try:
             neo4j = await get_neo4j_client()
-            
+
+            seed_concepts: list[dict] = []
             for entity in entities[:5]:
                 # If source-scoped, filter concepts to only those in focused IDs
                 if focused_source_ids:
@@ -347,27 +349,54 @@ async def get_context_node(state: ChatState) -> dict:
                         """
                         MATCH (c:Concept)
                         WHERE c.id IN $source_ids
+                          AND c.user_id = $user_id
                           AND (toLower(c.name) CONTAINS toLower($name) 
                                OR toLower(c.definition) CONTAINS toLower($name))
                         RETURN c.id as id, c.name as name, c.definition as definition,
                                c.domain as domain
                         LIMIT 3
                         """,
-                        {"name": entity, "source_ids": focused_source_ids}
+                        {"name": entity, "source_ids": focused_source_ids, "user_id": user_id}
                     )
                 else:
                     result = await neo4j.execute_query(
                         """
                         MATCH (c:Concept)
-                        WHERE toLower(c.name) CONTAINS toLower($name)
+                        WHERE c.user_id = $user_id
+                          AND toLower(c.name) CONTAINS toLower($name)
                         RETURN c.id as id, c.name as name, c.definition as definition,
                                c.domain as domain
                         LIMIT 3
                         """,
-                        {"name": entity}
+                        {"name": entity, "user_id": user_id}
                     )
-                graph_context["concepts"].extend(result)
-                
+                seed_concepts.extend(result)
+
+            concept_ids = list({c["id"] for c in seed_concepts if c.get("id")})
+            if concept_ids:
+                if intent == "path":
+                    max_hops = 3
+                    rel_types = ["PREREQUISITE_OF"]
+                elif intent == "explain":
+                    max_hops = 1
+                    rel_types = None
+                else:
+                    max_hops = 2
+                    rel_types = None
+
+                hop_result = await neo4j.k_hop_context(
+                    concept_ids=concept_ids,
+                    user_id=user_id,
+                    max_hops=max_hops,
+                    max_nodes=20,
+                    relationship_types=rel_types,
+                    allowed_concept_ids=focused_source_ids or None,
+                )
+                graph_context["concepts"] = hop_result.get("nodes", seed_concepts)
+                graph_context["relationships"] = hop_result.get("edges", [])
+            else:
+                graph_context["concepts"] = seed_concepts
+
         except Exception as e:
             logger.warning("get_context_node: Graph query failed", error=str(e))
     
@@ -448,11 +477,28 @@ async def generate_response_node(state: ChatState) -> dict:
     context_parts = []
     
     if graph_context.get("concepts"):
-        concepts_text = "\n".join([
-            f"- {c['name']}: {c.get('definition', 'No definition')}"
-            for c in graph_context["concepts"]
-        ])
+        concept_lines = []
+        for c in graph_context["concepts"]:
+            name = c.get("name", "Unknown")
+            hops = c.get("hops", 0)
+            if hops and hops >= 2:
+                concept_lines.append(f"- {name} (hop {hops})")
+            else:
+                suffix = f" (hop {hops})" if hops else ""
+                concept_lines.append(
+                    f"- {name}{suffix}: {c.get('definition', 'No definition')}"
+                )
+        concepts_text = "\n".join(concept_lines)
         context_parts.append(f"**Knowledge Graph Concepts:**\n{concepts_text}")
+
+    if graph_context.get("relationships"):
+        rels_text = "\n".join(
+            [
+                f"- {r.get('src_name') or r.get('src')} --[{r.get('type')}]--> {r.get('tgt_name') or r.get('tgt')}"
+                for r in graph_context["relationships"][:15]
+            ]
+        )
+        context_parts.append(f"**Relationships:**\n{rels_text}")
     
     if rag_context:
         notes_text = "\n".join([

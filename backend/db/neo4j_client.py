@@ -236,6 +236,131 @@ class Neo4jClient:
         result = await self.execute_query(query, {"id": concept_id, "user_id": user_id})
         return result[0]["c"] if result else None
 
+    async def k_hop_context(
+        self,
+        concept_ids: list[str],
+        user_id: str,
+        max_hops: int = 2,
+        max_nodes: int = 20,
+        relationship_types: Optional[list[str]] = None,
+        allowed_concept_ids: Optional[list[str]] = None,
+    ) -> dict:
+        """Return a k-hop neighborhood (nodes + edges) for seed concepts."""
+        if not concept_ids:
+            return {"nodes": [], "edges": []}
+
+        rel_types = relationship_types or [
+            "PREREQUISITE_OF",
+            "RELATED_TO",
+            "SUBTOPIC_OF",
+            "BUILDS_ON",
+            "PART_OF",
+        ]
+        max_hops = max(1, min(int(max_hops), 4))
+        max_nodes = max(1, min(int(max_nodes), 100))
+
+        seed_query = """
+        MATCH (c:Concept)
+        WHERE c.user_id = $user_id AND c.id IN $concept_ids
+        RETURN c.id AS id, c.name AS name, c.definition AS definition,
+               c.domain AS domain, c.complexity_score AS complexity,
+               c.confidence AS confidence
+        """
+        seeds = await self.execute_query(
+            seed_query, {"concept_ids": concept_ids, "user_id": user_id}
+        )
+        if not seeds:
+            return {"nodes": [], "edges": []}
+
+        neighbor_limit = max(max_nodes - len(seeds), 0)
+        neighbors: list[dict[str, Any]] = []
+        if neighbor_limit > 0 and max_hops > 0:
+            allowed_clause = "AND neighbor.id IN $allowed_ids" if allowed_concept_ids else ""
+            neighbor_query = f"""
+            MATCH (seed:Concept {{user_id: $user_id}})
+            WHERE seed.id IN $concept_ids
+            MATCH path = (seed)-[rels*1..$max_hops]-(neighbor:Concept {{user_id: $user_id}})
+            WHERE ALL(rel IN rels WHERE type(rel) IN $rel_types)
+            {allowed_clause}
+            WITH neighbor, min(length(path)) AS hops
+            RETURN neighbor.id AS id, neighbor.name AS name, neighbor.definition AS definition,
+                   neighbor.domain AS domain, neighbor.complexity_score AS complexity,
+                   neighbor.confidence AS confidence, hops AS hops
+            ORDER BY hops ASC
+            LIMIT $neighbor_limit
+            """
+            neighbor_params = {
+                "concept_ids": concept_ids,
+                "user_id": user_id,
+                "max_hops": max_hops,
+                "neighbor_limit": neighbor_limit,
+                "rel_types": rel_types,
+            }
+            if allowed_concept_ids:
+                neighbor_params["allowed_ids"] = allowed_concept_ids
+            neighbors = await self.execute_query(neighbor_query, neighbor_params)
+
+        nodes_by_id: dict[str, dict[str, Any]] = {}
+        for seed in seeds:
+            nodes_by_id[seed["id"]] = {
+                "id": seed["id"],
+                "name": seed.get("name"),
+                "definition": seed.get("definition"),
+                "domain": seed.get("domain"),
+                "complexity": seed.get("complexity"),
+                "confidence": seed.get("confidence"),
+                "hops": 0,
+            }
+
+        for neighbor in neighbors:
+            nid = neighbor.get("id")
+            if not nid:
+                continue
+            hops = int(neighbor.get("hops") or 1)
+            existing = nodes_by_id.get(nid)
+            if existing and existing.get("hops", 99) <= hops:
+                continue
+            nodes_by_id[nid] = {
+                "id": nid,
+                "name": neighbor.get("name"),
+                "definition": neighbor.get("definition"),
+                "domain": neighbor.get("domain"),
+                "complexity": neighbor.get("complexity"),
+                "confidence": neighbor.get("confidence"),
+                "hops": hops,
+            }
+
+        nodes = list(nodes_by_id.values())
+        nodes.sort(key=lambda n: (n.get("hops", 99), n.get("name") or ""))
+        nodes = nodes[:max_nodes]
+        node_ids = [n["id"] for n in nodes if n.get("id")]
+
+        edges: list[dict[str, Any]] = []
+        if node_ids:
+            edges_query = """
+            MATCH (c1:Concept)-[r]->(c2:Concept)
+            WHERE c1.id IN $node_ids AND c2.id IN $node_ids
+              AND c1.user_id = $user_id AND c2.user_id = $user_id
+              AND type(r) IN $rel_types
+            RETURN c1.id AS src, c1.name AS src_name,
+                   c2.id AS tgt, c2.name AS tgt_name,
+                   type(r) AS type,
+                   coalesce(r.strength, 1.0) AS strength
+            """
+            edge_results = await self.execute_query(
+                edges_query,
+                {"node_ids": node_ids, "user_id": user_id, "rel_types": rel_types},
+            )
+            seen: set[tuple[str, str, str]] = set()
+            for edge in edge_results:
+                key = (edge.get("src"), edge.get("tgt"), edge.get("type"))
+                if not key[0] or not key[1] or key in seen:
+                    continue
+                seen.add(key)
+                edges.append(edge)
+
+        return {"nodes": nodes, "edges": edges}
+
     async def get_concepts_by_name(self, name: str, user_id: str) -> list[dict]:
         """Search concepts by name (case-insensitive partial match)."""
         query = """
