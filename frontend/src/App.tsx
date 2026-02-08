@@ -81,7 +81,7 @@ function AuthenticatedApp() {
       <TopBar />
 
       {/* Main Content */}
-      <main className="pt-16 pb-32 px-4 min-h-screen lg:px-8">
+      <main className="content-bleed px-4 min-h-screen lg:px-8">
         <AnimatePresence mode="popLayout">
           <motion.div
             key={activeTab}
