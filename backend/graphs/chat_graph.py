@@ -403,7 +403,28 @@ async def get_context_node(state: ChatState) -> dict:
 
         except Exception as e:
             logger.warning("get_context_node: Graph query failed", error=str(e))
-    
+
+    if intent == "summarize" and not entities:
+        try:
+            pg_client = await get_postgres_client()
+            summaries = await pg_client.execute_query(
+                """
+                SELECT title, summary, size
+                FROM communities
+                WHERE user_id = :uid AND summary IS NOT NULL
+                ORDER BY size DESC
+                LIMIT 5
+                """,
+                {"uid": user_id},
+            )
+            if summaries:
+                global_text = "\n".join(
+                    f"- **{s['title']}**: {s['summary']}" for s in summaries
+                )
+                graph_context["global_summary"] = global_text
+        except Exception as e:
+            logger.warning("get_context_node: Community summary failed", error=str(e))
+
     # Get RAG context (notes)
     if query:
         try:
@@ -496,6 +517,11 @@ async def generate_response_node(state: ChatState) -> dict:
                 )
         concepts_text = "\n".join(concept_lines)
         context_parts.append(f"**Knowledge Graph Concepts:**\n{concepts_text}")
+
+    if graph_context.get("global_summary"):
+        context_parts.append(
+            f"**Global Summary:**\n{graph_context['global_summary']}"
+        )
 
     if graph_context.get("relationships"):
         rels_text = "\n".join(
