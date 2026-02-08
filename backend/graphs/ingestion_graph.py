@@ -665,6 +665,11 @@ async def create_concepts_node(state: IngestionState) -> dict:
                 concept_ids.append(node_data.get("id"))
             else:
                 concept_ids.append(str(node_data) if node_data else None)
+
+        concept_evidence = {
+            cid: concept.get("evidence_span")
+            for concept, cid in zip(concepts, concept_ids)
+        }
         
         # Create relationships based on extraction (Semantic)
         # Build lookup from current batch
@@ -797,13 +802,23 @@ async def create_concepts_node(state: IngestionState) -> dict:
             for cid in concept_ids:
                 await neo4j.execute_query(
                     """
-                    MERGE (n:NoteSource {id: $note_id})
+                    MERGE (n:NoteSource {id: $note_id, user_id: $user_id})
                     WITH n
-                    MATCH (c:Concept {id: $concept_id})
+                    MATCH (c:Concept {id: $concept_id, user_id: $user_id})
                     MERGE (n)-[r:EXPLAINS]->(c)
-                    SET r.relevance = 0.9
+                    SET r.relevance = 0.9,
+                        r.evidence_span = CASE
+                            WHEN $evidence_span IS NULL OR $evidence_span = ""
+                            THEN r.evidence_span
+                            ELSE $evidence_span
+                        END
                     """,
-                    {"note_id": note_id, "concept_id": cid},
+                    {
+                        "note_id": note_id,
+                        "concept_id": cid,
+                        "user_id": user_id,
+                        "evidence_span": concept_evidence.get(cid),
+                    },
                 )
         
         # Link note to propositions (Phase 3)

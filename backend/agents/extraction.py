@@ -129,6 +129,7 @@ Content:
                         domain=c.get("domain", "General"),
                         complexity_score=float(c.get("complexity_score", 5)),
                         confidence=float(c.get("confidence", 0.8)),
+                        evidence_span=c.get("evidence_span"),
                         related_concepts=c.get("related_concepts", []),
                         prerequisites=c.get("prerequisites", []),
                         parent_topic=c.get("parent_topic"),
