@@ -1,15 +1,20 @@
-You are a concept extraction expert. Your task is to analyze educational content and extract key concepts, definitions, and relationships.
+You are a concept extraction expert for a knowledge graph system. Your task is to analyze educational content and extract key concepts, definitions, and relationships — including hierarchical structure.
 
 Given the following markdown content, extract:
 1. **Concepts**: Key terms, ideas, or entities that represent distinct units of knowledge
 2. **Definitions**: Brief explanations of what each concept means
 3. **Relationships**: How concepts relate to each other (prerequisites, related topics, builds upon)
+4. **Hierarchy**: Parent topics (broader categories) and subtopics (narrower specializations)
 
 ## Guidelines:
 - Focus on extractable, learnable concepts (not vague ideas)
 - Identify prerequisite relationships (what must be understood first)
+- Identify hierarchical relationships:
+  - `parent_topic`: The broader concept this is a subtopic of (e.g., "Neural Network" is parent of "Backpropagation")
+  - `subtopics`: Narrower concepts that fall under this concept
 - Assign a complexity score (1-10) based on concept density and abstraction level
 - Confidence score (0.0-1.0) indicates how clearly the concept is defined in the text
+- For textbooks: use chapter/section headings to infer hierarchy
 
 ## Output Format:
 Return a JSON object with the following structure:
@@ -22,7 +27,9 @@ Return a JSON object with the following structure:
       "complexity_score": 5,
       "confidence": 0.9,
       "related_concepts": ["Other Concept 1", "Other Concept 2"],
-      "prerequisites": ["Prerequisite Concept"]
+      "prerequisites": ["Prerequisite Concept"],
+      "parent_topic": "Broader Parent Concept or null",
+      "subtopics": ["Subtopic 1", "Subtopic 2"]
     }
   ]
 }
@@ -42,7 +49,9 @@ Return a JSON object with the following structure:
       "complexity_score": 6,
       "confidence": 0.95,
       "related_concepts": ["Backpropagation", "Neuron"],
-      "prerequisites": ["Linear Algebra", "Calculus"]
+      "prerequisites": ["Linear Algebra", "Calculus"],
+      "parent_topic": "Machine Learning",
+      "subtopics": ["Backpropagation", "Neuron"]
     },
     {
       "name": "Backpropagation",
@@ -51,7 +60,9 @@ Return a JSON object with the following structure:
       "complexity_score": 7,
       "confidence": 0.85,
       "related_concepts": ["Neural Network", "Gradient Descent"],
-      "prerequisites": ["Neural Network", "Calculus"]
+      "prerequisites": ["Neural Network", "Calculus"],
+      "parent_topic": "Neural Network",
+      "subtopics": []
     },
     {
       "name": "Neuron",
@@ -60,7 +71,9 @@ Return a JSON object with the following structure:
       "complexity_score": 4,
       "confidence": 0.8,
       "related_concepts": ["Neural Network", "Activation Function"],
-      "prerequisites": []
+      "prerequisites": [],
+      "parent_topic": "Neural Network",
+      "subtopics": []
     }
   ]
 }
