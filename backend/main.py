@@ -46,6 +46,7 @@ try:
     from backend.routers.ingest_v2 import router as ingest_v2_router
     from backend.routers.auth import router as auth_router
     from backend.routers.images import router as images_router
+    from backend.routers.knowledge import router as knowledge_router
 except Exception as e:
     import traceback
     traceback.print_exc()
@@ -180,6 +181,7 @@ app.include_router(nodes_router)     # /api/nodes - Manual node creation/linking
 app.include_router(ingest_v2_router) # /api/v2 - LangGraph-powered ingestion
 app.include_router(auth_router)      # /auth - Google authentication
 app.include_router(images_router)    # /api/images - Serve book images
+app.include_router(knowledge_router) # /api/knowledge - Global summaries
 
 
 # ============================================================================
