@@ -19,6 +19,38 @@ from backend.models.feed_schemas import (
 )
 from backend.agents.mermaid_agent import MermaidAgent
 
+
+def _normalize_difficulty(value: object, fallback: int = 5) -> int:
+    """Coerce difficulty to int 1-10 from common LLM outputs."""
+    if isinstance(value, bool):
+        return fallback
+    if isinstance(value, int):
+        return max(1, min(10, value))
+    if isinstance(value, float):
+        return max(1, min(10, int(round(value))))
+    if isinstance(value, str):
+        text = value.strip().lower()
+        mapping = {
+            "easy": 3,
+            "medium": 5,
+            "med": 5,
+            "moderate": 5,
+            "hard": 8,
+            "difficult": 8,
+            "very hard": 9,
+            "advanced": 8,
+        }
+        if text in mapping:
+            return mapping[text]
+        import re
+        match = re.search(r"(\d{1,2})", text)
+        if match:
+            try:
+                return max(1, min(10, int(match.group(1))))
+            except ValueError:
+                return fallback
+    return fallback
+
 logger = structlog.get_logger()
 
 # Load prompts
@@ -96,12 +128,13 @@ class ContentGeneratorAgent:
         Returns:
             MCQQuestion object
         """
+        normalized_difficulty = _normalize_difficulty(difficulty, fallback=5)
         prompt = f"""Generate a multiple choice question to test understanding of this concept.
 
 CONCEPT: {concept_name}
 DEFINITION: {concept_definition}
 RELATED CONCEPTS: {', '.join(related_concepts[:5])}
-DIFFICULTY LEVEL: {difficulty}/10 (1=very easy, 10=very hard)
+DIFFICULTY LEVEL: {normalized_difficulty}/10 (1=very easy, 10=very hard)
 
 Requirements:
 1. Create a clear, unambiguous question
@@ -125,7 +158,7 @@ Output JSON format:
         {{"id": "D", "text": "Option D text", "is_correct": false}}
     ],
     "explanation": "Explanation of the correct answer",
-    "difficulty": {difficulty}
+    "difficulty": {normalized_difficulty}
 }}"""
         
         try:
@@ -146,7 +179,7 @@ Output JSON format:
                 question=parsed["question"],
                 options=options,
                 explanation=parsed.get("explanation", ""),
-                difficulty=parsed.get("difficulty", difficulty),
+                difficulty=_normalize_difficulty(parsed.get("difficulty"), normalized_difficulty),
             )
 
         except Exception as e:
@@ -216,11 +249,12 @@ Output JSON format:
         Returns:
             FillBlankQuestion object
         """
+        normalized_difficulty = _normalize_difficulty(difficulty, fallback=5)
         prompt = f"""Generate a fill-in-the-blank sentence to test understanding of this concept.
 
 CONCEPT: {concept_name}
 DEFINITION: {concept_definition}
-DIFFICULTY LEVEL: {difficulty}/10
+DIFFICULTY LEVEL: {normalized_difficulty}/10
 
 Requirements:
 1. Create a meaningful sentence where the blank tests key understanding
@@ -234,7 +268,7 @@ Output JSON format:
     "sentence": "The sentence with _____ for the blank",
     "answers": ["correct answer", "alternative acceptable answer"],
     "hint": "A helpful hint",
-    "difficulty": {difficulty}
+    "difficulty": {normalized_difficulty}
 }}"""
         
         try:
@@ -246,7 +280,7 @@ Output JSON format:
                 sentence=parsed["sentence"],
                 answers=parsed["answers"],
                 hint=parsed.get("hint"),
-                difficulty=parsed.get("difficulty", difficulty),
+                difficulty=_normalize_difficulty(parsed.get("difficulty"), normalized_difficulty),
             )
 
         except Exception as e:
@@ -496,9 +530,10 @@ Rules: Exactly {count} items total. Variety is key."""
         difficulty: int = 5
     ) -> CodeChallengeQuestion:
         """Specifically generate a code-related challenge."""
+        normalized_difficulty = _normalize_difficulty(difficulty, fallback=5)
         prompt = f"""Generate a code completion or command-line challenge for: {topic}.
 CONTEXT: {definition}
-DIFFICULTY: {difficulty}/10
+DIFFICULTY: {normalized_difficulty}/10
 
 Respond with JSON:
 {{
@@ -507,7 +542,7 @@ Respond with JSON:
     "initial_code": "optional starting point",
     "solution_code": "The correct answer",
     "explanation": "Why this is correct",
-    "difficulty": {difficulty}
+    "difficulty": {normalized_difficulty}
 }}"""
         try:
             response = await self.llm.ainvoke(prompt)
@@ -519,7 +554,7 @@ Respond with JSON:
                 initial_code=parsed.get("initial_code"),
                 solution_code=parsed["solution_code"],
                 explanation=parsed["explanation"],
-                difficulty=parsed.get("difficulty", difficulty)
+                difficulty=_normalize_difficulty(parsed.get("difficulty"), normalized_difficulty)
             )
         except Exception as e:
             logger.error("ContentGenerator: Code challenge failed", error=str(e))
