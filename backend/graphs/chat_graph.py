@@ -352,8 +352,10 @@ async def get_context_node(state: ChatState) -> dict:
                           AND c.user_id = $user_id
                           AND (toLower(c.name) CONTAINS toLower($name) 
                                OR toLower(c.definition) CONTAINS toLower($name))
+                          AND coalesce(c.confidence, 0.8) >= 0.4
                         RETURN c.id as id, c.name as name, c.definition as definition,
-                               c.domain as domain
+                               c.domain as domain, c.confidence as confidence
+                        ORDER BY c.confidence DESC
                         LIMIT 3
                         """,
                         {"name": entity, "source_ids": focused_source_ids, "user_id": user_id}
@@ -364,8 +366,10 @@ async def get_context_node(state: ChatState) -> dict:
                         MATCH (c:Concept)
                         WHERE c.user_id = $user_id
                           AND toLower(c.name) CONTAINS toLower($name)
+                          AND coalesce(c.confidence, 0.8) >= 0.4
                         RETURN c.id as id, c.name as name, c.definition as definition,
-                               c.domain as domain
+                               c.domain as domain, c.confidence as confidence
+                        ORDER BY c.confidence DESC
                         LIMIT 3
                         """,
                         {"name": entity, "user_id": user_id}
@@ -481,12 +485,14 @@ async def generate_response_node(state: ChatState) -> dict:
         for c in graph_context["concepts"]:
             name = c.get("name", "Unknown")
             hops = c.get("hops", 0)
+            conf = c.get("confidence", 0.8)
+            conf_tag = " [high confidence]" if conf >= 0.85 else ""
             if hops and hops >= 2:
-                concept_lines.append(f"- {name} (hop {hops})")
+                concept_lines.append(f"- {name}{conf_tag} (hop {hops})")
             else:
                 suffix = f" (hop {hops})" if hops else ""
                 concept_lines.append(
-                    f"- {name}{suffix}: {c.get('definition', 'No definition')}"
+                    f"- {name}{conf_tag}{suffix}: {c.get('definition', 'No definition')}"
                 )
         concepts_text = "\n".join(concept_lines)
         context_parts.append(f"**Knowledge Graph Concepts:**\n{concepts_text}")
