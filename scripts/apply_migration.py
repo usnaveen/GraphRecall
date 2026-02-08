@@ -20,10 +20,10 @@ async def run_migration():
     await client.initialize()
     
     try:
-        with open("backend/db/migrations/006_optimizations.sql", "r") as f:
+        with open("backend/db/migrations/011_add_is_liked.sql", "r") as f:
             sql = f.read()
             
-        print("Running migration 006_optimizations.sql...")
+        print("Running migration 011_add_is_liked.sql...")
         # Split by ; manually because client.execute_update executes single statement usually
         # But wait, postgres_client._split_sql_statements is static. I can use it.
         statements = client._split_sql_statements(sql)
