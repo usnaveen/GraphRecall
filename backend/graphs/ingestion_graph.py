@@ -653,6 +653,7 @@ async def create_concepts_node(state: IngestionState) -> dict:
                 definition=concept.get("definition", ""),
                 domain=concept.get("domain", "General"),
                 complexity_score=float(concept.get("complexity_score", 5)),
+                confidence=float(concept.get("confidence", 0.8)),
                 user_id=user_id,
                 concept_id=concept.get("id"),
                 # embedding=None (for now)

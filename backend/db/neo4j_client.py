@@ -158,6 +158,7 @@ class Neo4jClient:
         domain: str,
         complexity_score: float,
         user_id: str,
+        confidence: float = 0.8,
         concept_id: Optional[str] = None,
         embedding: Optional[list[float]] = None,
     ) -> dict:
@@ -173,11 +174,13 @@ class Neo4jClient:
             c.definition = $definition,
             c.domain = $domain,
             c.complexity_score = $complexity_score,
+            c.confidence = $confidence,
             c.embedding = $embedding,
             c.created_at = datetime()
         ON MATCH SET
             c.definition = $definition,
             c.complexity_score = $complexity_score,
+            c.confidence = $confidence,
             c.embedding = $embedding,
             c.updated_at = datetime()
         RETURN c
@@ -189,6 +192,7 @@ class Neo4jClient:
             "definition": definition,
             "domain": domain,
             "complexity_score": complexity_score,
+            "confidence": confidence,
             "embedding": embedding,
         }
         result = await self.execute_query(query, params)
