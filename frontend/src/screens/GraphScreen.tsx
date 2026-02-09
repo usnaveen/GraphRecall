@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, X, Target, BookOpen, Link2, Plus, Loader2, ChevronDown } from "lucide-react";
 import { GraphVisualizer } from "../components/graph/GraphVisualizer";
+import Inspector from "../components/graph/Inspector";
+import Controls from "../components/graph/Controls";
 import type { GraphData, Community } from "../lib/graphData";
 import { ForceSimulation3D } from "../lib/forceSimulation3d";
-import type { GraphLayout, Node3D } from "../lib/forceSimulation3d";
+import type { GraphLayout, Node3D, Link3D } from "../lib/forceSimulation3d";
 import { api, nodesService } from "../services/api";
 import { useAppStore } from "../store/useAppStore";
 
@@ -47,6 +49,11 @@ export function GraphScreen() {
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [showCommunities, setShowCommunities] = useState(true);
   const [isolateCommunity, setIsolateCommunity] = useState(false);
+
+  // Controls state
+  const [minRelationshipWeight, setMinRelationshipWeight] = useState(0);
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  const [showInspector, setShowInspector] = useState(true);
 
   // Resources Modal State
   const [showResources, setShowResources] = useState(false);
@@ -237,6 +244,30 @@ export function GraphScreen() {
     const count = layout?.nodes.length || 0;
     return count <= 220;
   }, [layout]);
+
+  // Connected links for inspector panel
+  const connectedLinks = useMemo<Link3D[]>(() => {
+    if (!selectedNode || !layout?.links) return [];
+    return layout.links.filter(
+      (l) => l.source.id === selectedNode.id || l.target.id === selectedNode.id
+    );
+  }, [selectedNode, layout]);
+
+  // Visible node/link counts for controls panel
+  const visibleNodeCount = useMemo(() => {
+    if (!layout?.nodes) return 0;
+    let nodes = layout.nodes;
+    if (visibleNodeIds) nodes = nodes.filter((n) => visibleNodeIds.has(n.id));
+    if (selectedDomain) nodes = nodes.filter((n) => n.domain === selectedDomain);
+    return nodes.length;
+  }, [layout, visibleNodeIds, selectedDomain]);
+
+  const visibleLinkCount = useMemo(() => {
+    if (!layout?.links) return 0;
+    let links = layout.links;
+    if (minRelationshipWeight > 0) links = links.filter((l) => l.weight >= minRelationshipWeight);
+    return links.length;
+  }, [layout, minRelationshipWeight]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -430,7 +461,10 @@ export function GraphScreen() {
           hoveredNode={hoveredNode}
           onNodeSelect={(node) => {
             setSelectedNode(node);
-            if (node) setFocusNodeId(node.id);
+            if (node) {
+              setFocusNodeId(node.id);
+              setShowInspector(true);
+            }
           }}
           onNodeHover={(node) => setHoveredNode(node)}
           showCommunities={showCommunities}
@@ -443,19 +477,17 @@ export function GraphScreen() {
           }}
           focusNodeId={focusNodeId}
           pulseNodeId={focusNodeId || selectedNode?.id || null}
+          minRelationshipWeight={minRelationshipWeight}
+          selectedDomain={selectedDomain}
         />
 
-        {/* Community toggle */}
-        <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/50 rounded-full px-3 py-1.5">
-          <span className="text-[10px] text-white/60">Communities</span>
-          <button
-            onClick={() => setShowCommunities((v) => !v)}
-            className={`text-[10px] px-2 py-0.5 rounded-full ${showCommunities ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/60"}`}
-          >
-            {showCommunities ? "On" : "Off"}
-          </button>
-          <button
-            onClick={async () => {
+        {/* Controls Panel (top-left) */}
+        {!isMobile && (
+          <Controls
+            layout={layout}
+            showCommunities={showCommunities}
+            onToggleCommunities={() => setShowCommunities((v) => !v)}
+            onRecomputeCommunities={async () => {
               try {
                 await api.post("/graph3d/communities/recompute");
                 await loadGraph();
@@ -463,11 +495,45 @@ export function GraphScreen() {
                 console.error("Failed to recompute communities", e);
               }
             }}
-            className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/70 hover:bg-white/20"
-          >
-            Recompute
-          </button>
-        </div>
+            minRelationshipWeight={minRelationshipWeight}
+            onMinRelationshipWeightChange={setMinRelationshipWeight}
+            selectedDomain={selectedDomain}
+            onDomainChange={setSelectedDomain}
+            visibleNodeCount={visibleNodeCount}
+            visibleLinkCount={visibleLinkCount}
+          />
+        )}
+
+        {/* Mobile community toggle fallback */}
+        {isMobile && (
+          <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/50 rounded-full px-3 py-1.5">
+            <span className="text-[10px] text-white/60">Communities</span>
+            <button
+              onClick={() => setShowCommunities((v) => !v)}
+              className={`text-[10px] px-2 py-0.5 rounded-full ${showCommunities ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/60"}`}
+            >
+              {showCommunities ? "On" : "Off"}
+            </button>
+          </div>
+        )}
+
+        {/* Inspector Panel (right side overlay) */}
+        <AnimatePresence>
+          {selectedNode && showInspector && !isMobile && (
+            <Inspector
+              selectedNode={selectedNode}
+              connectedLinks={connectedLinks}
+              communities={layout?.communities || []}
+              onClose={() => setShowInspector(false)}
+              onNodeSelect={(node) => {
+                setSelectedNode(node);
+                setFocusNodeId(node.id);
+              }}
+              onQuiz={(topic) => startQuizForTopic(topic)}
+              onShowResources={handleShowResources}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Floating action button */}
         <button

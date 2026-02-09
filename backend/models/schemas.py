@@ -166,6 +166,8 @@ class ChunkBase(BaseModel):
     chunk_index: Optional[int] = None
     chunk_level: ChunkLevel = ChunkLevel.CHILD
     source_location: Optional[dict[str, Any]] = None
+    page_start: Optional[int] = Field(default=None, description="Starting page number")
+    page_end: Optional[int] = Field(default=None, description="Ending page number")
 
 
 class ChunkCreate(ChunkBase):
@@ -230,6 +232,10 @@ class Relationship(BaseModel):
     to_concept_id: str
     relationship_type: RelationshipType
     strength: float = Field(default=1.0, ge=0.0, le=1.0)
+    mention_count: int = Field(default=1, description="Number of times this relationship was mentioned")
+    source: Optional[str] = Field(default=None, description="Source of the relationship (extraction, synthesis, auto, user)")
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     properties: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -51,6 +51,7 @@ async def create_node(
             c.definition = $definition,
             c.domain = $domain,
             c.complexity_score = $complexity_score,
+            c.confidence = $confidence,
             c.x = $x,
             c.y = $y,
             c.z = $z,
@@ -58,6 +59,7 @@ async def create_node(
             c.created_at = datetime()
         ON MATCH SET
             c.definition = coalesce(c.definition, $definition),
+            c.confidence = coalesce(c.confidence, $confidence),
             c.x = coalesce(c.x, $x),
             c.y = coalesce(c.y, $y),
             c.z = coalesce(c.z, $z),
@@ -77,6 +79,7 @@ async def create_node(
                 "definition": request.description or "",
                 "domain": domain,
                 "complexity_score": 5.0,
+                "confidence": 1.0,  # User-created concepts have full confidence
                 "x": position.get("x"),
                 "y": position.get("y"),
                 "z": position.get("z"),
@@ -99,7 +102,12 @@ async def create_node(
                     MATCH (child:Concept {id: $child_id, user_id: $user_id})
                     MATCH (parent:Concept {id: $parent_id, user_id: $user_id})
                     MERGE (child)-[r:SUBTOPIC_OF]->(parent)
-                    SET r.strength = 1.0, r.source = 'user_created'
+                    ON CREATE SET r.strength = 1.0,
+                                  r.source = 'user_created',
+                                  r.mention_count = 1,
+                                  r.created_at = datetime()
+                    ON MATCH SET r.mention_count = coalesce(r.mention_count, 1) + 1,
+                                 r.updated_at = datetime()
                     RETURN type(r) as relationship
                     """,
                     {
@@ -183,7 +191,13 @@ async def apply_links(
                 MATCH (a:Concept {{id: $source_id, user_id: $user_id}})
                 MATCH (b:Concept {{id: $target_id, user_id: $user_id}})
                 MERGE (a)-[r:{rel}]->(b)
-                SET r.strength = $strength
+                ON CREATE SET r.strength = $strength,
+                              r.source = 'user_linked',
+                              r.mention_count = 1,
+                              r.created_at = datetime()
+                ON MATCH SET r.mention_count = coalesce(r.mention_count, 1) + 1,
+                             r.strength = $strength,
+                             r.updated_at = datetime()
                 RETURN type(r) as relationship
                 """,
                 {

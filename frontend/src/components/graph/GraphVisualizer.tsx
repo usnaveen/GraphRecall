@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 
 import { calculateLinkThickness } from "../../lib/forceSimulation3d";
 import type { GraphLayout, Node3D, Link3D } from "../../lib/forceSimulation3d";
@@ -12,6 +13,9 @@ import type { Community } from "../../lib/graphData";
 import GalaxyBackground from "./GalaxyBackground";
 
 const BLOOM_SCENE = 1;
+
+// Threshold: links with weight >= this get energy tube treatment
+const ENERGY_TUBE_WEIGHT_THRESHOLD = 0.7;
 
 function useBillboard() {
   const ref = useRef<THREE.Object3D>(null);
@@ -147,6 +151,61 @@ function Link({ link, isHighlighted, sourceNodeId, targetNodeId }: { link: Link3
   );
 }
 
+// Animated energy tube for strong relationships
+function EnergyEdge({ link }: { link: Link3D }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  const curve = useMemo(() => {
+    const src = new THREE.Vector3(link.source.x, link.source.y, link.source.z);
+    const tgt = new THREE.Vector3(link.target.x, link.target.y, link.target.z);
+    return new THREE.CatmullRomCurve3([src, tgt]);
+  }, [link.source.x, link.source.y, link.source.z, link.target.x, link.target.y, link.target.z]);
+
+  const tubularSegments = 32;
+  const radius = useMemo(() => Math.max(0.06, calculateLinkThickness(link.weight) * 0.25), [link.weight]);
+  const radialSegments = 6;
+  const closed = false;
+
+  const mat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        uniforms: {
+          time: { value: 0.0 },
+          c1: { value: new THREE.Color("#6be6ff") },
+          c2: { value: new THREE.Color("#ff8bcb") },
+        },
+        vertexShader: `
+      varying float vLen;
+      void main(){ vLen = position.y; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }
+    `,
+        fragmentShader: `
+      uniform float time; uniform vec3 c1,c2; varying float vLen;
+      void main(){
+        float t = fract(vLen*0.1 - time*0.8);
+        float band = smoothstep(0.0,0.05,t)*smoothstep(0.2,0.15,t);
+        vec3 col = mix(c1,c2, t);
+        gl_FragColor = vec4(col*(0.5+band*2.0), 0.7);
+      }
+    `,
+      }),
+    []
+  );
+
+  useFrame((state) => {
+    (mat.uniforms.time as { value: number }).value = state.clock.getElapsedTime();
+  });
+
+  return (
+    <mesh ref={meshRef} onUpdate={(m) => m.layers.enable(BLOOM_SCENE)}>
+      <tubeGeometry args={[curve, tubularSegments, radius, radialSegments, closed]} />
+      <primitive object={mat} attach="material" />
+    </mesh>
+  );
+}
+
 function CommunityBoundary({ community }: { community: Community }) {
   if (!community.computedBounds) return null;
   const bounds = community.computedBounds;
@@ -205,24 +264,69 @@ function CommunityGlow({ community }: { community: Community }) {
   );
 }
 
-function Bloom({ strength }: { strength: number }) {
+// Enhanced post-processing: Bloom + Vignette
+function PostProcessing({ strength, isMobile }: { strength: number; isMobile: boolean }) {
   const { gl, scene, camera, size } = useThree();
-  const composer = useMemo(() => {
+  const composerRef = useRef<EffectComposer | null>(null);
+
+  useEffect(() => {
     const comp = new EffectComposer(gl);
-    comp.addPass(new RenderPass(scene, camera));
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(size.width, size.height), strength, 0.6, 0.2);
+    comp.setSize(size.width, size.height);
+
+    // Render pass
+    const renderPass = new RenderPass(scene, camera);
+    comp.addPass(renderPass);
+
+    // Bloom pass with tuned settings
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(size.width, size.height),
+      strength,
+      isMobile ? 0.4 : 0.8, // radius
+      0.2 // threshold
+    );
     comp.addPass(bloomPass);
-    return comp;
-  }, [gl, scene, camera, size.width, size.height, strength]);
+
+    // Vignette pass - darkens screen edges for cinematic look
+    if (!isMobile) {
+      const VignetteShader = {
+        uniforms: {
+          tDiffuse: { value: null },
+          strength: { value: 0.18 },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse; uniform float strength; varying vec2 vUv;
+          void main(){
+            vec4 c = texture2D(tDiffuse, vUv);
+            float d = distance(vUv, vec2(0.5));
+            float v = smoothstep(0.6, 0.98, d);
+            c.rgb *= (1.0 - v * strength);
+            gl_FragColor = c;
+          }
+        `,
+      };
+      const vignettePass = new ShaderPass(VignetteShader);
+      comp.addPass(vignettePass);
+    }
+
+    composerRef.current = comp;
+
+    return () => {
+      comp.dispose();
+    };
+  }, [gl, scene, camera, size.width, size.height, strength, isMobile]);
 
   useFrame(() => {
-    composer.render();
+    composerRef.current?.render();
   }, 1);
 
   return null;
 }
 
-type GraphVisualizerProps = {
+export type GraphVisualizerProps = {
   layout: GraphLayout | null;
   selectedNode: Node3D | null;
   hoveredNode: Node3D | null;
@@ -236,6 +340,9 @@ type GraphVisualizerProps = {
   onEmptyContextMenu?: (point: { x: number; y: number; z: number }) => void;
   focusNodeId?: string | null;
   pulseNodeId?: string | null;
+  // Controls props
+  minRelationshipWeight?: number;
+  selectedDomain?: string | null;
 };
 
 function GraphScene({
@@ -252,6 +359,8 @@ function GraphScene({
   onEmptyContextMenu,
   focusNodeId,
   pulseNodeId,
+  minRelationshipWeight = 0,
+  selectedDomain,
 }: GraphVisualizerProps) {
   const nodes = layout?.nodes || [];
   const links = layout?.links || [];
@@ -265,22 +374,49 @@ function GraphScene({
   }, [searchTerm, nodes]);
 
   const visibleNodes = useMemo(() => {
-    if (!visibleNodeIds) return nodes;
-    return nodes.filter((n) => visibleNodeIds.has(n.id));
-  }, [nodes, visibleNodeIds]);
+    let filtered = nodes;
+    if (visibleNodeIds) {
+      filtered = filtered.filter((n) => visibleNodeIds.has(n.id));
+    }
+    if (selectedDomain) {
+      filtered = filtered.filter((n) => n.domain === selectedDomain);
+    }
+    return filtered;
+  }, [nodes, visibleNodeIds, selectedDomain]);
+
+  const visibleNodeIdSet = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes]);
 
   const visibleLinks = useMemo(() => {
-    if (!visibleNodeIds) return links;
-    return links.filter((l) => visibleNodeIds.has(l.source.id) && visibleNodeIds.has(l.target.id));
-  }, [links, visibleNodeIds]);
+    let filtered = links.filter(
+      (l) => visibleNodeIdSet.has(l.source.id) && visibleNodeIdSet.has(l.target.id)
+    );
+    if (minRelationshipWeight > 0) {
+      filtered = filtered.filter((l) => l.weight >= minRelationshipWeight);
+    }
+    return filtered;
+  }, [links, visibleNodeIdSet, minRelationshipWeight]);
+
+  // Separate strong links for energy tube rendering
+  const { regularLinks, energyLinks } = useMemo(() => {
+    const regular: Link3D[] = [];
+    const energy: Link3D[] = [];
+    for (const link of visibleLinks) {
+      if (link.weight >= ENERGY_TUBE_WEIGHT_THRESHOLD) {
+        energy.push(link);
+      }
+      // Always render the regular line too (energy is an overlay)
+      regular.push(link);
+    }
+    return { regularLinks: regular, energyLinks: energy };
+  }, [visibleLinks]);
 
   const visibleCommunities = useMemo(() => {
     if (!layout?.communities) return [];
     if (!visibleNodeIds) return layout.communities;
     return layout.communities.filter((community) =>
-      community.entity_ids.some((id) => visibleNodeIds.has(id))
+      community.entity_ids.some((id) => visibleNodeIdSet.has(id))
     );
-  }, [layout?.communities, visibleNodeIds]);
+  }, [layout?.communities, visibleNodeIds, visibleNodeIdSet]);
 
   const focusNode = useMemo(() => {
     if (!focusNodeId) return null;
@@ -344,7 +480,7 @@ function GraphScene({
             <CommunityGlow community={c} />
           </group>
         ))}
-        {visibleLinks.map((link) => {
+        {regularLinks.map((link) => {
           const isHighlighted =
             (selectedNode && (link.source.id === selectedNode.id || link.target.id === selectedNode.id)) ||
             (hoveredNode && (link.source.id === hoveredNode.id || link.target.id === hoveredNode.id));
@@ -352,6 +488,10 @@ function GraphScene({
             !!pulseNodeId && (link.source.id === pulseNodeId || link.target.id === pulseNodeId);
           return <Link key={link.id} link={link} isHighlighted={!!isHighlighted || isPulse} sourceNodeId={selectedNode?.id} targetNodeId={selectedNode?.id} />;
         })}
+        {/* Energy tubes overlay for strong relationships */}
+        {energyLinks.map((link) => (
+          <EnergyEdge key={`energy-${link.id}`} link={link} />
+        ))}
         {visibleNodes.map((node) => (
           <Node
             key={node.id}
@@ -376,7 +516,7 @@ function GraphScene({
         zoomSpeed={isMobile ? 2.0 : 1.0}
         rotateSpeed={isMobile ? 1.2 : 0.8}
       />
-      <Bloom strength={isMobile ? 0.4 : 0.9} />
+      <PostProcessing strength={isMobile ? 0.4 : 0.9} isMobile={isMobile} />
     </>
   );
 }

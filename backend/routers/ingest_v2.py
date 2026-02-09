@@ -32,13 +32,23 @@ router = APIRouter(prefix="/api/v2", tags=["V2 Ingestion"])
 
 
 async def _recompute_communities(user_id: str) -> None:
+    """Recompute communities in the background after ingestion.
+
+    Runs Louvain detection, persists results, and generates LLM summaries.
+    Errors are logged but never propagated (fire-and-forget task).
+    """
     try:
         service = CommunityService()
         communities = await service.compute_communities(user_id)
         await service.persist_communities(user_id, communities)
         await service.generate_community_summaries(user_id)
+        logger.info(
+            "Background community recompute complete",
+            user_id=user_id,
+            num_communities=len(communities),
+        )
     except Exception as e:
-        logger.warning("Background community recompute failed", error=str(e))
+        logger.error("Background community recompute failed", user_id=user_id, error=str(e))
 
 
 # ============================================================================

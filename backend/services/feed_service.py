@@ -806,6 +806,7 @@ class FeedService:
                     definition: c.definition,
                     domain: c.domain,
                     complexity_score: c.complexity_score,
+                    confidence: c.confidence,
                     related_concepts: related_names
                 } AS concept
                 ORDER BY c.created_at DESC
@@ -1079,7 +1080,8 @@ class FeedService:
         try:
             # Pick a random concept
             res = await self.neo4j_client.execute_query(
-                "MATCH (c:Concept) WHERE rand() < 0.2 RETURN c.name as name LIMIT 1"
+                "MATCH (c:Concept {user_id: $user_id}) WHERE rand() < 0.2 RETURN c.name as name LIMIT 1",
+                {"user_id": user_id},
             )
             if not res: return
             
@@ -1107,8 +1109,8 @@ class FeedService:
             concept_def = ""
             try:
                 concept_res = await self.neo4j_client.execute_query(
-                    "MATCH (c:Concept) WHERE toLower(c.name) = toLower($name) RETURN c.id as id, c.definition as def LIMIT 1",
-                    {"name": topic_name}
+                    "MATCH (c:Concept {user_id: $user_id}) WHERE toLower(c.name) = toLower($name) RETURN c.id as id, c.definition as def LIMIT 1",
+                    {"name": topic_name, "user_id": user_id}
                 )
                 if concept_res:
                     concept_id = concept_res[0]["id"]

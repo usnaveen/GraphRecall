@@ -190,6 +190,7 @@ async def get_3d_graph(
                 domain=domain,
                 complexity_score=complexity,
                 mastery_level=mastery,
+                confidence=concept.get("confidence"),
                 size=calculate_node_size(complexity, rel_count),
                 color=get_domain_color(domain),
             ))
@@ -201,11 +202,12 @@ async def get_3d_graph(
         MATCH (c1:Concept)-[r]->(c2:Concept)
         WHERE c1.id IN $node_ids AND c2.id IN $node_ids
           AND c1.user_id = $user_id AND c2.user_id = $user_id
-        RETURN 
+        RETURN
             c1.id as source,
             c2.id as target,
             type(r) as relationship_type,
             coalesce(r.strength, 1.0) as strength,
+            r.mention_count as mention_count,
             elementId(r) as edge_id
         """
 
@@ -225,6 +227,7 @@ async def get_3d_graph(
                 target=e["target"],
                 relationship_type=e["relationship_type"],
                 strength=e["strength"],
+                mention_count=e.get("mention_count"),
             )
             for e in edges_result
         ]
