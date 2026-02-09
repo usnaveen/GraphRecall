@@ -49,6 +49,7 @@ class GraphBuilderAgent:
         concepts: list[dict],
         conflicts: Optional[list[dict]] = None,
         note_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         Build/update the knowledge graph with extracted concepts.
@@ -57,6 +58,7 @@ class GraphBuilderAgent:
             concepts: List of extracted concepts
             conflicts: Optional list of conflict decisions
             note_id: Optional note ID to link concepts to
+            user_id: Optional user ID for multi-tenant isolation
 
         Returns:
             Dict with statistics about the operations performed
@@ -121,6 +123,8 @@ class GraphBuilderAgent:
                     definition=definition,
                     domain=concept.get("domain", "General"),
                     complexity_score=float(concept.get("complexity_score", 5.0)),
+                    confidence=float(concept.get("confidence", 0.8)),
+                    user_id=user_id or "default_user",
                     embedding=embedding,
                 )
 
@@ -147,7 +151,7 @@ class GraphBuilderAgent:
 
         # Create relationships between concepts
         relationships_created = await self._create_relationships(
-            neo4j, concepts, concept_ids
+            neo4j, concepts, concept_ids, user_id=user_id or "default_user"
         )
 
         # Link concepts to the source note
@@ -194,9 +198,10 @@ class GraphBuilderAgent:
         neo4j,
         concepts: list[dict],
         concept_ids: list[str],
+        user_id: str = "default_user",
     ) -> int:
         """
-        Create relationships between concepts.
+        Create relationships between concepts using upsert pattern.
 
         Relationships are created based on:
         1. Prerequisites defined in the concepts
@@ -217,11 +222,23 @@ class GraphBuilderAgent:
                 if prereq_lower in name_to_id:
                     prereq_id = name_to_id[prereq_lower]
                     try:
-                        await neo4j.create_relationship(
-                            from_concept_id=prereq_id,
-                            to_concept_id=concept_id,
-                            relationship_type="PREREQUISITE_OF",
-                            properties={"created_by": "auto"},
+                        await neo4j.execute_query(
+                            """
+                            MATCH (from:Concept {id: $from_id, user_id: $uid})
+                            MATCH (to:Concept {id: $to_id, user_id: $uid})
+                            MERGE (from)-[r:PREREQUISITE_OF]->(to)
+                            ON CREATE SET r.strength = 0.9,
+                                          r.source = 'auto',
+                                          r.mention_count = 1,
+                                          r.created_at = datetime()
+                            ON MATCH SET r.mention_count = coalesce(r.mention_count, 1) + 1,
+                                         r.strength = CASE
+                                             WHEN coalesce(r.strength, 0.9) + 0.1 > 1.0 THEN 1.0
+                                             ELSE coalesce(r.strength, 0.9) + 0.1
+                                         END,
+                                         r.updated_at = datetime()
+                            """,
+                            {"from_id": prereq_id, "to_id": concept_id, "uid": user_id},
                         )
                         relationships_created += 1
                     except Exception as e:
@@ -238,11 +255,23 @@ class GraphBuilderAgent:
                 if related_lower in name_to_id and related_lower != concept.get("name", "").lower():
                     related_id = name_to_id[related_lower]
                     try:
-                        await neo4j.create_relationship(
-                            from_concept_id=concept_id,
-                            to_concept_id=related_id,
-                            relationship_type="RELATED_TO",
-                            properties={"strength": 0.8, "created_by": "auto"},
+                        await neo4j.execute_query(
+                            """
+                            MATCH (from:Concept {id: $from_id, user_id: $uid})
+                            MATCH (to:Concept {id: $to_id, user_id: $uid})
+                            MERGE (from)-[r:RELATED_TO]->(to)
+                            ON CREATE SET r.strength = 0.8,
+                                          r.source = 'auto',
+                                          r.mention_count = 1,
+                                          r.created_at = datetime()
+                            ON MATCH SET r.mention_count = coalesce(r.mention_count, 1) + 1,
+                                         r.strength = CASE
+                                             WHEN coalesce(r.strength, 0.8) + 0.1 > 1.0 THEN 1.0
+                                             ELSE coalesce(r.strength, 0.8) + 0.1
+                                         END,
+                                         r.updated_at = datetime()
+                            """,
+                            {"from_id": concept_id, "to_id": related_id, "uid": user_id},
                         )
                         relationships_created += 1
                     except Exception as e:
@@ -262,10 +291,15 @@ class GraphBuilderAgent:
 
     async def get_existing_concepts(
         self,
+        user_id: str = "default_user",
         limit: int = 100,
     ) -> list[dict]:
         """
         Get existing concepts from the graph for conflict detection.
+
+        Args:
+            user_id: User ID for multi-tenant filtering
+            limit: Maximum number of concepts to return
 
         Returns:
             List of existing concept dictionaries
@@ -273,15 +307,16 @@ class GraphBuilderAgent:
         neo4j = await get_neo4j_client()
 
         query = """
-        MATCH (c:Concept)
-        RETURN c.id AS id, c.name AS name, c.definition AS definition, 
-               c.domain AS domain, c.complexity_score AS complexity_score
+        MATCH (c:Concept {user_id: $user_id})
+        RETURN c.id AS id, c.name AS name, c.definition AS definition,
+               c.domain AS domain, c.complexity_score AS complexity_score,
+               c.confidence AS confidence
         ORDER BY c.created_at DESC
         LIMIT $limit
         """
 
         try:
-            results = await neo4j.execute_query(query, {"limit": limit})
+            results = await neo4j.execute_query(query, {"user_id": user_id, "limit": limit})
             return results
         except Exception as e:
             logger.error(

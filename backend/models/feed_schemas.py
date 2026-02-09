@@ -396,6 +396,7 @@ class Graph3DNode(BaseModel):
     domain: str
     complexity_score: float
     mastery_level: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidence: Optional[float] = Field(default=None, description="Extraction confidence 0-1")
 
     # 3D positioning (optional, can be calculated client-side)
     x: Optional[float] = None
@@ -415,6 +416,7 @@ class Graph3DEdge(BaseModel):
     target: str
     relationship_type: str
     strength: float = Field(default=1.0, ge=0.0, le=1.0)
+    mention_count: Optional[int] = Field(default=None, description="Times this relationship was mentioned")
 
 
 class Graph3DResponse(BaseModel):

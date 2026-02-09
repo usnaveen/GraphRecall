@@ -125,15 +125,17 @@ Output JSON:
     async def get_graph_context(
         self,
         entities: list[str],
+        user_id: str = "default_user",
         depth: int = 2,
     ) -> dict:
         """
         Get context from knowledge graph for given entities.
-        
+
         Args:
             entities: List of concept names to look up
+            user_id: User ID for multi-tenant filtering
             depth: How many relationship hops to traverse
-            
+
         Returns:
             Dictionary with concepts and relationships
         """
@@ -142,59 +144,60 @@ Output JSON:
             "relationships": [],
             "paths": [],
         }
-        
+
         if not entities:
             return context
-        
+
         try:
-            # Find matching concepts
+            # Find matching concepts (with user_id)
             for entity in entities:
-                concepts = await self.neo4j_client.get_concepts_by_name(entity)
+                concepts = await self.neo4j_client.get_concepts_by_name(entity, user_id=user_id)
                 if concepts:
                     context["concepts"].extend(concepts[:3])  # Top 3 matches
-            
+
             # If we found concepts, get their relationships
             concept_ids = [c["id"] for c in context["concepts"]]
-            
+
             if concept_ids:
                 # Get relationships between found concepts and neighbors
                 relationships_query = """
-                MATCH (c1:Concept)-[r]->(c2:Concept)
+                MATCH (c1:Concept {user_id: $user_id})-[r]->(c2:Concept {user_id: $user_id})
                 WHERE c1.id IN $concept_ids OR c2.id IN $concept_ids
-                RETURN 
+                RETURN
                     c1.name as from_name,
                     c2.name as to_name,
                     type(r) as relationship,
-                    r.strength as strength
+                    r.strength as strength,
+                    r.mention_count as mention_count
                 LIMIT 20
                 """
-                
+
                 relationships = await self.neo4j_client.execute_query(
                     relationships_query,
-                    {"concept_ids": concept_ids},
+                    {"concept_ids": concept_ids, "user_id": user_id},
                 )
                 context["relationships"] = relationships
-                
+
                 # Get prerequisite paths if there are multiple concepts
                 if len(concept_ids) >= 2:
                     paths_query = """
                     MATCH path = shortestPath(
-                        (c1:Concept {id: $id1})-[:PREREQUISITE_OF|BUILDS_ON*..5]-(c2:Concept {id: $id2})
+                        (c1:Concept {id: $id1, user_id: $user_id})-[:PREREQUISITE_OF|BUILDS_ON*..5]-(c2:Concept {id: $id2, user_id: $user_id})
                     )
                     RETURN [n IN nodes(path) | n.name] as concept_path
                     """
-                    
+
                     try:
                         paths = await self.neo4j_client.execute_query(
                             paths_query,
-                            {"id1": concept_ids[0], "id2": concept_ids[1]},
+                            {"id1": concept_ids[0], "id2": concept_ids[1], "user_id": user_id},
                         )
                         context["paths"] = paths
                     except:
                         pass  # Path might not exist
-            
+
             return context
-            
+
         except Exception as e:
             logger.error("GraphRAG: Graph context retrieval failed", error=str(e))
             return context
@@ -419,7 +422,7 @@ Respond naturally and helpfully:"""
         # Step 2: Get graph context (if needed)
         graph_context = {"concepts": [], "relationships": [], "paths": []}
         if analysis.requires_graph:
-            graph_context = await self.get_graph_context(analysis.entities)
+            graph_context = await self.get_graph_context(analysis.entities, user_id=user_id)
         
         # Step 3: Get RAG context (if needed)
         rag_context = []

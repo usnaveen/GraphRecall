@@ -404,7 +404,10 @@ async def get_context_node(state: ChatState) -> dict:
         except Exception as e:
             logger.warning("get_context_node: Graph query failed", error=str(e))
 
-    if intent == "summarize" and not entities:
+    # Attach community summaries for broad/summarize queries.
+    # Trigger when: intent is summarize (with or without entities), or when no
+    # graph concepts were found (fallback to global context).
+    if intent in ("summarize", "general") or not graph_context.get("concepts"):
         try:
             pg_client = await get_postgres_client()
             summaries = await pg_client.execute_query(
@@ -419,7 +422,7 @@ async def get_context_node(state: ChatState) -> dict:
             )
             if summaries:
                 global_text = "\n".join(
-                    f"- **{s['title']}**: {s['summary']}" for s in summaries
+                    f"- **{s['title']}** ({s['size']} concepts): {s['summary']}" for s in summaries
                 )
                 graph_context["global_summary"] = global_text
         except Exception as e:
@@ -511,7 +514,12 @@ async def generate_response_node(state: ChatState) -> dict:
             name = c.get("name", "Unknown")
             hops = c.get("hops", 0)
             conf = c.get("confidence", 0.8)
-            conf_tag = " [high confidence]" if conf >= 0.85 else ""
+            if conf >= 0.85:
+                conf_tag = " [high confidence]"
+            elif conf < 0.5:
+                conf_tag = " [low confidence]"
+            else:
+                conf_tag = ""
             if hops and hops >= 2:
                 concept_lines.append(f"- {name}{conf_tag} (hop {hops})")
             else:
@@ -528,12 +536,15 @@ async def generate_response_node(state: ChatState) -> dict:
         )
 
     if graph_context.get("relationships"):
-        rels_text = "\n".join(
-            [
-                f"- {r.get('src_name') or r.get('src')} --[{r.get('type')}]--> {r.get('tgt_name') or r.get('tgt')}"
-                for r in graph_context["relationships"][:15]
-            ]
-        )
+        rel_lines = []
+        for r in graph_context["relationships"][:15]:
+            src = r.get('src_name') or r.get('src')
+            tgt = r.get('tgt_name') or r.get('tgt')
+            rel_type = r.get('type')
+            strength = r.get('strength', 1.0)
+            strength_tag = f" (strength: {strength:.1f})" if strength < 1.0 else ""
+            rel_lines.append(f"- {src} --[{rel_type}]--> {tgt}{strength_tag}")
+        rels_text = "\n".join(rel_lines)
         context_parts.append(f"**Relationships:**\n{rels_text}")
     
     if rag_context:

@@ -73,8 +73,9 @@ class CommunityService:
         return results
 
     async def persist_communities(self, user_id: str, communities: list[dict[str, Any]]) -> None:
-        """Persist communities to Postgres (replace existing)."""
+        """Persist communities to Postgres and sync community_id to Neo4j Concept nodes."""
         pg = await get_postgres_client()
+        neo4j = await get_neo4j_client()
 
         await pg.execute_update(
             "DELETE FROM community_nodes WHERE user_id = :user_id",
@@ -84,6 +85,19 @@ class CommunityService:
             "DELETE FROM communities WHERE user_id = :user_id",
             {"user_id": user_id},
         )
+
+        # Clear existing community_id from Neo4j (in case concepts moved between communities)
+        try:
+            await neo4j.execute_query(
+                """
+                MATCH (c:Concept {user_id: $uid})
+                WHERE c.community_id IS NOT NULL
+                REMOVE c.community_id
+                """,
+                {"uid": user_id},
+            )
+        except Exception as e:
+            logger.warning("persist_communities: Failed to clear Neo4j community_id", error=str(e))
 
         for community in communities:
             await pg.execute_update(
@@ -112,6 +126,28 @@ class CommunityService:
                         "concept_id": concept_id,
                     },
                 )
+
+            # Sync community_id to Neo4j Concept nodes for graph-level queries
+            if community["entity_ids"]:
+                try:
+                    await neo4j.execute_query(
+                        """
+                        MATCH (c:Concept {user_id: $uid})
+                        WHERE c.id IN $concept_ids
+                        SET c.community_id = $community_id
+                        """,
+                        {
+                            "uid": user_id,
+                            "concept_ids": community["entity_ids"],
+                            "community_id": community["id"],
+                        },
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "persist_communities: Failed to sync community_id to Neo4j",
+                        community_id=community["id"],
+                        error=str(e),
+                    )
 
     async def generate_community_summaries(self, user_id: str) -> None:
         """Generate LLM summaries for each community and persist to Postgres."""
@@ -150,15 +186,23 @@ class CommunityService:
                 f"Concepts:\n{concepts_text}\n\nSummary:"
             )
 
-            response = await llm.ainvoke(prompt)
-            summary = response.content.strip()
-            if not summary:
-                continue
+            try:
+                response = await llm.ainvoke(prompt)
+                summary = response.content.strip()
+                if not summary:
+                    continue
 
-            await pg.execute_update(
-                "UPDATE communities SET summary = :summary WHERE id = :id",
-                {"summary": summary, "id": community["id"]},
-            )
+                await pg.execute_update(
+                    "UPDATE communities SET summary = :summary WHERE id = :id",
+                    {"summary": summary, "id": community["id"]},
+                )
+            except Exception as e:
+                logger.warning(
+                    "generate_community_summaries: Failed for community",
+                    community_id=community["id"],
+                    error=str(e),
+                )
+                continue
 
     async def get_communities(self, user_id: str) -> list[dict[str, Any]]:
         """Fetch communities and node mappings from Postgres."""

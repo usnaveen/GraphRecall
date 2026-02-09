@@ -328,31 +328,7 @@ async def save_chunks_node(state: IngestionState) -> dict:
                     }
                 )
         
-        # Save Propositions (if any)
-        propositions = state.get("propositions", [])
-        if propositions:
-            logger.info("save_chunks_node: Saving propositions", count=len(propositions))
-            for prop in propositions:
-                await pg_client.execute_update(
-                    """
-                    INSERT INTO propositions (id, note_id, chunk_id, content, confidence, is_atomic, created_at)
-                    VALUES (:id, :note_id, :chunk_id, :content, :confidence, :is_atomic, :created_at)
-                    ON CONFLICT (id) DO NOTHING
-                    """,
-                    {
-                        "id": str(uuid.uuid4()), # Generate ID for proposition here
-                        "note_id": str(prop["note_id"]),
-                        "chunk_id": str(prop["chunk_id"]),
-                        "content": prop["content"],
-                        "confidence": prop["confidence"],
-                        "is_atomic": prop["is_atomic"],
-                        "created_at": datetime.now(timezone.utc)
-                    }
-                )
-                
         logger.info("save_chunks_node: Saved chunks", saved=saved_count, propositions_saved=len(propositions))
-                
-        logger.info("save_chunks_node: Saved chunks", saved=saved_count)
         return {}
         
     except Exception as e:
@@ -484,8 +460,9 @@ async def find_related_node(state: IngestionState) -> dict:
         query = """
         MATCH (c:Concept)
         WHERE c.user_id = $user_id
-        RETURN c.id AS id, c.name AS name, c.definition AS definition, 
-               c.domain AS domain, c.complexity_score AS complexity_score
+        RETURN c.id AS id, c.name AS name, c.definition AS definition,
+               c.domain AS domain, c.complexity_score AS complexity_score,
+               c.confidence AS confidence
         LIMIT 100
         """
         
@@ -899,24 +876,36 @@ async def link_synthesis_node(state: IngestionState) -> dict:
     
     try:
         neo4j = await get_neo4j_client()
-        
-        # Link new concepts to related existing ones
+        user_id = state.get("user_id", "default_user")
+
+        # Link new concepts to related existing ones using upsert pattern
+        # to be consistent with create_concepts_node strength reinforcement
         for new_id in new_ids[:5]:  # Limit connections
             for rel in related[:3]:
                 rel_id = rel.get("id")
                 if rel_id and rel_id != new_id:
                     await neo4j.execute_query(
                         """
-                        MATCH (c1:Concept {id: $id1}), (c2:Concept {id: $id2})
+                        MATCH (c1:Concept {id: $id1, user_id: $uid})
+                        MATCH (c2:Concept {id: $id2, user_id: $uid})
                         MERGE (c1)-[r:RELATED_TO]->(c2)
-                        SET r.strength = 0.6, r.source = 'synthesis'
+                        ON CREATE SET r.strength = 0.6,
+                                      r.source = 'synthesis',
+                                      r.mention_count = 1,
+                                      r.created_at = datetime()
+                        ON MATCH SET r.mention_count = coalesce(r.mention_count, 1) + 1,
+                                     r.strength = CASE
+                                         WHEN coalesce(r.strength, 0.6) + 0.1 > 1.0 THEN 1.0
+                                         ELSE coalesce(r.strength, 0.6) + 0.1
+                                     END,
+                                     r.updated_at = datetime()
                         """,
-                        {"id1": new_id, "id2": rel_id},
+                        {"id1": new_id, "id2": rel_id, "uid": user_id},
                     )
-        
+
         logger.info("link_synthesis_node: Complete")
         return {"synthesis_completed": True}
-        
+
     except Exception as e:
         logger.error("link_synthesis_node: Failed", error=str(e))
         return {"synthesis_completed": False, "error": str(e)}

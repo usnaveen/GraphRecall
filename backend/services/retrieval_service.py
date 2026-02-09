@@ -38,21 +38,26 @@ class RetrievalService:
         
         results = await pg_client.execute_query(
             """
-            SELECT 
-                c.id, 
-                c.content as child_content, 
+            SELECT
+                c.id,
+                c.content as child_content,
                 c.chunk_index,
                 p.content as parent_content,
                 c.source_location,
+                c.page_start,
+                c.page_end,
+                c.note_id,
                 1 - (c.embedding <=> :embedding) as similarity
             FROM chunks c
             LEFT JOIN chunks p ON c.parent_chunk_id = p.id
             WHERE c.chunk_level = 'child'
+              AND c.note_id IN (SELECT id FROM notes WHERE user_id = :user_id)
             ORDER BY c.embedding <=> :embedding
             LIMIT :limit
             """,
             {
-                "embedding": embedding_str, 
+                "embedding": embedding_str,
+                "user_id": user_id,
                 "limit": limit
             }
         )
