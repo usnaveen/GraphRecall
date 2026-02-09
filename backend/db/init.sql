@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS communities (
     level INTEGER DEFAULT 0,
     parent_id UUID,
     size INTEGER DEFAULT 0,
+    summary TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -126,48 +126,49 @@ async def get_chat_suggestions(
     """
     try:
         neo4j_client = await get_neo4j_client()
-        
+        user_id = str(current_user["id"])
+
         suggestions = []
-        
+
         # Get some recent concepts
         recent_concepts = await neo4j_client.execute_query(
             """
-            MATCH (c:Concept)
+            MATCH (c:Concept {user_id: $user_id})
             RETURN c.name as name, c.domain as domain
             ORDER BY c.created_at DESC
             LIMIT 5
             """,
-            {},
+            {"user_id": user_id},
         )
-        
+
         for concept in recent_concepts:
             suggestions.append(f"Explain {concept['name']}")
-        
+
         # Get concepts with prerequisites
         complex_concepts = await neo4j_client.execute_query(
             """
-            MATCH (c:Concept)<-[:PREREQUISITE_OF]-(prereq:Concept)
+            MATCH (c:Concept {user_id: $user_id})<-[:PREREQUISITE_OF]-(prereq:Concept {user_id: $user_id})
             WITH c, count(prereq) as prereq_count
             WHERE prereq_count > 0
             RETURN c.name as name
             ORDER BY prereq_count DESC
             LIMIT 3
             """,
-            {},
+            {"user_id": user_id},
         )
-        
+
         for concept in complex_concepts:
             suggestions.append(f"What should I learn before {concept['name']}?")
-        
+
         # Get related concept pairs for comparison
         related_pairs = await neo4j_client.execute_query(
             """
-            MATCH (c1:Concept)-[:RELATED_TO]-(c2:Concept)
+            MATCH (c1:Concept {user_id: $user_id})-[:RELATED_TO]-(c2:Concept {user_id: $user_id})
             WHERE c1.name < c2.name
             RETURN c1.name as concept1, c2.name as concept2
             LIMIT 3
             """,
-            {},
+            {"user_id": user_id},
         )
         
         for pair in related_pairs:

@@ -280,11 +280,16 @@ class Neo4jClient:
         neighbors: list[dict[str, Any]] = []
         if neighbor_limit > 0 and max_hops > 0:
             allowed_clause = "AND neighbor.id IN $allowed_ids" if allowed_concept_ids else ""
+            # NOTE: Neo4j does NOT support parameters for variable-length path
+            # bounds (e.g. *1..$max_hops).  The bound must be a literal integer
+            # embedded in the query string.  max_hops is already clamped to [1,4]
+            # above so this is safe from injection.
             neighbor_query = f"""
             MATCH (seed:Concept {{user_id: $user_id}})
             WHERE seed.id IN $concept_ids
-            MATCH path = (seed)-[rels*1..$max_hops]-(neighbor:Concept {{user_id: $user_id}})
+            MATCH path = (seed)-[rels*1..{max_hops}]-(neighbor:Concept {{user_id: $user_id}})
             WHERE ALL(rel IN rels WHERE type(rel) IN $rel_types)
+              AND neighbor.id <> seed.id
             {allowed_clause}
             WITH neighbor,
                  length(path) AS hops,
@@ -296,10 +301,9 @@ class Neo4jClient:
             ORDER BY strength_score DESC, hops ASC
             LIMIT $neighbor_limit
             """
-            neighbor_params = {
+            neighbor_params: dict[str, Any] = {
                 "concept_ids": concept_ids,
                 "user_id": user_id,
-                "max_hops": max_hops,
                 "neighbor_limit": neighbor_limit,
                 "rel_types": rel_types,
             }
