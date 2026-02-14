@@ -114,27 +114,64 @@ class ContentGeneratorAgent:
         difficulty: int = 5,
         num_options: int = 4,
         propositions: list[str] = [],
+        mastery_score: float = 0.0,
+        few_shot_examples: list[dict] = [],
     ) -> MCQQuestion:
         """
         Generate a multiple choice question for a concept.
-        
+
         Args:
             concept_name: Name of the concept
             concept_definition: Definition of the concept
             related_concepts: Related concepts for context/distractors
             difficulty: Difficulty level 1-10
             num_options: Number of answer options (default 4)
-            
+            propositions: Atomic facts to ground the question in
+            mastery_score: User's mastery 0.0-1.0 (adjusts difficulty)
+            few_shot_examples: Past high-quality MCQs as few-shot examples
+
         Returns:
             MCQQuestion object
         """
-        normalized_difficulty = _normalize_difficulty(difficulty, fallback=5)
+        # Mastery-based difficulty adjustment
+        # Low mastery (< 0.3) → lower difficulty; High mastery (> 0.7) → higher difficulty
+        base_difficulty = _normalize_difficulty(difficulty, fallback=5)
+        if mastery_score > 0.7:
+            adjusted_difficulty = min(10, base_difficulty + 2)
+        elif mastery_score < 0.3 and mastery_score > 0:
+            adjusted_difficulty = max(1, base_difficulty - 2)
+        else:
+            adjusted_difficulty = base_difficulty
+
+        # Build dynamic few-shot section
+        few_shot_section = ""
+        if few_shot_examples:
+            examples_text = []
+            for i, ex in enumerate(few_shot_examples[:2], 1):
+                ex_options = ex.get("options", [])
+                options_str = "\n".join(
+                    f'        {{"id": "{o.get("id", chr(64+j))}", "text": "{o.get("text", "")}", "is_correct": {str(o.get("is_correct", False)).lower()}}}'
+                    for j, o in enumerate(ex_options, 1)
+                )
+                examples_text.append(
+                    f"Example {i}:\n"
+                    f'{{"question": "{ex.get("question", "")}", '
+                    f'"options": [\n{options_str}\n    ], '
+                    f'"explanation": "{ex.get("explanation", "")}", '
+                    f'"difficulty": {ex.get("difficulty", 5)}}}'
+                )
+            few_shot_section = (
+                "\n\nHere are examples of high-quality questions for reference "
+                "(match this style and rigor):\n" + "\n\n".join(examples_text)
+            )
+
         prompt = f"""Generate a multiple choice question to test understanding of this concept.
 
 CONCEPT: {concept_name}
 DEFINITION: {concept_definition}
 RELATED CONCEPTS: {', '.join(related_concepts[:5])}
-DIFFICULTY LEVEL: {normalized_difficulty}/10 (1=very easy, 10=very hard)
+DIFFICULTY LEVEL: {adjusted_difficulty}/10 (1=very easy, 10=very hard)
+USER MASTERY: {mastery_score:.0%} — {"challenge with application/synthesis questions" if mastery_score > 0.6 else "focus on core understanding and recall" if mastery_score < 0.3 else "mix recall with some application"}
 
 Requirements:
 1. Create a clear, unambiguous question
@@ -147,6 +184,7 @@ Requirements:
 
 SUPPORTING FACTS:
 {'- ' + chr(10).join(propositions[:5]) if propositions else 'None provided (General knowledge)'}
+{few_shot_section}
 
 Output JSON format:
 {{
@@ -158,9 +196,9 @@ Output JSON format:
         {{"id": "D", "text": "Option D text", "is_correct": false}}
     ],
     "explanation": "Explanation of the correct answer",
-    "difficulty": {normalized_difficulty}
+    "difficulty": {adjusted_difficulty}
 }}"""
-        
+
         try:
             response = await self.llm.ainvoke(prompt)
             parsed = _parse_llm_json(response)
@@ -179,7 +217,7 @@ Output JSON format:
                 question=parsed["question"],
                 options=options,
                 explanation=parsed.get("explanation", ""),
-                difficulty=_normalize_difficulty(parsed.get("difficulty"), normalized_difficulty),
+                difficulty=_normalize_difficulty(parsed.get("difficulty"), adjusted_difficulty),
             )
 
         except Exception as e:
@@ -213,6 +251,8 @@ Output JSON format:
                         related_concepts=concept.get("related_concepts", []),
                         difficulty=int(concept.get("complexity_score", 5)),
                         propositions=concept.get("propositions", []),
+                        mastery_score=float(concept.get("mastery_score", 0.0)),
+                        few_shot_examples=concept.get("few_shot_examples", []),
                     )
                     mcq.concept_id = concept.get("id", "")
 

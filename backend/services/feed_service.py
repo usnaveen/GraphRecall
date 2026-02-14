@@ -43,6 +43,133 @@ class FeedService:
         self.content_generator = ContentGeneratorAgent()
         self.web_quiz_agent = WebQuizAgent()
         self.llm_timeout_seconds = 8
+        self._embedding_service = None  # Lazy init for dedup
+
+    async def _get_embedding_service(self):
+        """Lazy-initialize embedding service for semantic dedup."""
+        if self._embedding_service is None:
+            from backend.services.ingestion.embedding_service import EmbeddingService
+            self._embedding_service = EmbeddingService()
+        return self._embedding_service
+
+    async def _is_duplicate_question(
+        self, question_text: str, concept_id: str, user_id: str, threshold: float = 0.85
+    ) -> bool:
+        """
+        Check if a question is semantically similar to existing ones.
+
+        Uses embedding cosine similarity to catch paraphrased duplicates
+        that ILIKE matching would miss.
+        """
+        try:
+            # Quick text-based check first (cheap)
+            existing = await self.pg_client.execute_query(
+                """
+                SELECT question_text FROM quizzes
+                WHERE concept_id = :concept_id AND user_id = :user_id
+                LIMIT 20
+                """,
+                {"concept_id": concept_id, "user_id": user_id},
+            )
+            if not existing:
+                return False
+
+            # Exact match check
+            existing_texts = [r["question_text"] for r in existing]
+            if question_text.strip().lower() in [t.strip().lower() for t in existing_texts]:
+                return True
+
+            # Semantic similarity check via embeddings
+            emb_service = await self._get_embedding_service()
+            batch_texts = [question_text] + existing_texts
+            embeddings = await emb_service.embed_batch(batch_texts)
+            if len(embeddings) < 2:
+                return False
+
+            query_emb = embeddings[0]
+            for existing_emb in embeddings[1:]:
+                # Cosine similarity (embeddings are normalized by MRL)
+                dot_product = sum(a * b for a, b in zip(query_emb, existing_emb))
+                if dot_product > threshold:
+                    logger.info(
+                        "Semantic dedup: duplicate detected",
+                        similarity=round(dot_product, 3),
+                        concept_id=concept_id,
+                    )
+                    return True
+
+            return False
+        except Exception as e:
+            logger.warning("Semantic dedup check failed", error=str(e))
+            return False  # Fail open — allow the question
+
+    async def _get_few_shot_examples(
+        self, concept_id: str, user_id: str, limit: int = 2
+    ) -> list[dict]:
+        """
+        Fetch high-quality past MCQs as few-shot examples.
+
+        Retrieves liked/saved questions or recently correct ones to guide generation.
+        """
+        try:
+            rows = await self.pg_client.execute_query(
+                """
+                SELECT question_text, options_json, explanation
+                FROM quizzes
+                WHERE user_id = :user_id
+                  AND concept_id = :concept_id
+                  AND (is_liked = true OR is_saved = true)
+                ORDER BY created_at DESC
+                LIMIT :limit
+                """,
+                {"user_id": user_id, "concept_id": concept_id, "limit": limit},
+            )
+            if not rows:
+                # Fallback: any recent question for this concept
+                rows = await self.pg_client.execute_query(
+                    """
+                    SELECT question_text, options_json, explanation
+                    FROM quizzes
+                    WHERE user_id = :user_id AND concept_id = :concept_id
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                    """,
+                    {"user_id": user_id, "concept_id": concept_id, "limit": limit},
+                )
+
+            examples = []
+            for row in rows or []:
+                options = row.get("options_json")
+                if isinstance(options, str):
+                    try:
+                        options = json.loads(options)
+                    except Exception:
+                        continue
+                examples.append({
+                    "question": row["question_text"],
+                    "options": options or [],
+                    "explanation": row.get("explanation", ""),
+                })
+            return examples
+        except Exception:
+            return []
+
+    async def _get_concept_mastery(self, concept_id: str, user_id: str) -> float:
+        """Get user's mastery score (0.0-1.0) for a concept."""
+        try:
+            rows = await self.pg_client.execute_query(
+                """
+                SELECT score FROM proficiency_scores
+                WHERE user_id = :user_id AND concept_id = :concept_id
+                LIMIT 1
+                """,
+                {"user_id": user_id, "concept_id": concept_id},
+            )
+            if rows:
+                return float(rows[0].get("score", 0.0))
+        except Exception:
+            pass
+        return 0.0
 
     def _basic_concept_showcase(self, concept: dict) -> dict:
         """Fallback concept showcase content without LLM calls."""
@@ -552,16 +679,43 @@ class FeedService:
                 if candidate:
                     logger.info("FeedService: Using Lazy Quiz Candidate", concept=concept["name"])
                     context_append = f"\n\nContext Source: {candidate['text']}"
-                
+
+                # Fetch mastery + few-shot examples for quality generation
+                concept_id = concept.get("id", "")
+                mastery = await self._get_concept_mastery(concept_id, user_id)
+                few_shots = await self._get_few_shot_examples(concept_id, user_id)
+
                 mcq = await asyncio.wait_for(
                     self.content_generator.generate_mcq(
                         concept_name=concept["name"],
                         concept_definition=concept.get("definition", "") + context_append,
                         related_concepts=concept.get("related_concepts", []),
                         difficulty=int(concept.get("complexity_score", 5)),
+                        mastery_score=mastery,
+                        few_shot_examples=few_shots,
                     ),
                     timeout=self.llm_timeout_seconds,
                 )
+
+                # Semantic deduplication: skip if too similar to existing
+                if concept_id:
+                    is_dup = await self._is_duplicate_question(
+                        mcq.question, concept_id, user_id
+                    )
+                    if is_dup:
+                        logger.info("FeedService: MCQ is duplicate, regenerating", concept=concept.get("name"))
+                        # One retry with higher temperature variation
+                        mcq = await asyncio.wait_for(
+                            self.content_generator.generate_mcq(
+                                concept_name=concept["name"],
+                                concept_definition=concept.get("definition", "") + context_append,
+                                related_concepts=concept.get("related_concepts", []),
+                                difficulty=int(concept.get("complexity_score", 5)),
+                                mastery_score=mastery,
+                            ),
+                            timeout=self.llm_timeout_seconds,
+                        )
+
                 content = {
                     "question": mcq.question,
                     "options": [o.model_dump() for o in mcq.options],
