@@ -1,15 +1,20 @@
--- Migration 014: Fix embedding dimension from 768 to 3072
--- Gemini embedding-001 produces 3072-dimensional vectors, not 768.
--- This migration fixes the chunks table to match the actual embedding model.
+-- Migration 014: Standardize embedding dimension to 768
+-- gemini-embedding-001 supports MRL (Matryoshka Representation Learning).
+-- 768 dims = 99.74% quality of 3072, 75% less storage, faster vector ops.
+-- This migration handles both old 3072-dim and wrong 768-dim schemas.
 
 -- Drop the old ivfflat index (it's tied to the old dimension)
 DROP INDEX IF EXISTS idx_chunks_embedding;
 
--- Alter the column type to the correct dimension
--- NOTE: This will fail if there are existing 768-dim embeddings stored.
+-- Alter the column type to 768 dimensions
+-- NOTE: This will fail if there are existing embeddings of a different dimension.
 -- In that case, truncate chunks first: TRUNCATE chunks CASCADE;
 ALTER TABLE chunks
-ALTER COLUMN embedding TYPE vector(3072);
+ALTER COLUMN embedding TYPE vector(768);
+
+-- Also fix notes embedding column if it was set to 3072
+ALTER TABLE notes
+ALTER COLUMN embedding TYPE vector(768);
 
 -- Recreate the ivfflat index with correct dimension
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding

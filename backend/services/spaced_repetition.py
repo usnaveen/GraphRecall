@@ -552,40 +552,7 @@ class SpacedRepetitionService:
             List of items with SM2 data
         """
         now = datetime.now(timezone.utc)
-        
-        # Query for due items
-        query = """
-            SELECT 
-                ps.concept_id as item_id,
-                'concept' as item_type,
-                ps.easiness_factor,
-                ps.interval_days as interval,
-                ps.repetition_count as repetition,
-                ps.last_review,
-                ps.next_review,
-                ps.total_reviews,
-                ps.correct_streak,
-                ps.score as mastery_score,
-                c.name as concept_name,
-                c.definition,
-                c.domain,
-                c.complexity_score
-            FROM proficiency_scores ps
-            JOIN (
-                SELECT DISTINCT id, name, definition, domain, complexity_score
-                FROM (
-                    -- Get concepts from Neo4j through a materialized view or sync table
-                    SELECT id, name, definition, domain, complexity_score
-                    FROM concepts_cache
-                ) concepts
-            ) c ON ps.concept_id = c.id
-            WHERE ps.user_id = :user_id
-              AND ps.next_review <= :now
-            ORDER BY ps.next_review ASC
-            LIMIT :limit
-        """
-        
-        # Simplified query that works with current schema
+
         query = """
             SELECT 
                 ps.concept_id as item_id,
@@ -702,13 +669,13 @@ class SpacedRepetitionService:
             today = datetime.now(timezone.utc).date()
             
             query = """
-                SELECT 
-                    DATE(next_review) as review_date,
+                SELECT
+                    DATE(next_review_due) as review_date,
                     COUNT(*) as count
                 FROM proficiency_scores
                 WHERE user_id = :user_id
-                  AND next_review >= :today
-                GROUP BY DATE(next_review)
+                  AND next_review_due >= :today
+                GROUP BY DATE(next_review_due)
                 ORDER BY review_date ASC
                 LIMIT :days
             """
@@ -751,13 +718,13 @@ class SpacedRepetitionService:
 
             query = """
                 SELECT
-                    DATE(next_review) as review_date,
+                    DATE(next_review_due) as review_date,
                     COUNT(*) as count,
                     array_agg(concept_id) as concept_ids
                 FROM proficiency_scores
                 WHERE user_id = :user_id
-                  AND next_review >= :today
-                GROUP BY DATE(next_review)
+                  AND next_review_due >= :today
+                GROUP BY DATE(next_review_due)
                 ORDER BY review_date ASC
                 LIMIT :days
             """
