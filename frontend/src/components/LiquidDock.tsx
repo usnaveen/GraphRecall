@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Home, Share2, Plus, MessageCircle, User, BookOpen } from 'lucide-react';
+import { Home, Share2, Plus, MessageCircle, User } from 'lucide-react';
 import type { TabType } from '../types';
 
 interface LiquidDockProps {
@@ -19,7 +19,6 @@ const dockItems: DockItem[] = [
   { id: 'feed', icon: Home, label: 'Feed' },
   { id: 'graph', icon: Share2, label: 'Graph' },
   { id: 'create', icon: Plus, label: 'Create' },
-  { id: 'library', icon: BookOpen, label: 'Library' },
   { id: 'assistant', icon: MessageCircle, label: 'Assistant' },
   { id: 'profile', icon: User, label: 'Profile' },
 ];
