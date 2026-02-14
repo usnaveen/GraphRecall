@@ -9,7 +9,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { authService, feedService } from '../services/api';
 
-type ProfileView = 'main' | 'settings' | 'notes' | 'concepts' | 'uploads' | 'quizzes';
+type ProfileView = 'main' | 'settings' | 'notes' | 'concepts' | 'uploads' | 'quizzes' | 'books';
 
 import { AgentDeck } from '../components/geekout/AgentDeck';
 
@@ -19,8 +19,8 @@ export function ProfileScreen() {
   const [quizCount, setQuizCount] = useState(0);
   const {
     userStats, fetchStats,
-    notesList, conceptsList, uploadsList,
-    fetchNotes, fetchConcepts, fetchUploads,
+    notesList, conceptsList, uploadsList, libraryBooks,
+    fetchNotes, fetchConcepts, fetchUploads, fetchLibrary,
     activeRecallSchedule, fetchSchedule
   } = useAppStore();
   const { user, logout } = useAuthStore();
@@ -28,6 +28,7 @@ export function ProfileScreen() {
   useEffect(() => {
     fetchStats();
     fetchUploads();
+    fetchLibrary();
     fetchSchedule();
     feedService.getQuizHistory().then(data => {
       if (data && data.quizzes) setQuizCount(data.quizzes.length);
@@ -58,6 +59,10 @@ export function ProfileScreen() {
 
   if (currentView === 'quizzes') {
     return <QuizHistoryView onBack={() => setCurrentView('main')} />;
+  }
+
+  if (currentView === 'books') {
+    return <BooksListView onBack={() => setCurrentView('main')} />;
   }
 
 
@@ -186,6 +191,14 @@ export function ProfileScreen() {
           label="Resources"
           onClick={() => setCurrentView('uploads')}
           color="#FF6B6B"
+        />
+        <StatsCard
+          icon={BookOpen}
+          count={libraryBooks.length}
+          label="Books"
+          onClick={() => setCurrentView('books')}
+          color="#F59E0B"
+          className="col-span-2"
         />
       </motion.div>
 
@@ -1285,24 +1298,169 @@ function QuizHistoryView({
   );
 }
 
+// Books List View
+function BooksListView({ onBack }: { onBack: () => void }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedBook, setSelectedBook] = useState<any>(null);
+  const { libraryBooks, fetchLibrary } = useAppStore();
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setIsLoading(true);
+      await fetchLibrary();
+      if (mounted) setIsLoading(false);
+    };
+    load();
+    return () => { mounted = false; };
+  }, []);
+
+  const filtered = libraryBooks.filter(
+    (b) =>
+      b.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      b.content_text?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (selectedBook) {
+    return (
+      <div className="h-[calc(100vh-120px)] overflow-y-auto pr-1 pb-10 scrollbar-hide">
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => setSelectedBook(null)}
+            className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-white/60" />
+          </button>
+          <h2 className="font-heading text-lg font-bold text-white truncate flex-1">
+            {selectedBook.title || 'Untitled Book'}
+          </h2>
+        </div>
+        <div className="glass-surface rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-3 flex-wrap">
+            <span className="text-[10px] text-white/30 flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              {new Date(selectedBook.created_at).toLocaleDateString()}
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/40">
+              {selectedBook.resource_type || 'book'}
+            </span>
+            <span className="text-[10px] text-white/30">
+              {selectedBook.content_text?.split(/\s+/).filter(Boolean).length.toLocaleString()} words
+            </span>
+          </div>
+          <div className="text-sm text-white/70 leading-relaxed whitespace-pre-wrap max-h-[60vh] overflow-y-auto scrollbar-hide">
+            {selectedBook.content_text || 'No content available'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[calc(100vh-120px)] overflow-y-auto pr-1">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={onBack}
+          className="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-white/60" />
+        </button>
+        <h2 className="font-heading text-lg font-bold text-white">My Books</h2>
+        <span className="ml-auto text-sm text-white/40">{libraryBooks.length} total</span>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search books..."
+          className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-[#F59E0B]/50"
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+            <X className="w-4 h-4 text-white/40" />
+          </button>
+        )}
+      </div>
+
+      {/* Books List */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-6 h-6 border-2 border-[#F59E0B] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12">
+          <BookOpen className="w-10 h-10 text-white/20 mx-auto mb-3" />
+          <p className="text-white/40 text-sm">
+            {searchQuery ? 'No books matching your search' : 'No books yet. Ingest a PDF to get started!'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((book) => (
+            <motion.button
+              key={book.id}
+              layout
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              onClick={() => setSelectedBook(book)}
+              className="w-full glass-surface rounded-xl p-4 hover:bg-white/5 transition-all group text-left"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-[#F59E0B]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <BookOpen className="w-4 h-4 text-[#F59E0B]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-white truncate">
+                    {book.title || 'Untitled Book'}
+                  </h4>
+                  <p className="text-xs text-white/40 mt-1 line-clamp-2">
+                    {book.content_text?.slice(0, 120) || 'No content'}
+                  </p>
+                  <div className="flex items-center gap-3 mt-2">
+                    <span className="text-[10px] text-white/30 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {new Date(book.created_at).toLocaleDateString()}
+                    </span>
+                    <span className="text-[10px] text-white/30">
+                      {book.content_text?.split(/\s+/).filter(Boolean).length.toLocaleString()} words
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </motion.button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Stats Card
 function StatsCard({
   icon: Icon,
   count,
   label,
   onClick,
-  color
+  color,
+  className = '',
 }: {
   icon: any;
   count: number;
   label: string;
   onClick: () => void;
   color: string;
+  className?: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className="glass-surface rounded-xl p-4 flex flex-col items-center justify-center gap-2 hover:bg-white/5 transition-colors group"
+      className={`glass-surface rounded-xl p-4 flex flex-col items-center justify-center gap-2 hover:bg-white/5 transition-colors group ${className}`}
     >
       <div
         className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
