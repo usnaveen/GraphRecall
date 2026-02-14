@@ -508,6 +508,14 @@ export function AssistantScreen() {
         {children}
       </a>
     ),
+    img: ({ src, alt }: any) => (
+      <img
+        src={src}
+        alt={alt || 'Image from notes'}
+        className="max-w-full h-auto rounded-lg border border-white/10 my-2"
+        loading="lazy"
+      />
+    ),
   });
 
   return (
