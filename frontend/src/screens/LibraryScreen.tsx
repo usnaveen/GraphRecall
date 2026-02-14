@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 
-type LibraryView = 'grid' | 'detail';
+
 
 interface BookItem {
   id: string;
@@ -61,7 +61,7 @@ export function LibraryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBook, setSelectedBook] = useState<BookItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { libraryBooks, fetchLibrary, notesList, fetchNotes } = useAppStore();
+  const { libraryBooks, fetchLibrary, fetchNotes } = useAppStore();
 
   useEffect(() => {
     let mounted = true;
@@ -346,11 +346,10 @@ function BookDetailView({ book, onBack }: { book: BookItem; onBack: () => void }
           <button
             key={tab}
             onClick={() => setActiveSection(tab)}
-            className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all capitalize ${
-              activeSection === tab
+            className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all capitalize ${activeSection === tab
                 ? 'bg-[#B6FF2E]/20 text-[#B6FF2E]'
                 : 'text-white/50 hover:text-white/70'
-            }`}
+              }`}
           >
             {tab}
           </button>
