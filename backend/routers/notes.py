@@ -17,26 +17,34 @@ async def list_notes(
     current_user: dict = Depends(get_current_user),
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
+    resource_type: str = Query(default=None, description="Filter by resource_type (e.g. 'book', 'notes', 'article')"),
 ):
-    """List notes for the current user."""
+    """List notes for the current user, optionally filtered by resource_type."""
     try:
         pg_client = await get_postgres_client()
         user_id = str(current_user["id"])
 
+        params: dict = {"user_id": user_id, "limit": limit, "offset": offset}
+
+        where_clause = "WHERE user_id = :user_id"
+        if resource_type:
+            where_clause += " AND resource_type = :resource_type"
+            params["resource_type"] = resource_type
+
         notes = await pg_client.execute_query(
-            """
+            f"""
             SELECT id, title, content_text, resource_type, source_url, created_at
             FROM notes
-            WHERE user_id = :user_id
+            {where_clause}
             ORDER BY created_at DESC
             LIMIT :limit OFFSET :offset
             """,
-            {"user_id": user_id, "limit": limit, "offset": offset},
+            params,
         )
 
         count_result = await pg_client.execute_query(
-            "SELECT COUNT(*) as count FROM notes WHERE user_id = :user_id",
-            {"user_id": user_id},
+            f"SELECT COUNT(*) as count FROM notes {where_clause}",
+            {k: v for k, v in params.items() if k not in ("limit", "offset")},
         )
         total = count_result[0]["count"] if count_result else 0
 

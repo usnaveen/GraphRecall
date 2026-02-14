@@ -42,7 +42,11 @@ class Chunk:
 
 
 class BookChunker:
-    """Rule-based chunker tailored for OCR markdown with figures."""
+    """Rule-based chunker tailored for OCR markdown with figures.
+
+    Also used as the unified chunker for all ingestion (notes, books, PDFs).
+    Supports both file-based and string-based input.
+    """
 
     def __init__(
         self,
@@ -54,13 +58,33 @@ class BookChunker:
         self.overlap_ratio = overlap_ratio
         self.heading_weight = heading_weight
 
+    def chunk_text(
+        self,
+        text: str,
+        images_dir: Optional[Path] = None,
+    ) -> List[Chunk]:
+        """Chunk a raw markdown/text string. Images dir is optional."""
+        return self._chunk_lines(
+            text.splitlines(),
+            images_dir or Path("/dev/null"),
+        )
+
     def chunk_markdown(
         self,
         md_path: Path,
         images_dir: Path,
         book_slug: Optional[str] = None,
     ) -> List[Chunk]:
+        """Chunk a markdown file on disk (original book ingestion path)."""
         lines = md_path.read_text(encoding="utf-8").splitlines()
+        return self._chunk_lines(lines, images_dir)
+
+    def _chunk_lines(
+        self,
+        lines: list[str],
+        images_dir: Path,
+    ) -> List[Chunk]:
+        """Core chunking logic shared by chunk_text and chunk_markdown."""
 
         units: List[dict] = []  # each unit preserves figure/text boundaries
         current_para: list[str] = []

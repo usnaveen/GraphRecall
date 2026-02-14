@@ -8,6 +8,7 @@ import { GraphScreen } from './screens/GraphScreen';
 import { CreateScreen } from './screens/CreateScreen';
 import { AssistantScreen } from './screens/AssistantScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import { LibraryScreen } from './screens/LibraryScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
@@ -39,6 +40,8 @@ function AuthenticatedApp() {
         return <CreateScreen key="create" />;
       case 'assistant':
         return <AssistantScreen key="assistant" />;
+      case 'library':
+        return <LibraryScreen key="library" />;
       case 'profile':
         return <ProfileScreen key="profile" />;
       default:

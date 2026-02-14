@@ -58,10 +58,11 @@ async def _recompute_communities(user_id: str) -> None:
 
 class IngestRequest(BaseModel):
     """Request body for note ingestion."""
-    
+
     content: str
     title: Optional[str] = None
     skip_review: bool = False  # If True, auto-approve concepts
+    resource_type: Optional[str] = None  # e.g. "book", "notes", "article"
 
 
 class IngestResponse(BaseModel):
@@ -158,6 +159,7 @@ async def ingest_note(
             user_id=user_id,
             skip_review=request.skip_review,
             content_hash=content_hash, # Pass hash to save it
+            resource_type=request.resource_type,  # Pass through (e.g. "book")
         ))
         
         status = result.get("status", "completed")

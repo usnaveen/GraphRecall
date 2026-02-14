@@ -241,6 +241,15 @@ export const notesService = {
         return response.json();
     },
 
+    /** Get list of user's notes filtered by resource_type */
+    listByType: async (resourceType: string, limit: number = 50, offset: number = 0) => {
+        const response = await authFetch(
+            `${API_BASE}/notes?resource_type=${encodeURIComponent(resourceType)}&limit=${limit}&offset=${offset}`
+        );
+        if (!response.ok) throw new Error('Failed to fetch notes by type');
+        return response.json();
+    },
+
     deleteNote: async (noteId: string) => {
         const response = await authFetch(`${API_BASE}/notes/${noteId}`, { method: 'DELETE' });
         if (!response.ok) throw new Error('Failed to delete note');

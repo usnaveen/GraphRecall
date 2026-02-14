@@ -48,7 +48,7 @@ from backend.agents.extraction import ExtractionAgent
 from backend.agents.synthesis import SynthesisAgent
 from backend.agents.content_generator import ContentGeneratorAgent
 from backend.agents.proposition_agent import PropositionExtractionAgent
-from backend.services.ingestion import DocumentParserService, HierarchicalChunker
+from backend.services.ingestion import DocumentParserService, BookChunker
 from backend.services.ingestion.embedding_service import EmbeddingService
 
 # Initialize agents
@@ -58,7 +58,7 @@ content_generator = ContentGeneratorAgent()
 
 # Initialize services
 parser_service = DocumentParserService()
-chunker_service = HierarchicalChunker()
+book_chunker = BookChunker(max_chars=1400, overlap_ratio=0.15)
 embedding_service = EmbeddingService()
 proposition_agent = PropositionExtractionAgent()
 
@@ -140,34 +140,85 @@ async def parse_node(state: IngestionState) -> dict:
 
 async def chunk_node(state: IngestionState) -> dict:
     """
-    Node 0b: Split parsed document into Hierarchical Chunks.
+    Node 0b: Split parsed document into chunks using BookChunker.
+
+    Uses the unified BookChunker (image-aware, heading-preserving) for all
+    content types — notes, articles, and books alike.
+
+    Output format matches what downstream nodes expect:
+    Each group = {parent_id, parent_content, parent_index,
+                  child_contents, child_ids, child_embeddings (later),
+                  images (list of image metadata)}
     """
     logger.info("chunk_node: Starting")
-    
+
     parsed = state.get("parsed_document")
-    if not parsed:
+    raw_content = state.get("raw_content", "")
+    if not parsed and not raw_content:
         return {"chunks": []}
-        
-    # Reconstruct ParsedDocument object
-    from backend.services.ingestion.parser_service import ParsedDocument
-    doc_obj = ParsedDocument(**parsed)
-    
+
+    # Get markdown text
+    if parsed:
+        from backend.services.ingestion.parser_service import ParsedDocument
+        doc_obj = ParsedDocument(**parsed)
+        md_text = doc_obj.markdown_content
+    else:
+        md_text = raw_content
+
+    if not md_text:
+        return {"chunks": []}
+
     note_id = state.get("note_id") or str(uuid.uuid4())
-    
-    # Generate chunks
-    chunks = chunker_service.chunk(doc_obj, uuid.UUID(note_id))
-    
-    # Enrich chunks with UUIDs immediately to support downstream linkage (Propositions, Embeddings)
-    # The chunker returns a list of dictionaries. We'll inject 'id' and 'child_ids' here.
-    for group in chunks:
-        # Generate ID for parent
-        group["parent_id"] = str(uuid.uuid4())
-        
-        # Generate IDs for children
-        child_ids = [str(uuid.uuid4()) for _ in group["child_contents"]]
-        group["child_ids"] = child_ids
-    
-    # Store note_id in state if it wasn't there
+
+    # Use BookChunker for all content (notes + books)
+    raw_chunks = book_chunker.chunk_text(md_text)
+
+    # Convert BookChunker output to the group format expected by downstream nodes.
+    # BookChunker produces flat chunks; we treat each as a "parent" with itself as
+    # the single "child" (preserving the parent/child DB schema).
+    # For larger chunks we could split children further, but for notes this is fine.
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    child_splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
+
+    chunks = []
+    for chunk in raw_chunks:
+        parent_id = str(uuid.uuid4())
+        parent_text = chunk.text
+
+        # Split parent into smaller children for embedding
+        child_texts = child_splitter.split_text(parent_text)
+        if not child_texts:
+            child_texts = [parent_text]
+
+        child_ids = [str(uuid.uuid4()) for _ in child_texts]
+
+        # Image metadata from BookChunker
+        images = [
+            {
+                "filename": img.filename,
+                "caption": img.caption,
+                "page": img.page,
+                "url": img.url,
+            }
+            for img in chunk.images
+        ] if chunk.images else []
+
+        chunks.append({
+            "parent_id": parent_id,
+            "parent_content": parent_text,
+            "parent_index": chunk.index,
+            "parent_page_start": chunk.images[0].page if chunk.images else None,
+            "parent_page_end": chunk.images[-1].page if chunk.images else None,
+            "child_contents": child_texts,
+            "child_ids": child_ids,
+            "child_page_starts": [None] * len(child_texts),
+            "child_page_ends": [None] * len(child_texts),
+            "images": images,
+            "headings": chunk.headings,
+        })
+
+    logger.info("chunk_node: Complete", num_groups=len(chunks),
+                total_children=sum(len(c["child_contents"]) for c in chunks))
     return {"chunks": chunks, "note_id": note_id}
 
 async def embed_node(state: IngestionState) -> dict:
@@ -233,11 +284,12 @@ async def save_chunks_node(state: IngestionState) -> dict:
             parent_page_start = parent_group.get("parent_page_start")
             parent_page_end = parent_group.get("parent_page_end")
             
-            # Save Parent Chunk
+            # Save Parent Chunk (with images metadata from BookChunker)
+            images_json = json.dumps(parent_group.get("images", []))
             await pg_client.execute_update(
                 """
-                INSERT INTO chunks (id, note_id, content, chunk_level, chunk_index, page_start, page_end, created_at)
-                VALUES (:id, :note_id, :content, 'parent', :index, :page_start, :page_end, :created_at)
+                INSERT INTO chunks (id, note_id, content, chunk_level, chunk_index, page_start, page_end, images, created_at)
+                VALUES (:id, :note_id, :content, 'parent', :index, :page_start, :page_end, :images, :created_at)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 {
@@ -245,6 +297,7 @@ async def save_chunks_node(state: IngestionState) -> dict:
                     "note_id": state["note_id"],
                     "content": parent_text,
                     "index": parent_group["parent_index"],
+                    "images": images_json,
                     "page_start": parent_page_start,
                     "page_end": parent_page_end,
                     "created_at": datetime.now(timezone.utc)
@@ -414,13 +467,15 @@ async def store_note_node(state: IngestionState) -> dict:
         pg_client = await get_postgres_client()
         
         # Insert or update note using named params
+        resource_type = state.get("resource_type") or "notes"
         await pg_client.execute_insert(
             """
-            INSERT INTO notes (id, user_id, title, content_text, content_hash, created_at, updated_at)
-            VALUES (:id, :user_id, :title, :content_text, :content_hash, :created_at, :created_at)
+            INSERT INTO notes (id, user_id, title, content_text, content_hash, resource_type, created_at, updated_at)
+            VALUES (:id, :user_id, :title, :content_text, :content_hash, :resource_type, :created_at, :created_at)
             ON CONFLICT (id) DO UPDATE SET
                 content_text = :content_text,
                 content_hash = :content_hash,
+                resource_type = :resource_type,
                 updated_at = :created_at
             RETURNING id
             """,
@@ -430,6 +485,7 @@ async def store_note_node(state: IngestionState) -> dict:
                 "title": state.get("title") or "Untitled Note",
                 "content_text": state.get("raw_content", ""),
                 "content_hash": state.get("content_hash"), # Save hash
+                "resource_type": resource_type,
                 "created_at": datetime.now(timezone.utc),
             }
         )
@@ -1326,10 +1382,11 @@ async def run_ingestion(
     note_id: Optional[str] = None,
     skip_review: bool = False,
     content_hash: Optional[str] = None, # New arg
+    resource_type: Optional[str] = None, # e.g. "book", "notes"
 ) -> dict:
     """
     Run the ingestion workflow for a note.
-    
+
     Args:
         content: Raw markdown/text content
         title: Optional note title
@@ -1337,13 +1394,14 @@ async def run_ingestion(
         note_id: Optional existing note ID (for updates)
         skip_review: If True, auto-approve all concepts (no human-in-the-loop)
         content_hash: SHA-256 hash of content for deduplication
-    
+        resource_type: Optional resource type (e.g. "book", "notes", "article")
+
     Returns:
         Dict with note_id, concept_ids, term_card_ids, thread_id
     """
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
-    
+
     initial_state: IngestionState = {
         "user_id": user_id,
         "raw_content": content,
@@ -1351,6 +1409,7 @@ async def run_ingestion(
         "note_id": note_id,
         "skip_review": skip_review,
         "content_hash": content_hash, # Pass to state
+        "resource_type": resource_type, # Pass to state
         "extracted_concepts": [],
         "related_concepts": [],
         "needs_synthesis": False,
