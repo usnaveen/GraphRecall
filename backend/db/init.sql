@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS notes (
     embedding vector(3072),  -- Gemini embedding-001 dimension
     
     CONSTRAINT valid_content_type CHECK (content_type IN ('text', 'markdown', 'pdf', 'handwriting')),
-    CONSTRAINT valid_resource_type CHECK (resource_type IN ('notes', 'lecture_slides', 'youtube', 'article', 'chat_conversation', 'documentation', 'research'))
+    CONSTRAINT valid_resource_type CHECK (resource_type IN ('notes', 'lecture_slides', 'youtube', 'article', 'chat_conversation', 'documentation', 'research', 'book'))
 );
 
 -- Proficiency scores (tracking user knowledge per concept)

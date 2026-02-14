@@ -1,4 +1,4 @@
-export type TabType = 'feed' | 'graph' | 'create' | 'assistant' | 'profile';
+export type TabType = 'feed' | 'graph' | 'create' | 'assistant' | 'profile' | 'library';
 
 export type CardType = 'term_card' | 'quiz' | 'fillblank' | 'screenshot' | 'diagram' | 'concept_showcase' | 'code_challenge';
 
