@@ -1,5 +1,6 @@
 -- GraphRecall PostgreSQL Schema Initialization
 -- This file runs automatically when the PostgreSQL container starts
+-- CONSOLIDATED: Includes all tables from migrations for clean deploys
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -26,16 +27,71 @@ CREATE TABLE IF NOT EXISTS notes (
     title VARCHAR(500),
     content_type VARCHAR(50) NOT NULL DEFAULT 'markdown',
     content_text TEXT NOT NULL,
+    content_hash VARCHAR(64),  -- SHA-256 hash for deduplication
     source_url VARCHAR(2048),
     resource_type VARCHAR(50) NOT NULL DEFAULT 'notes',
     tags TEXT[] DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     embedding vector(3072),  -- Gemini embedding-001 dimension
-    
+
     CONSTRAINT valid_content_type CHECK (content_type IN ('text', 'markdown', 'pdf', 'handwriting')),
     CONSTRAINT valid_resource_type CHECK (resource_type IN ('notes', 'lecture_slides', 'youtube', 'article', 'chat_conversation', 'documentation', 'research', 'book'))
 );
+
+-- Hierarchical chunks table (parent/child chunking for RAG)
+CREATE TABLE IF NOT EXISTS chunks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    note_id UUID NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    parent_chunk_id UUID REFERENCES chunks(id) ON DELETE SET NULL,
+    chunk_index INTEGER,
+
+    content TEXT NOT NULL,
+    chunk_level VARCHAR(20),  -- 'parent', 'child'
+    source_location JSONB,    -- {"page": 1, "slide": 5, "section": "..."}
+
+    -- Embeddings (child chunks only, Gemini embedding-001 = 3072 dims)
+    embedding vector(3072),
+
+    -- Image metadata (BookChunker)
+    images JSONB DEFAULT '[]',
+
+    -- Page range metadata
+    page_start INTEGER,
+    page_end INTEGER,
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_note ON chunks(note_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_parent ON chunks(parent_chunk_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- RAG citations (tracking which chunks are used in responses)
+CREATE TABLE IF NOT EXISTS rag_citations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    response_id UUID NOT NULL,
+    chunk_id UUID NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+    citation_rank INTEGER,
+    similarity_score DECIMAL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_citations_response ON rag_citations(response_id);
+
+-- Propositions (atomic facts extracted from chunks)
+CREATE TABLE IF NOT EXISTS propositions (
+    id UUID PRIMARY KEY,
+    note_id UUID NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    chunk_id UUID NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    confidence FLOAT DEFAULT 0.0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT (now() AT TIME ZONE 'utc'),
+    is_atomic BOOLEAN DEFAULT TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_propositions_chunk_id ON propositions(chunk_id);
+CREATE INDEX IF NOT EXISTS idx_propositions_note_id ON propositions(note_id);
 
 -- Proficiency scores (tracking user knowledge per concept)
 CREATE TABLE IF NOT EXISTS proficiency_scores (
@@ -47,8 +103,12 @@ CREATE TABLE IF NOT EXISTS proficiency_scores (
     next_review_due TIMESTAMP WITH TIME ZONE,
     streak_count INTEGER DEFAULT 0,
     difficulty_rating DECIMAL(3,2) DEFAULT 0.50,
+    -- FSRS (Free Spaced Repetition Scheduler) columns
+    stability FLOAT DEFAULT NULL,
+    difficulty_fsrs FLOAT DEFAULT NULL,
+    reps_fsrs INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    
+
     UNIQUE(user_id, concept_id)
 );
 
@@ -79,7 +139,7 @@ CREATE TABLE IF NOT EXISTS quizzes (
     correct_answer TEXT NOT NULL,
     explanation TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    
+
     CONSTRAINT valid_question_type CHECK (question_type IN ('mcq', 'open_ended', 'code')),
     is_liked BOOLEAN DEFAULT FALSE,
     is_saved BOOLEAN DEFAULT FALSE
@@ -94,7 +154,7 @@ CREATE TABLE IF NOT EXISTS study_sessions (
     end_time TIMESTAMP WITH TIME ZONE,
     concepts_covered VARCHAR(255)[] DEFAULT '{}',
     performance_summary JSONB,
-    
+
     CONSTRAINT valid_session_type CHECK (session_type IN ('quiz', 'flashcard', 'teaching'))
 );
 
@@ -102,6 +162,7 @@ CREATE TABLE IF NOT EXISTS study_sessions (
 CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id);
 CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_resource_type ON notes(resource_type);
+CREATE INDEX IF NOT EXISTS idx_notes_hash ON notes(user_id, content_hash);
 CREATE INDEX IF NOT EXISTS idx_proficiency_user_concept ON proficiency_scores(user_id, concept_id);
 CREATE INDEX IF NOT EXISTS idx_proficiency_next_review ON proficiency_scores(next_review_due);
 CREATE INDEX IF NOT EXISTS idx_flashcards_user_concept ON flashcards(user_id, concept_id);
@@ -170,11 +231,11 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conve
 CREATE INDEX IF NOT EXISTS idx_saved_responses_user ON saved_responses(user_id);
 
 -- Vector similarity index for semantic search on notes
-CREATE INDEX IF NOT EXISTS idx_notes_embedding ON notes 
+CREATE INDEX IF NOT EXISTS idx_notes_embedding ON notes
     USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
 
 -- Insert a default test user for development
-INSERT INTO users (id, email) 
+INSERT INTO users (id, email)
 VALUES ('00000000-0000-0000-0000-000000000001', 'test@graphrecall.dev')
 ON CONFLICT (email) DO NOTHING;

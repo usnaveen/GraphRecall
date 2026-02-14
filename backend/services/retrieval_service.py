@@ -31,11 +31,9 @@ class RetrievalService:
         # We retrieve Child Chunks but also join with Parent Chunk to get full context
         pg_client = await get_postgres_client()
         
-        # Use named parameters for SQLAlchemy text()
-        # Ensure embedding is passed as string for compatible casting if needed, 
-        # though asyncpg can often handle lists. String is safest for vector literal.
-        embedding_str = str(query_embedding)
-        
+        # Pass embedding as a formatted vector string for pgvector casting
+        embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
+
         results = await pg_client.execute_query(
             """
             SELECT
@@ -47,16 +45,18 @@ class RetrievalService:
                 c.page_start,
                 c.page_end,
                 c.note_id,
-                1 - (c.embedding <=> :embedding) as similarity
+                c.images,
+                1 - (c.embedding <=> cast(:embedding as vector)) as similarity
             FROM chunks c
             LEFT JOIN chunks p ON c.parent_chunk_id = p.id
             WHERE c.chunk_level = 'child'
+              AND c.embedding IS NOT NULL
               AND c.note_id IN (SELECT id FROM notes WHERE user_id = :user_id)
-            ORDER BY c.embedding <=> :embedding
+            ORDER BY c.embedding <=> cast(:embedding as vector)
             LIMIT :limit
             """,
             {
-                "embedding": embedding_str,
+                "embedding": embedding_literal,
                 "user_id": user_id,
                 "limit": limit
             }

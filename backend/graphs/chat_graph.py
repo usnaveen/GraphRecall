@@ -185,34 +185,54 @@ async def search_notes(query: str, user_id: str = "default") -> str:
     
     try:
         pg_client = await get_postgres_client()
-        
-        # Keyword-based search (fallback for when embeddings aren't available)
-        result = await pg_client.execute_query(
-            """
-            SELECT id, title, content_text as content, created_at
-            FROM notes
-            WHERE user_id = :user_id
-              AND (title ILIKE :search_pattern OR content_text ILIKE :search_pattern)
-            ORDER BY created_at DESC
-            LIMIT 5
-            """,
-            {
-                "user_id": user_id,
-                "search_pattern": f"%{query}%"
-            }
-        )
-        
+
+        # Try vector similarity search on chunks first
+        try:
+            embeddings_model = get_embeddings()
+            query_embedding = await embeddings_model.aembed_query(query)
+            embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
+
+            result = await pg_client.execute_query(
+                """
+                SELECT c.id, n.title, c.content, c.page_start, c.page_end,
+                       1 - (c.embedding <=> cast(:embedding as vector)) as similarity
+                FROM chunks c
+                JOIN notes n ON c.note_id = n.id
+                WHERE n.user_id = :user_id
+                  AND c.chunk_level = 'child'
+                  AND c.embedding IS NOT NULL
+                ORDER BY c.embedding <=> cast(:embedding as vector)
+                LIMIT 5
+                """,
+                {"user_id": user_id, "embedding": embedding_literal}
+            )
+        except Exception:
+            # Fallback to keyword search if vector search fails
+            result = await pg_client.execute_query(
+                """
+                SELECT id, title, content_text as content, created_at
+                FROM notes
+                WHERE user_id = :user_id
+                  AND (title ILIKE :search_pattern OR content_text ILIKE :search_pattern)
+                ORDER BY created_at DESC
+                LIMIT 5
+                """,
+                {"user_id": user_id, "search_pattern": f"%{query}%"}
+            )
+
         if not result:
             return f"No notes found matching '{query}'."
-        
+
         output = "## Relevant Notes:\n\n"
         for note in result:
             title = note.get("title", "Untitled")
             content = note.get("content", "")[:300]
-            output += f"### {title}\n{content}...\n\n"
-        
+            similarity = note.get("similarity")
+            sim_tag = f" (relevance: {similarity:.2f})" if similarity else ""
+            output += f"### {title}{sim_tag}\n{content}...\n\n"
+
         return output
-        
+
     except Exception as e:
         logger.error("search_notes: Failed", error=str(e))
         return f"Error searching notes: {str(e)}"
@@ -476,52 +496,71 @@ async def get_context_node(state: ChatState) -> dict:
         except Exception as e:
             logger.warning("get_context_node: Global search failed", error=str(e))
 
-    # Get RAG context (notes)
+    # Get RAG context (notes) — Vector similarity search with parent chunk join
     if query:
         try:
             pg_client = await get_postgres_client()
-            
-            # Retrieve chunk-level matches to surface images alongside text
+
+            # Generate query embedding for vector similarity search
+            embeddings_model = get_embeddings()
+            query_embedding = await embeddings_model.aembed_query(query)
+            embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
+
             if focused_source_ids:
                 result = await pg_client.execute_query(
                     """
                     SELECT c.id, c.content, c.images, c.chunk_index,
                            c.page_start, c.page_end,
-                           n.title, n.id AS note_id
+                           p.content as parent_content,
+                           n.title, n.id AS note_id,
+                           1 - (c.embedding <=> cast(:embedding as vector)) as similarity
                     FROM chunks c
+                    LEFT JOIN chunks p ON c.parent_chunk_id = p.id
                     JOIN notes n ON c.note_id = n.id
                     WHERE n.user_id = :user_id
                       AND n.id = ANY(:source_ids)
+                      AND c.chunk_level = 'child'
+                      AND c.embedding IS NOT NULL
+                    ORDER BY c.embedding <=> cast(:embedding as vector)
                     LIMIT 5
                     """,
-                    {"user_id": user_id, "source_ids": focused_source_ids},
+                    {"user_id": user_id, "source_ids": focused_source_ids, "embedding": embedding_literal},
                 )
             else:
                 result = await pg_client.execute_query(
                     """
                     SELECT c.id, c.content, c.images, c.chunk_index,
                            c.page_start, c.page_end,
-                           n.title, n.id AS note_id
+                           p.content as parent_content,
+                           n.title, n.id AS note_id,
+                           1 - (c.embedding <=> cast(:embedding as vector)) as similarity
                     FROM chunks c
+                    LEFT JOIN chunks p ON c.parent_chunk_id = p.id
                     JOIN notes n ON c.note_id = n.id
                     WHERE n.user_id = :user_id
-                      AND (c.content ILIKE :search_pattern OR n.title ILIKE :search_pattern)
-                    ORDER BY n.updated_at DESC
+                      AND c.chunk_level = 'child'
+                      AND c.embedding IS NOT NULL
+                    ORDER BY c.embedding <=> cast(:embedding as vector)
                     LIMIT 5
                     """,
-                    {"user_id": user_id, "search_pattern": f"%{query[:50]}%"},
+                    {"user_id": user_id, "embedding": embedding_literal},
                 )
 
             rag_context = []
             for row in result or []:
-                images = row.get("images")
+                row_dict = dict(row)
+                images = row_dict.get("images")
                 if isinstance(images, str):
                     try:
                         images = json.loads(images)
                     except Exception:
                         images = []
-                row["images"] = images or []
-                rag_context.append(dict(row))
+                row_dict["images"] = images or []
+                # Use parent content for richer context if available
+                parent_content = row_dict.get("parent_content")
+                if parent_content:
+                    row_dict["content"] = parent_content
+                rag_context.append(row_dict)
 
         except Exception as e:
             logger.warning("get_context_node: Notes query failed", error=str(e))

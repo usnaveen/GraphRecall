@@ -318,10 +318,12 @@ async def save_chunks_node(state: IngestionState) -> dict:
                 
                 # Dynamic query based on whether embedding exists
                 if embedding:
+                    # Format embedding as pgvector-compatible literal string
+                    embedding_literal = "[" + ",".join(str(x) for x in embedding) + "]"
                     await pg_client.execute_update(
                         """
                         INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, embedding, created_at)
-                        VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :page_start, :page_end, :embedding, :created_at)
+                        VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :page_start, :page_end, cast(:embedding as vector), :created_at)
                         ON CONFLICT (id) DO NOTHING
                         """,
                         {
@@ -332,7 +334,7 @@ async def save_chunks_node(state: IngestionState) -> dict:
                             "index": i,
                             "page_start": page_start,
                             "page_end": page_end,
-                            "embedding": str(embedding),
+                            "embedding": embedding_literal,
                             "created_at": datetime.now(timezone.utc)
                         }
                     )
