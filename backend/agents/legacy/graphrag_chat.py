@@ -44,7 +44,7 @@ class GraphRAGAgent:
         neo4j_client,
         pg_client,
         model: Optional[str] = None,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str = "models/gemini-embedding-001",  # Unused: uses get_embeddings()
     ):
         self.neo4j_client = neo4j_client
         self.pg_client = pg_client

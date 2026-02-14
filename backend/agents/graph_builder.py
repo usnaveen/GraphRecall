@@ -36,7 +36,7 @@ class GraphBuilderAgent:
 
     def __init__(
         self,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str = "models/gemini-embedding-001",  # Unused: uses get_embeddings()
     ):
         self.embeddings = get_embeddings()
 
