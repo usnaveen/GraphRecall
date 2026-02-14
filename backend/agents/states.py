@@ -32,6 +32,7 @@ class IngestionState(TypedDict, total=False):
     title: Optional[str]
     skip_review: bool  # If True, auto-approve concepts
     content_hash: Optional[str]  # Hash for deduplication
+    resource_type: Optional[str]  # e.g. "book", "notes", "article"
     
     # Processing fields (updated by nodes)
     note_id: Optional[str]

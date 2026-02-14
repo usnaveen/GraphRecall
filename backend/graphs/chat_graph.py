@@ -404,29 +404,77 @@ async def get_context_node(state: ChatState) -> dict:
         except Exception as e:
             logger.warning("get_context_node: Graph query failed", error=str(e))
 
-    # Attach community summaries for broad/summarize queries.
-    # Trigger when: intent is summarize (with or without entities), or when no
-    # graph concepts were found (fallback to global context).
+    # Global Search: Map-Reduce over community summaries (Microsoft GraphRAG pattern)
+    # Trigger when: intent is summarize/general, or no graph concepts found
     if intent in ("summarize", "general") or not graph_context.get("concepts"):
         try:
-            pg_client = await get_postgres_client()
-            summaries = await pg_client.execute_query(
-                """
-                SELECT title, summary, size
-                FROM communities
-                WHERE user_id = :uid AND summary IS NOT NULL
-                ORDER BY size DESC
-                LIMIT 5
-                """,
-                {"uid": user_id},
-            )
-            if summaries:
+            from backend.services.community_service import CommunityService
+            community_svc = CommunityService()
+
+            # Use level-1 (medium) communities for global queries
+            summaries = await community_svc.get_community_summaries_by_level(user_id, level=1)
+            if not summaries:
+                summaries = await community_svc.get_community_summaries_by_level(user_id)
+
+            if summaries and len(summaries) >= 2:
+                # MAP PHASE: Score each community's relevance to query
+                map_llm = get_chat_model(temperature=0)
+                map_results = []
+
+                for s in summaries[:12]:
+                    map_prompt = (
+                        f"Given the user's question: \"{query}\"\n\n"
+                        f"And this community of concepts:\n"
+                        f"Title: {s['title']} ({s['size']} concepts)\n"
+                        f"Summary: {s['summary']}\n\n"
+                        f"Rate relevance 0-10 and provide a 1-2 sentence partial answer "
+                        f"if relevant. Format: SCORE: X\nANSWER: ...\n"
+                        f"If not relevant, respond: SCORE: 0\nANSWER: Not relevant."
+                    )
+                    try:
+                        map_resp = await map_llm.ainvoke(map_prompt)
+                        text = map_resp.content.strip()
+                        score = 0
+                        answer = text
+                        for line in text.split("\n"):
+                            if line.strip().upper().startswith("SCORE:"):
+                                try:
+                                    score = int(line.split(":", 1)[1].strip().split()[0])
+                                except (ValueError, IndexError):
+                                    score = 0
+                            elif line.strip().upper().startswith("ANSWER:"):
+                                answer = line.split(":", 1)[1].strip()
+
+                        if score > 2:
+                            map_results.append({
+                                "title": s["title"],
+                                "score": score,
+                                "answer": answer,
+                                "size": s["size"],
+                            })
+                    except Exception as e:
+                        logger.warning("Global search map failed", community=s["title"], error=str(e))
+                        continue
+
+                # REDUCE PHASE: Combine top results into global context
+                map_results.sort(key=lambda x: x["score"], reverse=True)
+                top_results = map_results[:5]
+
+                if top_results:
+                    global_text = "\n".join(
+                        f"- **{r['title']}** (relevance: {r['score']}/10, {r['size']} concepts): {r['answer']}"
+                        for r in top_results
+                    )
+                    graph_context["global_summary"] = global_text
+                    graph_context["search_mode"] = "global_map_reduce"
+            elif summaries:
                 global_text = "\n".join(
                     f"- **{s['title']}** ({s['size']} concepts): {s['summary']}" for s in summaries
                 )
                 graph_context["global_summary"] = global_text
+                graph_context["search_mode"] = "global_simple"
         except Exception as e:
-            logger.warning("get_context_node: Community summary failed", error=str(e))
+            logger.warning("get_context_node: Global search failed", error=str(e))
 
     # Get RAG context (notes)
     if query:

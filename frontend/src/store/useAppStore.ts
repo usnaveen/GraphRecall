@@ -55,6 +55,7 @@ interface AppState {
   notesList: NoteItem[];
   conceptsList: ConceptItem[];
   uploadsList: UploadItem[];
+  libraryBooks: NoteItem[];
 
   // Feed Modes
   feedMode: 'daily' | 'history' | 'saved';
@@ -85,6 +86,7 @@ interface AppState {
   fetchNotes: () => Promise<void>;
   fetchConcepts: (forceRefresh?: boolean) => Promise<void>;
   fetchUploads: () => Promise<void>;
+  fetchLibrary: () => Promise<void>;
   nextFeedItem: () => void;
   prevFeedItem: () => void;
   toggleLike: (itemId: string, itemType: string) => Promise<void>;
@@ -116,6 +118,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   notesList: [],
   conceptsList: [],
   uploadsList: [],
+  libraryBooks: [],
   graphCache: {
     data: null,
     layout: null,
@@ -425,6 +428,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ uploadsList: data.uploads || [] });
     } catch (error) {
       console.error("Failed to fetch uploads:", error);
+    }
+  },
+
+  fetchLibrary: async () => {
+    try {
+      const data = await notesService.listByType('book', 100, 0);
+      set({ libraryBooks: data.notes || [] });
+    } catch (error) {
+      console.error("Failed to fetch library books:", error);
     }
   },
 
