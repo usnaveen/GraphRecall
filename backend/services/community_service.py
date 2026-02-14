@@ -237,23 +237,34 @@ class CommunityService:
                         error=str(e),
                     )
 
-    async def generate_community_summaries(self, user_id: str) -> None:
+    async def generate_community_summaries(self, user_id: str, force: bool = False) -> None:
         """Generate rich LLM community reports for Global Search.
 
         Reports are richer at higher levels (coarser communities).
+        Skips communities that already have a summary unless force=True.
+        Uses parallel LLM calls for efficiency.
         """
+        import asyncio
+
         communities = await self.get_communities(user_id)
         if not communities:
             return
+
+        # Filter: skip communities that already have summaries (caching)
+        if not force:
+            communities = [c for c in communities if not c.get("summary")]
+            if not communities:
+                logger.info("generate_community_summaries: All summaries cached, skipping")
+                return
 
         neo4j = await get_neo4j_client()
         pg = await get_postgres_client()
         llm = get_chat_model(temperature=0.1)
 
-        for community in communities:
+        async def _summarize_one(community: dict) -> None:
             concept_ids = community.get("entity_ids", [])
             if not concept_ids or len(concept_ids) < 2:
-                continue
+                return
 
             concepts = await neo4j.execute_query(
                 """
@@ -265,7 +276,7 @@ class CommunityService:
                 {"ids": concept_ids[:30], "uid": user_id},
             )
             if not concepts:
-                continue
+                return
 
             relationships = await neo4j.execute_query(
                 """
@@ -326,7 +337,7 @@ Summary:"""
                 response = await llm.ainvoke(prompt)
                 summary = response.content.strip()
                 if not summary:
-                    continue
+                    return
 
                 await pg.execute_update(
                     "UPDATE communities SET summary = :summary WHERE id = :id",
@@ -338,7 +349,12 @@ Summary:"""
                     community_id=community["id"],
                     error=str(e),
                 )
-                continue
+
+        # Run all community summaries in parallel
+        await asyncio.gather(
+            *[_summarize_one(c) for c in communities],
+            return_exceptions=True,
+        )
 
     async def get_communities(self, user_id: str) -> list[dict[str, Any]]:
         """Fetch communities and node mappings from Postgres."""

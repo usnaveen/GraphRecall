@@ -23,7 +23,7 @@ from langchain_core.messages import (
 )
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
-from backend.config.llm import get_chat_model, get_embeddings
+from backend.config.llm import get_chat_model, get_embeddings, get_embedding_dims
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -189,7 +189,7 @@ async def search_notes(query: str, user_id: str = "default") -> str:
         # Try vector similarity search on chunks first
         try:
             embeddings_model = get_embeddings()
-            query_embedding = await embeddings_model.aembed_query(query)
+            query_embedding = await embeddings_model.aembed_query(query, output_dimensionality=get_embedding_dims())
             embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
             result = await pg_client.execute_query(
@@ -437,11 +437,11 @@ async def get_context_node(state: ChatState) -> dict:
                 summaries = await community_svc.get_community_summaries_by_level(user_id)
 
             if summaries and len(summaries) >= 2:
-                # MAP PHASE: Score each community's relevance to query
+                # MAP PHASE: Score each community's relevance in PARALLEL
+                import asyncio
                 map_llm = get_chat_model(temperature=0)
-                map_results = []
 
-                for s in summaries[:12]:
+                async def _score_community(s: dict) -> dict | None:
                     map_prompt = (
                         f"Given the user's question: \"{query}\"\n\n"
                         f"And this community of concepts:\n"
@@ -466,15 +466,22 @@ async def get_context_node(state: ChatState) -> dict:
                                 answer = line.split(":", 1)[1].strip()
 
                         if score > 2:
-                            map_results.append({
+                            return {
                                 "title": s["title"],
                                 "score": score,
                                 "answer": answer,
                                 "size": s["size"],
-                            })
+                            }
                     except Exception as e:
                         logger.warning("Global search map failed", community=s["title"], error=str(e))
-                        continue
+                    return None
+
+                # Run all community scoring in parallel
+                scored = await asyncio.gather(
+                    *[_score_community(s) for s in summaries[:12]],
+                    return_exceptions=True,
+                )
+                map_results = [r for r in scored if isinstance(r, dict)]
 
                 # REDUCE PHASE: Combine top results into global context
                 map_results.sort(key=lambda x: x["score"], reverse=True)
@@ -503,7 +510,7 @@ async def get_context_node(state: ChatState) -> dict:
 
             # Generate query embedding for vector similarity search
             embeddings_model = get_embeddings()
-            query_embedding = await embeddings_model.aembed_query(query)
+            query_embedding = await embeddings_model.aembed_query(query, output_dimensionality=get_embedding_dims())
             embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
             if focused_source_ids:

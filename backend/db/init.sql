@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS notes (
     tags TEXT[] DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    embedding vector(3072),  -- Gemini embedding-001 dimension
+    embedding vector(768),  -- Gemini embedding-001 with MRL (768 dims optimal)
 
     CONSTRAINT valid_content_type CHECK (content_type IN ('text', 'markdown', 'pdf', 'handwriting')),
     CONSTRAINT valid_resource_type CHECK (resource_type IN ('notes', 'lecture_slides', 'youtube', 'article', 'chat_conversation', 'documentation', 'research', 'book'))
@@ -50,8 +50,8 @@ CREATE TABLE IF NOT EXISTS chunks (
     chunk_level VARCHAR(20),  -- 'parent', 'child'
     source_location JSONB,    -- {"page": 1, "slide": 5, "section": "..."}
 
-    -- Embeddings (child chunks only, Gemini embedding-001 = 3072 dims)
-    embedding vector(3072),
+    -- Embeddings (child chunks only, gemini-embedding-001 MRL @ 768 dims)
+    embedding vector(768),
 
     -- Image metadata (BookChunker)
     images JSONB DEFAULT '[]',

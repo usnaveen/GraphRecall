@@ -192,18 +192,19 @@ Output JSON format:
         num_per_concept: int = 2,
     ) -> list[MCQQuestion]:
         """
-        Generate multiple MCQs for a batch of concepts.
-        
+        Generate multiple MCQs for a batch of concepts using parallel LLM calls.
+
         Args:
             concepts: List of concept dictionaries with name, definition, etc.
             num_per_concept: Number of MCQs to generate per concept
-            
+
         Returns:
-            List of MCQQuestion objects
+            List of validated MCQQuestion objects
         """
-        all_mcqs = []
-        
-        for concept in concepts:
+        import asyncio
+
+        async def _generate_one(concept: dict) -> list[MCQQuestion]:
+            results = []
             for _ in range(num_per_concept):
                 try:
                     mcq = await self.generate_mcq(
@@ -214,14 +215,45 @@ Output JSON format:
                         propositions=concept.get("propositions", []),
                     )
                     mcq.concept_id = concept.get("id", "")
-                    all_mcqs.append(mcq)
+
+                    # VALIDATION: Ensure exactly one correct answer in options
+                    correct_options = [o for o in mcq.options if o.is_correct]
+                    if not correct_options:
+                        logger.warning(
+                            "MCQ validation: No correct answer, forcing first option",
+                            concept=concept["name"],
+                        )
+                        if mcq.options:
+                            mcq.options[0].is_correct = True
+                    elif len(correct_options) > 1:
+                        logger.warning(
+                            "MCQ validation: Multiple correct answers, keeping first",
+                            concept=concept["name"],
+                        )
+                        for opt in mcq.options:
+                            opt.is_correct = False
+                        correct_options[0].is_correct = True
+
+                    results.append(mcq)
                 except Exception as e:
                     logger.warning(
                         "ContentGenerator: Failed to generate MCQ for concept",
                         concept=concept["name"],
                         error=str(e),
                     )
-        
+            return results
+
+        # Run all concept MCQ generations in parallel
+        tasks = [_generate_one(concept) for concept in concepts]
+        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_mcqs = []
+        for result in batch_results:
+            if isinstance(result, list):
+                all_mcqs.extend(result)
+            elif isinstance(result, Exception):
+                logger.warning("MCQ batch: task failed", error=str(result))
+
         return all_mcqs
     
     # =========================================================================

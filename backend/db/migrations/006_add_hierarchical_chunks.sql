@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     source_location JSONB,    -- {"page": 1, "slide": 5, "section": "..."}
     
     -- Embeddings (Child chunks only usually)
-    embedding vector(3072),  -- Gemini embedding-001 produces 3072 dimensions
+    embedding vector(768),  -- Gemini embedding-001 with MRL output_dimensionality=768
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
