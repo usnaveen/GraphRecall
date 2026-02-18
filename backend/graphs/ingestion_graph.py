@@ -1442,7 +1442,7 @@ async def run_ingestion(
                 thread_id=thread_id,
             )
             return {
-                "note_id": result.get("note_id"),
+                "note_id": str(result.get("note_id")) if result.get("note_id") else None,
                 "concepts": result.get("extracted_concepts", []),
                 "synthesis_decisions": result.get("synthesis_decisions", []),
                 "processing_metadata": result.get("processing_metadata", {}),
@@ -1458,7 +1458,7 @@ async def run_ingestion(
         )
         
         return {
-            "note_id": result.get("note_id"),
+            "note_id": str(result.get("note_id")) if result.get("note_id") else None,
             "concepts": result.get("extracted_concepts", []),
             "concept_ids": result.get("created_concept_ids", []),
             "term_card_ids": result.get("term_card_ids", []),
