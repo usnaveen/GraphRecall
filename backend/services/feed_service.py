@@ -960,7 +960,7 @@ class FeedService:
                     definition: c.definition,
                     domain: c.domain,
                     complexity_score: c.complexity_score,
-                    confidence: c.confidence,
+                    confidence: coalesce(c["confidence"], 0.8),
                     related_concepts: related_names
                 } AS concept
                 ORDER BY c.created_at DESC
