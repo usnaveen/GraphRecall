@@ -925,6 +925,7 @@ function adaptGraphData(raw: any): GraphData {
     title: n.name || n.label || "Concept",
     type: "concept",
     description: n.definition || "",
+    definition: n.definition || "",
     frequency: 1,
     degree: 0,
     size: typeof n.size === "number" ? n.size : undefined,
