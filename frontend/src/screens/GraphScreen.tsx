@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, X, Target, BookOpen, Link2, Plus, Loader2, ChevronDown } from "lucide-react";
+import { Search, X, Target, Link2, Plus, Loader2, ChevronDown } from "lucide-react";
 import { GraphVisualizer } from "../components/graph/GraphVisualizer";
 import Inspector from "../components/graph/Inspector";
 import Controls from "../components/graph/Controls";
@@ -20,14 +20,6 @@ const DOMAIN_OPTIONS = [
   "Programming",
   "Statistics",
 ];
-
-const REL_TYPE_COLORS: Record<string, string> = {
-  PREREQUISITE_OF: "#2EFFE6",
-  SUBTOPIC_OF: "#9B59B6",
-  BUILDS_ON: "#F59E0B",
-  RELATED_TO: "#FFFFFF",
-  PART_OF: "#EC4899",
-};
 
 type LinkSuggestion = {
   target_id: string;
@@ -62,9 +54,6 @@ export function GraphScreen() {
   const [resources, setResources] = useState<any[]>([]);
   const [resourcesLoading, setResourcesLoading] = useState(false);
 
-  // Note detail modal
-  const [selectedNoteDetail, setSelectedNoteDetail] = useState<any | null>(null);
-
   // Manual node creation
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newNodeName, setNewNodeName] = useState("");
@@ -77,58 +66,6 @@ export function GraphScreen() {
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [linkNodeId, setLinkNodeId] = useState<string | null>(null);
   const [pendingPosition, setPendingPosition] = useState<{ x: number; y: number; z: number } | null>(null);
-  const [expandDefinition, setExpandDefinition] = useState(false);
-
-  const [linkedNotes, setLinkedNotes] = useState<any[]>([]);
-  const [linkedNotesLoading, setLinkedNotesLoading] = useState(false);
-  const [nodeConnections, setNodeConnections] = useState<any[]>([]);
-  const [connectionView, setConnectionView] = useState<"all" | "prereqs" | "children" | "subtopic" | "builds_on" | "related" | "part_of">("all");
-
-  const prerequisiteConnections = useMemo(
-    () =>
-      nodeConnections.filter(
-        (c) => c.relationship === "PREREQUISITE_OF" && c.direction === "incoming"
-      ),
-    [nodeConnections]
-  );
-
-  const childConnections = useMemo(
-    () =>
-      nodeConnections.filter(
-        (c) => c.relationship === "PREREQUISITE_OF" && c.direction === "outgoing"
-      ),
-    [nodeConnections]
-  );
-
-  const subtopicConnections = useMemo(
-    () => nodeConnections.filter((c) => c.relationship === "SUBTOPIC_OF"),
-    [nodeConnections]
-  );
-
-  const buildsOnConnections = useMemo(
-    () => nodeConnections.filter((c) => c.relationship === "BUILDS_ON"),
-    [nodeConnections]
-  );
-
-  const relatedConnections = useMemo(
-    () => nodeConnections.filter((c) => c.relationship === "RELATED_TO"),
-    [nodeConnections]
-  );
-
-  const partOfConnections = useMemo(
-    () => nodeConnections.filter((c) => c.relationship === "PART_OF"),
-    [nodeConnections]
-  );
-
-  const displayedConnections = useMemo(() => {
-    if (connectionView === "prereqs") return prerequisiteConnections;
-    if (connectionView === "children") return childConnections;
-    if (connectionView === "subtopic") return subtopicConnections;
-    if (connectionView === "builds_on") return buildsOnConnections;
-    if (connectionView === "related") return relatedConnections;
-    if (connectionView === "part_of") return partOfConnections;
-    return nodeConnections;
-  }, [connectionView, nodeConnections, prerequisiteConnections, childConnections, subtopicConnections, buildsOnConnections, relatedConnections, partOfConnections]);
 
   const openCreateModal = useCallback(
     (prefillName?: string, position?: { x: number; y: number; z: number }) => {
@@ -173,28 +110,6 @@ export function GraphScreen() {
     }
   }, [graphCache, loadGraph]);
 
-  useEffect(() => {
-    if (!selectedNode) {
-      setLinkedNotes([]);
-      setNodeConnections([]);
-      setConnectionView("all");
-      return;
-    }
-    const fetchFocus = async () => {
-      setLinkedNotesLoading(true);
-      try {
-        const data = await api.graph.getFocus(selectedNode.id);
-        setLinkedNotes(data.linked_notes || []);
-        setNodeConnections(data.connections || []);
-        setConnectionView("all");
-      } catch (err) {
-        console.error("Failed to fetch node focus:", err);
-      } finally {
-        setLinkedNotesLoading(false);
-      }
-    };
-    fetchFocus();
-  }, [selectedNode]);
 
   const highlightedIds = useMemo(() => {
     if (!searchQuery || !layout?.nodes) return new Set<string>();
@@ -218,12 +133,11 @@ export function GraphScreen() {
   const noSearchMatch = searchQuery.trim().length > 0 && highlightedIds.size === 0;
   const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
 
-  // Reset isolation and expand when selected node changes or is deselected
+  // Reset isolation when selected node changes or is deselected
   useEffect(() => {
     if (!selectedNode) {
       setIsolateCommunity(false);
     }
-    setExpandDefinition(false);
   }, [selectedNode]);
 
   // Parent concept search results for create modal
@@ -544,176 +458,6 @@ export function GraphScreen() {
         </button>
       </div>
 
-      {/* Selected Node Panel */}
-      {selectedNode && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-4 glass-surface rounded-2xl p-4"
-        >
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex-1 min-w-0 mr-2">
-              <h3 className="font-heading font-bold text-white">{selectedNode.title}</h3>
-              {selectedNode.definition && (
-                <button
-                  onClick={() => setExpandDefinition((v) => !v)}
-                  className="text-left w-full"
-                >
-                  <p className={`text-xs text-white/70 mt-1 leading-relaxed ${expandDefinition ? '' : 'line-clamp-2'}`}>
-                    {selectedNode.definition}
-                  </p>
-                  {selectedNode.definition.length > 100 && (
-                    <span className="text-[10px] text-[#B6FF2E]/60 mt-0.5 inline-block">
-                      {expandDefinition ? 'Show less' : 'Show more'}
-                    </span>
-                  )}
-                </button>
-              )}
-              {selectedNode.community && (
-                <p className="text-[10px] text-white/30 mt-1">
-                  Community: {selectedNode.community.title} • {selectedNode.community.size} nodes
-                </p>
-              )}
-            </div>
-            <button
-              onClick={() => setSelectedNode(null)}
-              className="p-1 rounded-full hover:bg-white/10 transition-colors shrink-0"
-            >
-              <X className="w-4 h-4 text-white/50" />
-            </button>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => startQuizForTopic(selectedNode.title)}
-              className="flex-1 py-2 rounded-xl bg-[#B6FF2E]/20 text-[#B6FF2E] text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-[#B6FF2E]/30 transition-colors"
-            >
-              <Target className="w-3 h-3" />
-              Quiz Me
-            </button>
-            <button
-              onClick={() => handleShowResources(selectedNode.title, "note")}
-              className="flex-1 py-2 rounded-xl bg-white/5 text-white/70 text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-white/10 transition-colors"
-            >
-              <BookOpen className="w-3 h-3" />
-              Notes
-            </button>
-            <button
-              onClick={() => handleShowResources(selectedNode.title, "link")}
-              className="flex-1 py-2 rounded-xl bg-white/5 text-white/70 text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-white/10 transition-colors"
-            >
-              <Link2 className="w-3 h-3" />
-              Links
-            </button>
-          </div>
-          {selectedNode.community && (
-            <div className={`mt-3 flex items-center justify-between rounded-xl border px-3 py-2 transition-colors ${isolateCommunity ? 'border-[#B6FF2E]/30 bg-[#B6FF2E]/5' : 'border-white/10 bg-white/5'}`}>
-              <div>
-                <p className="text-[10px] text-white/40 uppercase tracking-wider">
-                  {selectedNode.community.title || 'Community'}
-                </p>
-                <p className="text-xs text-white/70">
-                  {isolateCommunity
-                    ? `Showing ${selectedNode.community.entity_ids.length} nodes`
-                    : `${selectedNode.community.entity_ids.length} related nodes`}
-                </p>
-              </div>
-              <button
-                onClick={() => setIsolateCommunity((v) => !v)}
-                className={`text-[10px] px-2.5 py-1 rounded-full font-bold transition-colors ${isolateCommunity ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/70 hover:bg-white/20"
-                  }`}
-              >
-                {isolateCommunity ? "Show All" : "Isolate"}
-              </button>
-            </div>
-          )}
-
-          {/* Relationship Buttons */}
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {[
-              { key: "prereqs" as const, label: "Prereqs", count: prerequisiteConnections.length, color: "#2EFFE6" },
-              { key: "children" as const, label: "Children", count: childConnections.length, color: "#2EFFE6" },
-              { key: "subtopic" as const, label: "Subtopics", count: subtopicConnections.length, color: "#9B59B6" },
-              { key: "builds_on" as const, label: "Builds On", count: buildsOnConnections.length, color: "#F59E0B" },
-              { key: "related" as const, label: "Related", count: relatedConnections.length, color: "#FFFFFF" },
-              { key: "part_of" as const, label: "Part Of", count: partOfConnections.length, color: "#EC4899" },
-            ].filter((f) => f.count > 0).map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setConnectionView(connectionView === f.key ? 'all' : f.key)}
-                className={`px-2 py-1 rounded-lg text-[10px] font-medium transition-colors border ${connectionView === f.key
-                  ? 'border-current'
-                  : 'bg-white/5 text-white/60 border-transparent hover:bg-white/10'
-                  }`}
-                style={connectionView === f.key ? { color: f.color, backgroundColor: `${f.color}15`, borderColor: `${f.color}50` } : undefined}
-              >
-                {f.label} ({f.count})
-              </button>
-            ))}
-          </div>
-
-          {linkedNotesLoading ? (
-            <div className="mt-3 flex justify-center">
-              <Loader2 className="w-4 h-4 animate-spin text-white/30" />
-            </div>
-          ) : linkedNotes.length > 0 ? (
-            <div className="mt-3 pt-3 border-t border-white/10">
-              <p className="text-[10px] text-white/40 uppercase tracking-wider mb-2">Linked Notes</p>
-              <div className="space-y-1.5 max-h-[120px] overflow-y-auto">
-                {linkedNotes.map((note: any) => (
-                  <div
-                    key={note.id}
-                    className="p-2 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-pointer"
-                    onClick={() => setSelectedNoteDetail(note)}
-                  >
-                    <p className="text-xs text-white/80 font-medium truncate">{note.title}</p>
-                    <p className="text-[10px] text-white/40 truncate mt-0.5">{note.preview}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {nodeConnections.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] text-white/40 uppercase tracking-wider">Connected Concepts</p>
-                <button
-                  onClick={() => setConnectionView("all")}
-                  className={`text-[10px] px-2 py-0.5 rounded-full ${connectionView === "all" ? "bg-white/20 text-white" : "bg-white/10 text-white/60"
-                    }`}
-                >
-                  All ({nodeConnections.length})
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {displayedConnections.map((conn: any, i: number) => {
-                  const relColor = REL_TYPE_COLORS[conn.relationship] || "#FFFFFF";
-                  return (
-                    <button
-                      key={`${conn.concept?.id || i}-${conn.relationship}-${conn.direction}`}
-                      onClick={() => {
-                        const match = layout?.nodes.find((n) => n.id === conn.concept?.id);
-                        if (match) {
-                          setSelectedNode(match);
-                          setFocusNodeId(match.id);
-                        }
-                      }}
-                      className="px-2 py-1 rounded-full text-[10px] bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-colors flex items-center gap-1"
-                    >
-                      <span
-                        className="w-1.5 h-1.5 rounded-full shrink-0"
-                        style={{ backgroundColor: relColor }}
-                      />
-                      {conn.concept?.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </motion.div>
-      )}
 
       {/* Create Node Modal */}
       <AnimatePresence>
@@ -941,44 +685,6 @@ export function GraphScreen() {
         )}
       </AnimatePresence>
 
-      {/* Note Detail Modal */}
-      <AnimatePresence>
-        {selectedNoteDetail && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
-            onClick={() => setSelectedNoteDetail(null)}
-          >
-            <motion.div
-              initial={{ y: 100, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 100, opacity: 0 }}
-              className="bg-[#1a1a2e] rounded-2xl border border-white/10 w-full max-w-lg max-h-[70vh] overflow-hidden flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between p-4 border-b border-white/10">
-                <div className="flex items-center gap-2 min-w-0">
-                  <BookOpen className="w-4 h-4 text-[#2EFFE6] flex-shrink-0" />
-                  <h3 className="text-white font-medium text-sm truncate">{selectedNoteDetail.title || "Untitled Note"}</h3>
-                </div>
-                <button
-                  onClick={() => setSelectedNoteDetail(null)}
-                  className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 transition-colors flex-shrink-0"
-                >
-                  <X className="w-4 h-4 text-white/60" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4">
-                <p className="text-white/70 text-sm leading-relaxed whitespace-pre-wrap">
-                  {selectedNoteDetail.preview || selectedNoteDetail.content_text || "No content available."}
-                </p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

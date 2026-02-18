@@ -162,15 +162,26 @@ class Neo4jClient:
         concept_id: Optional[str] = None,
         embedding: Optional[list[float]] = None,
     ) -> dict:
-        """Create or update a Concept node, merging by name/user_id."""
-        import uuid
-        
-        # Identity for merging should be (name, user_id)
-        # c.id is a property we set, but not the merge key if we want name uniqueness
+        """Create or update a Concept node, merging by normalized name/user_id.
+
+        Uses name_normalized (lowercase, stripped of parentheticals) as the MERGE
+        key so variants like "Automatic Differentiation" and "Automatic
+        Differentiation (Autograd)" collapse into a single node.  The display
+        ``name`` is kept as-is on first creation and updated only if the new
+        name is shorter (more canonical).
+        """
+        import re, uuid
+
+        # Normalize: strip parentheticals, lowercase, collapse whitespace
+        name_normalized = re.sub(r"\s*\([^)]*\)", "", name).strip().lower()
+        name_normalized = re.sub(r"\s+", " ", name_normalized)
+
         query = """
-        MERGE (c:Concept {name: $name, user_id: $user_id})
+        MERGE (c:Concept {name_normalized: $name_normalized, user_id: $user_id})
         ON CREATE SET
             c.id = $id,
+            c.name = $name,
+            c.name_normalized = $name_normalized,
             c.definition = $definition,
             c.domain = $domain,
             c.complexity_score = $complexity_score,
@@ -178,9 +189,10 @@ class Neo4jClient:
             c.embedding = $embedding,
             c.created_at = datetime()
         ON MATCH SET
-            c.definition = $definition,
+            c.name = CASE WHEN size($name) <= size(c.name) THEN $name ELSE c.name END,
+            c.definition = CASE WHEN size($definition) > size(coalesce(c.definition, '')) THEN $definition ELSE c.definition END,
             c.complexity_score = $complexity_score,
-            c.confidence = $confidence,
+            c.confidence = CASE WHEN $confidence > c.confidence THEN $confidence ELSE c.confidence END,
             c.embedding = $embedding,
             c.updated_at = datetime()
         RETURN c
@@ -189,6 +201,7 @@ class Neo4jClient:
             "id": concept_id or str(uuid.uuid4()),
             "user_id": user_id,
             "name": name,
+            "name_normalized": name_normalized,
             "definition": definition,
             "domain": domain,
             "complexity_score": complexity_score,
@@ -197,7 +210,7 @@ class Neo4jClient:
         }
         result = await self.execute_query(query, params)
         node_data = result[0]["c"] if result else {}
-        return {"c": node_data} # Return in standard format expected by ingestion graph
+        return {"c": node_data}
 
     async def create_relationship(
         self,
