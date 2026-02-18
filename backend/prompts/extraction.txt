@@ -23,6 +23,14 @@ Given the following markdown content, extract:
 - Concepts mentioned only in passing without any definition or explanation
 - Duplicate concepts with slightly different wording (pick the most precise name)
 
+## Naming Rules (CRITICAL):
+- Use the SHORTEST canonical name for a concept. Do NOT add parenthetical qualifiers.
+  - GOOD: "Automatic Differentiation" — BAD: "Automatic Differentiation (Autograd)"
+  - GOOD: "Gradient Descent" — BAD: "Gradient Descent Algorithm"
+  - GOOD: "Attention Mechanism" — BAD: "Attention Mechanism (Self-Attention)"
+- If the text mentions a variant (e.g., "Autograd"), extract it as a SEPARATE concept with a SUBTOPIC_OF relationship, not as a parenthetical suffix.
+- Never include framework names, library names, or implementation details in the concept name itself.
+
 ## Evidence and Reasoning:
 For each concept, provide:
 - `evidence_span`: A brief quote (10-30 words) from the source text that supports this concept's extraction.
