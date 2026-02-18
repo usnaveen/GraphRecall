@@ -39,7 +39,7 @@ async def get_feed(
     max_items: int = Query(default=20, le=50),
     item_types: Optional[str] = Query(
         default=None,
-        description="Comma-separated item types: flashcard,mcq,fill_blank,concept_showcase",
+        description="Comma-separated item types: flashcard,mcq,fill_blank,showcase",
     ),
     domains: Optional[str] = Query(
         default=None,

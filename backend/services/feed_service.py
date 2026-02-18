@@ -1346,7 +1346,7 @@ class FeedService:
                                 "id": item_id,
                                 "uid": user_id,
                                 "cid": concept_id or "unknown",
-                                "ctype": itype,
+                                "ctype": "mermaid" if itype == "diagram" else itype,
                                 "cjson": json.dumps(content)
                             }
                         )
