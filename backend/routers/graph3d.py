@@ -22,20 +22,32 @@ router = APIRouter(prefix="/api/graph3d", tags=["3D Graph"])
 
 # Domain to color mapping for consistent visualization
 DOMAIN_COLORS = {
-    "Machine Learning": "#7C3AED",  # Purple
-    "Mathematics": "#3B82F6",  # Blue
-    "Computer Science": "#10B981",  # Green
-    "Database Systems": "#F59E0B",  # Amber
-    "System Design": "#EF4444",  # Red
-    "Programming": "#06B6D4",  # Cyan
-    "Statistics": "#8B5CF6",  # Violet
-    "General": "#6B7280",  # Gray
+    "Machine Learning": "#7C3AED",
+    "Mathematics": "#3B82F6",
+    "Computer Science": "#10B981",
+    "Database Systems": "#F59E0B",
+    "System Design": "#EF4444",
+    "Programming": "#06B6D4",
+    "Statistics": "#8B5CF6",
+    "General": "#6B7280",
 }
+
+# HSL palette for dynamically discovered domains
+_DYNAMIC_HUE_PALETTE = [
+    "#E11D48", "#DB2777", "#C026D3", "#7C3AED", "#4F46E5",
+    "#2563EB", "#0284C7", "#0891B2", "#0D9488", "#059669",
+    "#16A34A", "#65A30D", "#CA8A04", "#D97706", "#EA580C",
+    "#DC2626",
+]
 
 
 def get_domain_color(domain: str) -> str:
-    """Get color for a domain, with fallback."""
-    return DOMAIN_COLORS.get(domain, DOMAIN_COLORS["General"])
+    """Get color for a domain. Uses known mapping first, then deterministic hash."""
+    if domain in DOMAIN_COLORS:
+        return DOMAIN_COLORS[domain]
+    # Deterministic color from hash so the same domain always gets the same color
+    h = hash(domain) % len(_DYNAMIC_HUE_PALETTE)
+    return _DYNAMIC_HUE_PALETTE[h]
 
 
 def calculate_node_size(complexity: float, relationship_count: int) -> float:

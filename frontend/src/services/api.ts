@@ -269,7 +269,28 @@ export const conceptsService = {
         const response = await authFetch(`${API_BASE}/concepts/${conceptId}`, { method: 'DELETE' });
         if (!response.ok) throw new Error('Failed to delete concept');
         return response.json();
-    }
+    },
+
+    mergeConcepts: async (sourceIds: string[], targetId: string) => {
+        const response = await authFetch(`${API_BASE}/concepts/merge`, {
+            method: 'POST',
+            body: JSON.stringify({ source_ids: sourceIds, target_id: targetId }),
+        });
+        if (!response.ok) throw new Error('Failed to merge concepts');
+        return response.json();
+    },
+
+    getConceptNotes: async (conceptId: string) => {
+        const response = await authFetch(`${API_BASE}/concepts/${conceptId}/notes`);
+        if (!response.ok) throw new Error('Failed to fetch concept notes');
+        return response.json();
+    },
+
+    backfillEmbeddings: async () => {
+        const response = await authFetch(`${API_BASE}/concepts/backfill-embeddings`, { method: 'POST' });
+        if (!response.ok) throw new Error('Failed to backfill embeddings');
+        return response.json();
+    },
 };
 
 export const authService = {

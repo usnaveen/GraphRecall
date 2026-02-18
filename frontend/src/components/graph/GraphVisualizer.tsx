@@ -17,6 +17,11 @@ const BLOOM_SCENE = 1;
 // Threshold: links with weight >= this get energy tube treatment
 const ENERGY_TUBE_WEIGHT_THRESHOLD = 0.7;
 
+// Parent/child coloring
+const PARENT_COLOR = "#3B82F6";  // blue
+const CHILD_COLOR = "#10B981";   // green
+const MERGE_TARGET_COLOR = "#F97316"; // orange for merge targets
+
 function useBillboard() {
   const ref = useRef<THREE.Object3D>(null);
   useFrame(({ camera }) => {
@@ -31,33 +36,60 @@ function Node({
   node,
   isSelected,
   isHighlighted,
+  isMergeTarget,
+  colorOverride,
   onClick,
   onPointerOver,
   onPointerOut,
   onContextMenu,
   showLabel,
+  springTarget,
 }: {
   node: Node3D;
   isSelected: boolean;
   isHighlighted: boolean;
+  isMergeTarget?: boolean;
+  colorOverride?: string;
   onClick: (node: Node3D) => void;
   onPointerOver: (node: Node3D) => void;
   onPointerOut: () => void;
   onContextMenu?: () => void;
   showLabel: boolean;
+  springTarget?: THREE.Vector3 | null;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const groupRef = useRef<THREE.Group>(null);
   const textRef = useBillboard();
+  const originalPos = useRef(new THREE.Vector3(node.x, node.y, node.z));
+
+  // Update original position when node data changes
+  useEffect(() => {
+    originalPos.current.set(node.x, node.y, node.z);
+  }, [node.x, node.y, node.z]);
+
+  const nodeColor = colorOverride || node.computedColor;
 
   useFrame(() => {
     if (meshRef.current) {
-      const scale = isSelected ? 1.5 : isHighlighted ? 1.2 : 1.0;
+      const scale = isSelected ? 1.5 : isHighlighted || isMergeTarget ? 1.2 : 1.0;
       meshRef.current.scale.setScalar(scale);
+    }
+
+    // Spring animation: pull connected nodes closer to selected
+    if (groupRef.current) {
+      if (springTarget && !isSelected) {
+        // Move 35% closer to the selected node
+        const desired = originalPos.current.clone().lerp(springTarget, 0.35);
+        groupRef.current.position.lerp(desired, 0.06);
+      } else {
+        // Lerp back to original position
+        groupRef.current.position.lerp(originalPos.current, 0.06);
+      }
     }
   });
 
   return (
-    <group position={[node.x, node.y, node.z]}>
+    <group ref={groupRef} position={[node.x, node.y, node.z]}>
       <Sphere
         ref={meshRef}
         args={[node.computedSize, 24, 24]}
@@ -73,8 +105,19 @@ function Node({
           m.layers.enable(BLOOM_SCENE);
         }}
       >
-        <meshStandardMaterial color={node.computedColor} emissive={node.computedColor} emissiveIntensity={0.25} />
+        <meshStandardMaterial
+          color={nodeColor}
+          emissive={nodeColor}
+          emissiveIntensity={isMergeTarget ? 0.5 : 0.25}
+        />
       </Sphere>
+      {/* Merge target ring */}
+      {isMergeTarget && (
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[node.computedSize * 1.4, node.computedSize * 1.7, 32]} />
+          <meshBasicMaterial color={MERGE_TARGET_COLOR} transparent opacity={0.7} side={THREE.DoubleSide} />
+        </mesh>
+      )}
       {showLabel && (
         <group ref={textRef} position={[0, node.computedSize + 2.5, 0]}>
           <Text
@@ -338,11 +381,19 @@ export type GraphVisualizerProps = {
   showLabels: boolean;
   isMobile: boolean;
   onEmptyContextMenu?: (point: { x: number; y: number; z: number }) => void;
+  onDoubleClickEmpty?: (point: { x: number; y: number; z: number }) => void;
   focusNodeId?: string | null;
   pulseNodeId?: string | null;
   // Controls props
   minRelationshipWeight?: number;
   selectedDomain?: string | null;
+  // Merge mode
+  mergeMode?: boolean;
+  mergeTargetIds?: Set<string>;
+  // Parent/child coloring
+  parentNodeIds?: Set<string>;
+  childNodeIds?: Set<string>;
+  connectedNodeIds?: Set<string>;
 };
 
 function GraphScene({
@@ -357,10 +408,16 @@ function GraphScene({
   showLabels,
   isMobile,
   onEmptyContextMenu,
+  onDoubleClickEmpty,
   focusNodeId,
   pulseNodeId,
   minRelationshipWeight = 0,
   selectedDomain,
+  mergeMode,
+  mergeTargetIds,
+  parentNodeIds,
+  childNodeIds,
+  connectedNodeIds,
 }: GraphVisualizerProps) {
   const nodes = layout?.nodes || [];
   const links = layout?.links || [];
@@ -423,6 +480,12 @@ function GraphScene({
     return nodes.find((n) => n.id === focusNodeId) || null;
   }, [nodes, focusNodeId]);
 
+  // Spring target: when a node is selected, connected nodes spring toward it
+  const springTarget = useMemo(() => {
+    if (!selectedNode) return null;
+    return new THREE.Vector3(selectedNode.x, selectedNode.y, selectedNode.z);
+  }, [selectedNode]);
+
   const { camera } = useThree();
 
   useEffect(() => {
@@ -453,6 +516,15 @@ function GraphScene({
     }
   });
 
+  // Compute color overrides for parent/child nodes
+  const getNodeColorOverride = (nodeId: string): string | undefined => {
+    if (!selectedNode) return undefined;
+    if (parentNodeIds?.has(nodeId)) return PARENT_COLOR;
+    if (childNodeIds?.has(nodeId)) return CHILD_COLOR;
+    if (mergeTargetIds?.has(nodeId)) return MERGE_TARGET_COLOR;
+    return undefined;
+  };
+
   return (
     <>
       <ambientLight intensity={0.4} />
@@ -460,20 +532,27 @@ function GraphScene({
       <GalaxyBackground />
 
       <group>
-        {onEmptyContextMenu && (
-          <mesh
-            position={[0, 0, 0]}
-            rotation={[-Math.PI / 2, 0, 0]}
-            onContextMenu={(event) => {
+        {/* Background plane for context menu and double-click navigation */}
+        <mesh
+          position={[0, 0, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          onContextMenu={(event) => {
+            if (onEmptyContextMenu) {
               event.stopPropagation();
               event.nativeEvent.preventDefault();
               onEmptyContextMenu({ x: event.point.x, y: event.point.y, z: event.point.z });
-            }}
-          >
-            <planeGeometry args={[3000, 3000]} />
-            <meshBasicMaterial transparent opacity={0} />
-          </mesh>
-        )}
+            }
+          }}
+          onDoubleClick={(event) => {
+            if (onDoubleClickEmpty) {
+              event.stopPropagation();
+              onDoubleClickEmpty({ x: event.point.x, y: event.point.y, z: event.point.z });
+            }
+          }}
+        >
+          <planeGeometry args={[3000, 3000]} />
+          <meshBasicMaterial transparent opacity={0} />
+        </mesh>
         {showCommunities && visibleCommunities.map((c) => (
           <group key={c.id}>
             <CommunityBoundary community={c} />
@@ -498,10 +577,13 @@ function GraphScene({
             node={node}
             isSelected={selectedNode?.id === node.id}
             isHighlighted={highlightedIds.has(node.id) || hoveredNode?.id === node.id}
+            isMergeTarget={mergeTargetIds?.has(node.id)}
+            colorOverride={getNodeColorOverride(node.id)}
             onClick={(n) => onNodeSelect(n)}
             onPointerOver={(n) => onNodeHover?.(n)}
             onPointerOut={() => onNodeHover?.(null)}
             showLabel={showLabels || selectedNode?.id === node.id || hoveredNode?.id === node.id}
+            springTarget={connectedNodeIds?.has(node.id) ? springTarget : null}
           />
         ))}
       </group>
