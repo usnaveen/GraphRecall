@@ -22,7 +22,7 @@ class FeedItemType(str, Enum):
     INFOGRAPHIC = "infographic"  # User uploaded
     MERMAID_DIAGRAM = "diagram"
     SCREENSHOT = "screenshot"  # User uploaded
-    CONCEPT_SHOWCASE = "concept_showcase"
+    CONCEPT_SHOWCASE = "showcase"
     CODE_CHALLENGE = "code_challenge"
 
 
