@@ -37,6 +37,7 @@ dependencies = [
     "google-auth>=2.48.0",
     "langchain-google-genai>=4.2.0",
     "marker-pdf>=1.10.2",
+    "langchain-tavily>=0.0.1",
 ]
 
 [project.optional-dependencies]
