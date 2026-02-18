@@ -130,29 +130,77 @@ async def merge_concepts(
                 continue
 
             # Transfer outgoing relationships (source)-[r]->(other) to (target)-[r]->(other)
-            await neo4j.execute_query(
+            # Using pure Cypher per rel type (AuraDB has no APOC)
+            _KNOWN_REL_TYPES = [
+                "PREREQUISITE_OF", "RELATED_TO", "SUBTOPIC_OF", "BUILDS_ON", "PART_OF"
+            ]
+            outgoing_rels = await neo4j.execute_query(
                 """
                 MATCH (src:Concept {id: $src_id, user_id: $uid})-[r]->(other)
                 WHERE other.id <> $tgt_id
-                WITH src, r, other, type(r) AS rtype, properties(r) AS props
-                MATCH (tgt:Concept {id: $tgt_id, user_id: $uid})
-                CALL apoc.create.relationship(tgt, rtype, props, other) YIELD rel
-                DELETE r
+                RETURN type(r) AS rtype, properties(r) AS props, other.id AS other_id
                 """,
                 {"src_id": source_id, "tgt_id": request.target_id, "uid": user_id},
             )
+            for row in (outgoing_rels or []):
+                rtype = row.get("rtype", "")
+                if rtype not in _KNOWN_REL_TYPES:
+                    continue
+                other_id = row.get("other_id")
+                props = row.get("props") or {}
+                query = f"""
+                MATCH (tgt:Concept {{id: $tgt_id, user_id: $uid}})
+                MATCH (other {{id: $other_id}})
+                MERGE (tgt)-[r:{rtype}]->(other)
+                SET r += $props
+                """
+                await neo4j.execute_query(
+                    query,
+                    {"tgt_id": request.target_id, "uid": user_id, "other_id": other_id, "props": props},
+                )
+            # Delete source outgoing rels
+            await neo4j.execute_query(
+                """
+                MATCH (src:Concept {id: $src_id, user_id: $uid})-[r]->()
+                WHERE NOT type(r) = 'EXPLAINS'
+                DELETE r
+                """,
+                {"src_id": source_id, "uid": user_id},
+            )
 
             # Transfer incoming relationships (other)-[r]->(source) to (other)-[r]->(target)
-            await neo4j.execute_query(
+            incoming_rels = await neo4j.execute_query(
                 """
                 MATCH (other)-[r]->(src:Concept {id: $src_id, user_id: $uid})
                 WHERE other.id <> $tgt_id
-                WITH src, r, other, type(r) AS rtype, properties(r) AS props
-                MATCH (tgt:Concept {id: $tgt_id, user_id: $uid})
-                CALL apoc.create.relationship(other, rtype, props, tgt) YIELD rel
-                DELETE r
+                RETURN type(r) AS rtype, properties(r) AS props, other.id AS other_id
                 """,
                 {"src_id": source_id, "tgt_id": request.target_id, "uid": user_id},
+            )
+            for row in (incoming_rels or []):
+                rtype = row.get("rtype", "")
+                if rtype not in _KNOWN_REL_TYPES:
+                    continue
+                other_id = row.get("other_id")
+                props = row.get("props") or {}
+                query = f"""
+                MATCH (other {{id: $other_id}})
+                MATCH (tgt:Concept {{id: $tgt_id, user_id: $uid}})
+                MERGE (other)-[r:{rtype}]->(tgt)
+                SET r += $props
+                """
+                await neo4j.execute_query(
+                    query,
+                    {"other_id": other_id, "tgt_id": request.target_id, "uid": user_id, "props": props},
+                )
+            # Delete source incoming rels
+            await neo4j.execute_query(
+                """
+                MATCH ()-[r]->(src:Concept {id: $src_id, user_id: $uid})
+                WHERE NOT type(r) = 'EXPLAINS'
+                DELETE r
+                """,
+                {"src_id": source_id, "uid": user_id},
             )
 
             # Transfer NoteSource EXPLAINS relationships
