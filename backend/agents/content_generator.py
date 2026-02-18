@@ -571,7 +571,7 @@ Output JSON format:
             }}
         }},
         {{
-            "type": "concept_showcase",
+            "type": "showcase",
             "content": {{ 
                 "tagline": "...", 
                 "visual_metaphor": "...", 

@@ -1046,9 +1046,18 @@ Return ONLY valid JSON:
             
             data = json.loads(content)
             flashcards_dicts = data.get("flashcards", [])
-        except Exception as e:
-             logger.error("generate_flashcards_node: Legacy generation failed", error=str(e))
-             return {"term_card_ids": []}
+        except json.JSONDecodeError:
+            # LLM sometimes produces invalid escape sequences (e.g. \n inside strings).
+            # Try to sanitise before giving up.
+            try:
+                import re
+                # Replace lone backslashes not followed by a valid JSON escape char
+                sanitised = re.sub(r'\\(?!["\\bfnrtu/])', r'\\\\', content)
+                data = json.loads(sanitised)
+                flashcards_dicts = data.get("flashcards", [])
+            except Exception:
+                logger.error("generate_flashcards_node: Legacy generation failed", error="JSON parse failed after sanitisation")
+                return {"term_card_ids": []}
 
     # Save cards (Unified path)
     if not flashcards_dicts:
@@ -1312,16 +1321,16 @@ def create_ingestion_graph(enable_interrupts: bool = True):
     builder.add_node("generate_quiz", generate_quiz_node)
     
     # New Flow:
-    # START -> parse -> chunk -> extract_propositions -> embed_chunks -> save_chunks -> extract_concepts -> ...
+    # START -> parse -> chunk -> extract_concepts -> store_note -> embed_chunks -> save_chunks -> ...
+    # NOTE: store_note MUST run before save_chunks due to FK constraint (chunks.note_id -> notes.id)
     
     builder.add_edge(START, "parse")
     builder.add_edge("parse", "chunk")
-    builder.add_edge("chunk", "extract_propositions")
-    builder.add_edge("extract_propositions", "embed_chunks")
-    builder.add_edge("embed_chunks", "save_chunks")
-    builder.add_edge("save_chunks", "extract_concepts")
-    builder.add_edge("extract_concepts", "store_note")  # Continues to legacy flow
-    builder.add_edge("store_note", "find_related")
+    builder.add_edge("chunk", "extract_concepts")
+    builder.add_edge("extract_concepts", "store_note")  # Store note FIRST
+    builder.add_edge("store_note", "embed_chunks")       # Then embed
+    builder.add_edge("embed_chunks", "save_chunks")      # Then save chunks (FK safe)
+    builder.add_edge("save_chunks", "find_related")
     
     # Conditional edge: Route based on overlap detection
     builder.add_conditional_edges(

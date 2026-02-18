@@ -152,22 +152,33 @@ OUTPUT JSON FORMAT:
             response = await self.llm.ainvoke(prompt)
             content = response.content
             
-            # Parse JSON
+            # Parse JSON with robustness
+            clean_content = content
             if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
+                clean_content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
+                clean_content = content.split("```")[1].split("```")[0].strip()
+            
+            # Fix potential backslash issues (common in LLM output)
+            import re
+            clean_content = re.sub(r'\\(?!["\\bfnrtu/])', r'\\\\', clean_content)
                 
-            data = json.loads(content)
+            data = json.loads(clean_content)
             quizzes_data = data.get("quizzes", [])
             
             # Convert to schema
             mcqs = []
             for q in quizzes_data:
-                options = [
-                    MCQOption(id=o["id"], text=o["text"], is_correct=o["is_correct"]) 
-                    for o in q["options"]
-                ]
+                options = []
+                for o in q["options"]:
+                    if isinstance(o, dict):
+                         options.append(MCQOption(id=o.get("id", "A"), text=o.get("text", ""), is_correct=o.get("is_correct", False)))
+                    elif isinstance(o, str):
+                        # Fallback for malformed output (just string options)
+                        # We can't know which is correct, so default to False or skip
+                        # Here we give it a dummy ID and assume false
+                        options.append(MCQOption(id="?", text=o, is_correct=False))
+                # Create MCQQuestion with the processed options list
                 mcqs.append(MCQQuestion(
                     concept_id="", # Caller handles this
                     question=q["question"],
