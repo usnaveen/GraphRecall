@@ -207,7 +207,7 @@ async def get_3d_graph(
             c2.id as target,
             type(r) as relationship_type,
             coalesce(r.strength, 1.0) as strength,
-            coalesce(r.mention_count, 1) as mention_count,
+            coalesce(r["mention_count"], 1) as mention_count,
             elementId(r) as edge_id
         """
 
