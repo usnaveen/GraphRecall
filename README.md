@@ -23,6 +23,7 @@ GraphRecall is a full-stack AI application that ingests your notes, articles, an
 ## Table of Contents
 
 - [Features](#features)
+- [Recent Changes (Feb 2026)](#recent-changes-feb-2026)
 - [Architecture Overview](#architecture-overview)
 - [System Architecture](#system-architecture)
 - [Tech Stack](#tech-stack)
@@ -46,10 +47,10 @@ GraphRecall is a full-stack AI application that ingests your notes, articles, an
 - **URL scraping** &mdash; Fetch and process articles from Substack, Medium, blogs, and documentation sites
 - **AI concept extraction** &mdash; Gemini 2.5 Flash extracts concepts with definitions, domains, complexity scores, and relationships
 - **Duplicate & conflict detection** &mdash; Embedding-based synthesis detects overlapping, enhancing, or contradictory concepts
-- **Human-in-the-loop review** &mdash; LangGraph `interrupt_before` lets you approve, edit, or reject concepts before they enter the graph
+- **Human-in-the-loop review** &mdash; LangGraph `interrupt()` pauses ingestion and resumes via `thread_id` after concept approval
 
 ### Active Recall & Spaced Repetition
-- **Six card types** &mdash; Flashcards, multiple-choice quizzes, fill-in-the-blank, screenshots, Mermaid diagrams, and concept showcases
+- **Seven card types** &mdash; Flashcards, multiple-choice quizzes, fill-in-the-blank, screenshots, Mermaid diagrams, concept showcases, and code challenges
 - **SM-2 algorithm** &mdash; SuperMemo 2 scheduling adjusts review intervals based on your difficulty ratings
 - **Topic-scoped quizzes** &mdash; Generate quizzes on any concept with automatic web research fallback via Tavily
 - **Proficiency tracking** &mdash; Per-concept mastery scores drive adaptive feed ordering
@@ -75,6 +76,14 @@ GraphRecall is a full-stack AI application that ingests your notes, articles, an
 - Figures and captions are linked to each chunk and stored in the `chunks.images` JSONB column; images are served from `/api/images/{filename}` or uploaded via `--upload-images`.
 - Optional `--local-embeddings` uses sentence-transformers; `--extract-concepts` batches concept extraction to Neo4j.
 - The earlier parsing notebook lives at `notebooks/pdf_ocr_colab.ipynb` (source for the provided parsed book).
+
+## Recent Changes (Feb 2026)
+
+- **Concept dedup hardening** &mdash; Neo4j concept upserts now `MERGE` on `name_normalized + user_id` to collapse naming variants (for example, parenthetical suffixes).
+- **Ingestion ordering fix** &mdash; Workflow order is now FK-safe: `extract_concepts -> store_note -> embed_chunks -> save_chunks`.
+- **LLM JSON sanitization** &mdash; Added defensive parsing/cleanup paths in generation nodes and quiz agents for malformed escaped output.
+- **Graph edge robustness** &mdash; 3D graph queries now use `coalesce` for optional relationship properties like `mention_count`.
+- **Navigation update** &mdash; Books/Library moved into `Profile` (not a bottom dock tab).
 
 ---
 
@@ -130,7 +139,7 @@ graph TB
 graph TD
     A["HTTP Request"] --> B["FastAPI Router Layer"]
 
-    subgraph Routers["API Routers (7 modules)"]
+    subgraph Routers["API Routers (12 modules)"]
         B --> R1["/api/chat"]
         B --> R2["/api/feed"]
         B --> R3["/api/graph3d"]
@@ -138,6 +147,11 @@ graph TD
         B --> R5["/api/review"]
         B --> R6["/api/uploads"]
         B --> R7["/auth"]
+        B --> R8["/api/notes"]
+        B --> R9["/api/nodes"]
+        B --> R10["/api/concepts"]
+        B --> R11["/api/images"]
+        B --> R12["/api/knowledge"]
     end
 
     subgraph Services["Service Layer"]
@@ -191,11 +205,11 @@ graph TD
         Auth["GoogleOAuthProvider"]
         Auth --> Router["Screen Router (5 tabs)"]
 
-        Router --> Feed["FeedScreen\n6 card types, SR scheduling"]
+        Router --> Feed["FeedScreen\n7 card types, SR scheduling"]
         Router --> Graph["GraphScreen\n3D force-directed graph"]
         Router --> Create["CreateScreen\nMulti-modal ingestion"]
         Router --> Chat["AssistantScreen\nGraphRAG streaming chat"]
-        Router --> Profile["ProfileScreen\nStats, heatmap, settings"]
+        Router --> Profile["ProfileScreen\nStats, heatmap, settings, books/library"]
     end
 
     subgraph State["Zustand Stores"]
@@ -239,7 +253,7 @@ graph TD
 | **Backend** | Python 3.11+, FastAPI, Uvicorn |
 | **AI Orchestration** | LangGraph 1.0+ (StateGraph with conditional edges, HITL interrupts) |
 | **LLM** | Google Gemini 2.5 Flash (extraction, synthesis, content generation) |
-| **Embeddings** | Gemini Embedding-001 (3072 dimensions) |
+| **Embeddings** | Gemini Embedding-001 (768 dimensions via MRL) |
 | **Knowledge Graph** | Neo4j Aura (Concept, NoteSource, Topic nodes) |
 | **Relational DB** | PostgreSQL via Supabase (SQLAlchemy async + pgvector) |
 | **Vector Search** | pgvector IVFFlat index on note embeddings |
@@ -280,7 +294,11 @@ GraphRecall/
 │   │   ├── quiz_graph.py          #   Quiz generation with research
 │   │   ├── article_graph.py       #   URL scraping + ingestion
 │   │   ├── research_graph.py      #   Web research workflow
-│   │   └── mermaid_graph.py       #   Diagram generation workflow
+│   │   ├── mermaid_graph.py       #   Diagram generation workflow
+│   │   ├── content_graph.py       #   Parallel content generation
+│   │   ├── link_suggestion_graph.py # AI-assisted relationship suggestions
+│   │   ├── mcp_graph.py           #   Verification workflow
+│   │   └── supervisor_graph.py    #   Orchestrator graph
 │   ├── models/
 │   │   ├── schemas.py             #   Core Pydantic models
 │   │   └── feed_schemas.py        #   Feed, stats, and card models
@@ -294,6 +312,11 @@ GraphRecall/
 │   │   ├── ingest_v2.py           #   /api/v2 — LangGraph ingestion
 │   │   ├── review.py              #   /api/review — Concept review (HITL)
 │   │   ├── uploads.py             #   /api/uploads — File management
+│   │   ├── notes.py               #   /api/notes — Notes library
+│   │   ├── concepts.py            #   /api/concepts — Concept operations
+│   │   ├── nodes.py               #   /api/nodes — Manual graph edits
+│   │   ├── images.py              #   /api/images — Book image serving
+│   │   ├── knowledge.py           #   /api/knowledge — Global summaries
 │   │   └── auth.py                #   /auth — Google OAuth
 │   ├── services/
 │   │   ├── feed_service.py        #   Feed generation & stats
@@ -362,9 +385,8 @@ cd GraphRecall
 # Install Python dependencies
 uv sync
 
-# Copy and configure environment variables
-cp .env.example .env
-# Edit .env with your API keys (see Environment Variables section)
+# Create and configure environment variables
+# (create .env manually and set values listed below)
 
 # Run database migrations
 uv run alembic upgrade head
@@ -451,6 +473,7 @@ All endpoints (except `/auth/google` and `/health`) require a `Bearer` token in 
 | `POST` | `/api/v2/ingest/chat-transcript` | Process an LLM chat transcript |
 | `GET` | `/api/v2/ingest/{thread_id}/status` | Check ingestion workflow status |
 | `POST` | `/api/v2/ingest/{thread_id}/approve` | Approve/reject extracted concepts |
+| `GET` | `/api/v2/health` | Router health probe |
 
 ### Feed & Spaced Repetition (`/api/feed`)
 
@@ -459,9 +482,13 @@ All endpoints (except `/auth/google` and `/health`) require a `Bearer` token in 
 | `GET` | `/api/feed` | Get personalized active recall feed |
 | `POST` | `/api/feed/review` | Record difficulty rating (again/hard/good/easy) |
 | `GET` | `/api/feed/stats` | User statistics (streak, accuracy, domains) |
+| `GET` | `/api/feed/saved` | Get liked/saved study items |
+| `GET` | `/api/feed/history/quizzes` | Quiz history |
 | `GET` | `/api/feed/due-count` | Count of items due today |
 | `POST` | `/api/feed/quiz/topic/{topic}` | Generate quiz on a specific topic |
+| `POST` | `/api/feed/quiz/topic/{topic}/stream` | Stream topic quiz generation |
 | `GET` | `/api/feed/resources/{concept}` | Get all resources linked to a concept |
+| `GET` | `/api/feed/schedule` | Recall schedule for next days |
 | `POST` | `/api/feed/{item_id}/like` | Toggle like on a card |
 | `POST` | `/api/feed/{item_id}/save` | Toggle save on a card |
 
@@ -470,13 +497,17 @@ All endpoints (except `/auth/google` and `/health`) require a `Bearer` token in 
 | Method | Endpoint | Description |
 |:-------|:---------|:------------|
 | `POST` | `/api/chat` | Send message to GraphRAG assistant |
+| `POST` | `/api/chat/quick` | Fast-path chat endpoint |
 | `POST` | `/api/chat/stream` | Stream response via SSE |
 | `GET` | `/api/chat/suggestions` | Get contextual chat suggestions |
-| `GET` | `/api/chat/history` | List recent conversations |
+| `GET` | `/api/chat/conversations` | List conversations |
 | `GET` | `/api/chat/conversations/{id}` | Get full conversation |
+| `POST` | `/api/chat/conversations` | Create a conversation |
 | `POST` | `/api/chat/conversations/{id}/messages` | Add message to conversation |
 | `POST` | `/api/chat/messages/{id}/save` | Save message for quiz generation |
+| `POST` | `/api/chat/messages/{id}/create-card` | Create card from message |
 | `POST` | `/api/chat/conversations/{id}/to-knowledge` | Convert conversation to notes |
+| `GET` | `/api/chat/history` | List recent conversations |
 | `DELETE` | `/api/chat/conversations/{id}` | Delete conversation |
 
 ### Knowledge Graph (`/api/graph3d`)
@@ -485,18 +516,20 @@ All endpoints (except `/auth/google` and `/health`) require a `Bearer` token in 
 |:-------|:---------|:------------|
 | `GET` | `/api/graph3d` | Get full 3D graph data |
 | `GET` | `/api/graph3d/focus/{concept_id}` | Get concept neighborhood with linked notes |
-| `GET` | `/api/graph3d/domains` | List all domains with colors |
 | `GET` | `/api/graph3d/search` | Search concepts for navigation |
+| `POST` | `/api/graph3d/communities/recompute` | Recompute graph communities |
 
 ### Concept Review (`/api/review`)
 
 | Method | Endpoint | Description |
 |:-------|:---------|:------------|
+| `POST` | `/api/review/ingest` | Start review-oriented ingestion |
 | `GET` | `/api/review/sessions` | List pending review sessions |
 | `GET` | `/api/review/sessions/{id}` | Get session with concepts |
 | `PUT` | `/api/review/sessions/{id}` | Edit concepts before approval |
 | `POST` | `/api/review/sessions/{id}/approve` | Commit concepts to Neo4j |
 | `POST` | `/api/review/sessions/{id}/cancel` | Cancel session |
+| `POST` | `/api/review/sessions/{id}/concepts` | Add concept to session |
 
 ### Uploads (`/api/uploads`)
 
@@ -505,8 +538,28 @@ All endpoints (except `/auth/google` and `/health`) require a `Bearer` token in 
 | `POST` | `/api/uploads` | Upload screenshot/infographic |
 | `GET` | `/api/uploads` | List user uploads |
 | `GET` | `/api/uploads/{id}` | Get upload details |
+| `PUT` | `/api/uploads/{id}` | Update upload metadata |
 | `POST` | `/api/uploads/{id}/link-concepts` | Link concepts to upload |
+| `DELETE` | `/api/uploads/{id}/link-concepts/{concept_id}` | Unlink concept |
 | `DELETE` | `/api/uploads/{id}` | Delete upload |
+
+### Notes & Nodes
+
+| Method | Endpoint | Description |
+|:-------|:---------|:------------|
+| `GET` | `/api/notes` | List notes |
+| `DELETE` | `/api/notes/{note_id}` | Delete note |
+| `POST` | `/api/nodes` | Create manual concept node |
+| `POST` | `/api/nodes/{node_id}/suggest-links` | Get AI link suggestions |
+| `POST` | `/api/nodes/{node_id}/link` | Apply selected links |
+
+### Other Utility Endpoints
+
+| Method | Endpoint | Description |
+|:-------|:---------|:------------|
+| `DELETE` | `/api/concepts/{concept_id}` | Delete concept |
+| `GET` | `/api/images/{filename}` | Serve ingested book images |
+| `GET` | `/api/knowledge/summary` | Global knowledge summary |
 
 ### Health
 
@@ -541,7 +594,7 @@ erDiagram
         text content_text
         varchar resource_type
         varchar source_url
-        vector_3072 embedding
+        vector_768 embedding
         timestamp created_at
     }
 
@@ -565,7 +618,7 @@ erDiagram
         decimal easiness_factor
         integer interval_days
         integer repetition_count
-        timestamp next_review
+        timestamp next_review_due
     }
 
     chat_conversations {
@@ -675,14 +728,18 @@ graph LR
 
 ### Ingestion Pipeline (Human-in-the-Loop)
 
-The ingestion workflow uses LangGraph's `interrupt_before` for human review of extracted concepts.
+The ingestion workflow uses LangGraph's `interrupt()` for human review of extracted concepts.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ExtractConcepts: Raw content input
+    [*] --> Parse: Raw content input
 
+    Parse --> Chunk: Parse/normalize markdown
+    Chunk --> ExtractConcepts: Chunked content prepared
     ExtractConcepts --> StoreNote: Concepts extracted
-    StoreNote --> FindRelated: Note saved to PostgreSQL
+    StoreNote --> EmbedChunks: FK-safe note creation first
+    EmbedChunks --> SaveChunks: Child embeddings generated
+    SaveChunks --> FindRelated: Chunk rows persisted
 
     FindRelated --> CheckOverlap: Query Neo4j for similar concepts
 
@@ -694,15 +751,17 @@ stateDiagram-v2
     UserReview --> LinkSynthesis: User approves/rejects
     LinkSynthesis --> GenerateFlashcards: Merge with existing
 
-    CreateConcepts --> GenerateFlashcards: New concepts in Neo4j
+    CreateConcepts --> LinkSynthesis: New concepts in Neo4j
+    LinkSynthesis --> GenerateFlashcards: Cross-note links reinforced
 
-    GenerateFlashcards --> [*]: Flashcards generated
+    GenerateFlashcards --> GenerateQuiz: Initial MCQs generated
+    GenerateQuiz --> [*]: Ingestion complete
 
     note right of UserReview
-        LangGraph interrupt_before
+        LangGraph interrupt()
         pauses execution here.
         Frontend shows review UI.
-        User approves via API call.
+        User approves via /ingest/{thread_id}/approve.
     end note
 ```
 
@@ -728,7 +787,7 @@ stateDiagram-v2
 
     note right of SearchNotes
         Vector search on note
-        embeddings (3072-dim)
+        embeddings (768-dim)
     end note
 ```
 
@@ -737,7 +796,7 @@ stateDiagram-v2
 ## Frontend Screens
 
 ### Feed Screen
-The primary study interface with six card types driven by SM-2 spaced repetition scheduling:
+The primary study interface with seven card types driven by SM-2 spaced repetition scheduling:
 
 | Card Type | Description |
 |:----------|:------------|
@@ -747,6 +806,7 @@ The primary study interface with six card types driven by SM-2 spaced repetition
 | **Screenshot** | User-uploaded images with linked concept badges |
 | **Diagram** | Mermaid-generated visual mindmaps and flowcharts |
 | **Concept Showcase** | Rich cards with emoji, tagline, real-world examples, and key points |
+| **Code Challenge** | Short code/CLI completion tasks with guided explanations |
 
 ### Graph Screen
 Interactive 3D force-directed knowledge graph with:
@@ -776,6 +836,7 @@ User dashboard with:
 - Domain mastery progress bars
 - Streak tracking with flame animation
 - Notes and concepts browser with search
+- Books/library browser (moved from dock into Profile)
 - Settings (theme, notifications, daily target)
 
 ---

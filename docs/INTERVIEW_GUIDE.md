@@ -5,6 +5,19 @@
 
 ---
 
+## Status Update (Feb 18, 2026)
+
+This guide has been refreshed for recent production changes:
+
+- Concept dedup now has a **database-level safety net** via Neo4j `MERGE` on `name_normalized + user_id`.
+- Ingestion ordering was corrected to be **FK-safe**: `extract_concepts -> store_note -> embed_chunks -> save_chunks`.
+- LLM JSON parsing paths were hardened (sanitization for malformed escapes/control chars).
+- Graph edge queries now safely handle missing relationship properties (for example `mention_count`) with `coalesce`.
+- Frontend navigation changed: **Books/Library moved to Profile** (not a dock tab).
+- API surface now includes `/api/knowledge` and totals **12 routers**.
+
+---
+
 ## Table of Contents
 
 1. [Project Overview & Elevator Pitch](#1-project-overview--elevator-pitch)
@@ -49,7 +62,7 @@
 > "I built GraphRecall, a full-stack AI learning platform that ingests user content, extracts
 > concepts using LLM agents, builds a Neo4j knowledge graph, generates study materials via
 > spaced repetition, and provides a GraphRAG chatbot. The backend is orchestrated with
-> LangGraph using 9 distinct workflow graphs demonstrating patterns like supervisor routing,
+> LangGraph using 9 core workflow graphs (+ article ingestion helper graph) demonstrating patterns like supervisor routing,
 > human-in-the-loop, self-correction, and ReAct agents. The system uses a dual-database
 > architecture - PostgreSQL with pgvector for vector search and Neo4j for relationship
 > traversal - enabling hybrid retrieval that combines vector similarity, keyword matching,
@@ -64,11 +77,11 @@ User uploads content (note, PDF, URL)
     |
     v
 LangGraph Ingestion Pipeline
-    |-- Parse document (LlamaParse / SimpleText)
-    |-- Chunk hierarchically (Parent 1000 tokens / Child 250 tokens)
+    |-- Parse document (Marker-preprocessed markdown + simple text parser)
+    |-- Chunk via BookChunker (image-aware, ~1400-char parent chunks + 300-char children)
     |-- Generate embeddings (Gemini embedding-001, 768 dims via MRL)
     |-- Extract concepts (Gemini 2.5 Flash + structured output)
-    |-- Detect duplicates (Embedding similarity + LLM synthesis)
+    |-- Detect duplicates (LLM synthesis + normalized-name Neo4j MERGE)
     |-- [OPTIONAL] Human-in-the-loop review (LangGraph interrupt)
     |-- Create Neo4j nodes & relationships
     |-- Generate flashcards & MCQs (adaptive difficulty + semantic dedup)
@@ -89,7 +102,7 @@ GraphRecall/
 |
 |-- backend/
 |   |-- agents/                    # AI agent implementations
-|   |   |-- states.py              #   ALL LangGraph state definitions (8 states)
+|   |   |-- states.py              #   Shared LangGraph state definitions (9 shared states)
 |   |   |-- extraction.py          #   Concept extraction agent (Gemini)
 |   |   |-- synthesis.py           #   Duplicate/conflict detection
 |   |   |-- content_generator.py   #   MCQ, flashcard generation (adaptive difficulty)
@@ -99,7 +112,7 @@ GraphRecall/
 |   |   |-- proposition_agent.py   #   Atomic fact extraction
 |   |   |-- graph_builder.py       #   Neo4j graph construction
 |   |
-|   |-- graphs/                    # LangGraph workflow definitions (9 graphs)
+|   |-- graphs/                    # LangGraph workflow definitions (9 core + article helper)
 |   |   |-- supervisor_graph.py    #   Multi-agent orchestrator
 |   |   |-- ingestion_graph.py     #   Content -> concepts pipeline
 |   |   |-- chat_graph.py          #   GraphRAG conversation
@@ -109,17 +122,17 @@ GraphRecall/
 |   |   |-- quiz_graph.py          #   Quiz gen with conditional research
 |   |   |-- link_suggestion_graph.py  # AI-powered graph linking
 |   |   |-- mcp_graph.py           #   Claim verification
-|   |   |-- checkpointer.py        #   PostgreSQL checkpoint config
+|   |   |-- checkpointer.py        #   PostgresSaver/MemorySaver config
 |   |
 |   |-- db/                        # Database clients
 |   |   |-- neo4j_client.py        #   Async Neo4j driver (50 conn pool)
 |   |   |-- postgres_client.py     #   Async SQLAlchemy + pgvector
 |   |   |-- init.sql               #   Consolidated schema (15+ tables, all migrations)
-|   |   |-- migrations/            #   14 SQL migration files
+|   |   |-- migrations/            #   17 SQL migration files
 |   |
-|   |-- routers/                   # FastAPI endpoint handlers (11 routers)
+|   |-- routers/                   # FastAPI endpoint handlers (12 routers)
 |   |   |-- auth.py, feed.py, chat.py, graph3d.py, ingest_v2.py,
-|   |   |-- review.py, uploads.py, notes.py, concepts.py, nodes.py, images.py
+|   |   |-- review.py, uploads.py, notes.py, concepts.py, nodes.py, images.py, knowledge.py
 |   |
 |   |-- services/                  # Business logic
 |   |   |-- feed_service.py        #   Feed generation + semantic dedup + adaptive difficulty
@@ -153,7 +166,7 @@ GraphRecall/
 ### Why This Structure Matters
 
 - **Separation of Concerns**: `graphs/` (orchestration) vs `agents/` (LLM logic) vs `services/` (business logic) vs `routers/` (HTTP)
-- **States centralized**: All LangGraph state definitions in `agents/states.py` - single source of truth
+- **State schemas mostly centralized**: Shared states live in `agents/states.py`; graph-specific local states (for example `LinkSuggestionState`, `ArticleState`, `ChatState`) stay close to their graph files
 - **Each graph is self-contained**: Has its own file with nodes, edges, routing, and public interface
 - **Database clients are singletons**: `get_neo4j_client()` / `get_postgres_client()` pattern
 - **Config centralized**: All model choices in `config/llm.py` — single place to update models and dimensions
@@ -172,15 +185,15 @@ GraphRecall/
                              |
                     +--------v---------+
                     |   FastAPI Server  |
-                    |  (11 Routers)     |
+                    |  (12 Routers)     |
                     +--------+---------+
                              |
               +--------------+--------------+
               |              |              |
      +--------v---+  +-------v------+  +---v-----------+
-     | LangGraph  |  | Direct DB    |  | Background    |
-     | Workflows  |  | Queries      |  | Tasks         |
-     | (9 graphs) |  | (CRUD ops)   |  | (asyncio)     |
+     | LangGraph   | | Direct DB    |  | Background    |
+     | Workflows   | | Queries      |  | Tasks         |
+     | (9 + helper)| | (CRUD ops)   |  | (asyncio)     |
      +-----+------+  +------+-------+  +-------+-------+
            |                 |                  |
      +-----v------+  +------v-------+  +-------v-------+
@@ -229,14 +242,14 @@ Here is every LangGraph concept we use in GraphRecall and WHERE we use it:
 
 | LangGraph Concept | Where Used | Purpose |
 |-------------------|------------|---------|
-| **StateGraph** | All 9 graphs | Core graph builder - defines nodes, edges, state |
-| **TypedDict state** | `agents/states.py` (8 states) | Type-safe state schemas with `total=False` for partial updates |
+| **StateGraph** | 9 core graphs (+ article helper graph) | Core graph builder - defines nodes, edges, state |
+| **TypedDict state** | `agents/states.py` + graph-local state classes | Type-safe state schemas with `total=False` for partial updates |
 | **Annotated + add_messages** | `ChatState`, `ResearchState` | Message accumulation reducer for conversation history |
 | **Conditional edges** | `ingestion_graph`, `mermaid_graph`, `quiz_graph` | Dynamic routing based on state values |
 | **Command(goto=...)** | `supervisor_graph` | Programmatic routing from within a node |
 | **interrupt()** | `ingestion_graph` | Human-in-the-loop pause for concept review |
-| **Checkpointer (MemorySaver)** | `chat_graph` (dev) | In-memory state persistence for conversations |
-| **AsyncPostgresSaver** | `chat_graph` (prod) | Production-grade persistent checkpointing |
+| **Checkpointer (MemorySaver)** | `chat_graph`, `ingestion_graph` (dev/local) | In-memory state persistence for conversations/workflows |
+| **AsyncPostgresSaver** | `chat_graph`, `ingestion_graph` (prod/local with flag) | Production-grade persistent checkpointing |
 | **create_react_agent** | `research_graph` | Prebuilt ReAct loop with tool calling |
 | **ToolNode** | `chat_graph` (defined, optional) | Prebuilt node for executing tool calls |
 | **@tool decorator** | `chat_graph` | LangChain tool definitions for graph/note search |
@@ -284,13 +297,15 @@ class ChatState(TypedDict, total=False):
 |-------|-------|------------|------------------|
 | `SupervisorState` | supervisor | request_type, payload, result | Command-based routing |
 | `IngestionState` | ingestion | raw_content, extracted_concepts, synthesis_decisions, needs_synthesis | HITL interrupt, conditional edges |
+| `ReviewSessionState` | review (planned graph) | due_cards, responses, session_completed | Review-session workflow scaffold |
 | `ChatState` | chat | messages (add_messages), intent, entities, graph_context, rag_context | Message reducer, checkpointing |
 | `MermaidState` | mermaid | current_code, validation_error, attempt_count | Self-correction loop |
 | `ResearchState` | research | messages (add_messages), topic | ReAct agent |
 | `ContentState` | content | topic, mcqs, term_cards, diagram, final_pack | Parallel fan-out |
 | `QuizState` | quiz | topic, resources, needs_research | Conditional branching |
 | `MCPState` | mcp | claim, verdict, explanation | Simple pipeline |
-| `LinkSuggestionState` | link_suggestion | node_id, candidates, links | Simple pipeline |
+| `LinkSuggestionState` | link_suggestion | node_id, candidates, links | Local state in `link_suggestion_graph.py` |
+| `ArticleState` | article | url, html_content, markdown_content, ingestion_result | URL fetch/parse/ingest helper graph |
 
 ---
 
@@ -363,25 +378,23 @@ This is the most complex graph in the system. It demonstrates the most LangGraph
 START
   |
   v
-parse_node               -- Parse document (PDF/DOCX/MD -> Markdown via LlamaParse)
+parse_node               -- Parse document (Marker-preprocessed markdown + simple text parser)
   |
   v
-chunk_node               -- Split into Parent (1000 tok) / Child (250 tok) chunks
-  |                          Generates UUIDs for parent + child chunks
+chunk_node               -- BookChunker (image-aware, ~1400-char parent chunks)
+  |                          Child chunks created with RecursiveCharacterTextSplitter (~300 chars)
   v
-extract_propositions_node -- [DISABLED for cost] Atomic fact extraction
-  |                          Returns empty list, keeps fallback paths working
+extract_concepts_node    -- LLM extracts concepts + relationships (Gemini 2.5 Flash)
+  |                          CONTEXT-AWARE: fetches existing concept names from Neo4j first
+  v
+store_note_node          -- Save note FIRST (required for chunk FK: chunks.note_id -> notes.id)
+  |
   v
 embed_node               -- Batch embed ALL child chunks (Gemini embedding-001, 768 dims MRL)
   |                          Uses index_map to track (parent_idx, child_idx) -> flat_index
   v
 save_chunks_node         -- Persist parent + child chunks + embeddings to PostgreSQL
   |                          Embeddings stored via: cast(:embedding as vector)
-  v
-extract_concepts_node    -- LLM extracts concepts + relationships (Gemini 2.5 Flash)
-  |                          CONTEXT-AWARE: fetches existing concept names from Neo4j first
-  v
-store_note_node          -- Save note to PostgreSQL (INSERT ... ON CONFLICT UPDATE)
   |
   v
 find_related_node        -- Search Neo4j for similar existing concepts
@@ -402,7 +415,7 @@ find_related_node        -- Search Neo4j for similar existing concepts
   |
   v
 create_concepts_node  -- Create concepts + ALL relationship types in Neo4j
-  |                      (RELATED_TO, PREREQUISITE_OF, SUBTOPIC_OF, BUILDS_ON)
+  |                      (RELATED_TO, PREREQUISITE_OF, SUBTOPIC_OF)
   |                      Also creates NoteSource -> EXPLAINS -> Concept edges
   |                      Cross-note linking: resolves names against ALL existing concepts
   v
@@ -418,7 +431,7 @@ generate_quiz_node    -- Generate MCQs (2 per concept)
 END
 ```
 
-**13 nodes, 2 conditional edges, 1 interrupt point** - this is the most complex graph in the system.
+**13 nodes defined, 2 conditional edges, 1 interrupt point** - `extract_propositions_node` is currently disabled/disconnected for cost optimization, while the active path remains the most complex graph in the system.
 
 #### Key LangGraph Features Demonstrated
 
@@ -495,7 +508,7 @@ async def user_review_node(state: IngestionState) -> dict:
 2. The FastAPI endpoint returns `status: "awaiting_review"` with `thread_id` to the frontend
 3. Frontend shows a review UI where user approves/rejects concepts
 4. Frontend calls `POST /api/v2/ingest/{thread_id}/approve` with decisions
-5. Backend calls `graph.ainvoke(user_response, config)` to RESUME the graph from where it paused
+5. Backend calls `graph.ainvoke(Command(resume=user_response), config)` to RESUME the graph
 6. The `interrupt()` call returns the user's response, and execution continues
 
 **Why HITL?** Concept extraction is imperfect. When we detect potential duplicates ("React Hooks" vs "React Custom Hooks"), we want the user to decide: are these the same concept or different ones? This prevents knowledge graph pollution.
@@ -1043,7 +1056,8 @@ query_vec = await self.embedder.aembed_query(
 | `PREREQUISITE_OF` | A -> B | Must learn A before B | JavaScript -> React |
 | `RELATED_TO` | A <-> B | Semantic association | React <-> Vue |
 | `SUBTOPIC_OF` | A -> B | A is part of B | useState -> React Hooks |
-| `BUILDS_ON` | A -> B | A extends B | Custom Hooks -> React Hooks |
+| `BUILDS_ON` | A -> B | A extends B (primarily from manual/AI link suggestions) | Custom Hooks -> React Hooks |
+| `PART_OF` | A -> B | A is a component of B (manual/AI link suggestions) | Attention Head -> Transformer |
 | `EXPLAINS` | NoteSource -> Concept | Note explains concept | Note#1 -> React |
 
 **User Isolation**: Every query includes `WHERE c.user_id = $user_id`. Each user has their own isolated knowledge graph.
@@ -1078,6 +1092,14 @@ Two-phase matching:
 - Each decision includes reasoning and merge strategy
 
 **Why two phases?** Embedding comparison is cheap (no LLM calls). We use it to filter from potentially hundreds of existing concepts down to a handful of candidates. Then we use expensive LLM calls only for those candidates.
+
+**Recent hardening (critical)**: dedup now also happens at write-time in Neo4j:
+
+```cypher
+MERGE (c:Concept {name_normalized: $name_normalized, user_id: $user_id})
+```
+
+`name_normalized` strips parenthetical suffixes and normalizes spacing/case, so variants like `Automatic Differentiation` and `Automatic Differentiation (Autograd)` collapse into one node. This prevents graph fragmentation even if upstream extraction misses a duplicate.
 
 ### 6.5 Hybrid Retrieval (Vector + Keyword + Graph + RRF)
 
@@ -1341,11 +1363,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, ...)
 
-# 11 routers
-app.include_router(auth_router, prefix="/auth")
-app.include_router(feed_router, prefix="/api/feed")
-app.include_router(chat_router, prefix="/api/chat")
-app.include_router(ingest_v2_router, prefix="/api/v2")
+# 12 routers
+app.include_router(auth_router)       # /auth
+app.include_router(feed_router)       # /api/feed
+app.include_router(chat_router)       # /api/chat
+app.include_router(ingest_v2_router)  # /api/v2
+app.include_router(knowledge_router)  # /api/knowledge
 # ... etc
 ```
 
@@ -1391,6 +1414,7 @@ asyncio.create_task(scanner_agent.scan_and_save(content, note_id, user_id))
 | concepts | /api/concepts | 1 |
 | nodes | /api/nodes | 3 |
 | images | /api/images | 1 |
+| knowledge | /api/knowledge | 1 |
 | **Total** | | **~60 endpoints** |
 
 ---
@@ -1412,7 +1436,7 @@ asyncio.create_task(scanner_agent.scan_and_save(content, note_id, user_id))
 
 ### PostgreSQL Schema (Consolidated)
 
-The `init.sql` file is the single source of truth for all tables, consolidated from 14 migration files. Key tables:
+The `init.sql` + `db/migrations/*.sql` pipeline is the source of truth for tables (currently 17 SQL migration files). Key tables:
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
@@ -1832,24 +1856,23 @@ This reduces latency from O(N * T) to O(T) where T is the slowest single LLM cal
 
 > 1. **Frontend** calls `POST /api/v2/ingest` with markdown content
 > 2. **Router** hashes content for deduplication, calls `run_ingestion()`
-> 3. **parse_node**: LlamaParse converts to markdown (no-op for plain text)
-> 4. **chunk_node**: RecursiveCharacterTextSplitter creates parent (1000 tok) + child (250 tok) chunks, assigns UUIDs
-> 5. **extract_propositions_node**: Currently disabled for cost (returns empty)
-> 6. **embed_node**: Batch embeds all child chunks via Gemini embedding-001 (768 dims MRL)
-> 7. **save_chunks_node**: INSERT INTO chunks with `cast(:embedding as vector)` for proper pgvector storage
-> 8. **extract_concepts_node**: Fetches existing concept names from Neo4j, passes them to ExtractionAgent, LLM returns structured concepts
-> 9. **store_note_node**: INSERT INTO notes (with content hash)
-> 10. **find_related_node**: Word overlap matching against existing Neo4j concepts
-> 11. **route_after_find_related**: Routes to synthesis (if manual) or direct creation
-> 12. **synthesize_node**: SynthesisAgent compares new vs existing, recommends MERGE/SKIP/CREATE
-> 13. **user_review_node**: `interrupt()` pauses, frontend shows review UI
-> 14. User approves -> `Command(resume=...)` resumes graph
-> 15. **create_concepts_node**: MERGE concept nodes in Neo4j, CREATE relationships (RELATED_TO, PREREQUISITE_OF, SUBTOPIC_OF), MERGE NoteSource -> EXPLAINS -> Concept
-> 16. **link_synthesis_node**: Create cross-reference edges between new and existing concepts
-> 17. **generate_flashcards_node**: LLM generates cloze deletion cards, INSERT INTO flashcards
-> 18. **generate_quiz_node**: ContentGeneratorAgent generates MCQs (2 per concept, adaptive difficulty, few-shot prompting), INSERT INTO quizzes
-> 19. **Return**: note_id, concept_ids, term_card_ids, quiz_ids, processing_metadata
-> 20. **Background**: ScannerAgent fires lazy quiz scan for any missed content
+> 3. **parse_node**: Parses Marker-preprocessed markdown (or plain text fallback)
+> 4. **chunk_node**: BookChunker creates image-aware parent chunks (~1400 chars) and child chunks (~300 chars)
+> 5. **extract_concepts_node**: Fetches existing concept names from Neo4j, then extracts structured concepts via ExtractionAgent
+> 6. **store_note_node**: INSERT INTO notes (with content hash) before chunk persistence (FK-safe ordering)
+> 7. **embed_node**: Batch embeds all child chunks via Gemini embedding-001 (768 dims MRL)
+> 8. **save_chunks_node**: INSERT INTO chunks with `cast(:embedding as vector)` for pgvector storage
+> 9. **find_related_node**: Word-overlap matching against existing Neo4j concepts
+> 10. **route_after_find_related**: Routes to synthesis (manual/default) or direct creation (auto path)
+> 11. **synthesize_node**: SynthesisAgent compares new vs existing, recommends MERGE/SKIP/CREATE
+> 12. **user_review_node**: `interrupt()` pauses, frontend shows review UI
+> 13. User approves -> `Command(resume=...)` resumes graph
+> 14. **create_concepts_node**: Neo4j upsert with normalized-name dedup + relationships (RELATED_TO, PREREQUISITE_OF, SUBTOPIC_OF) + NoteSource `EXPLAINS`
+> 15. **link_synthesis_node**: Creates cross-reference edges between new and existing concepts
+> 16. **generate_flashcards_node**: LLM generates cloze deletion cards, INSERT INTO flashcards
+> 17. **generate_quiz_node**: ContentGeneratorAgent generates MCQs (2 per concept, adaptive difficulty, few-shot prompting), INSERT INTO quizzes
+> 18. **Return**: note_id, concept_ids, term_card_ids, quiz_ids, processing_metadata
+> 19. **Background**: ScannerAgent fires lazy quiz scan for any missed content
 
 **Q28: What would you do differently if starting from scratch?**
 

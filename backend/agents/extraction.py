@@ -2,6 +2,7 @@
 
 import json
 import time
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -92,9 +93,9 @@ Content:
         )
 
         # Safety: Truncate content to prevent token limits
-        # gemini-2.5-flash has 1M token limit, but let's be safe with 100k chars for now
-        # to avoid timeouts/memory issues until we implement chunking
-        MAX_CHARS = 100_000
+        # gemini-2.5-flash has 1M token limit.
+        # Bumped to 400k as safety valve, but graph should handle chunking.
+        MAX_CHARS = 400_000
         if len(content) > MAX_CHARS:
             logger.warning(
                 "ExtractionAgent: Content too long, truncating",
@@ -115,6 +116,10 @@ Content:
                 raw_response = raw_response.split("```json")[1].split("```")[0].strip()
             elif raw_response.startswith("```"):
                 raw_response = raw_response.split("```")[1].split("```")[0].strip()
+
+            # Fix potential backslash issues (common in LLM output)
+            # Escapes backslashes that aren't already part of a valid escape sequence
+            raw_response = re.sub(r'\\(?!["\\bfnrtu/])', r'\\\\', raw_response)
 
             # Parse the JSON response
             parsed = json.loads(raw_response)
