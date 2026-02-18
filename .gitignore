@@ -100,3 +100,4 @@ verify_output.txt
 # Editor/Project configs
 .cursorrules
 .claude/
+.langgraph_api/
