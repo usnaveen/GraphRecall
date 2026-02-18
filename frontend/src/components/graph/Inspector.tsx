@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { motion } from "framer-motion";
-import { X, Target, BookOpen, Link2, Circle, GitBranch, Layers } from "lucide-react";
+import { X, Target, BookOpen, Link2, Circle, GitBranch, Layers, Merge } from "lucide-react";
 import type { Node3D, Link3D } from "../../lib/forceSimulation3d";
 import type { Community } from "../../lib/graphData";
 
@@ -20,6 +20,8 @@ interface InspectorProps {
   onNodeSelect: (node: Node3D) => void;
   onQuiz: (topic: string) => void;
   onShowResources: (topic: string, type: "note" | "link") => void;
+  onMerge?: () => void;
+  onOpenNotes?: () => void;
 }
 
 export default function Inspector({
@@ -30,6 +32,8 @@ export default function Inspector({
   onNodeSelect,
   onQuiz,
   onShowResources,
+  onMerge,
+  onOpenNotes,
 }: InspectorProps) {
   // Build connected nodes sorted by weight
   const connectedNodes = useMemo(() => {
@@ -85,12 +89,23 @@ export default function Inspector({
               </p>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
-          >
-            <X className="w-4 h-4 text-white/50" />
-          </button>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {onMerge && (
+              <button
+                onClick={onMerge}
+                title="Merge with other concepts"
+                className="p-1 rounded-full hover:bg-orange-500/20 transition-colors"
+              >
+                <Merge className="w-3.5 h-3.5 text-white/40 hover:text-orange-400" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1 rounded-full hover:bg-white/10 transition-colors"
+            >
+              <X className="w-4 h-4 text-white/50" />
+            </button>
+          </div>
         </div>
 
         {/* Stats badges */}
@@ -120,7 +135,7 @@ export default function Inspector({
             Quiz
           </button>
           <button
-            onClick={() => onShowResources(selectedNode.title, "note")}
+            onClick={() => onOpenNotes ? onOpenNotes() : onShowResources(selectedNode.title, "note")}
             className="flex-1 py-1.5 rounded-lg bg-white/5 text-white/70 text-[10px] font-medium flex items-center justify-center gap-1 hover:bg-white/10 transition-colors"
           >
             <BookOpen className="w-3 h-3" />
@@ -139,12 +154,12 @@ export default function Inspector({
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Description */}
-        {selectedNode.definition && (
-          <div>
-            <p className="text-[10px] text-white/40 uppercase tracking-wider mb-1.5">Description</p>
-            <p className="text-xs text-white/70 leading-relaxed">{selectedNode.definition}</p>
-          </div>
-        )}
+        <div>
+          <p className="text-[10px] text-white/40 uppercase tracking-wider mb-1.5">Description</p>
+          <p className="text-xs text-white/70 leading-relaxed line-clamp-3">
+            {selectedNode.definition || "No description available"}
+          </p>
+        </div>
 
         {/* Community Hierarchy */}
         {hierarchyInfo && (

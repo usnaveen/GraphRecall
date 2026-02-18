@@ -16,16 +16,7 @@ interface ControlsProps {
   visibleLinkCount: number;
 }
 
-const DOMAIN_OPTIONS = [
-  "General",
-  "Machine Learning",
-  "Mathematics",
-  "Computer Science",
-  "Database Systems",
-  "System Design",
-  "Programming",
-  "Statistics",
-];
+// Domains are now derived from graph data, no hardcoded list
 
 export default function Controls({
   layout,
@@ -78,7 +69,7 @@ export default function Controls({
             className="w-full px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-[11px] focus:outline-none focus:border-[#B6FF2E]/50 appearance-none cursor-pointer"
           >
             <option value="" className="bg-[#1a1a1f] text-white">All Domains</option>
-            {(availableDomains.length > 0 ? availableDomains : DOMAIN_OPTIONS).map((d) => (
+            {availableDomains.map((d) => (
               <option key={d} value={d} className="bg-[#1a1a1f] text-white">
                 {d}
               </option>

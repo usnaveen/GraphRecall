@@ -1,25 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, X, Target, Link2, Plus, Loader2, ChevronDown } from "lucide-react";
+import { Search, X, Target, Link2, Plus, Loader2, ChevronDown, Check, Merge } from "lucide-react";
 import { GraphVisualizer } from "../components/graph/GraphVisualizer";
 import Inspector from "../components/graph/Inspector";
 import Controls from "../components/graph/Controls";
+import NotePanel from "../components/graph/NotePanel";
 import type { GraphData, Community } from "../lib/graphData";
 import { ForceSimulation3D } from "../lib/forceSimulation3d";
 import type { GraphLayout, Node3D, Link3D } from "../lib/forceSimulation3d";
-import { api, nodesService } from "../services/api";
+import { api, nodesService, conceptsService } from "../services/api";
 import { useAppStore } from "../store/useAppStore";
-
-const DOMAIN_OPTIONS = [
-  "General",
-  "Machine Learning",
-  "Mathematics",
-  "Computer Science",
-  "Database Systems",
-  "System Design",
-  "Programming",
-  "Statistics",
-];
 
 type LinkSuggestion = {
   target_id: string;
@@ -66,6 +56,28 @@ export function GraphScreen() {
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [linkNodeId, setLinkNodeId] = useState<string | null>(null);
   const [pendingPosition, setPendingPosition] = useState<{ x: number; y: number; z: number } | null>(null);
+
+  // Merge mode state
+  const [mergeMode, setMergeMode] = useState(false);
+  const [mergeSourceId, setMergeSourceId] = useState<string | null>(null);
+  const [mergeTargetIds, setMergeTargetIds] = useState<Set<string>>(new Set());
+  const [merging, setMerging] = useState(false);
+
+  // Notes side panel state
+  const [notePanelOpen, setNotePanelOpen] = useState(false);
+  const [notePanelConceptId, setNotePanelConceptId] = useState<string | null>(null);
+  const [notePanelConceptName, setNotePanelConceptName] = useState("");
+  const [splitRatio, setSplitRatio] = useState(0.6); // graph takes 60%
+  const isDraggingRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Available domains from graph data for create modal
+  const availableDomains = useMemo(() => {
+    if (!layout?.nodes) return ["General"];
+    const domains = new Set(layout.nodes.map((n) => n.domain).filter(Boolean));
+    domains.add("General");
+    return Array.from(domains).sort() as string[];
+  }, [layout]);
 
   const openCreateModal = useCallback(
     (prefillName?: string, position?: { x: number; y: number; z: number }) => {
@@ -167,6 +179,43 @@ export function GraphScreen() {
     );
   }, [selectedNode, layout]);
 
+  // Parent/child/connected node IDs for coloring and spring animation
+  const { parentNodeIds, childNodeIds, connectedNodeIds } = useMemo(() => {
+    if (!selectedNode || !connectedLinks.length) {
+      return { parentNodeIds: new Set<string>(), childNodeIds: new Set<string>(), connectedNodeIds: new Set<string>() };
+    }
+    const parents = new Set<string>();
+    const children = new Set<string>();
+    const connected = new Set<string>();
+
+    for (const link of connectedLinks) {
+      const relType = (link.description || "").toUpperCase();
+      const otherId = link.source.id === selectedNode.id ? link.target.id : link.source.id;
+      connected.add(otherId);
+
+      if (relType === "PREREQUISITE_OF") {
+        // source --PREREQUISITE_OF--> target means source is a prereq of target
+        if (link.target.id === selectedNode.id) {
+          // source is a prerequisite OF selectedNode → source is a parent
+          parents.add(link.source.id);
+        } else {
+          // selectedNode is PREREQUISITE_OF target → target is a child
+          children.add(link.target.id);
+        }
+      } else if (relType === "SUBTOPIC_OF") {
+        // source --SUBTOPIC_OF--> target means source is subtopic of target
+        if (link.source.id === selectedNode.id) {
+          // selected is subtopic of target → target is parent
+          parents.add(link.target.id);
+        } else {
+          // other is subtopic of selected → other is child
+          children.add(link.source.id);
+        }
+      }
+    }
+    return { parentNodeIds: parents, childNodeIds: children, connectedNodeIds: connected };
+  }, [selectedNode, connectedLinks]);
+
   // Visible node/link counts for controls panel
   const visibleNodeCount = useMemo(() => {
     if (!layout?.nodes) return 0;
@@ -192,9 +241,9 @@ export function GraphScreen() {
   const handleShowResources = async (topicName: string, type: "note" | "link") => {
     setSelectedResourceTopic(topicName);
     setResourceType(type);
-    setResourcesLoading(true); // Set loading FIRST
+    setResourcesLoading(true);
     setResources([]);
-    setShowResources(true); // Then show modal
+    setShowResources(true);
 
     try {
       const response = await api.get(`/feed/resources/${encodeURIComponent(topicName)}`);
@@ -275,6 +324,116 @@ export function GraphScreen() {
       console.error("Failed to apply links:", err);
     }
   };
+
+  // --- Merge mode handlers ---
+  const enterMergeMode = () => {
+    if (!selectedNode) return;
+    setMergeMode(true);
+    setMergeSourceId(selectedNode.id);
+    setMergeTargetIds(new Set());
+  };
+
+  const exitMergeMode = () => {
+    setMergeMode(false);
+    setMergeSourceId(null);
+    setMergeTargetIds(new Set());
+  };
+
+  const toggleMergeTarget = (node: Node3D) => {
+    if (node.id === mergeSourceId) return; // Can't merge with self
+    setMergeTargetIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(node.id)) next.delete(node.id);
+      else next.add(node.id);
+      return next;
+    });
+  };
+
+  const handleMerge = async () => {
+    if (!mergeSourceId || mergeTargetIds.size === 0) return;
+    setMerging(true);
+    try {
+      await conceptsService.mergeConcepts(Array.from(mergeTargetIds), mergeSourceId);
+      exitMergeMode();
+      setSelectedNode(null);
+      await loadGraph();
+    } catch (err) {
+      console.error("Failed to merge concepts:", err);
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  // --- Notes panel handlers ---
+  const handleOpenNotes = () => {
+    if (!selectedNode) return;
+    setNotePanelConceptId(selectedNode.id);
+    setNotePanelConceptName(selectedNode.title);
+    setNotePanelOpen(true);
+  };
+
+  const handleCloseNotes = () => {
+    setNotePanelOpen(false);
+    setNotePanelConceptId(null);
+  };
+
+  // --- Resizable split ---
+  const handleDragStart = useCallback(() => {
+    isDraggingRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingRef.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const ratio = (e.clientX - rect.left) / rect.width;
+      setSplitRatio(Math.max(0.3, Math.min(0.8, ratio)));
+    };
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
+  // --- Double-click to navigate ---
+  const handleDoubleClickEmpty = useCallback((point: { x: number; y: number; z: number }) => {
+    setFocusNodeId(null); // clear first to allow re-trigger
+    // Find nearest node to the clicked point to use as focus
+    if (!layout?.nodes) return;
+    let nearest: Node3D | null = null;
+    let minDist = Infinity;
+    for (const n of layout.nodes) {
+      const dx = n.x - point.x;
+      const dy = n.y - point.y;
+      const dz = n.z - point.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = n;
+      }
+    }
+    if (nearest) {
+      setFocusNodeId(nearest.id);
+    }
+  }, [layout]);
+
+  // --- Node selection handler ---
+  const handleNodeSelect = useCallback((node: Node3D | null) => {
+    if (mergeMode && node) {
+      toggleMergeTarget(node);
+      return;
+    }
+    setSelectedNode(node);
+    if (node) {
+      setFocusNodeId(node.id);
+      setShowInspector(true);
+    }
+  }, [mergeMode, mergeSourceId]);
 
   if (loading) {
     return (
@@ -367,95 +526,163 @@ export function GraphScreen() {
         </div>
       )}
 
-      {/* Graph Canvas */}
-      <div className="flex-1 rounded-3xl overflow-hidden border border-white/10 relative bg-[#0a0a0f]">
-        <GraphVisualizer
-          layout={layout}
-          selectedNode={selectedNode}
-          hoveredNode={hoveredNode}
-          onNodeSelect={(node) => {
-            setSelectedNode(node);
-            if (node) {
-              setFocusNodeId(node.id);
-              setShowInspector(true);
-            }
-          }}
-          onNodeHover={(node) => setHoveredNode(node)}
-          showCommunities={showCommunities}
-          searchTerm={searchQuery}
-          visibleNodeIds={visibleNodeIds}
-          showLabels={showLabels}
-          isMobile={isMobile}
-          onEmptyContextMenu={(point) => {
-            openCreateModal(undefined, point);
-          }}
-          focusNodeId={focusNodeId}
-          pulseNodeId={focusNodeId || selectedNode?.id || null}
-          minRelationshipWeight={minRelationshipWeight}
-          selectedDomain={selectedDomain}
-        />
-
-        {/* Controls Panel (top-left) */}
-        {!isMobile && (
-          <Controls
+      {/* Graph Canvas + Notes Panel (split view) */}
+      <div
+        ref={containerRef}
+        className="flex-1 flex rounded-3xl overflow-hidden border border-white/10 relative bg-[#0a0a0f]"
+      >
+        {/* Graph side */}
+        <div
+          className="relative h-full overflow-hidden"
+          style={{ width: notePanelOpen ? `${splitRatio * 100}%` : "100%" }}
+        >
+          <GraphVisualizer
             layout={layout}
+            selectedNode={selectedNode}
+            hoveredNode={hoveredNode}
+            onNodeSelect={handleNodeSelect}
+            onNodeHover={(node) => setHoveredNode(node)}
             showCommunities={showCommunities}
-            onToggleCommunities={() => setShowCommunities((v) => !v)}
-            onRecomputeCommunities={async () => {
-              try {
-                await api.post("/graph3d/communities/recompute");
-                await loadGraph();
-              } catch (e) {
-                console.error("Failed to recompute communities", e);
-              }
+            searchTerm={searchQuery}
+            visibleNodeIds={visibleNodeIds}
+            showLabels={showLabels}
+            isMobile={isMobile}
+            onEmptyContextMenu={(point) => {
+              openCreateModal(undefined, point);
             }}
+            onDoubleClickEmpty={handleDoubleClickEmpty}
+            focusNodeId={focusNodeId}
+            pulseNodeId={focusNodeId || selectedNode?.id || null}
             minRelationshipWeight={minRelationshipWeight}
-            onMinRelationshipWeightChange={setMinRelationshipWeight}
             selectedDomain={selectedDomain}
-            onDomainChange={setSelectedDomain}
-            visibleNodeCount={visibleNodeCount}
-            visibleLinkCount={visibleLinkCount}
+            mergeMode={mergeMode}
+            mergeTargetIds={mergeTargetIds}
+            parentNodeIds={parentNodeIds}
+            childNodeIds={childNodeIds}
+            connectedNodeIds={connectedNodeIds}
+          />
+
+          {/* Controls Panel (top-left) */}
+          {!isMobile && (
+            <Controls
+              layout={layout}
+              showCommunities={showCommunities}
+              onToggleCommunities={() => setShowCommunities((v) => !v)}
+              onRecomputeCommunities={async () => {
+                try {
+                  await api.post("/graph3d/communities/recompute");
+                  await loadGraph();
+                } catch (e) {
+                  console.error("Failed to recompute communities", e);
+                }
+              }}
+              minRelationshipWeight={minRelationshipWeight}
+              onMinRelationshipWeightChange={setMinRelationshipWeight}
+              selectedDomain={selectedDomain}
+              onDomainChange={setSelectedDomain}
+              visibleNodeCount={visibleNodeCount}
+              visibleLinkCount={visibleLinkCount}
+            />
+          )}
+
+          {/* Mobile community toggle fallback */}
+          {isMobile && (
+            <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/50 rounded-full px-3 py-1.5">
+              <span className="text-[10px] text-white/60">Communities</span>
+              <button
+                onClick={() => setShowCommunities((v) => !v)}
+                className={`text-[10px] px-2 py-0.5 rounded-full ${showCommunities ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/60"}`}
+              >
+                {showCommunities ? "On" : "Off"}
+              </button>
+            </div>
+          )}
+
+          {/* Inspector Panel (right side overlay) */}
+          <AnimatePresence>
+            {selectedNode && showInspector && !isMobile && !mergeMode && (
+              <Inspector
+                selectedNode={selectedNode}
+                connectedLinks={connectedLinks}
+                communities={layout?.communities || []}
+                onClose={() => setShowInspector(false)}
+                onNodeSelect={(node) => {
+                  setSelectedNode(node);
+                  setFocusNodeId(node.id);
+                }}
+                onQuiz={(topic) => startQuizForTopic(topic)}
+                onShowResources={handleShowResources}
+                onMerge={enterMergeMode}
+                onOpenNotes={handleOpenNotes}
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Merge mode bar */}
+          <AnimatePresence>
+            {mergeMode && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-xl border border-orange-500/30 rounded-2xl px-5 py-3 flex items-center gap-4 z-30"
+              >
+                <Merge className="w-4 h-4 text-orange-400" />
+                <div className="text-xs text-white">
+                  <span className="text-orange-400 font-medium">Merge mode</span>
+                  {" — Click nodes to select, then confirm. "}
+                  <span className="text-white/50">({mergeTargetIds.size} selected)</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={exitMergeMode}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 text-white/70 text-xs hover:bg-white/20 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleMerge}
+                    disabled={mergeTargetIds.size === 0 || merging}
+                    className="px-3 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-medium hover:bg-orange-400 transition-colors disabled:opacity-40"
+                  >
+                    {merging ? "Merging..." : `Merge ${mergeTargetIds.size} → 1`}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Floating action button */}
+          {!mergeMode && (
+            <button
+              onClick={() => openCreateModal()}
+              className="absolute bottom-4 right-4 w-12 h-12 rounded-full bg-[#B6FF2E] text-black flex items-center justify-center shadow-lg hover:bg-[#c5ff4d] transition-colors"
+            >
+              <Plus className="w-6 h-6" />
+            </button>
+          )}
+        </div>
+
+        {/* Drag handle for split */}
+        {notePanelOpen && (
+          <div
+            onMouseDown={handleDragStart}
+            className="w-1 hover:w-1.5 bg-white/10 hover:bg-[#B6FF2E]/40 cursor-col-resize transition-all flex-shrink-0"
           />
         )}
 
-        {/* Mobile community toggle fallback */}
-        {isMobile && (
-          <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/50 rounded-full px-3 py-1.5">
-            <span className="text-[10px] text-white/60">Communities</span>
-            <button
-              onClick={() => setShowCommunities((v) => !v)}
-              className={`text-[10px] px-2 py-0.5 rounded-full ${showCommunities ? "bg-[#B6FF2E] text-black" : "bg-white/10 text-white/60"}`}
-            >
-              {showCommunities ? "On" : "Off"}
-            </button>
-          </div>
-        )}
-
-        {/* Inspector Panel (right side overlay) */}
+        {/* Notes Panel (right side) */}
         <AnimatePresence>
-          {selectedNode && showInspector && !isMobile && (
-            <Inspector
-              selectedNode={selectedNode}
-              connectedLinks={connectedLinks}
-              communities={layout?.communities || []}
-              onClose={() => setShowInspector(false)}
-              onNodeSelect={(node) => {
-                setSelectedNode(node);
-                setFocusNodeId(node.id);
-              }}
-              onQuiz={(topic) => startQuizForTopic(topic)}
-              onShowResources={handleShowResources}
-            />
+          {notePanelOpen && notePanelConceptId && (
+            <div style={{ width: `${(1 - splitRatio) * 100}%` }} className="h-full">
+              <NotePanel
+                conceptId={notePanelConceptId}
+                conceptName={notePanelConceptName}
+                onClose={handleCloseNotes}
+              />
+            </div>
           )}
         </AnimatePresence>
-
-        {/* Floating action button */}
-        <button
-          onClick={() => openCreateModal()}
-          className="absolute bottom-4 right-4 w-12 h-12 rounded-full bg-[#B6FF2E] text-black flex items-center justify-center shadow-lg hover:bg-[#c5ff4d] transition-colors"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
       </div>
 
 
@@ -488,14 +715,14 @@ export function GraphScreen() {
                 className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-[#B6FF2E]/50 mb-3 h-20 resize-none"
               />
 
-              {/* Domain Dropdown */}
+              {/* Domain Dropdown - Dynamic from graph data */}
               <div className="relative mb-3">
                 <select
                   value={newNodeDomain}
                   onChange={(e) => setNewNodeDomain(e.target.value)}
                   className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-[#B6FF2E]/50 appearance-none cursor-pointer"
                 >
-                  {DOMAIN_OPTIONS.map((d) => (
+                  {availableDomains.map((d) => (
                     <option key={d} value={d} className="bg-[#1a1a1f] text-white">
                       {d}
                     </option>
