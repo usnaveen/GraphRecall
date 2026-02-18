@@ -413,7 +413,6 @@ function GraphScene({
   pulseNodeId,
   minRelationshipWeight = 0,
   selectedDomain,
-  mergeMode,
   mergeTargetIds,
   parentNodeIds,
   childNodeIds,
