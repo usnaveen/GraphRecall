@@ -146,7 +146,7 @@ async def ingest_note(
             logger.info("v2/ingest: Duplicate detected", note_id=existing_note[0]["id"])
             # Return successfully but point to existing note
             return IngestResponse(
-                note_id=existing_note[0]["id"],
+                note_id=str(existing_note[0]["id"]),
                 status="completed",
                 thread_id="duplicate_skipped",
                 error="Duplicate content detected. Note already exists."
