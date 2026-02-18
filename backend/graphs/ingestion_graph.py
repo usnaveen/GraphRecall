@@ -398,62 +398,104 @@ async def extract_concepts_node(state: IngestionState) -> dict:
 
     # Prefer chunks context if available (better context management)
     chunks = state.get("chunks", [])
-    if chunks:
-        # Concatenate parent chunks for extraction context
-        # In Phase 2/3, we might iterate per parent chunk. For now, concat for global context.
-        # Check struct format from chunker (list of dicts)
-        contents = [c.get("parent_content", "") for c in chunks]
-        content = "\n\n".join(contents)
-    else:
-        content = state.get("raw_content", "")
-        
-    logger.info("extract_concepts_node: Content prepared", length=len(content))
     
-    is_image = content.startswith("data:image")
-
-    # Build processing metadata
-    meta = state.get("processing_metadata") or {}
-    meta["content_length"] = len(content)
-    meta["is_multimodal"] = is_image
-    meta["input_type"] = "image" if is_image else "text"
-    meta["extraction_agent"] = "ExtractionAgent (Gemini, temp=0.2)"
-
-    try:
-        # Fetch existing concept names so the LLM can reference them in
-        # related_concepts / prerequisites (enables cross-note linking)
-        existing_concept_names: list[str] = []
-        try:
-            user_id = state.get("user_id", "default_user")
-            neo4j = await get_neo4j_client()
-            existing = await neo4j.execute_query(
-                "MATCH (c:Concept) WHERE c.user_id = $user_id RETURN c.name AS name LIMIT 200",
-                {"user_id": user_id},
-            )
-            existing_concept_names = [c["name"] for c in existing if c.get("name")]
-        except Exception as e:
-            logger.warning("extract_concepts_node: Context retrieval failed", error=str(e))
-            pass  # Continue without context if Neo4j is unavailable
-
-        if existing_concept_names:
-            result = await extraction_agent.extract_with_context(content, existing_concept_names)
-        else:
-            result = await extraction_agent.extract(content)
-        concepts = [c.model_dump() for c in result.concepts]
-
-        # Enrich metadata with extraction results
-        meta["concepts_extracted"] = len(concepts)
-        meta["domains_detected"] = list({c.get("domain", "General") for c in concepts})
-        meta["concept_names"] = [c.get("name", "") for c in concepts]
-        avg_complexity = sum(c.get("complexity_score", 5) for c in concepts) / max(len(concepts), 1)
-        meta["avg_complexity"] = round(avg_complexity, 1)
-
-        logger.info("extract_concepts_node: Complete", num_concepts=len(concepts))
-
-        return {"extracted_concepts": concepts, "processing_metadata": meta}
+    import asyncio
+    
+    # --- Batching Logic (Fixes timeouts / truncation) ---
+    if chunks:
+        # Group chunks into manageable batches to avoid 100k+ char prompts
+        # Target: ~25k chars per batch (safe for flash model, fast)
+        BATCH_CHAR_LIMIT = 25000
         
-    except Exception as e:
-        logger.error("extract_concepts_node: Failed", error=str(e))
-        return {"extracted_concepts": [], "error": str(e), "processing_metadata": meta}
+        batches = []
+        current_batch_texts = []
+        current_batch_len = 0
+        
+        # Prepare batches
+        for c in chunks:
+            text = c.get("parent_content", "")
+            # If adding this chunk exceeds limit (and batch not empty), start new batch
+            if current_batch_len + len(text) > BATCH_CHAR_LIMIT and current_batch_texts:
+                batches.append("\n\n".join(current_batch_texts))
+                current_batch_texts = []
+                current_batch_len = 0
+                
+            current_batch_texts.append(text)
+            current_batch_len += len(text)
+            
+        # Add final batch
+        if current_batch_texts:
+            batches.append("\n\n".join(current_batch_texts))
+            
+        logger.info("extract_concepts_node: Processing in batches", 
+                    num_batches=len(batches), total_chunks=len(chunks))
+
+        # --- Parallel Execution ---
+        # Limit concurrency to avoid rate limits
+        semaphore = asyncio.Semaphore(5) 
+        all_concepts = []
+        
+        async def process_batch(batch_text: str, batch_idx: int):
+            async with semaphore:
+                try:
+                    # Retrieve context if available (only for first few batches to save time?)
+                    # For now, use context if available for all
+                    if existing_concept_names:
+                        res = await extraction_agent.extract_with_context(batch_text, existing_concept_names)
+                    else:
+                        res = await extraction_agent.extract(batch_text)
+                    return res.concepts
+                except Exception as e:
+                    logger.error("extract_concepts_node: Batch failed", batch=batch_idx, error=str(e))
+                    return []
+
+        # Launch tasks
+        tasks = [process_batch(text, i) for i, text in enumerate(batches)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Aggregate results
+        for res in results:
+            if isinstance(res, list): # List of concepts
+                all_concepts.extend([c.model_dump() for c in res])
+            else:
+                logger.error("extract_concepts_node: Unexpected result type", type=type(res))
+
+    else:
+        # Fallback for non-chunked content (e.g. short text / URL)
+        content = state.get("raw_content", "")
+        # ... logic for single extraction ...
+        logger.info("extract_concepts_node: Single extraction", length=len(content))
+        
+        try:
+            if existing_concept_names:
+                result = await extraction_agent.extract_with_context(content, existing_concept_names)
+            else:
+                result = await extraction_agent.extract(content)
+            all_concepts = [c.model_dump() for c in result.concepts]
+        except Exception as e:
+            logger.error("extract_concepts_node: Single extraction failed", error=str(e))
+            all_concepts = []
+
+    # Common Post-Processing
+    concepts = all_concepts
+    
+    # Deduplicate by name (case-insensitive) just in case
+    unique_concepts = {}
+    for c in concepts:
+        key = c["name"].lower().strip()
+        if key not in unique_concepts:
+            unique_concepts[key] = c
+    concepts = list(unique_concepts.values())
+
+    meta = state.get("processing_metadata") or {}
+    meta["concepts_extracted"] = len(concepts)
+    meta["domains_detected"] = list({c.get("domain", "General") for c in concepts})
+    meta["concept_names"] = [c.get("name", "") for c in concepts]
+    avg_complexity = sum(c.get("complexity_score", 5) for c in concepts) / max(len(concepts), 1)
+    meta["avg_complexity"] = round(avg_complexity, 1)
+
+    logger.info("extract_concepts_node: Complete", num_concepts=len(concepts))
+    return {"extracted_concepts": concepts, "processing_metadata": meta}
 
 
 async def store_note_node(state: IngestionState) -> dict:

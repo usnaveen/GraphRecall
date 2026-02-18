@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
 import structlog
-from langchain_tavily import TavilySearch
 from langchain_core.messages import SystemMessage, HumanMessage
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -14,6 +13,13 @@ from backend.db.postgres_client import get_postgres_client
 from backend.models.feed_schemas import MCQQuestion, MCQOption
 
 logger = structlog.get_logger()
+
+# Optional dependency: keep server startup resilient when Tavily is absent.
+try:
+    from langchain_tavily import TavilySearch
+    TAVILY_AVAILABLE = True
+except ImportError:
+    TAVILY_AVAILABLE = False
 
 class WebQuizAgent:
     """
@@ -24,6 +30,11 @@ class WebQuizAgent:
     def __init__(self):
         self.llm = get_chat_model(temperature=0.2, json_mode=True)
         # Initialize search tool - expects TAVILY_API_KEY in env
+        if not TAVILY_AVAILABLE:
+            logger.warning("WebQuizAgent: langchain_tavily not installed, web search disabled")
+            self.search = None
+            return
+
         try:
             self.search = TavilySearch(max_results=3)
         except Exception as e:
