@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, X, Target, Link2, Plus, Loader2, ChevronDown, Check, Merge } from "lucide-react";
+import { Search, X, Target, Link2, Plus, Loader2, ChevronDown, Merge } from "lucide-react";
 import { GraphVisualizer } from "../components/graph/GraphVisualizer";
 import Inspector from "../components/graph/Inspector";
 import Controls from "../components/graph/Controls";
