@@ -189,7 +189,14 @@ Content:
             ExtractionResult with list of extracted concepts
         """
         # Append context to the prompt
-        context = f"\n\nExisting concepts in the knowledge graph: {', '.join(existing_concepts[:50])}\n\nIdentify relationships with these existing concepts where applicable."
+        concept_list = ", ".join(existing_concepts[:100])
+        context = (
+            f"\n\nExisting concepts already in the knowledge graph:\n{concept_list}\n\n"
+            "IMPORTANT: Do NOT re-extract concepts that already exist above. "
+            "Instead, reference them in related_concepts or prerequisites. "
+            "If you find a concept that is essentially the same as an existing one "
+            "(even with slightly different wording), use the EXISTING name exactly."
+        )
 
         augmented_content = content + context
         return await self.extract(augmented_content)
