@@ -234,33 +234,61 @@ async def embed_node(state: IngestionState) -> dict:
     all_child_texts = []
     # Map (parent_idx, child_idx) -> flat_index
     index_map = []
-    
+
     for p_idx, group in enumerate(chunks):
         for c_idx, content in enumerate(group["child_contents"]):
             all_child_texts.append(content)
             index_map.append((p_idx, c_idx))
-            
+
     if not all_child_texts:
         return {}
-        
+
     embeddings = await embedding_service.embed_batch(all_child_texts)
-    
-    # Re-assign to chunks structure
-    # We need to make sure 'chunks' in state is mutable or we create a new one
-    # The chunker returned dicts, so we can modify them in place if we are careful,
-    # but cleaner to rebuild or attach.
-    
-    # Let's attach 'child_embeddings' list to each group
-    # Initialize lists
+
+    # Initialize child_embeddings lists
     for group in chunks:
         group["child_embeddings"] = []
-        
-    for i, emb in enumerate(embeddings):
-        p_idx, c_idx = index_map[i]
-        # Ensure the list is long enough (it should be growing in order)
-        # Actually, since we iterate in order, we can just append
-        chunks[p_idx]["child_embeddings"].append(emb)
-        
+
+    if not embeddings:
+        logger.error(
+            "embed_node: All embeddings failed! Chunks will be saved without embeddings.",
+            total_texts=len(all_child_texts),
+        )
+        # Fill with None so save_chunks_node can still save the text
+        for p_idx, c_idx in index_map:
+            chunks[p_idx]["child_embeddings"].append(None)
+    elif len(embeddings) != len(all_child_texts):
+        logger.warning(
+            "embed_node: Partial embedding failure",
+            expected=len(all_child_texts),
+            received=len(embeddings),
+        )
+        for i, (p_idx, c_idx) in enumerate(index_map):
+            emb = embeddings[i] if i < len(embeddings) else None
+            # Treat empty list placeholders from failed individual embeds as None
+            if emb is not None and len(emb) == 0:
+                emb = None
+            chunks[p_idx]["child_embeddings"].append(emb)
+    else:
+        for i, emb in enumerate(embeddings):
+            p_idx, c_idx = index_map[i]
+            # Treat empty list placeholders as None
+            if emb is not None and len(emb) == 0:
+                emb = None
+            chunks[p_idx]["child_embeddings"].append(emb)
+
+    embedded_count = sum(
+        1 for group in chunks
+        for emb in group["child_embeddings"]
+        if emb is not None
+    )
+    logger.info(
+        "embed_node: Complete",
+        total_chunks=len(all_child_texts),
+        embedded=embedded_count,
+        missing=len(all_child_texts) - embedded_count,
+    )
+
     return {"chunks": chunks}
 
 async def save_chunks_node(state: IngestionState) -> dict:
@@ -315,7 +343,15 @@ async def save_chunks_node(state: IngestionState) -> dict:
             for i, (child_text, embedding, child_id) in enumerate(zip(child_contents, child_embeddings, child_ids)):
                 page_start = child_page_starts[i] if i < len(child_page_starts) else None
                 page_end = child_page_ends[i] if i < len(child_page_ends) else None
-                
+
+                if not embedding:
+                    logger.warning(
+                        "save_chunks_node: Saving child chunk WITHOUT embedding (RAG will skip this chunk)",
+                        chunk_id=child_id,
+                        note_id=state["note_id"],
+                        chunk_index=i,
+                    )
+
                 # Dynamic query based on whether embedding exists
                 if embedding:
                     # Format embedding as pgvector-compatible literal string
@@ -395,6 +431,21 @@ async def extract_concepts_node(state: IngestionState) -> dict:
     Node 1: Extract concepts from raw content using ExtractionAgent.
     """
     logger.info("extract_concepts_node: Starting")
+
+    # Fetch existing concept names so the LLM can reference them in
+    # related_concepts / prerequisites (enables cross-note linking)
+    existing_concept_names: list[str] = []
+    try:
+        user_id = state.get("user_id", "default_user")
+        neo4j = await get_neo4j_client()
+        existing = await neo4j.execute_query(
+            "MATCH (c:Concept) WHERE c.user_id = $user_id RETURN c.name AS name LIMIT 200",
+            {"user_id": user_id},
+        )
+        existing_concept_names = [c["name"] for c in existing if c.get("name")]
+    except Exception as e:
+        logger.warning("extract_concepts_node: Context retrieval failed", error=str(e))
+        pass  # Continue without context if Neo4j is unavailable
 
     # Prefer chunks context if available (better context management)
     chunks = state.get("chunks", [])
