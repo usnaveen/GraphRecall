@@ -18,6 +18,8 @@ from backend.auth.middleware import get_current_user
 from backend.agents.scanner_agent import ScannerAgent
 from backend.db.postgres_client import get_postgres_client
 from backend.services.community_service import CommunityService
+from backend.services.storage_service import get_storage_service
+import base64
 
 from backend.graphs.ingestion_graph import (
     run_ingestion,
@@ -63,6 +65,7 @@ class IngestRequest(BaseModel):
     title: Optional[str] = None
     skip_review: bool = False  # If True, auto-approve concepts
     resource_type: Optional[str] = None  # e.g. "book", "notes", "article"
+    images: Optional[dict[str, str]] = None  # Map of filename -> base64 string
 
 
 class IngestResponse(BaseModel):
@@ -152,9 +155,45 @@ async def ingest_note(
                 error="Duplicate content detected. Note already exists."
             )
 
+        # Process Images first (if any)
+        final_content = request.content
+        if request.images:
+            storage = get_storage_service()
+            logger.info("v2/ingest: Processing images", count=len(request.images))
+            
+            for filename, b64_data in request.images.items():
+                try:
+                    # Decode base64
+                    # Handle data:image/png;base64, prefix if present
+                    if "," in b64_data:
+                        b64_data = b64_data.split(",")[1]
+                        
+                    file_data = base64.b64decode(b64_data)
+                    
+                    # Determine content type
+                    content_type = "image/png"
+                    if filename.lower().endswith((".jpg", ".jpeg")):
+                        content_type = "image/jpeg"
+                        
+                    # Upload
+                    url = await storage.upload_file(
+                        file_data, 
+                        filename, 
+                        content_type, 
+                        user_id
+                    )
+                    
+                    # Replace in markdown content
+                    # We replace the filename with the full URL
+                    # This handles ![alt](filename) -> ![alt](url)
+                    final_content = final_content.replace(filename, url)
+                    
+                except Exception as e:
+                    logger.warning("v2/ingest: Failed to upload image", filename=filename, error=str(e))
+
         # Wrap in shield to ensure ingestion completes even if client disconnects
         result = await asyncio.shield(run_ingestion(
-            content=request.content,
+            content=final_content,
             title=request.title,
             user_id=user_id,
             skip_review=request.skip_review,
