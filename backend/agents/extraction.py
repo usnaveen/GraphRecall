@@ -119,10 +119,18 @@ Content:
 
             # Fix potential backslash issues (common in LLM output)
             # Escapes backslashes that aren't already part of a valid escape sequence
-            raw_response = re.sub(r'\\(?!["\\bfnrtu/])', r'\\\\', raw_response)
+            # Specifically handle unicode escapes like \uXXXX
+            raw_response = re.sub(r'\\(?!["\\bfnrtu/]|u[0-9a-fA-F]{4})', r'\\\\', raw_response)
 
-            # Parse the JSON response
-            parsed = json.loads(raw_response)
+            try:
+                # Parse the JSON response
+                parsed = json.loads(raw_response)
+            except json.JSONDecodeError:
+                # Fallback: aggressive cleaning if simple fix fails
+                # Remove control characters except newlines/tabs
+                import re
+                cleaned = re.sub(r'[\x00-\x09\x0B-\x1F\x7F]', '', raw_response)
+                parsed = json.loads(cleaned)
 
             # Convert to ConceptCreate objects
             concepts = []
