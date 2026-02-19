@@ -14,6 +14,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 
 type CreateStep = 'upload' | 'processing' | 'review' | 'success';
 type InputMode = 'upload' | 'text' | 'youtube' | 'chat-transcript';
+const ACTIVE_INGEST_THREAD_KEY = 'gr_active_ingest_thread';
+const DEFAULT_FILE_ACCEPT = '.md,.txt,.pdf,.jpg,.png,.jpeg,.docx,.doc,.zip';
 
 interface ExtractedConcept {
   id: string;
@@ -54,6 +56,19 @@ interface ProcessingMeta {
   flashcard_agent?: string;
   upload_only?: boolean;
   upload_title?: string;
+  stage?: string;
+  status_reason?: string;
+  next_action?: string;
+  completed_nodes?: string[];
+  failed_batches?: number;
+  background_mode?: boolean;
+}
+
+interface IngestEvent {
+  timestamp: string;
+  level: string;
+  message: string;
+  details?: Record<string, unknown>;
 }
 
 function formatFileSize(bytes: number): string {
@@ -74,6 +89,7 @@ function getFormatLabel(ext: string): string {
     webp: 'WebP Image',
     docx: 'Word Document',
     doc: 'Word Document',
+    zip: 'Processed ZIP',
   };
   return map[ext] || ext.toUpperCase();
 }
@@ -83,6 +99,8 @@ export function CreateScreen() {
   const [isDragging, setIsDragging] = useState(false);
   const [progress, setProgress] = useState(0);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [ingestEvents, setIngestEvents] = useState<IngestEvent[]>([]);
+  const [isBackgroundIngest, setIsBackgroundIngest] = useState(false);
   const [extractedConcepts, setExtractedConcepts] = useState<ExtractedConcept[]>([]);
   const [inputType, setInputType] = useState<InputMode>('upload');
   const [textInput, setTextInput] = useState('');
@@ -93,9 +111,37 @@ export function CreateScreen() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { fetchFeed, setActiveTab } = useAppStore();
 
+  const clearActiveIngestThread = () => {
+    localStorage.removeItem(ACTIVE_INGEST_THREAD_KEY);
+    setIsBackgroundIngest(false);
+  };
+
+  const statusToProgress = (statusPayload: any): number => {
+    const completedNodes = statusPayload?.progress?.completed_nodes || [];
+    const totalNodes = 10; // Core ingest nodes on the happy path
+    if (statusPayload?.status === 'completed') return 100;
+    if (statusPayload?.status === 'error') return Math.max(15, progress);
+    if (!Array.isArray(completedNodes)) return Math.max(progress, 15);
+    const pct = Math.round((completedNodes.length / totalNodes) * 90) + 5;
+    return Math.min(95, Math.max(10, pct));
+  };
+
+  const mapReviewConcepts = (decisions: any[] = []) => {
+    return decisions.map((d: any, i: number) => ({
+      id: i.toString(),
+      name: d.new_concept?.name || `Concept ${i + 1}`,
+      definition: d.new_concept?.definition || '',
+      domain: d.new_concept?.domain || 'General',
+      complexity: d.new_concept?.complexity_score || 5,
+      selected: d.recommended_action !== 'skip',
+      exists: d.matches && d.matches.length > 0,
+      original: d.new_concept
+    }));
+  };
+
   // Simulate progress ticks while waiting for API
   useEffect(() => {
-    if (step !== 'processing' || progress >= 90) return;
+    if (step !== 'processing' || progress >= 90 || isBackgroundIngest || threadId) return;
     const timer = setInterval(() => {
       setProgress(p => {
         if (p >= 85) return p; // Cap simulated progress at 85%
@@ -103,7 +149,98 @@ export function CreateScreen() {
       });
     }, 800);
     return () => clearInterval(timer);
-  }, [step, progress]);
+  }, [step, progress, isBackgroundIngest, threadId]);
+
+  // Resume background ingestion after tab navigation/reload.
+  useEffect(() => {
+    const savedThreadId = localStorage.getItem(ACTIVE_INGEST_THREAD_KEY);
+    if (!savedThreadId) return;
+
+    setThreadId(savedThreadId);
+    setIsBackgroundIngest(true);
+    setStep('processing');
+    setProgress(8);
+    setError(null);
+    setProcessingMeta(prev => ({
+      ...prev,
+      background_mode: true,
+      stage: 'processing',
+    }));
+  }, []);
+
+  // Poll status/events while a background ingest is active.
+  useEffect(() => {
+    if (!threadId || step !== 'processing' || !isBackgroundIngest) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const [statusPayload, eventsPayload] = await Promise.all([
+          ingestService.getStatus(threadId),
+          ingestService.getEvents(threadId),
+        ]);
+
+        if (cancelled) return;
+
+        if (eventsPayload?.events && Array.isArray(eventsPayload.events)) {
+          setIngestEvents(eventsPayload.events);
+        }
+
+        setProcessingMeta(prev => ({
+          ...prev,
+          stage: statusPayload.stage || prev.stage,
+          status_reason: statusPayload.status_reason || prev.status_reason,
+          next_action: statusPayload.next_action || prev.next_action,
+          completed_nodes: statusPayload.progress?.completed_nodes || prev.completed_nodes,
+          failed_batches: statusPayload.progress?.failed_batches ?? prev.failed_batches,
+          concepts_extracted: statusPayload.progress?.concepts_extracted ?? prev.concepts_extracted,
+          background_mode: true,
+        }));
+        setProgress(statusToProgress(statusPayload));
+
+        const hasEventTrail = Array.isArray(eventsPayload?.events) && eventsPayload.events.length > 0;
+        const effectiveStatus = statusPayload.status === 'not_found' && hasEventTrail
+          ? 'processing'
+          : statusPayload.status;
+
+        if (effectiveStatus === 'completed') {
+          setProgress(100);
+          setStep('success');
+          clearActiveIngestThread();
+          fetchFeed(true);
+          return;
+        }
+
+        if (effectiveStatus === 'awaiting_review') {
+          const reviewConcepts = mapReviewConcepts(statusPayload.synthesis_decisions || []);
+          setExtractedConcepts(reviewConcepts);
+          setStep('review');
+          return;
+        }
+
+        if (effectiveStatus === 'error') {
+          setError(
+            statusPayload.error ||
+            `Ingestion failed (${statusPayload.status_reason || statusPayload.status}).`
+          );
+          setStep('upload');
+          clearActiveIngestThread();
+        }
+      } catch (pollError: any) {
+        if (cancelled) return;
+        setError(pollError?.message || 'Failed to fetch ingestion progress');
+        setStep('upload');
+        clearActiveIngestThread();
+      }
+    };
+
+    poll();
+    const timer = setInterval(poll, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [threadId, step, isBackgroundIngest]);
 
   const readFileContent = async (file: File): Promise<string> => {
     const extension = file.name.split('.').pop()?.toLowerCase();
@@ -172,6 +309,8 @@ export function CreateScreen() {
 
   const uploadImageFile = async (file: File) => {
     try {
+      clearActiveIngestThread();
+      setIsBackgroundIngest(false);
       setStep('processing');
       setProgress(10);
       setError(null);
@@ -195,6 +334,45 @@ export function CreateScreen() {
       setStep('upload');
     } finally {
       setUploadIntent('ingest');
+      if (fileInputRef.current) fileInputRef.current.accept = DEFAULT_FILE_ACCEPT;
+    }
+  };
+
+  const startProcessedZipIngestion = async (file: File) => {
+    try {
+      setStep('processing');
+      setProgress(8);
+      setError(null);
+      setIngestEvents([]);
+      setIsBackgroundIngest(true);
+      setProcessingMeta({
+        file: {
+          fileName: file.name,
+          fileSize: file.size,
+          fileFormat: 'zip',
+          inputSource: 'file',
+        },
+        background_mode: true,
+        stage: 'queued',
+        status_reason: 'queued',
+      });
+
+      const response = await ingestService.ingestProcessedZip(file, {
+        skipReview: true,
+        title: file.name.replace(/\.zip$/i, ''),
+        resourceType: 'book',
+      });
+
+      const startedThreadId = response.thread_id as string;
+      setThreadId(startedThreadId);
+      localStorage.setItem(ACTIVE_INGEST_THREAD_KEY, startedThreadId);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to start processed zip ingestion');
+      setStep('upload');
+      clearActiveIngestThread();
+    } finally {
+      setUploadIntent('ingest');
+      if (fileInputRef.current) fileInputRef.current.accept = DEFAULT_FILE_ACCEPT;
     }
   };
 
@@ -207,6 +385,10 @@ export function CreateScreen() {
         return;
       }
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      if (ext === 'zip') {
+        await startProcessedZipIngestion(file);
+        return;
+      }
       try {
         setStep('processing');
         setProgress(5);
@@ -249,6 +431,10 @@ export function CreateScreen() {
         return;
       }
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      if (ext === 'zip') {
+        await startProcessedZipIngestion(file);
+        return;
+      }
       try {
         setStep('processing');
         setProgress(5);
@@ -271,6 +457,8 @@ export function CreateScreen() {
   };
 
   const startProcessing = async (content: string, title: string = "New Knowledge") => {
+    clearActiveIngestThread();
+    setIsBackgroundIngest(false);
     setStep('processing');
     setProgress(10);
     setError(null);
@@ -330,6 +518,7 @@ export function CreateScreen() {
         .map((c: ExtractedConcept) => (c as any).original);
 
       await ingestService.resume(threadId, approved);
+      clearActiveIngestThread();
       setStep('success');
     } catch (error) {
       console.error('Resume failed:', error);
@@ -407,6 +596,8 @@ export function CreateScreen() {
                     <button
                       onClick={async () => {
                         if (!youtubeUrl.trim()) return;
+                        clearActiveIngestThread();
+                        setIsBackgroundIngest(false);
                         setStep('processing');
                         setProgress(30);
                         setProcessingMeta({ file: { fileName: youtubeUrl, fileSize: 0, fileFormat: 'youtube', inputSource: 'url' } });
@@ -442,6 +633,8 @@ export function CreateScreen() {
                     <button
                       onClick={async () => {
                         if (!textInput.trim()) return;
+                        clearActiveIngestThread();
+                        setIsBackgroundIngest(false);
                         setStep('processing');
                         setProgress(10);
                         setProcessingMeta({ file: { fileName: 'Chat Transcript', fileSize: new Blob([textInput]).size, fileFormat: 'chat', inputSource: 'text' } });
@@ -467,7 +660,12 @@ export function CreateScreen() {
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    if (fileInputRef.current) {
+                      fileInputRef.current.accept = DEFAULT_FILE_ACCEPT;
+                      fileInputRef.current.click();
+                    }
+                  }}
                   className={`
                     flex-1 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-6 transition-all duration-300 cursor-pointer
                     ${isDragging
@@ -481,7 +679,7 @@ export function CreateScreen() {
                     ref={fileInputRef}
                     className="hidden"
                     onChange={handleFileSelect}
-                    accept=".md,.txt,.pdf,.jpg,.png,.jpeg,.docx,.doc"
+                    accept={DEFAULT_FILE_ACCEPT}
                   />
 
                   <motion.div
@@ -494,7 +692,7 @@ export function CreateScreen() {
                   <p className="text-white/50 text-sm mb-4">or click to browse</p>
 
                   <div className="flex flex-wrap gap-1.5">
-                    {['.md', '.txt', '.pdf', '.docx', 'Images'].map((format) => (
+                    {['.md', '.txt', '.pdf', '.docx', '.zip', 'Images'].map((format) => (
                       <span
                         key={format}
                         className="px-2 py-1 rounded-full text-xs font-mono bg-white/5 text-white/50 border border-white/5"
@@ -516,6 +714,8 @@ export function CreateScreen() {
                     onClick={() => {
                       const url = prompt("Enter Article/Substack URL to analyze:");
                       if (url) {
+                        clearActiveIngestThread();
+                        setIsBackgroundIngest(false);
                         setStep('processing');
                         setProgress(10);
                         setProcessingMeta({ file: { fileName: url, fileSize: 0, fileFormat: 'url', inputSource: 'url' } });
@@ -536,6 +736,17 @@ export function CreateScreen() {
                   />
                   <QuickActionButton icon={Youtube} label="YouTube" onClick={() => setInputType('youtube')} />
                   <QuickActionButton icon={MessageSquare} label="LLM Chat" onClick={() => setInputType('chat-transcript')} />
+                  <QuickActionButton
+                    icon={HardDrive}
+                    label="Processed ZIP"
+                    onClick={() => {
+                      if (fileInputRef.current) {
+                        fileInputRef.current.accept = ".zip";
+                        setUploadIntent('ingest');
+                        fileInputRef.current.click();
+                      }
+                    }}
+                  />
                   <QuickActionButton
                     icon={Image}
                     label="Images"
@@ -567,8 +778,17 @@ export function CreateScreen() {
               className="w-16 h-16 rounded-full border-4 border-white/10 border-t-[#B6FF2E] mb-4"
             />
             <h3 className="font-heading text-lg font-bold text-white mb-2">
-              {processingMeta.upload_only ? 'Uploading Image' : 'Analyzing Your Notes'}
+              {processingMeta.upload_only
+                ? 'Uploading Image'
+                : processingMeta.file?.fileFormat === 'zip'
+                  ? 'Ingesting Processed Book'
+                  : 'Analyzing Your Notes'}
             </h3>
+            {(processingMeta.stage || processingMeta.status_reason) && (
+              <p className="text-xs text-white/40 mb-2 font-mono">
+                stage={processingMeta.stage || 'processing'} • reason={processingMeta.status_reason || 'processing'}
+              </p>
+            )}
             <div className="w-48 h-2 bg-white/10 rounded-full overflow-hidden mb-6">
               <motion.div
                 className="h-full bg-gradient-to-r from-[#B6FF2E] to-[#2EFFE6]"
@@ -587,6 +807,9 @@ export function CreateScreen() {
             </div>
 
             <GeekoutPanel meta={processingMeta} />
+            {ingestEvents.length > 0 && (
+              <IngestEventPanel events={ingestEvents} />
+            )}
           </motion.div>
         )}
 
@@ -776,13 +999,26 @@ export function CreateScreen() {
 
             <div className="flex gap-3 w-full">
               <button
-                onClick={() => { setStep('upload'); setProcessingMeta({}); }}
+                onClick={() => {
+                  clearActiveIngestThread();
+                  setThreadId(null);
+                  setIngestEvents([]);
+                  setStep('upload');
+                  setProcessingMeta({});
+                }}
                 className="flex-1 py-3 rounded-xl bg-white/5 text-white/70 font-medium hover:bg-white/10 transition-colors"
               >
                 Add More
               </button>
               <button
-                onClick={() => { setStep('upload'); setProcessingMeta({}); setActiveTab('feed'); }}
+                onClick={() => {
+                  clearActiveIngestThread();
+                  setThreadId(null);
+                  setIngestEvents([]);
+                  setStep('upload');
+                  setProcessingMeta({});
+                  setActiveTab('feed');
+                }}
                 className="flex-1 py-3 rounded-xl bg-[#B6FF2E] text-[#07070A] font-medium hover:bg-[#c5ff4d] transition-colors"
               >
                 Go to Feed
@@ -919,6 +1155,34 @@ function GeekoutPanel({ meta }: { meta: ProcessingMeta }) {
             </div>
           </motion.div>
         )}
+      </div>
+    </motion.div>
+  );
+}
+
+function IngestEventPanel({ events }: { events: IngestEvent[] }) {
+  const recent = events.slice(-6).reverse();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full max-w-md mt-4"
+    >
+      <div className="flex items-center gap-1.5 mb-2">
+        <Database className="w-3 h-3 text-white/30" />
+        <span className="text-[10px] uppercase tracking-wider text-white/30 font-mono">Ingestion Log</span>
+      </div>
+      <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3 space-y-1.5 max-h-36 overflow-y-auto">
+        {recent.map((event, idx) => (
+          <div key={`${event.timestamp}-${idx}`} className="text-[11px] font-mono text-white/65">
+            <span className="text-white/30 mr-2">{new Date(event.timestamp).toLocaleTimeString()}</span>
+            <span className={event.level === 'error' ? 'text-red-400' : event.level === 'warning' ? 'text-amber-400' : 'text-[#B6FF2E]'}>
+              {event.level.toUpperCase()}
+            </span>
+            <span className="text-white/65 ml-2">{event.message}</span>
+          </div>
+        ))}
       </div>
     </motion.div>
   );

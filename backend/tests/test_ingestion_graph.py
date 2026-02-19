@@ -121,3 +121,71 @@ async def test_create_concepts_node_creates(monkeypatch):
     result = await ingestion_module.create_concepts_node(state)
 
     assert result["created_concept_ids"] == ["c1"]
+
+
+def test_route_after_find_related_fast_path_without_overlap():
+    state = {
+        "needs_synthesis": False,
+        "skip_review": False,
+    }
+    assert ingestion_module.route_after_find_related(state) == "create_concepts"
+
+
+def test_route_after_find_related_synthesis_with_overlap_manual_review():
+    state = {
+        "needs_synthesis": True,
+        "skip_review": False,
+    }
+    assert ingestion_module.route_after_find_related(state) == "synthesize"
+
+
+def test_route_after_extract_concepts_end_on_error():
+    state = {"error": "insufficient_concepts"}
+    assert ingestion_module.route_after_extract_concepts(state) == "end"
+
+
+@pytest.mark.asyncio
+async def test_extract_concepts_node_flags_insufficient_for_large_content(monkeypatch):
+    mock_concept = MagicMock()
+    mock_concept.model_dump.return_value = {
+        "name": "Single Concept",
+        "definition": "Only one concept extracted",
+        "domain": "General",
+        "complexity_score": 3,
+        "confidence": 0.6,
+        "related_concepts": [],
+        "prerequisites": [],
+    }
+    mock_result = MagicMock(concepts=[mock_concept])
+
+    async def fake_extract(_content):
+        return mock_result
+
+    monkeypatch.setattr(ingestion_module.extraction_agent, "extract", fake_extract)
+
+    mock_neo4j = AsyncMock()
+    mock_neo4j.execute_query.return_value = []
+
+    async def fake_get_neo4j_client():
+        return mock_neo4j
+
+    monkeypatch.setattr(ingestion_module, "get_neo4j_client", fake_get_neo4j_client)
+
+    state = {
+        "raw_content": "x" * (ingestion_module.LARGE_CONTENT_CHAR_THRESHOLD + 1000),
+        "user_id": "user-1",
+    }
+    result = await ingestion_module.extract_concepts_node(state)
+
+    assert result.get("error") == "insufficient_concepts"
+    assert result.get("status_reason") == "insufficient_concepts"
+
+
+def test_resolve_concept_uuid_prefers_mapping():
+    resolved = ingestion_module._resolve_concept_uuid(
+        candidate="Automatic Differentiation (Autograd)",
+        concepts=[],
+        concept_name_to_id={"automatic differentiation": "11111111-1111-1111-1111-111111111111"},
+        created_ids={"11111111-1111-1111-1111-111111111111"},
+    )
+    assert resolved == "11111111-1111-1111-1111-111111111111"

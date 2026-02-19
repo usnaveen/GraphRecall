@@ -15,6 +15,7 @@ START → extract_concepts → store_note → find_related
 
 import json
 import re
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Literal
@@ -30,6 +31,133 @@ from backend.db.postgres_client import get_postgres_client
 from backend.graphs.checkpointer import get_checkpointer
 
 logger = structlog.get_logger()
+
+LARGE_CONTENT_CHAR_THRESHOLD = 120_000
+MIN_CONCEPTS_FOR_LARGE_CONTENT = 8
+
+
+def _looks_like_uuid(value: Optional[str]) -> bool:
+    if not value:
+        return False
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+def _normalize_concept_name(name: str) -> str:
+    if not isinstance(name, str):
+        return ""
+    normalized = re.sub(r"\s*\([^)]*\)", "", name).strip().lower()
+    return re.sub(r"\s+", " ", normalized)
+
+
+def _resolve_concept_uuid(
+    candidate: Optional[str],
+    concepts: list[dict],
+    concept_name_to_id: dict[str, str],
+    created_ids: set[str],
+) -> Optional[str]:
+    if not candidate:
+        return None
+
+    cand = str(candidate).strip()
+    if not cand:
+        return None
+
+    if cand in created_ids and _looks_like_uuid(cand):
+        return cand
+
+    lowered = cand.lower()
+    normalized = _normalize_concept_name(cand)
+    mapped = concept_name_to_id.get(lowered) or concept_name_to_id.get(normalized)
+    if mapped and _looks_like_uuid(mapped):
+        return mapped
+
+    for concept in concepts:
+        name = concept.get("name", "")
+        c_id = concept.get("id")
+        if not name:
+            continue
+        if lowered == name.lower() or normalized == _normalize_concept_name(name):
+            if c_id and _looks_like_uuid(str(c_id)):
+                return str(c_id)
+            mapped_id = concept_name_to_id.get(name.lower()) or concept_name_to_id.get(_normalize_concept_name(name))
+            if mapped_id and _looks_like_uuid(mapped_id):
+                return mapped_id
+
+    if _looks_like_uuid(cand):
+        return cand
+
+    return None
+
+
+def _node_metrics(result: dict) -> dict:
+    metrics: dict = {}
+    if not isinstance(result, dict):
+        return metrics
+    if "chunks" in result and isinstance(result.get("chunks"), list):
+        metrics["chunk_groups"] = len(result["chunks"])
+    if "extracted_concepts" in result and isinstance(result.get("extracted_concepts"), list):
+        metrics["concepts_extracted"] = len(result["extracted_concepts"])
+    if "created_concept_ids" in result and isinstance(result.get("created_concept_ids"), list):
+        metrics["concepts_created"] = len([cid for cid in result["created_concept_ids"] if cid])
+    if "term_card_ids" in result and isinstance(result.get("term_card_ids"), list):
+        metrics["flashcards_created"] = len(result["term_card_ids"])
+    if "quiz_ids" in result and isinstance(result.get("quiz_ids"), list):
+        metrics["quizzes_created"] = len(result["quiz_ids"])
+    if "error" in result and result.get("error"):
+        metrics["error"] = result.get("error")
+    return metrics
+
+
+def _instrument_async_node(node_name: str, fn):
+    async def wrapped(state: IngestionState) -> dict:
+        start = time.perf_counter()
+        logger.info(
+            f"{node_name}: Start",
+            thread_id=state.get("thread_id"),
+            note_id=state.get("note_id"),
+        )
+        try:
+            result = await fn(state)
+            if not isinstance(result, dict):
+                return result
+
+            # Maintain lightweight progress state for status endpoint visibility.
+            meta = state.get("processing_metadata") or {}
+            meta = {**meta, **(result.get("processing_metadata") or {})}
+            progress = meta.get("progress", {})
+            completed_nodes = list(progress.get("completed_nodes", []))
+            if node_name not in completed_nodes:
+                completed_nodes.append(node_name)
+            progress["completed_nodes"] = completed_nodes
+            progress["current_node"] = None
+            progress["failed_batches"] = int(meta.get("failed_batches", progress.get("failed_batches", 0) or 0))
+            progress["concepts_extracted"] = int(meta.get("concepts_extracted", progress.get("concepts_extracted", 0) or 0))
+            meta["progress"] = progress
+            result["processing_metadata"] = meta
+
+            logger.info(
+                f"{node_name}: End",
+                thread_id=state.get("thread_id"),
+                note_id=result.get("note_id") or state.get("note_id"),
+                duration_ms=round((time.perf_counter() - start) * 1000, 2),
+                **_node_metrics(result),
+            )
+            return result
+        except Exception as e:
+            logger.error(
+                f"{node_name}: Exception",
+                thread_id=state.get("thread_id"),
+                note_id=state.get("note_id"),
+                duration_ms=round((time.perf_counter() - start) * 1000, 2),
+                error=str(e),
+            )
+            raise
+
+    return wrapped
 
 # ============================================================================
 # LLM Configuration (Gemini)
@@ -450,8 +578,13 @@ async def extract_concepts_node(state: IngestionState) -> dict:
 
     # Prefer chunks context if available (better context management)
     chunks = state.get("chunks", [])
+    raw_content = state.get("raw_content", "")
     
     import asyncio
+    all_concepts: list[dict] = []
+    total_batches = 0
+    failed_batches = 0
+    successful_batches = 0
     
     # --- Batching Logic (Fixes timeouts / truncation) ---
     if chunks:
@@ -479,14 +612,16 @@ async def extract_concepts_node(state: IngestionState) -> dict:
         if current_batch_texts:
             batches.append("\n\n".join(current_batch_texts))
             
-        logger.info("extract_concepts_node: Processing in batches", 
-                    num_batches=len(batches), total_chunks=len(chunks))
+        total_batches = len(batches)
+        logger.info(
+            "extract_concepts_node: Processing in batches",
+            num_batches=total_batches,
+            total_chunks=len(chunks),
+        )
 
         # --- Parallel Execution ---
         # Limit concurrency to avoid rate limits
         semaphore = asyncio.Semaphore(5) 
-        all_concepts = []
-        
         async def process_batch(batch_text: str, batch_idx: int):
             async with semaphore:
                 try:
@@ -496,10 +631,10 @@ async def extract_concepts_node(state: IngestionState) -> dict:
                         res = await extraction_agent.extract_with_context(batch_text, existing_concept_names)
                     else:
                         res = await extraction_agent.extract(batch_text)
-                    return res.concepts
+                    return {"concepts": res.concepts, "failed": False}
                 except Exception as e:
                     logger.error("extract_concepts_node: Batch failed", batch=batch_idx, error=str(e))
-                    return []
+                    return {"concepts": [], "failed": True}
 
         # Launch tasks
         tasks = [process_batch(text, i) for i, text in enumerate(batches)]
@@ -507,10 +642,15 @@ async def extract_concepts_node(state: IngestionState) -> dict:
         
         # Aggregate results
         for res in results:
-            if isinstance(res, list): # List of concepts
-                all_concepts.extend([c.model_dump() for c in res])
+            if isinstance(res, dict):
+                if res.get("failed"):
+                    failed_batches += 1
+                    continue
+                successful_batches += 1
+                all_concepts.extend([c.model_dump() for c in res.get("concepts", [])])
             else:
                 logger.error("extract_concepts_node: Unexpected result type", type=type(res))
+                failed_batches += 1
 
     else:
         # Fallback for non-chunked content (e.g. short text / URL)
@@ -524,9 +664,13 @@ async def extract_concepts_node(state: IngestionState) -> dict:
             else:
                 result = await extraction_agent.extract(content)
             all_concepts = [c.model_dump() for c in result.concepts]
+            total_batches = 1
+            successful_batches = 1
         except Exception as e:
             logger.error("extract_concepts_node: Single extraction failed", error=str(e))
             all_concepts = []
+            total_batches = 1
+            failed_batches = 1
 
     # Common Post-Processing
     concepts = all_concepts
@@ -543,8 +687,33 @@ async def extract_concepts_node(state: IngestionState) -> dict:
     meta["concepts_extracted"] = len(concepts)
     meta["domains_detected"] = list({c.get("domain", "General") for c in concepts})
     meta["concept_names"] = [c.get("name", "") for c in concepts]
+    meta["total_batches"] = total_batches
+    meta["successful_batches"] = successful_batches
+    meta["failed_batches"] = failed_batches
     avg_complexity = sum(c.get("complexity_score", 5) for c in concepts) / max(len(concepts), 1)
     meta["avg_complexity"] = round(avg_complexity, 1)
+    progress = meta.get("progress", {})
+    progress["failed_batches"] = failed_batches
+    progress["concepts_extracted"] = len(concepts)
+    meta["progress"] = progress
+
+    # Guardrail: large uploads should not silently "succeed" with too few concepts.
+    if len(raw_content) >= LARGE_CONTENT_CHAR_THRESHOLD and len(concepts) < MIN_CONCEPTS_FOR_LARGE_CONTENT:
+        status_reason = "insufficient_concepts"
+        logger.error(
+            "extract_concepts_node: Insufficient concept yield for large content",
+            raw_content_chars=len(raw_content),
+            concepts_extracted=len(concepts),
+            min_expected=MIN_CONCEPTS_FOR_LARGE_CONTENT,
+        )
+        meta["status_reason"] = status_reason
+        return {
+            "extracted_concepts": concepts,
+            "processing_metadata": meta,
+            "error": status_reason,
+            "status_reason": status_reason,
+            "next_action": "none",
+        }
 
     logger.info("extract_concepts_node: Complete", num_concepts=len(concepts))
     return {"extracted_concepts": concepts, "processing_metadata": meta}
@@ -710,6 +879,8 @@ async def synthesize_node(state: IngestionState) -> dict:
         return {
             "synthesis_decisions": synthesis_decisions,
             "awaiting_user_approval": True,
+            "status_reason": "awaiting_review_overlap",
+            "next_action": "approve_required",
         }
     except Exception as e:
         logger.error("synthesize_node: Failed", error=str(e))
@@ -717,6 +888,8 @@ async def synthesize_node(state: IngestionState) -> dict:
         return {
             "synthesis_decisions": [],
             "awaiting_user_approval": True, # Still pause so user sees failure? Or just proceed?
+            "status_reason": "awaiting_review_overlap",
+            "next_action": "approve_required",
         }
 
 
@@ -748,6 +921,8 @@ async def user_review_node(state: IngestionState) -> dict:
         return {
             "user_approved_concepts": approved,
             "awaiting_user_approval": False,
+            "status_reason": None,
+            "next_action": "none",
         }
     
     logger.info("user_review_node: Interrupting for user review")
@@ -761,11 +936,18 @@ async def user_review_node(state: IngestionState) -> dict:
     logger.info("user_review_node: Resumed with user response")
     
     if user_response.get("cancelled"):
-        return {"user_cancelled": True, "awaiting_user_approval": False}
+        return {
+            "user_cancelled": True,
+            "awaiting_user_approval": False,
+            "status_reason": "cancelled_by_user",
+            "next_action": "none",
+        }
     
     return {
         "user_approved_concepts": user_response.get("approved_concepts", []),
         "awaiting_user_approval": False,
+        "status_reason": None,
+        "next_action": "none",
     }
 
 
@@ -780,11 +962,12 @@ async def create_concepts_node(state: IngestionState) -> dict:
     user_id = state.get("user_id", "default_user")
     
     if not concepts:
-        return {"created_concept_ids": []}
+        return {"created_concept_ids": [], "concept_name_to_id": {}}
     
     try:
         neo4j = await get_neo4j_client()
-        concept_ids = []
+        concept_ids: list[Optional[str]] = []
+        concept_name_to_id: dict[str, str] = {}
         
         for concept in concepts:
             # Call create_concept with correct signature
@@ -803,9 +986,14 @@ async def create_concepts_node(state: IngestionState) -> dict:
             node_data = result_node.get("c", result_node) if isinstance(result_node, dict) else {}
             # If node_data is a Neo4j Node object, convert to dict
             if hasattr(node_data, 'items'):
-                concept_ids.append(node_data.get("id"))
+                cid = node_data.get("id")
             else:
-                concept_ids.append(str(node_data) if node_data else None)
+                cid = str(node_data) if node_data else None
+            concept_ids.append(cid)
+            concept_name = concept.get("name", "")
+            if cid and isinstance(concept_name, str) and concept_name.strip():
+                concept_name_to_id[concept_name.lower().strip()] = cid
+                concept_name_to_id[_normalize_concept_name(concept_name)] = cid
 
         # Build evidence map using (index -> evidence_span) to avoid misalignment
         # if any concept creation fails and concept_ids becomes shorter than concepts
@@ -816,14 +1004,28 @@ async def create_concepts_node(state: IngestionState) -> dict:
         
         # Create relationships based on extraction (Semantic)
         # Build lookup from current batch
-        name_to_id = {c.get("name", "").lower(): cid for c, cid in zip(concepts, concept_ids)}
+        name_to_id = {}
+        for concept, cid in zip(concepts, concept_ids):
+            if not cid:
+                continue
+            c_name = concept.get("name", "")
+            if isinstance(c_name, str) and c_name.strip():
+                name_to_id[c_name.lower().strip()] = cid
+                name_to_id[_normalize_concept_name(c_name)] = cid
 
         # Also fetch ALL existing user concepts for cross-note linking
         existing_concepts = await neo4j.execute_query(
             "MATCH (c:Concept) WHERE c.user_id = $user_id RETURN c.id AS id, c.name AS name",
             {"user_id": user_id},
         )
-        existing_name_to_id = {c["name"].lower(): c["id"] for c in existing_concepts if c.get("name")}
+        existing_name_to_id = {}
+        for c in existing_concepts:
+            c_name = c.get("name")
+            c_id = c.get("id")
+            if not c_name or not c_id:
+                continue
+            existing_name_to_id[c_name.lower().strip()] = c_id
+            existing_name_to_id[_normalize_concept_name(c_name)] = c_id
         # Merge: current batch takes priority, then existing concepts
         all_name_to_id = {**existing_name_to_id, **name_to_id}
 
@@ -864,6 +1066,8 @@ async def create_concepts_node(state: IngestionState) -> dict:
                 },
             )
         for concept, cid in zip(concepts, concept_ids):
+             if not cid:
+                 continue
              # Handle related_concepts — search ALL existing concepts, not just current batch
              for related_name in concept.get("related_concepts", []):
                  r_name = related_name
@@ -871,7 +1075,7 @@ async def create_concepts_node(state: IngestionState) -> dict:
                      r_name = related_name.get("name")
 
                  if isinstance(r_name, str):
-                     r_id = all_name_to_id.get(r_name.lower())
+                     r_id = all_name_to_id.get(r_name.lower().strip()) or all_name_to_id.get(_normalize_concept_name(r_name))
                      if r_id and r_id != cid:
                          try:
                              await upsert_relationship(
@@ -892,7 +1096,7 @@ async def create_concepts_node(state: IngestionState) -> dict:
                      p_name = prereq_name.get("name")
 
                  if isinstance(p_name, str):
-                     p_id = all_name_to_id.get(p_name.lower())
+                     p_id = all_name_to_id.get(p_name.lower().strip()) or all_name_to_id.get(_normalize_concept_name(p_name))
                      if p_id and p_id != cid:
                          try:
                              await upsert_relationship(
@@ -908,7 +1112,7 @@ async def create_concepts_node(state: IngestionState) -> dict:
              # Handle SUBTOPIC_OF (child -> parent)
              parent_topic = concept.get("parent_topic")
              if parent_topic and isinstance(parent_topic, str):
-                 parent_id = all_name_to_id.get(parent_topic.lower())
+                 parent_id = all_name_to_id.get(parent_topic.lower().strip()) or all_name_to_id.get(_normalize_concept_name(parent_topic))
                  if parent_id and parent_id != cid:
                      try:
                          await upsert_relationship(
@@ -925,7 +1129,7 @@ async def create_concepts_node(state: IngestionState) -> dict:
              for sub_name in concept.get("subtopics", []):
                  s_name = sub_name if isinstance(sub_name, str) else sub_name.get("name", "")
                  if isinstance(s_name, str):
-                     s_id = all_name_to_id.get(s_name.lower())
+                     s_id = all_name_to_id.get(s_name.lower().strip()) or all_name_to_id.get(_normalize_concept_name(s_name))
                      if s_id and s_id != cid:
                          try:
                              await upsert_relationship(
@@ -943,6 +1147,8 @@ async def create_concepts_node(state: IngestionState) -> dict:
         # Link note to concepts
         if note_id:
             for cid in concept_ids:
+                if not cid:
+                    continue
                 await neo4j.execute_query(
                     """
                     MERGE (n:NoteSource {id: $note_id, user_id: $user_id})
@@ -991,20 +1197,44 @@ async def create_concepts_node(state: IngestionState) -> dict:
                 """,
                 {"note_id": note_id, "user_id": user_id, "props": prop_params}
             )
+
+        # Initialize spaced repetition records so feed has due concepts immediately.
+        valid_concept_ids = [cid for cid in concept_ids if cid]
+        initialized_proficiency = 0
+        if valid_concept_ids:
+            try:
+                pg_client = await get_postgres_client()
+                for cid in valid_concept_ids:
+                    await pg_client.execute_update(
+                        """
+                        INSERT INTO proficiency_scores (user_id, concept_id, score)
+                        VALUES (:user_id, :concept_id, 0.10)
+                        ON CONFLICT (user_id, concept_id) DO NOTHING
+                        """,
+                        {"user_id": user_id, "concept_id": cid},
+                    )
+                    initialized_proficiency += 1
+            except Exception as e:
+                logger.warning("create_concepts_node: Failed to initialize proficiency scores", error=str(e))
         
         # Enrich processing metadata with graph stats
         meta = state.get("processing_metadata") or {}
-        meta["concepts_created"] = len(concept_ids)
-        # Count relationships created (co-occurrence pairs + explicit)
-        num_cooccurrence = max(0, len(concept_ids) * (len(concept_ids) - 1) // 2)
-        meta["relationships_created"] = num_cooccurrence
+        meta["concepts_created"] = len(valid_concept_ids)
+        meta["relationships_created"] = relationships_created
+        meta["proficiency_initialized"] = initialized_proficiency
 
         logger.info(
             "create_concepts_node: Complete",
-            num_created=len(concept_ids),
+            num_created=len(valid_concept_ids),
+            relationships_created=relationships_created,
+            proficiency_initialized=initialized_proficiency,
         )
 
-        return {"created_concept_ids": concept_ids, "processing_metadata": meta}
+        return {
+            "created_concept_ids": valid_concept_ids,
+            "concept_name_to_id": concept_name_to_id,
+            "processing_metadata": meta,
+        }
         
     except Exception as e:
         logger.error("create_concepts_node: Failed", error=str(e))
@@ -1161,19 +1391,31 @@ Return ONLY valid JSON:
     try:
         pg_client = await get_postgres_client()
         card_ids = []
+        concept_name_to_id = state.get("concept_name_to_id", {}) or {}
+        created_ids = set(state.get("created_concept_ids", []) or [])
+        default_concept_id = next(iter(created_ids), None) if len(created_ids) == 1 else None
+        skipped_cards = 0
         
         for card in flashcards_dicts:
             card_id = str(uuid.uuid4())
             concept_name = card.get("concept", "")
             
-            # Find concept_id from name (from our extracted concepts)
-            concept_id = None
-            for c in concepts:
-                if c.get("name", "").lower() == concept_name.lower():
-                    concept_id = c.get("id", concept_name)
-                    break
+            # Enforce canonical UUID concept IDs to keep feed/linkage consistent.
+            concept_id = _resolve_concept_uuid(
+                candidate=concept_name,
+                concepts=concepts,
+                concept_name_to_id=concept_name_to_id,
+                created_ids=created_ids,
+            )
             if not concept_id:
-                concept_id = concept_name  # Use name as fallback
+                concept_id = default_concept_id
+            if not concept_id:
+                skipped_cards += 1
+                logger.warning(
+                    "generate_flashcards_node: Skipping card with unresolved concept",
+                    concept_name=concept_name,
+                )
+                continue
             
             await pg_client.execute_update(
                 """
@@ -1199,6 +1441,7 @@ Return ONLY valid JSON:
         # Enrich processing metadata
         meta = state.get("processing_metadata") or {}
         meta["flashcards_generated"] = len(card_ids)
+        meta["flashcards_skipped_unresolved_concept"] = skipped_cards
         if propositions:
              meta["flashcard_mode"] = "proposition_cloze"
 
@@ -1262,21 +1505,31 @@ async def generate_quiz_node(state: IngestionState) -> dict:
             
         pg_client = await get_postgres_client()
         quiz_ids = []
+        concept_name_to_id = state.get("concept_name_to_id", {}) or {}
+        created_ids = set(state.get("created_concept_ids", []) or [])
+        default_concept_id = next(iter(created_ids), None) if len(created_ids) == 1 else None
+        skipped_quizzes = 0
         
         for mcq in mcqs:
             q_id = str(uuid.uuid4())
             
-            # Find concept_id - resolve name to UUID from creation step
-            concept_id = mcq.concept_id
-            # Try to resolve the LLM-provided concept name to a real UUID
-            for c in concepts:
-                if c.get("name") == concept_id and c.get("id"):
-                    concept_id = c.get("id")
-                    break
-            
-            # Fallback if still no UUID (shouldn't happen if create_concepts ran)
+            # Resolve LLM concept reference to canonical UUID.
+            concept_id = _resolve_concept_uuid(
+                candidate=mcq.concept_id,
+                concepts=concepts,
+                concept_name_to_id=concept_name_to_id,
+                created_ids=created_ids,
+            )
             if not concept_id:
-                concept_id = "unknown"
+                concept_id = default_concept_id
+            if not concept_id:
+                skipped_quizzes += 1
+                logger.warning(
+                    "generate_quiz_node: Skipping quiz with unresolved concept",
+                    llm_concept_id=mcq.concept_id,
+                    question=mcq.question[:120],
+                )
+                continue
 
             # Insert into quizzes table
             await pg_client.execute_update(
@@ -1302,6 +1555,7 @@ async def generate_quiz_node(state: IngestionState) -> dict:
         # Enrich processing metadata
         meta = state.get("processing_metadata") or {}
         meta["quizzes_generated"] = len(quiz_ids)
+        meta["quizzes_skipped_unresolved_concept"] = skipped_quizzes
         
         logger.info("generate_quiz_node: Complete", num_quizzes=len(quiz_ids))
         
@@ -1312,9 +1566,38 @@ async def generate_quiz_node(state: IngestionState) -> dict:
         return {"quiz_ids": []}
 
 
+# Apply lightweight lifecycle instrumentation to all ingestion nodes.
+parse_node = _instrument_async_node("parse", parse_node)
+chunk_node = _instrument_async_node("chunk", chunk_node)
+extract_propositions_node = _instrument_async_node("extract_propositions", extract_propositions_node)
+embed_node = _instrument_async_node("embed_chunks", embed_node)
+save_chunks_node = _instrument_async_node("save_chunks", save_chunks_node)
+extract_concepts_node = _instrument_async_node("extract_concepts", extract_concepts_node)
+store_note_node = _instrument_async_node("store_note", store_note_node)
+find_related_node = _instrument_async_node("find_related", find_related_node)
+synthesize_node = _instrument_async_node("synthesize", synthesize_node)
+user_review_node = _instrument_async_node("user_review", user_review_node)
+create_concepts_node = _instrument_async_node("create_concepts", create_concepts_node)
+link_synthesis_node = _instrument_async_node("link_synthesis", link_synthesis_node)
+generate_flashcards_node = _instrument_async_node("generate_flashcards", generate_flashcards_node)
+generate_quiz_node = _instrument_async_node("generate_quiz", generate_quiz_node)
+
+
 # ============================================================================
 # Routing Functions (Conditional Edges)
 # ============================================================================
+
+
+def route_after_extract_concepts(state: IngestionState) -> Literal["store_note", "end"]:
+    """Short-circuit when extraction produced a terminal error."""
+    if state.get("error"):
+        logger.warning(
+            "route_after_extract_concepts: Ending workflow due to extraction error",
+            error=state.get("error"),
+            status_reason=state.get("status_reason"),
+        )
+        return "end"
+    return "store_note"
 
 
 def route_after_find_related(state: IngestionState) -> Literal["synthesize", "create_concepts"]:
@@ -1327,29 +1610,28 @@ def route_after_find_related(state: IngestionState) -> Literal["synthesize", "cr
     needs_synthesis = state.get("needs_synthesis", False)
     skip_review = state.get("skip_review", False)
 
-    # Force review/synthesis path if not explicitly skipped
-    # This ensures user always gets to confirm extracted concepts
-    if not skip_review:
-        logger.info(
-            "route_after_find_related: Routing to synthesis (Force Review)",
-            reason="manual_review_required",
-        )
-        return "synthesize"
-    
-    # Auto-pilot path (only if skip_review=True)
+    # Only route to synthesis when overlap is actually detected.
+    # If there is no overlap, proceed directly to create_concepts.
     if needs_synthesis:
+        if not skip_review:
+            logger.info(
+                "route_after_find_related: Routing to synthesis (Manual Review)",
+                reason="overlap_detected_manual_review",
+            )
+            return "synthesize"
+
         logger.info(
             "route_after_find_related: Routing to synthesis (Auto-resolve)",
             reason="overlap_detected_skipping_review",
         )
         return "synthesize"
-    else:
-        logger.info(
-            "route_after_find_related: Routing to create_concepts (fast path)",
-            needs_synthesis=needs_synthesis,
-            skip_review=skip_review,
-        )
-        return "create_concepts"
+
+    logger.info(
+        "route_after_find_related: Routing to create_concepts (fast path)",
+        needs_synthesis=needs_synthesis,
+        skip_review=skip_review,
+    )
+    return "create_concepts"
 
 
 def route_after_user_review(state: IngestionState) -> Literal["create_concepts", "end"]:
@@ -1419,7 +1701,15 @@ def create_ingestion_graph(enable_interrupts: bool = True):
     builder.add_edge(START, "parse")
     builder.add_edge("parse", "chunk")
     builder.add_edge("chunk", "extract_concepts")
-    builder.add_edge("extract_concepts", "store_note")  # Store note FIRST
+    builder.add_conditional_edges(
+        "extract_concepts",
+        route_after_extract_concepts,
+        {
+            "store_note": "store_note",
+            "end": END,
+        },
+    )
+    # Store note FIRST
     builder.add_edge("store_note", "embed_chunks")       # Then embed
     builder.add_edge("embed_chunks", "save_chunks")      # Then save chunks (FK safe)
     builder.add_edge("save_chunks", "find_related")
@@ -1486,6 +1776,7 @@ async def run_ingestion(
     skip_review: bool = False,
     content_hash: Optional[str] = None, # New arg
     resource_type: Optional[str] = None, # e.g. "book", "notes"
+    thread_id: Optional[str] = None,
 ) -> dict:
     """
     Run the ingestion workflow for a note.
@@ -1498,14 +1789,16 @@ async def run_ingestion(
         skip_review: If True, auto-approve all concepts (no human-in-the-loop)
         content_hash: SHA-256 hash of content for deduplication
         resource_type: Optional resource type (e.g. "book", "notes", "article")
+        thread_id: Optional existing thread ID for background polling
 
     Returns:
         Dict with note_id, concept_ids, term_card_ids, thread_id
     """
-    thread_id = str(uuid.uuid4())
+    thread_id = thread_id or str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
 
     initial_state: IngestionState = {
+        "thread_id": thread_id,
         "user_id": user_id,
         "raw_content": content,
         "title": title,
@@ -1518,8 +1811,19 @@ async def run_ingestion(
         "needs_synthesis": False,
         "synthesis_completed": False,
         "created_concept_ids": [],
+        "concept_name_to_id": {},
         "term_card_ids": [],
         "quiz_ids": [],
+        "processing_metadata": {
+            "progress": {
+                "current_node": "parse",
+                "completed_nodes": [],
+                "failed_batches": 0,
+                "concepts_extracted": 0,
+            }
+        },
+        "status_reason": None,
+        "next_action": None,
         "error": None,
     }
     
@@ -1538,9 +1842,11 @@ async def run_ingestion(
         
         # Check if workflow is paused for user review
         if result.get("awaiting_user_approval"):
+            status_reason = result.get("status_reason") or "awaiting_review_overlap"
             logger.info(
                 "run_ingestion: Paused for user review",
                 thread_id=thread_id,
+                status_reason=status_reason,
             )
             return {
                 "note_id": str(result.get("note_id")) if result.get("note_id") else None,
@@ -1548,14 +1854,54 @@ async def run_ingestion(
                 "synthesis_decisions": result.get("synthesis_decisions", []),
                 "processing_metadata": result.get("processing_metadata", {}),
                 "status": "awaiting_review",
+                "status_reason": status_reason,
+                "next_action": "approve_required",
                 "thread_id": thread_id,
             }
+
+        if result.get("error"):
+            status_reason = result.get("status_reason") or "error_extraction"
+            logger.warning(
+                "run_ingestion: Completed with workflow error",
+                thread_id=thread_id,
+                note_id=result.get("note_id"),
+                error=result.get("error"),
+                status_reason=status_reason,
+            )
+            return {
+                "note_id": str(result.get("note_id")) if result.get("note_id") else None,
+                "concepts": result.get("extracted_concepts", []),
+                "concept_ids": [cid for cid in result.get("created_concept_ids", []) if cid],
+                "flashcard_ids": result.get("term_card_ids", []),
+                "quiz_ids": result.get("quiz_ids", []),
+                "processing_metadata": result.get("processing_metadata", {}),
+                "status": "error",
+                "status_reason": status_reason,
+                "next_action": "none",
+                "thread_id": thread_id,
+                "error": result.get("error"),
+            }
         
+        meta = result.get("processing_metadata", {}) or {}
         logger.info(
             "run_ingestion: Complete",
+            thread_id=thread_id,
             note_id=result.get("note_id"),
             num_concepts=len(result.get("created_concept_ids", [])),
             num_flashcards=len(result.get("term_card_ids", [])),
+            num_quizzes=len(result.get("quiz_ids", [])),
+        )
+        logger.info(
+            "run_ingestion: Summary",
+            thread_id=thread_id,
+            note_id=result.get("note_id"),
+            chunk_groups=len(result.get("chunks", []) or []),
+            successful_batches=meta.get("successful_batches", 0),
+            failed_batches=meta.get("failed_batches", 0),
+            concepts_created=len(result.get("created_concept_ids", [])),
+            relationships_created=meta.get("relationships_created", 0),
+            flashcards_created=len(result.get("term_card_ids", [])),
+            quizzes_created=len(result.get("quiz_ids", [])),
         )
         
         return {
@@ -1564,8 +1910,10 @@ async def run_ingestion(
             "concept_ids": result.get("created_concept_ids", []),
             "flashcard_ids": result.get("term_card_ids", []),
             "quiz_ids": result.get("quiz_ids", []),
-            "processing_metadata": result.get("processing_metadata", {}),
+            "processing_metadata": meta,
             "status": "completed",
+            "status_reason": "completed",
+            "next_action": "none",
             "thread_id": thread_id,
             "error": result.get("error"),
         }
@@ -1578,6 +1926,8 @@ async def run_ingestion(
             "concept_ids": [],
             "flashcard_ids": [],
             "status": "error",
+            "status_reason": "error_runtime",
+            "next_action": "none",
             "thread_id": thread_id,
             "error": str(e),
         }
@@ -1620,7 +1970,13 @@ async def resume_ingestion(
                     thread_id=thread_id,
                     user_id=user_id,
                 )
-                return {"status": "error", "error": "Unauthorized access to thread"}
+                return {
+                    "status": "error",
+                    "status_reason": "error_unauthorized_thread",
+                    "next_action": "none",
+                    "thread_id": thread_id,
+                    "error": "Unauthorized access to thread",
+                }
 
         # Resume using Command pattern
         resume_value = {
@@ -1641,6 +1997,8 @@ async def resume_ingestion(
             "concept_ids": result.get("created_concept_ids", []),
             "flashcard_ids": result.get("term_card_ids", []),
             "status": "completed" if not user_cancelled else "cancelled",
+            "status_reason": "completed" if not user_cancelled else "cancelled_by_user",
+            "next_action": "none",
             "thread_id": thread_id,
         }
         
@@ -1648,6 +2006,8 @@ async def resume_ingestion(
         logger.error("resume_ingestion: Failed", error=str(e))
         return {
             "status": "error",
+            "status_reason": "error_runtime",
+            "next_action": "none",
             "thread_id": thread_id,
             "error": str(e),
         }
@@ -1670,7 +2030,19 @@ async def get_ingestion_status(thread_id: str, user_id: Optional[str] = None) ->
         state = ingestion_graph.get_state(config)
         
         if not state:
-            return {"status": "not_found", "thread_id": thread_id}
+            return {
+                "status": "not_found",
+                "status_reason": "thread_not_found",
+                "next_action": "none",
+                "thread_id": thread_id,
+                "stage": "not_found",
+                "progress": {
+                    "current_node": None,
+                    "completed_nodes": [],
+                    "failed_batches": 0,
+                    "concepts_extracted": 0,
+                },
+            }
         
         values = state.values
         
@@ -1681,28 +2053,86 @@ async def get_ingestion_status(thread_id: str, user_id: Optional[str] = None) ->
                 thread_id=thread_id,
                 user_id=user_id,
             )
-            return {"status": "not_found", "thread_id": thread_id}
+            return {
+                "status": "not_found",
+                "status_reason": "thread_not_found",
+                "next_action": "none",
+                "thread_id": thread_id,
+                "stage": "not_found",
+                "progress": {
+                    "current_node": None,
+                    "completed_nodes": [],
+                    "failed_batches": 0,
+                    "concepts_extracted": 0,
+                },
+            }
             
         next_nodes = state.next if hasattr(state, "next") else []
+        meta = values.get("processing_metadata", {}) or {}
+        progress = meta.get("progress", {}) if isinstance(meta.get("progress"), dict) else {}
+        completed_nodes = list(progress.get("completed_nodes", []))
+        current_node = next_nodes[0] if next_nodes else None
+        failed_batches = int(progress.get("failed_batches", meta.get("failed_batches", 0) or 0))
+        concepts_extracted = int(
+            progress.get(
+                "concepts_extracted",
+                meta.get("concepts_extracted", len(values.get("extracted_concepts", []) or [])),
+            )
+            or 0
+        )
         
         if values.get("awaiting_user_approval"):
             status = "awaiting_review"
+            status_reason = values.get("status_reason") or "awaiting_review_overlap"
+            next_action = "approve_required"
+            stage = "user_review"
         elif values.get("error"):
             status = "error"
+            status_reason = values.get("status_reason") or "error_extraction"
+            next_action = "none"
+            stage = "error"
         elif not next_nodes:
             status = "completed"
+            status_reason = values.get("status_reason") or "completed"
+            next_action = "none"
+            stage = "completed"
         else:
             status = "processing"
+            status_reason = values.get("status_reason") or "processing"
+            next_action = "none"
+            stage = current_node or "processing"
         
         return {
             "status": status,
+            "status_reason": status_reason,
+            "next_action": next_action,
             "thread_id": thread_id,
+            "stage": stage,
+            "progress": {
+                "current_node": current_node,
+                "completed_nodes": completed_nodes,
+                "failed_batches": failed_batches,
+                "concepts_extracted": concepts_extracted,
+            },
             "note_id": values.get("note_id"),
-            "next_step": next_nodes[0] if next_nodes else None,
+            "next_step": current_node,
             "concepts": values.get("extracted_concepts", []),
             "synthesis_decisions": values.get("synthesis_decisions"),
         }
         
     except Exception as e:
         logger.error("get_ingestion_status: Failed", error=str(e))
-        return {"status": "error", "thread_id": thread_id, "error": str(e)}
+        return {
+            "status": "error",
+            "status_reason": "error_runtime",
+            "next_action": "none",
+            "thread_id": thread_id,
+            "stage": "error",
+            "progress": {
+                "current_node": None,
+                "completed_nodes": [],
+                "failed_batches": 0,
+                "concepts_extracted": 0,
+            },
+            "error": str(e),
+        }

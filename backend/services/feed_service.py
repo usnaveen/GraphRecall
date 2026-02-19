@@ -189,6 +189,24 @@ class FeedService:
             "prerequisites": concept.get("prerequisites", []),
             "related_concepts": concept.get("related_concepts", []),
         }
+
+    def _basic_mcq_fallback(self, concept: dict) -> dict:
+        """Deterministic MCQ fallback when web/LLM generation fails."""
+        concept_name = concept.get("name", "this concept")
+        definition = (concept.get("definition") or "A core concept in this topic area.").strip()
+        truncated_def = definition[:220] + ("..." if len(definition) > 220 else "")
+
+        return {
+            "question": f"Which option best describes {concept_name}?",
+            "options": [
+                {"id": "A", "text": truncated_def, "is_correct": True},
+                {"id": "B", "text": f"{concept_name} is unrelated to this domain.", "is_correct": False},
+                {"id": "C", "text": f"{concept_name} only applies to hardware setup.", "is_correct": False},
+                {"id": "D", "text": f"{concept_name} cannot be learned or practiced.", "is_correct": False},
+            ],
+            "explanation": f"The best answer aligns with the saved concept definition for {concept_name}.",
+            "source": "deterministic_fallback",
+        }
     
     async def get_user_streak(self, user_id: str) -> int:
         """Get the user's current streak in days."""
@@ -590,6 +608,7 @@ class FeedService:
                 )
             
             # 2. Try Web Augmentation (for MCQs only)
+            web_search_failed = False
             if item_type == FeedItemType.MCQ and not content:
                 try:
                     # Only search if we really lack content
@@ -656,6 +675,7 @@ class FeedService:
                              return FeedItem(**feed_kwargs)
                 except Exception as e:
                     logger.warning("FeedService: Web search failed", error=str(e))
+                    web_search_failed = True
 
             # 3. If no content, generate it
             content = {}
@@ -673,79 +693,88 @@ class FeedService:
                 )
                 
             elif item_type == FeedItemType.MCQ:
-                # Check for "Lazy Gen" candidates first
-                candidate = await self._get_from_quiz_candidates(concept["name"], user_id)
-                context_append = ""
-                if candidate:
-                    logger.info("FeedService: Using Lazy Quiz Candidate", concept=concept["name"])
-                    context_append = f"\n\nContext Source: {candidate['text']}"
+                try:
+                    # Check for "Lazy Gen" candidates first
+                    candidate = await self._get_from_quiz_candidates(concept["name"], user_id)
+                    context_append = ""
+                    if candidate:
+                        logger.info("FeedService: Using Lazy Quiz Candidate", concept=concept["name"])
+                        context_append = f"\n\nContext Source: {candidate['text']}"
 
-                # Fetch mastery + few-shot examples for quality generation
-                concept_id = concept.get("id", "")
-                mastery = await self._get_concept_mastery(concept_id, user_id)
-                few_shots = await self._get_few_shot_examples(concept_id, user_id)
+                    # Fetch mastery + few-shot examples for quality generation
+                    concept_id = concept.get("id", "")
+                    mastery = await self._get_concept_mastery(concept_id, user_id)
+                    few_shots = await self._get_few_shot_examples(concept_id, user_id)
 
-                mcq = await asyncio.wait_for(
-                    self.content_generator.generate_mcq(
-                        concept_name=concept["name"],
-                        concept_definition=concept.get("definition", "") + context_append,
-                        related_concepts=concept.get("related_concepts", []),
-                        difficulty=int(concept.get("complexity_score", 5)),
-                        mastery_score=mastery,
-                        few_shot_examples=few_shots,
-                    ),
-                    timeout=self.llm_timeout_seconds,
-                )
-
-                # Semantic deduplication: skip if too similar to existing
-                if concept_id:
-                    is_dup = await self._is_duplicate_question(
-                        mcq.question, concept_id, user_id
+                    mcq = await asyncio.wait_for(
+                        self.content_generator.generate_mcq(
+                            concept_name=concept["name"],
+                            concept_definition=concept.get("definition", "") + context_append,
+                            related_concepts=concept.get("related_concepts", []),
+                            difficulty=int(concept.get("complexity_score", 5)),
+                            mastery_score=mastery,
+                            few_shot_examples=few_shots,
+                        ),
+                        timeout=self.llm_timeout_seconds,
                     )
-                    if is_dup:
-                        logger.info("FeedService: MCQ is duplicate, regenerating", concept=concept.get("name"))
-                        # One retry with higher temperature variation
-                        mcq = await asyncio.wait_for(
-                            self.content_generator.generate_mcq(
-                                concept_name=concept["name"],
-                                concept_definition=concept.get("definition", "") + context_append,
-                                related_concepts=concept.get("related_concepts", []),
-                                difficulty=int(concept.get("complexity_score", 5)),
-                                mastery_score=mastery,
-                            ),
-                            timeout=self.llm_timeout_seconds,
-                        )
 
-                content = {
-                    "question": mcq.question,
-                    "options": [o.model_dump() for o in mcq.options],
-                    "explanation": mcq.explanation,
-                }
-                
-                # Save generated MCQ to DB for next time
-                if concept.get("id"):
-                     try:
-                        q_id = str(uuid.uuid4())
-                        await self.pg_client.execute_update(
-                            """
-                            INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type, 
-                                                 options_json, correct_answer, explanation, created_at)
-                            VALUES (:id, :user_id, :concept_id, :question_text, 'mcq',
-                                    :options_json, :correct_answer, :explanation, NOW())
-                            """,
-                            {
-                                "id": q_id,
-                                "user_id": user_id,
-                                "concept_id": concept.get("id"),
-                                "question_text": mcq.question,
-                                "options_json": json.dumps(content["options"]),
-                                "correct_answer": next((o.id for o in mcq.options if o.is_correct), "A"),
-                                "explanation": mcq.explanation,
-                            }
+                    # Semantic deduplication: skip if too similar to existing
+                    if concept_id:
+                        is_dup = await self._is_duplicate_question(
+                            mcq.question, concept_id, user_id
                         )
-                        content["id"] = q_id
-                     except Exception as e:
-                         logger.warning("FeedService: Failed to save generated MCQ", error=str(e))
+                        if is_dup:
+                            logger.info("FeedService: MCQ is duplicate, regenerating", concept=concept.get("name"))
+                            # One retry with higher temperature variation
+                            mcq = await asyncio.wait_for(
+                                self.content_generator.generate_mcq(
+                                    concept_name=concept["name"],
+                                    concept_definition=concept.get("definition", "") + context_append,
+                                    related_concepts=concept.get("related_concepts", []),
+                                    difficulty=int(concept.get("complexity_score", 5)),
+                                    mastery_score=mastery,
+                                ),
+                                timeout=self.llm_timeout_seconds,
+                            )
+
+                    content = {
+                        "question": mcq.question,
+                        "options": [o.model_dump() for o in mcq.options],
+                        "explanation": mcq.explanation,
+                    }
+                    
+                    # Save generated MCQ to DB for next time
+                    if concept.get("id"):
+                         try:
+                            q_id = str(uuid.uuid4())
+                            await self.pg_client.execute_update(
+                                """
+                                INSERT INTO quizzes (id, user_id, concept_id, question_text, question_type, 
+                                                     options_json, correct_answer, explanation, created_at)
+                                VALUES (:id, :user_id, :concept_id, :question_text, 'mcq',
+                                        :options_json, :correct_answer, :explanation, NOW())
+                                """,
+                                {
+                                    "id": q_id,
+                                    "user_id": user_id,
+                                    "concept_id": concept.get("id"),
+                                    "question_text": mcq.question,
+                                    "options_json": json.dumps(content["options"]),
+                                    "correct_answer": next((o.id for o in mcq.options if o.is_correct), "A"),
+                                    "explanation": mcq.explanation,
+                                }
+                            )
+                            content["id"] = q_id
+                         except Exception as e:
+                             logger.warning("FeedService: Failed to save generated MCQ", error=str(e))
+                except Exception as e:
+                    logger.warning(
+                        "FeedService: MCQ generation failed, using deterministic fallback",
+                        concept=concept.get("name"),
+                        web_search_failed=web_search_failed,
+                        error=str(e),
+                    )
+                    content = self._basic_mcq_fallback(concept)
                 
             elif item_type == FeedItemType.FILL_BLANK:
                 fill_blank = await asyncio.wait_for(

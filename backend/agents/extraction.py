@@ -15,8 +15,87 @@ from backend.models.schemas import ConceptCreate, ExtractionResult
 
 logger = structlog.get_logger()
 
+_VALID_JSON_ESCAPES = {'"', "\\", "/", "b", "f", "n", "r", "t", "u"}
+
 # Load the extraction prompt template
 PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "extraction.txt"
+
+
+def _is_hex_sequence(value: str) -> bool:
+    """Return True if value is exactly four hex characters."""
+    return len(value) == 4 and all(ch in "0123456789abcdefABCDEF" for ch in value)
+
+
+def _is_escaped(text: str, index: int) -> bool:
+    """Return True if text[index] is escaped by an odd number of backslashes."""
+    backslash_count = 0
+    i = index - 1
+    while i >= 0 and text[i] == "\\":
+        backslash_count += 1
+        i -= 1
+    return backslash_count % 2 == 1
+
+
+def _escape_invalid_json_backslashes(text: str) -> str:
+    r"""
+    Escape invalid backslashes inside JSON strings.
+
+    LLM output sometimes includes sequences like \S (valid in regex, invalid in JSON).
+    We only touch string-literal content and leave valid JSON escapes untouched.
+    """
+    if "\\" not in text:
+        return text
+
+    out: list[str] = []
+    in_string = False
+    i = 0
+
+    while i < len(text):
+        ch = text[i]
+
+        if ch == '"' and not _is_escaped(text, i):
+            in_string = not in_string
+            out.append(ch)
+            i += 1
+            continue
+
+        if in_string and ch == "\\":
+            # Evaluate the full run of consecutive backslashes.
+            j = i
+            while j < len(text) and text[j] == "\\":
+                j += 1
+            run_len = j - i
+            nxt = text[j] if j < len(text) else ""
+
+            out.append("\\" * run_len)
+
+            run_is_odd = run_len % 2 == 1
+            needs_extra_backslash = False
+
+            if run_is_odd:
+                if not nxt:
+                    # Trailing odd backslash is always invalid in JSON.
+                    needs_extra_backslash = True
+                elif nxt in _VALID_JSON_ESCAPES:
+                    if nxt == "u":
+                        # \u must be followed by exactly 4 hex chars.
+                        unicode_seq = text[j + 1 : j + 5]
+                        if len(unicode_seq) < 4 or not _is_hex_sequence(unicode_seq):
+                            needs_extra_backslash = True
+                else:
+                    # Odd run before non-escape char means invalid escape (e.g. \S).
+                    needs_extra_backslash = True
+
+            if needs_extra_backslash:
+                out.append("\\")
+
+            i = j
+            continue
+
+        out.append(ch)
+        i += 1
+
+    return "".join(out)
 
 
 class ExtractionAgent:
@@ -117,10 +196,8 @@ Content:
             elif raw_response.startswith("```"):
                 raw_response = raw_response.split("```")[1].split("```")[0].strip()
 
-            # Fix potential backslash issues (common in LLM output)
-            # Escapes backslashes that aren't already part of a valid escape sequence
-            # Specifically handle unicode escapes like \uXXXX
-            raw_response = re.sub(r'\\(?!["\\bfnrtu/]|u[0-9a-fA-F]{4})', r'\\\\', raw_response)
+            # Fix invalid escapes such as \S in regex snippets inside evidence_span.
+            raw_response = _escape_invalid_json_backslashes(raw_response)
 
             try:
                 # Parse the JSON response
@@ -129,6 +206,7 @@ Content:
                 # Fallback: aggressive cleaning if simple fix fails
                 # Remove control characters except newlines/tabs
                 cleaned = re.sub(r'[\x00-\x09\x0B-\x1F\x7F]', '', raw_response)
+                cleaned = _escape_invalid_json_backslashes(cleaned)
                 parsed = json.loads(cleaned)
 
             # Convert to ConceptCreate objects
