@@ -62,6 +62,9 @@ interface ProcessingMeta {
   completed_nodes?: string[];
   failed_batches?: number;
   background_mode?: boolean;
+  chunk_save_total?: number;
+  chunk_save_done?: number;
+  chunk_save_stage?: string;
 }
 
 interface IngestEvent {
@@ -118,6 +121,16 @@ export function CreateScreen() {
 
   const statusToProgress = (statusPayload: any): number => {
     const completedNodes = statusPayload?.progress?.completed_nodes || [];
+    const currentNode = statusPayload?.progress?.current_node;
+    const chunkSaveTotal = Number(statusPayload?.progress?.chunk_save_total || 0);
+    const chunkSaveDone = Number(statusPayload?.progress?.chunk_save_done || 0);
+
+    if (currentNode === 'save_chunks' && chunkSaveTotal > 0) {
+      const ratio = Math.max(0, Math.min(1, chunkSaveDone / chunkSaveTotal));
+      // Keep this stage in mid-to-late progress to reflect long chunk persistence work.
+      return Math.round(55 + ratio * 35);
+    }
+
     const totalNodes = 10; // Core ingest nodes on the happy path
     if (statusPayload?.status === 'completed') return 100;
     if (statusPayload?.status === 'error') return Math.max(15, progress);
@@ -194,6 +207,9 @@ export function CreateScreen() {
           completed_nodes: statusPayload.progress?.completed_nodes || prev.completed_nodes,
           failed_batches: statusPayload.progress?.failed_batches ?? prev.failed_batches,
           concepts_extracted: statusPayload.progress?.concepts_extracted ?? prev.concepts_extracted,
+          chunk_save_total: statusPayload.progress?.chunk_save_total ?? prev.chunk_save_total,
+          chunk_save_done: statusPayload.progress?.chunk_save_done ?? prev.chunk_save_done,
+          chunk_save_stage: statusPayload.progress?.chunk_save_stage ?? prev.chunk_save_stage,
           background_mode: true,
         }));
         setProgress(statusToProgress(statusPayload));
@@ -1078,6 +1094,17 @@ function GeekoutPanel({ meta }: { meta: ProcessingMeta }) {
   }
   if (meta.existing_concepts_scanned) {
     facts.push({ icon: Database, label: 'Graph Scanned', value: `${meta.existing_concepts_scanned} existing concepts`, color: 'text-sky-400' });
+  }
+  if (meta.chunk_save_total && meta.chunk_save_total > 0) {
+    const done = meta.chunk_save_done || 0;
+    const ratio = Math.round((done / meta.chunk_save_total) * 100);
+    const stage = meta.chunk_save_stage ? ` (${meta.chunk_save_stage})` : '';
+    facts.push({
+      icon: HardDrive,
+      label: 'Chunk Save',
+      value: `${done}/${meta.chunk_save_total} (${ratio}%)${stage}`,
+      color: 'text-blue-400'
+    });
   }
   if (meta.overlap_ratio !== undefined && meta.overlap_ratio > 0) {
     facts.push({ icon: GitBranch, label: 'Overlap', value: `${Math.round(meta.overlap_ratio * 100)}% with existing`, color: 'text-amber-400' });
