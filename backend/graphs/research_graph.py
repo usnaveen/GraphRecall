@@ -152,13 +152,13 @@ async def search_existing_knowledge(topic: str) -> str:
         
         # Search notes
         pg_client = await get_postgres_client()
-        notes = await pg_client.fetch(
+        notes = await pg_client.execute_query(
             """
-            SELECT title, content FROM notes
-            WHERE title ILIKE $1 OR content ILIKE $1
+            SELECT title, content_text as content FROM notes
+            WHERE title ILIKE :pattern OR content_text ILIKE :pattern
             LIMIT 3
             """,
-            f"%{topic}%"
+            {"pattern": f"%{topic}%"}
         )
         
         output = "## Existing Knowledge:\n\n"
