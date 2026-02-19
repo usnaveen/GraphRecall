@@ -189,3 +189,112 @@ def test_resolve_concept_uuid_prefers_mapping():
         created_ids={"11111111-1111-1111-1111-111111111111"},
     )
     assert resolved == "11111111-1111-1111-1111-111111111111"
+
+
+@pytest.mark.asyncio
+async def test_save_chunks_node_batches_in_one_session(monkeypatch):
+    class FakeSession:
+        def __init__(self):
+            self.execute_calls = 0
+            self.batch_sizes = []
+
+        async def execute(self, _query, params=None):
+            self.execute_calls += 1
+            if isinstance(params, list):
+                self.batch_sizes.append(len(params))
+            else:
+                self.batch_sizes.append(1)
+
+    class FakeSessionContext:
+        def __init__(self, session):
+            self._session = session
+
+        async def __aenter__(self):
+            return self._session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakePostgresClient:
+        def __init__(self):
+            self.session_instance = FakeSession()
+
+        def session(self):
+            return FakeSessionContext(self.session_instance)
+
+    fake_pg = FakePostgresClient()
+
+    async def fake_get_postgres_client():
+        return fake_pg
+
+    monkeypatch.setattr(ingestion_module, "get_postgres_client", fake_get_postgres_client)
+
+    state = {
+        "thread_id": "thread-save-1",
+        "note_id": "note-1",
+        "chunks": [
+            {
+                "parent_id": "parent-1",
+                "parent_content": "Parent content",
+                "parent_index": 0,
+                "images": [],
+                "child_contents": ["Child one", "Child two"],
+                "child_embeddings": [[0.1, 0.2], None],
+                "child_ids": ["child-1", "child-2"],
+                "child_page_starts": [1, 1],
+                "child_page_ends": [1, 1],
+            }
+        ],
+        "propositions": [
+            {
+                "id": "prop-1",
+                "note_id": "note-1",
+                "chunk_id": "child-1",
+                "content": "Atomic fact",
+                "confidence": 0.9,
+                "is_atomic": True,
+            }
+        ],
+    }
+
+    result = await ingestion_module.save_chunks_node(state)
+
+    assert "error" not in result
+    assert fake_pg.session_instance.execute_calls == 4
+    assert result["processing_metadata"]["progress"]["chunk_save_done"] == 4
+    assert result["processing_metadata"]["progress"]["chunk_save_total"] == 4
+
+
+@pytest.mark.asyncio
+async def test_get_ingestion_status_includes_live_save_chunks_progress(monkeypatch):
+    class FakeState:
+        values = {
+            "user_id": "user-1",
+            "processing_metadata": {
+                "progress": {
+                    "completed_nodes": ["parse", "chunk", "extract_concepts", "store_note", "embed_chunks"],
+                    "failed_batches": 0,
+                    "concepts_extracted": 42,
+                }
+            },
+            "extracted_concepts": [],
+        }
+        next = ("save_chunks",)
+
+    thread_id = "thread-live-progress-1"
+    monkeypatch.setattr(ingestion_module.ingestion_graph, "get_state", lambda _config: FakeState())
+    ingestion_module._live_node_progress[thread_id] = {
+        "current_node": "save_chunks",
+        "chunk_save_total": 1000,
+        "chunk_save_done": 420,
+        "chunk_save_stage": "children_with_embeddings",
+    }
+
+    result = await ingestion_module.get_ingestion_status(thread_id, user_id="user-1")
+
+    assert result["status"] == "processing"
+    assert result["progress"]["chunk_save_total"] == 1000
+    assert result["progress"]["chunk_save_done"] == 420
+    assert result["progress"]["chunk_save_stage"] == "children_with_embeddings"
+
+    ingestion_module._clear_live_progress(thread_id)
