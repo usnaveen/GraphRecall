@@ -149,13 +149,13 @@ CREATE TABLE IF NOT EXISTS quizzes (
 CREATE TABLE IF NOT EXISTS study_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_type VARCHAR(50) NOT NULL,
+    session_type VARCHAR(50) DEFAULT 'quiz',
     start_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     end_time TIMESTAMP WITH TIME ZONE,
     concepts_covered VARCHAR(255)[] DEFAULT '{}',
     performance_summary JSONB,
 
-    CONSTRAINT valid_session_type CHECK (session_type IN ('quiz', 'flashcard', 'teaching'))
+    CONSTRAINT valid_session_type CHECK (session_type IS NULL OR session_type IN ('quiz', 'flashcard', 'teaching'))
 );
 
 -- Indexes for performance

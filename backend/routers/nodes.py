@@ -9,6 +9,8 @@ from backend.auth.middleware import get_current_user
 from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
 from backend.graphs.link_suggestion_graph import run_link_suggestions
+from backend.config.llm import get_fast_model
+from backend.services.ingestion.embedding_service import EmbeddingService
 
 logger = structlog.get_logger()
 
@@ -92,6 +94,57 @@ async def create_node(
                 node = dict(node._properties)
         except Exception:
             pass
+
+        # AI-generate description if not provided
+        node_definition = request.description or ""
+        if not node_definition.strip():
+            try:
+                llm = get_fast_model(temperature=0.3)
+                ai_prompt = (
+                    f"Generate a brief 1-2 sentence educational description for "
+                    f"the concept: {request.name}. Domain: {domain}. "
+                    f"Be concise and factual."
+                )
+                ai_response = await llm.ainvoke(ai_prompt)
+                node_definition = ai_response.content.strip()
+                if node_definition:
+                    await neo4j.execute_query(
+                        """
+                        MATCH (c:Concept {name: $name, user_id: $user_id})
+                        SET c.definition = $definition
+                        RETURN c
+                        """,
+                        {
+                            "name": request.name,
+                            "user_id": user_id,
+                            "definition": node_definition,
+                        },
+                    )
+                    if isinstance(node, dict):
+                        node["definition"] = node_definition
+            except Exception as e:
+                logger.warning("Nodes: AI description generation failed", error=str(e))
+
+        # Generate and store embedding for the concept (enables ingestion matching)
+        try:
+            embed_svc = EmbeddingService()
+            embed_text = f"{request.name}: {node_definition}" if node_definition else request.name
+            embeddings = await embed_svc.embed_batch([embed_text])
+            if embeddings and embeddings[0]:
+                await neo4j.execute_query(
+                    """
+                    MATCH (c:Concept {name: $name, user_id: $user_id})
+                    SET c.embedding = $embedding
+                    RETURN c.id
+                    """,
+                    {
+                        "name": request.name,
+                        "user_id": user_id,
+                        "embedding": embeddings[0],
+                    },
+                )
+        except Exception as e:
+            logger.warning("Nodes: Embedding generation failed", error=str(e))
 
         # Create SUBTOPIC_OF relationship if parent specified
         if request.parent_concept_id:
