@@ -28,6 +28,7 @@ class IngestionState(TypedDict, total=False):
     """
     # Input fields (set at invocation)
     user_id: str
+    thread_id: Optional[str]
     raw_content: str
     title: Optional[str]
     skip_review: bool  # If True, auto-approve concepts
@@ -59,11 +60,16 @@ class IngestionState(TypedDict, total=False):
     
     # Output fields
     created_concept_ids: list[str]  # Neo4j concept IDs
+    concept_name_to_id: dict[str, str]  # Normalized concept name -> canonical UUID
     term_card_ids: list[str]        # Generated term card IDs
     quiz_ids: list[str]             # Generated quiz IDs
 
     # Processing metadata (geekout facts for UI)
     processing_metadata: dict  # Accumulated metadata from each node
+
+    # Workflow status metadata
+    status_reason: Optional[str]  # completed, awaiting_review_overlap, error_extraction, ...
+    next_action: Optional[str]    # approve_required, none
 
     # Error handling
     error: Optional[str]
@@ -243,4 +249,3 @@ class SupervisorState(TypedDict, total=False):
     # Output
     result: dict      # Result from subgraph
     error: Optional[str]
-

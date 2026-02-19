@@ -381,6 +381,39 @@ export const ingestService = {
         if (!response.ok) throw new Error('Chat transcript ingestion failed');
         return response.json();
     },
+
+    /** Queue processed-book ZIP ingestion in background */
+    ingestProcessedZip: async (
+        file: File,
+        options?: { skipReview?: boolean; title?: string; resourceType?: string }
+    ) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('skip_review', String(options?.skipReview ?? true));
+        if (options?.title) formData.append('title', options.title);
+        if (options?.resourceType) formData.append('resource_type', options.resourceType);
+
+        const response = await authFetch(`${API_BASE}/v2/ingest/processed-zip`, {
+            method: 'POST',
+            body: formData,
+        });
+        if (!response.ok) throw new Error('Processed zip ingestion failed');
+        return response.json();
+    },
+
+    /** Poll ingestion workflow status by thread ID */
+    getStatus: async (threadId: string) => {
+        const response = await authFetch(`${API_BASE}/v2/ingest/${encodeURIComponent(threadId)}/status`);
+        if (!response.ok) throw new Error('Failed to fetch ingestion status');
+        return response.json();
+    },
+
+    /** Fetch structured ingestion events for clean UI logs */
+    getEvents: async (threadId: string) => {
+        const response = await authFetch(`${API_BASE}/v2/ingest/${encodeURIComponent(threadId)}/events`);
+        if (!response.ok) throw new Error('Failed to fetch ingestion events');
+        return response.json();
+    },
 };
 
 export const uploadsService = {
