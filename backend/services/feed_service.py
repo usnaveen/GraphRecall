@@ -1151,12 +1151,12 @@ class FeedService:
             # Insert into study_sessions
             await self.pg_client.execute_insert(
                 """
-                INSERT INTO study_sessions 
-                    (user_id, concept_id, item_type, interaction_type, 
-                     is_correct, response_time_ms, reviewed_at)
-                VALUES 
+                INSERT INTO study_sessions
+                    (user_id, concept_id, item_type, interaction_type,
+                     is_correct, response_time_ms, reviewed_at, session_type)
+                VALUES
                     (:user_id, :concept_id, :item_type, :interaction_type,
-                     :is_correct, :response_time_ms, NOW())
+                     :is_correct, :response_time_ms, NOW(), :session_type)
                 RETURNING id
                 """,
                 {
@@ -1166,6 +1166,7 @@ class FeedService:
                     "interaction_type": interaction_type,
                     "is_correct": is_correct,
                     "response_time_ms": response_time_ms,
+                    "session_type": "flashcard" if item_type == "flashcard" else "quiz",
                 },
             )
             

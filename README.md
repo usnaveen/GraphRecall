@@ -930,6 +930,22 @@ export LANGCHAIN_PROJECT=graphrecall
 
 View traces at [smith.langchain.com](https://smith.langchain.com).
 
+### Colab Book OCR Troubleshooting
+
+If `notebooks/book_ingestion_colab.ipynb` prints errors like:
+
+```text
+⚠️ Failed to save _page_XX_Figure_YY.jpeg: function takes at most 16 arguments (17 given)
+```
+
+this is a runtime-level image encoding incompatibility in some Colab environments (typically on JPEG save paths). The notebook now falls back to PNG export and rewrites markdown image references automatically, so ingestion can continue with figures attached.
+
+If you still see the error repeatedly:
+
+1. Restart the Colab runtime.
+2. Re-run cells from the top (especially the dependency install cell).
+3. Re-run Step 3 (PDF parse and image export) before ingestion.
+
 ---
 
 ## License
