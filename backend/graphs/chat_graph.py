@@ -654,9 +654,16 @@ async def generate_response_node(state: ChatState) -> dict:
                     else f" (p. {page_start})"
                 )
             note_lines.append(
-                f"- {n.get('title', 'Note')}{page_text}: {n.get('content', '')[:200]}..."
-                + (f" [images: {len(n.get('images', []))}]" if n.get("images") else "")
+                f"- {n.get('title', 'Note')}{page_text}: {n.get('content', '')[:500]}..."
             )
+            
+            # Explicitly append image markdown so LLM can see and reference them
+            if n.get("images"):
+                for img in n.get("images"):
+                    # Handle both new object format and legacy string format
+                    url = img if isinstance(img, str) else img.get("url")
+                    if url:
+                         note_lines.append(f"  ![Image from Note]({url})")
         notes_text = "\n".join(note_lines)
         context_parts.append(f"**Relevant Notes:**\n{notes_text}")
     
