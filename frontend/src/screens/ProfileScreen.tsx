@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
-import { authService, feedService } from '../services/api';
+import { authService, feedService, usersService } from '../services/api';
 
 type ProfileView = 'main' | 'settings' | 'notes' | 'concepts' | 'uploads' | 'quizzes' | 'books';
 
@@ -1123,22 +1123,24 @@ function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: ()
         {/* Danger Zone */}
         <SettingsGroup title="Danger Zone">
           <button
-            onClick={() => {
-              if (confirm("⚠️ WARNING: This will permanently delete ALL your data (notes, concepts, quizzes, history). This action cannot be undone.\n\nAre you sure you want to proceed?")) {
-                if (confirm("Last chance: Type 'DELETE' to confirm destruction of all your data.")) {
-                  // Call purge API
-                  fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/users/me/purge`, {
-                    method: 'DELETE',
-                    headers: {
-                      'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
-                  }).then(() => {
-                    alert("Data purged successfully. Signing out...");
-                    onLogout();
-                  }).catch(err => {
-                    alert("Failed to purge data: " + err.message);
-                  });
-                }
+            onClick={async () => {
+              if (!confirm("⚠️ WARNING: This will permanently delete ALL your data (notes, concepts, quizzes, history). This action cannot be undone.\n\nAre you sure you want to proceed?")) {
+                return;
+              }
+
+              const confirmation = prompt("Type DELETE to confirm data purge:");
+              if (confirmation !== "DELETE") {
+                alert("Purge cancelled.");
+                return;
+              }
+
+              try {
+                await usersService.purgeAllData();
+                alert("Data purged successfully. Signing out...");
+                onLogout();
+              } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                alert("Failed to purge data: " + message);
               }
             }}
             className="w-full flex items-center justify-between p-4 bg-red-500/10 hover:bg-red-500/20 transition-colors"
