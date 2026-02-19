@@ -1037,11 +1037,10 @@ function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: ()
                   <button
                     key={algo.key}
                     onClick={() => updateSetting('sr_algorithm', algo.key)}
-                    className={`flex-1 p-3 rounded-xl border transition-all text-left ${
-                      active
+                    className={`flex-1 p-3 rounded-xl border transition-all text-left ${active
                         ? 'border-[#B6FF2E]/60 bg-[#B6FF2E]/10'
                         : 'border-white/10 bg-white/5 hover:border-white/20'
-                    }`}
+                      }`}
                   >
                     <span className={`text-sm font-semibold block ${active ? 'text-[#B6FF2E]' : 'text-white/70'}`}>
                       {algo.label}
@@ -1111,13 +1110,47 @@ function SettingsScreen({ onBack, onLogout }: { onBack: () => void; onLogout: ()
         <SettingsGroup title="Account">
           <button
             onClick={onLogout}
-            className="w-full flex items-center justify-between p-4 hover:bg-red-500/10 transition-colors"
+            className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
           >
             <div className="flex items-center gap-3">
-              <LogOut className="w-4 h-4 text-red-400" />
-              <span className="text-sm text-red-400">Sign Out</span>
+              <LogOut className="w-4 h-4 text-white/50" />
+              <span className="text-sm text-white/80">Sign Out</span>
             </div>
-            <ChevronRight className="w-4 h-4 text-red-400/50" />
+            <ChevronRight className="w-4 h-4 text-white/30" />
+          </button>
+        </SettingsGroup>
+
+        {/* Danger Zone */}
+        <SettingsGroup title="Danger Zone">
+          <button
+            onClick={() => {
+              if (confirm("⚠️ WARNING: This will permanently delete ALL your data (notes, concepts, quizzes, history). This action cannot be undone.\n\nAre you sure you want to proceed?")) {
+                if (confirm("Last chance: Type 'DELETE' to confirm destruction of all your data.")) {
+                  // Call purge API
+                  fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/users/me/purge`, {
+                    method: 'DELETE',
+                    headers: {
+                      'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                  }).then(() => {
+                    alert("Data purged successfully. Signing out...");
+                    onLogout();
+                  }).catch(err => {
+                    alert("Failed to purge data: " + err.message);
+                  });
+                }
+              }
+            }}
+            className="w-full flex items-center justify-between p-4 bg-red-500/10 hover:bg-red-500/20 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Trash2 className="w-4 h-4 text-red-500" />
+              <div className="text-left">
+                <span className="text-sm font-semibold text-red-500 block">Purge All Data</span>
+                <span className="text-xs text-red-400/70">Irreversible action</span>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-red-500/50" />
           </button>
         </SettingsGroup>
       </div>
