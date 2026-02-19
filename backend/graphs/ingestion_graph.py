@@ -24,6 +24,7 @@ import structlog
 from backend.config.llm import get_chat_model
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import interrupt, Command
+from sqlalchemy import text
 
 from backend.agents.states import IngestionState
 from backend.db.neo4j_client import get_neo4j_client
@@ -34,6 +35,29 @@ logger = structlog.get_logger()
 
 LARGE_CONTENT_CHAR_THRESHOLD = 120_000
 MIN_CONCEPTS_FOR_LARGE_CONTENT = 8
+CHUNK_INSERT_BATCH_SIZE = 200
+
+# Live per-thread progress for long-running nodes (e.g. save_chunks)
+_live_node_progress: dict[str, dict] = {}
+
+
+def _set_live_progress(thread_id: Optional[str], **fields) -> None:
+    if not thread_id:
+        return
+    current = _live_node_progress.get(thread_id, {})
+    current.update(fields)
+    _live_node_progress[thread_id] = current
+
+
+def _clear_live_progress(thread_id: Optional[str]) -> None:
+    if not thread_id:
+        return
+    _live_node_progress.pop(thread_id, None)
+
+
+def _iter_batches(items: list[dict], batch_size: int):
+    for i in range(0, len(items), batch_size):
+        yield items[i : i + batch_size]
 
 
 def _looks_like_uuid(value: Optional[str]) -> bool:
@@ -427,131 +451,183 @@ async def save_chunks_node(state: IngestionState) -> dict:
     chunks = state.get("chunks", [])
     if not chunks:
         return {}
-        
+
+    note_id = state.get("note_id")
+    thread_id = state.get("thread_id")
+    if not note_id:
+        return {"error": "missing_note_id"}
+
     logger.info("save_chunks_node: Saving chunks", count=len(chunks))
-    
+
     try:
         pg_client = await get_postgres_client()
-        saved_count = 0
-        
+        now = datetime.now(timezone.utc)
+
+        parent_rows: list[dict] = []
+        child_rows_with_embedding: list[dict] = []
+        child_rows_without_embedding: list[dict] = []
+        missing_embedding_rows = 0
+
         for parent_group in chunks:
-            # Use pre-generated ID or fallback (though chunk_node should guarantee it now)
             parent_id = parent_group.get("parent_id") or str(uuid.uuid4())
-            parent_text = parent_group["parent_content"]
-            parent_page_start = parent_group.get("parent_page_start")
-            parent_page_end = parent_group.get("parent_page_end")
-            
-            # Save Parent Chunk (with images metadata from BookChunker)
-            images_json = json.dumps(parent_group.get("images", []))
-            await pg_client.execute_update(
-                """
-                INSERT INTO chunks (id, note_id, content, chunk_level, chunk_index, page_start, page_end, images, created_at)
-                VALUES (:id, :note_id, :content, 'parent', :index, :page_start, :page_end, :images, :created_at)
-                ON CONFLICT (id) DO NOTHING
-                """,
+            parent_rows.append(
                 {
                     "id": parent_id,
-                    "note_id": state["note_id"],
-                    "content": parent_text,
+                    "note_id": note_id,
+                    "content": parent_group["parent_content"],
                     "index": parent_group["parent_index"],
-                    "images": images_json,
-                    "page_start": parent_page_start,
-                    "page_end": parent_page_end,
-                    "created_at": datetime.now(timezone.utc)
+                    "images": json.dumps(parent_group.get("images", [])),
+                    "page_start": parent_group.get("parent_page_start"),
+                    "page_end": parent_group.get("parent_page_end"),
+                    "created_at": now,
                 }
             )
-            saved_count += 1
-            
-            # Save Child Chunks
-            child_contents = parent_group["child_contents"]
-            child_embeddings = parent_group.get("child_embeddings", [None] * len(child_contents))
-            child_ids = parent_group.get("child_ids", [str(uuid.uuid4()) for _ in child_contents])
-            child_page_starts = parent_group.get("child_page_starts", [None] * len(child_contents))
-            child_page_ends = parent_group.get("child_page_ends", [None] * len(child_contents))
-            
-            for i, (child_text, embedding, child_id) in enumerate(zip(child_contents, child_embeddings, child_ids)):
-                page_start = child_page_starts[i] if i < len(child_page_starts) else None
-                page_end = child_page_ends[i] if i < len(child_page_ends) else None
 
-                if not embedding:
-                    logger.warning(
-                        "save_chunks_node: Saving child chunk WITHOUT embedding (RAG will skip this chunk)",
-                        chunk_id=child_id,
-                        note_id=state["note_id"],
-                        chunk_index=i,
-                    )
+            child_contents = parent_group.get("child_contents", [])
+            child_embeddings = parent_group.get("child_embeddings", [])
+            child_ids = parent_group.get("child_ids", [])
+            child_page_starts = parent_group.get("child_page_starts", [])
+            child_page_ends = parent_group.get("child_page_ends", [])
 
-                # Dynamic query based on whether embedding exists
+            for i, child_text in enumerate(child_contents):
+                child_id = child_ids[i] if i < len(child_ids) and child_ids[i] else str(uuid.uuid4())
+                embedding = child_embeddings[i] if i < len(child_embeddings) else None
+                row = {
+                    "id": child_id,
+                    "note_id": note_id,
+                    "parent_id": parent_id,
+                    "content": child_text,
+                    "index": i,
+                    "page_start": child_page_starts[i] if i < len(child_page_starts) else None,
+                    "page_end": child_page_ends[i] if i < len(child_page_ends) else None,
+                    "created_at": now,
+                }
                 if embedding:
-                    # Format embedding as pgvector-compatible literal string
-                    embedding_literal = "[" + ",".join(str(x) for x in embedding) + "]"
-                    await pg_client.execute_update(
-                        """
-                        INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, embedding, created_at)
-                        VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :page_start, :page_end, cast(:embedding as vector), :created_at)
-                        ON CONFLICT (id) DO NOTHING
-                        """,
-                        {
-                            "id": child_id,
-                            "note_id": state["note_id"],
-                            "parent_id": parent_id,
-                            "content": child_text,
-                            "index": i,
-                            "page_start": page_start,
-                            "page_end": page_end,
-                            "embedding": embedding_literal,
-                            "created_at": datetime.now(timezone.utc)
-                        }
-                    )
+                    row["embedding"] = "[" + ",".join(str(x) for x in embedding) + "]"
+                    child_rows_with_embedding.append(row)
                 else:
-                    await pg_client.execute_update(
-                        """
-                        INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, created_at)
-                        VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :page_start, :page_end, :created_at)
-                        ON CONFLICT (id) DO NOTHING
-                        """,
-                        {
-                            "id": child_id,
-                            "note_id": state["note_id"],
-                            "parent_id": parent_id,
-                            "content": child_text,
-                            "index": i,
-                            "page_start": page_start,
-                            "page_end": page_end,
-                            "created_at": datetime.now(timezone.utc)
-                        }
-                    )
-                saved_count += 1
-        
-        # Save Propositions (if any)
+                    missing_embedding_rows += 1
+                    child_rows_without_embedding.append(row)
+
         propositions = state.get("propositions", [])
-        if propositions:
-            logger.info("save_chunks_node: Saving propositions", count=len(propositions))
-            for prop in propositions:
-                # Use pre-generated ID if available
-                prop_id = prop.get("id") or str(uuid.uuid4())
-                
-                await pg_client.execute_update(
-                    """
-                    INSERT INTO propositions (id, note_id, chunk_id, content, confidence, is_atomic, created_at)
-                    VALUES (:id, :note_id, :chunk_id, :content, :confidence, :is_atomic, :created_at)
-                    ON CONFLICT (id) DO NOTHING
-                    """,
-                    {
-                        "id": prop_id,
-                        "note_id": str(prop["note_id"]),
-                        "chunk_id": str(prop["chunk_id"]),
-                        "content": prop["content"],
-                        "confidence": prop["confidence"],
-                        "is_atomic": prop["is_atomic"],
-                        "created_at": datetime.now(timezone.utc)
-                    }
-                )
-        
-        logger.info("save_chunks_node: Saved chunks", saved=saved_count, propositions_saved=len(propositions))
-        return {}
-        
+        proposition_rows = [
+            {
+                "id": prop.get("id") or str(uuid.uuid4()),
+                "note_id": str(prop["note_id"]),
+                "chunk_id": str(prop["chunk_id"]),
+                "content": prop["content"],
+                "confidence": prop["confidence"],
+                "is_atomic": prop["is_atomic"],
+                "created_at": now,
+            }
+            for prop in propositions
+        ]
+
+        total_rows_to_save = (
+            len(parent_rows)
+            + len(child_rows_with_embedding)
+            + len(child_rows_without_embedding)
+            + len(proposition_rows)
+        )
+        saved_count = 0
+
+        _set_live_progress(
+            thread_id,
+            current_node="save_chunks",
+            chunk_save_stage="starting",
+            chunk_save_total=total_rows_to_save,
+            chunk_save_done=0,
+            chunks_without_embedding=missing_embedding_rows,
+        )
+
+        async with pg_client.session() as session:
+            if parent_rows:
+                _set_live_progress(thread_id, chunk_save_stage="parents")
+                for batch in _iter_batches(parent_rows, CHUNK_INSERT_BATCH_SIZE):
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO chunks (id, note_id, content, chunk_level, chunk_index, page_start, page_end, images, created_at)
+                            VALUES (:id, :note_id, :content, 'parent', :index, :page_start, :page_end, :images, :created_at)
+                            ON CONFLICT (id) DO NOTHING
+                            """
+                        ),
+                        batch,
+                    )
+                    saved_count += len(batch)
+                    _set_live_progress(thread_id, chunk_save_done=saved_count)
+
+            if child_rows_with_embedding:
+                _set_live_progress(thread_id, chunk_save_stage="children_with_embeddings")
+                for batch in _iter_batches(child_rows_with_embedding, CHUNK_INSERT_BATCH_SIZE):
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, embedding, created_at)
+                            VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :page_start, :page_end, cast(:embedding as vector), :created_at)
+                            ON CONFLICT (id) DO NOTHING
+                            """
+                        ),
+                        batch,
+                    )
+                    saved_count += len(batch)
+                    _set_live_progress(thread_id, chunk_save_done=saved_count)
+
+            if child_rows_without_embedding:
+                _set_live_progress(thread_id, chunk_save_stage="children_without_embeddings")
+                for batch in _iter_batches(child_rows_without_embedding, CHUNK_INSERT_BATCH_SIZE):
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, created_at)
+                            VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :page_start, :page_end, :created_at)
+                            ON CONFLICT (id) DO NOTHING
+                            """
+                        ),
+                        batch,
+                    )
+                    saved_count += len(batch)
+                    _set_live_progress(thread_id, chunk_save_done=saved_count)
+
+            if proposition_rows:
+                logger.info("save_chunks_node: Saving propositions", count=len(proposition_rows))
+                _set_live_progress(thread_id, chunk_save_stage="propositions")
+                for batch in _iter_batches(proposition_rows, CHUNK_INSERT_BATCH_SIZE):
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO propositions (id, note_id, chunk_id, content, confidence, is_atomic, created_at)
+                            VALUES (:id, :note_id, :chunk_id, :content, :confidence, :is_atomic, :created_at)
+                            ON CONFLICT (id) DO NOTHING
+                            """
+                        ),
+                        batch,
+                    )
+                    saved_count += len(batch)
+                    _set_live_progress(thread_id, chunk_save_done=saved_count)
+
+        _set_live_progress(thread_id, chunk_save_stage="complete", chunk_save_done=saved_count)
+
+        meta = state.get("processing_metadata") or {}
+        progress = meta.get("progress", {}) if isinstance(meta.get("progress"), dict) else {}
+        progress["chunk_save_total"] = total_rows_to_save
+        progress["chunk_save_done"] = saved_count
+        progress["chunk_save_stage"] = "complete"
+        meta["progress"] = progress
+        meta["chunks_saved"] = saved_count
+        meta["propositions_saved"] = len(proposition_rows)
+        meta["chunks_without_embedding"] = missing_embedding_rows
+
+        logger.info(
+            "save_chunks_node: Saved chunks",
+            saved=saved_count,
+            propositions_saved=len(proposition_rows),
+            chunks_without_embedding=missing_embedding_rows,
+        )
+        return {"processing_metadata": meta}
+
     except Exception as e:
+        _set_live_progress(thread_id, chunk_save_stage="error", chunk_save_error=str(e))
         logger.error("save_chunks_node: Failed", error=str(e))
         return {"error": str(e)}
 
@@ -1820,6 +1896,10 @@ async def run_ingestion(
                 "completed_nodes": [],
                 "failed_batches": 0,
                 "concepts_extracted": 0,
+                "chunk_save_total": 0,
+                "chunk_save_done": 0,
+                "chunk_save_stage": None,
+                "chunk_save_error": None,
             }
         },
         "status_reason": None,
@@ -1848,6 +1928,7 @@ async def run_ingestion(
                 thread_id=thread_id,
                 status_reason=status_reason,
             )
+            _clear_live_progress(thread_id)
             return {
                 "note_id": str(result.get("note_id")) if result.get("note_id") else None,
                 "concepts": result.get("extracted_concepts", []),
@@ -1868,6 +1949,7 @@ async def run_ingestion(
                 error=result.get("error"),
                 status_reason=status_reason,
             )
+            _clear_live_progress(thread_id)
             return {
                 "note_id": str(result.get("note_id")) if result.get("note_id") else None,
                 "concepts": result.get("extracted_concepts", []),
@@ -1904,6 +1986,7 @@ async def run_ingestion(
             quizzes_created=len(result.get("quiz_ids", [])),
         )
         
+        _clear_live_progress(thread_id)
         return {
             "note_id": str(result.get("note_id")) if result.get("note_id") else None,
             "concepts": result.get("extracted_concepts", []),
@@ -1920,6 +2003,7 @@ async def run_ingestion(
 
     except Exception as e:
         logger.error("run_ingestion: Failed", error=str(e))
+        _clear_live_progress(thread_id)
         return {
             "note_id": note_id,
             "concepts": [],
@@ -2041,6 +2125,10 @@ async def get_ingestion_status(thread_id: str, user_id: Optional[str] = None) ->
                     "completed_nodes": [],
                     "failed_batches": 0,
                     "concepts_extracted": 0,
+                    "chunk_save_total": 0,
+                    "chunk_save_done": 0,
+                    "chunk_save_stage": None,
+                    "chunk_save_error": None,
                 },
             }
         
@@ -2064,6 +2152,10 @@ async def get_ingestion_status(thread_id: str, user_id: Optional[str] = None) ->
                     "completed_nodes": [],
                     "failed_batches": 0,
                     "concepts_extracted": 0,
+                    "chunk_save_total": 0,
+                    "chunk_save_done": 0,
+                    "chunk_save_stage": None,
+                    "chunk_save_error": None,
                 },
             }
             
@@ -2072,6 +2164,10 @@ async def get_ingestion_status(thread_id: str, user_id: Optional[str] = None) ->
         progress = meta.get("progress", {}) if isinstance(meta.get("progress"), dict) else {}
         completed_nodes = list(progress.get("completed_nodes", []))
         current_node = next_nodes[0] if next_nodes else None
+        live_progress = _live_node_progress.get(thread_id, {}) if thread_id else {}
+        if current_node == "save_chunks" and live_progress.get("current_node"):
+            current_node = live_progress.get("current_node")
+
         failed_batches = int(progress.get("failed_batches", meta.get("failed_batches", 0) or 0))
         concepts_extracted = int(
             progress.get(
@@ -2080,6 +2176,25 @@ async def get_ingestion_status(thread_id: str, user_id: Optional[str] = None) ->
             )
             or 0
         )
+        chunk_save_total = int(
+            live_progress.get(
+                "chunk_save_total",
+                progress.get("chunk_save_total", 0) or 0,
+            )
+            or 0
+        )
+        chunk_save_done = int(
+            live_progress.get(
+                "chunk_save_done",
+                progress.get("chunk_save_done", 0) or 0,
+            )
+            or 0
+        )
+        chunk_save_stage = (
+            live_progress.get("chunk_save_stage")
+            or progress.get("chunk_save_stage")
+        )
+        chunk_save_error = live_progress.get("chunk_save_error")
         
         if values.get("awaiting_user_approval"):
             status = "awaiting_review"
@@ -2113,6 +2228,10 @@ async def get_ingestion_status(thread_id: str, user_id: Optional[str] = None) ->
                 "completed_nodes": completed_nodes,
                 "failed_batches": failed_batches,
                 "concepts_extracted": concepts_extracted,
+                "chunk_save_total": chunk_save_total,
+                "chunk_save_done": chunk_save_done,
+                "chunk_save_stage": chunk_save_stage,
+                "chunk_save_error": chunk_save_error,
             },
             "note_id": values.get("note_id"),
             "next_step": current_node,
@@ -2133,6 +2252,10 @@ async def get_ingestion_status(thread_id: str, user_id: Optional[str] = None) ->
                 "completed_nodes": [],
                 "failed_batches": 0,
                 "concepts_extracted": 0,
+                "chunk_save_total": 0,
+                "chunk_save_done": 0,
+                "chunk_save_stage": None,
+                "chunk_save_error": None,
             },
             "error": str(e),
         }
