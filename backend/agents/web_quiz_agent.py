@@ -177,11 +177,28 @@ OUTPUT JSON FORMAT:
             data = json.loads(clean_content)
             quizzes_data = data.get("quizzes", [])
             
+            # Ensure list format
+            if isinstance(quizzes_data, dict):
+                # Handle {"quizzes": [...]} wrapper
+                quizzes_data = quizzes_data.get("quizzes", [])
+            elif not isinstance(quizzes_data, list):
+                logger.warning("WebQuizAgent: Unexpected JSON structure", type=type(quizzes_data))
+                return [], ""
+
             # Convert to schema
             mcqs = []
             for q in quizzes_data:
+                # SKIP invalid entries causing "string indices must be integers"
+                if not isinstance(q, dict):
+                    continue
+
                 options = []
-                for o in q["options"]:
+                # Ensure options is a list
+                raw_opts = q.get("options", [])
+                if not isinstance(raw_opts, list):
+                     continue
+
+                for o in raw_opts:
                     if isinstance(o, dict):
                          options.append(MCQOption(id=o.get("id", "A"), text=o.get("text", ""), is_correct=o.get("is_correct", False)))
                     elif isinstance(o, str):
@@ -189,15 +206,19 @@ OUTPUT JSON FORMAT:
                         # We can't know which is correct, so default to False or skip
                         # Here we give it a dummy ID and assume false
                         options.append(MCQOption(id="?", text=o, is_correct=False))
-                # Create MCQQuestion with the processed options list
-                mcqs.append(MCQQuestion(
-                    concept_id="", # Caller handles this
-                    question=q["question"],
-                    options=options,
-                    explanation=q.get("explanation", ""),
-                    difficulty=q.get("difficulty", 5)
-                ))
                 
+                # Create MCQQuestion with the processed options list
+                try:
+                    mcqs.append(MCQQuestion(
+                        concept_id="", # Caller handles this
+                        question=q.get("question", "Unknown Question"),
+                        options=options,
+                        explanation=q.get("explanation", ""),
+                        difficulty=q.get("difficulty", 5)
+                    ))
+                except Exception as e:
+                     logger.warning("WebQuizAgent: Skipped invalid question", error=str(e))
+
             logger.info("WebQuizAgent: Found/Generated quizzes", count=len(mcqs))
             return mcqs, primary_source_url
 

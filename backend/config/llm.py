@@ -53,11 +53,19 @@ def get_chat_model(
             "generation_config": {"response_mime_type": "application/json"}
         }
 
+    # Add robust retry configuration for 502/504 errors
+    # Gemini API can be flaky with transient errors on high load
+    if "transport" not in kwargs:
+        kwargs["transport"] = "rest" # Use REST instead of gRPC for better compatibility
+    
+    # Langchain's Google GenAI integration supports a 'max_retries' param
+    # which handles 5xx errors automatically
     return ChatGoogleGenerativeAI(
         model=model_name,
         google_api_key=os.getenv("GOOGLE_API_KEY"),
         temperature=temperature,
-        convert_system_message_to_human=True,  # Gemini quirk
+        convert_system_message_to_human=True,
+        max_retries=6,  # Retry up to 6 times (exponential backoff built-in)
         **kwargs,
     )
 
