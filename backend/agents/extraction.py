@@ -128,7 +128,6 @@ Content:
             except json.JSONDecodeError:
                 # Fallback: aggressive cleaning if simple fix fails
                 # Remove control characters except newlines/tabs
-                import re
                 cleaned = re.sub(r'[\x00-\x09\x0B-\x1F\x7F]', '', raw_response)
                 parsed = json.loads(cleaned)
 

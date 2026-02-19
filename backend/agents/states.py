@@ -120,9 +120,13 @@ class ChatState(TypedDict, total=False):
     graph_context: dict
     rag_context: list[dict]
     
+    # Source-scoped filtering (optional)
+    focused_source_ids: list[str]
+
     # Response metadata
     sources: list[dict]
     related_concepts: list[dict]
+    metadata: dict
 
 
 class QuizState(TypedDict, total=False):
