@@ -304,6 +304,26 @@ export const authService = {
     }
 };
 
+export const usersService = {
+    purgeAllData: async () => {
+        const response = await authFetch(`${API_BASE}/users/me/purge`, {
+            method: 'DELETE',
+        });
+
+        if (!response.ok) {
+            const raw = await response.text();
+            let detail = raw || `HTTP ${response.status}`;
+            try {
+                const parsed = raw ? JSON.parse(raw) : null;
+                if (parsed?.detail) detail = parsed.detail;
+            } catch {
+                // Keep raw text when response is not JSON.
+            }
+            throw new Error(detail);
+        }
+    },
+};
+
 export const ingestService = {
     /** Start ingestion workflow */
     ingest: async (content: string, title?: string, skipReview: boolean = false) => {
