@@ -70,6 +70,7 @@ class ChatState(TypedDict, total=False):
     # Final outputs
     related_concepts: list[dict]
     sources: list[dict]
+    metadata: dict
 
 
 
@@ -516,7 +517,7 @@ async def get_context_node(state: ChatState) -> dict:
             if focused_source_ids:
                 result = await pg_client.execute_query(
                     """
-                    SELECT c.id, c.content, c.images, c.chunk_index,
+                    SELECT c.id, c.content, p.images, c.chunk_index,
                            c.page_start, c.page_end,
                            p.content as parent_content,
                            n.title, n.id AS note_id,
@@ -536,7 +537,7 @@ async def get_context_node(state: ChatState) -> dict:
             else:
                 result = await pg_client.execute_query(
                     """
-                    SELECT c.id, c.content, c.images, c.chunk_index,
+                    SELECT c.id, c.content, p.images, c.chunk_index,
                            c.page_start, c.page_end,
                            p.content as parent_content,
                            n.title, n.id AS note_id,

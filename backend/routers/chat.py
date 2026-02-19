@@ -54,22 +54,14 @@ async def chat(
     Include conversation_history for multi-turn conversations.
     """
     try:
-        # Refactor: Use LangGraph run_chat
-        
-        # Use existing conversation ID as thread_id if provided
-        thread_id = None
-        if request.conversation_history:
-            # Note: The frontend sends history as a list, but for LangGraph we rely on 
-            # server-side persistence via checkpointer. Ideally, frontend should send thread_id.
-            # For this refactor, we'll treat a new proper request with thread_id in header
-            # but getting it from request for now if we mock it.
-            pass
+        # Use existing conversation ID as thread_id for multi-turn persistence
+        thread_id = request.conversation_id or str(uuid.uuid4())
 
         # Execute the graph
         result = await run_chat(
             user_id=str(current_user["id"]),
             message=request.message,
-            thread_id=str(uuid.uuid4()) # Create new thread for single turn if no ID
+            thread_id=thread_id,
         )
         
         return ChatResponse(

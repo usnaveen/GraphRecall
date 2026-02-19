@@ -14,6 +14,7 @@ START → extract_concepts → store_note → find_related
 """
 
 import json
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Literal
@@ -806,10 +807,12 @@ async def create_concepts_node(state: IngestionState) -> dict:
             else:
                 concept_ids.append(str(node_data) if node_data else None)
 
-        concept_evidence = {
-            cid: concept.get("evidence_span")
-            for concept, cid in zip(concepts, concept_ids)
-        }
+        # Build evidence map using (index -> evidence_span) to avoid misalignment
+        # if any concept creation fails and concept_ids becomes shorter than concepts
+        concept_evidence = {}
+        for concept, cid in zip(concepts, concept_ids):
+            if cid is not None:
+                concept_evidence[cid] = concept.get("evidence_span")
         
         # Create relationships based on extraction (Semantic)
         # Build lookup from current batch
@@ -979,14 +982,14 @@ async def create_concepts_node(state: IngestionState) -> dict:
 
             await neo4j.execute_query(
                 """
-                MERGE (n:NoteSource {id: $note_id})
+                MERGE (n:NoteSource {id: $note_id, user_id: $user_id})
                 WITH n
                 UNWIND $props AS p
                 MERGE (prop:Proposition {id: p.id})
                 SET prop.content = p.content, prop.confidence = p.confidence
                 MERGE (n)-[r:HAS_PROPOSITION]->(prop)
                 """,
-                {"note_id": note_id, "props": prop_params}
+                {"note_id": note_id, "user_id": user_id, "props": prop_params}
             )
         
         # Enrich processing metadata with graph stats
@@ -1143,7 +1146,6 @@ Return ONLY valid JSON:
             # LLM sometimes produces invalid escape sequences (e.g. \n inside strings).
             # Try to sanitise before giving up.
             try:
-                import re
                 # Replace lone backslashes not followed by a valid JSON escape char
                 sanitised = re.sub(r'\\(?!["\\bfnrtu/])', r'\\\\', content)
                 data = json.loads(sanitised)
@@ -1264,16 +1266,13 @@ async def generate_quiz_node(state: IngestionState) -> dict:
         for mcq in mcqs:
             q_id = str(uuid.uuid4())
             
-            # Find concept_id
+            # Find concept_id - resolve name to UUID from creation step
             concept_id = mcq.concept_id
-            # If concept_id is missing or name-only, try to resolve to UUID from creation step
-            if not concept_id or concept_id == mcq.concept_id: # (if equal to name)
-                 # Try to find matching concept in our list which might have 'id' now
-                 for c in concepts:
-                     if c.get("name") == mcq.concept_id: # or however it was mapped
-                        if c.get("id"):
-                            concept_id = c.get("id")
-                            break
+            # Try to resolve the LLM-provided concept name to a real UUID
+            for c in concepts:
+                if c.get("name") == concept_id and c.get("id"):
+                    concept_id = c.get("id")
+                    break
             
             # Fallback if still no UUID (shouldn't happen if create_concepts ran)
             if not concept_id:
@@ -1563,21 +1562,21 @@ async def run_ingestion(
             "note_id": str(result.get("note_id")) if result.get("note_id") else None,
             "concepts": result.get("extracted_concepts", []),
             "concept_ids": result.get("created_concept_ids", []),
-            "term_card_ids": result.get("term_card_ids", []),
+            "flashcard_ids": result.get("term_card_ids", []),
             "quiz_ids": result.get("quiz_ids", []),
             "processing_metadata": result.get("processing_metadata", {}),
             "status": "completed",
             "thread_id": thread_id,
             "error": result.get("error"),
         }
-        
+
     except Exception as e:
         logger.error("run_ingestion: Failed", error=str(e))
         return {
             "note_id": note_id,
             "concepts": [],
             "concept_ids": [],
-            "term_card_ids": [],
+            "flashcard_ids": [],
             "status": "error",
             "thread_id": thread_id,
             "error": str(e),
@@ -1640,7 +1639,7 @@ async def resume_ingestion(
         return {
             "note_id": result.get("note_id"),
             "concept_ids": result.get("created_concept_ids", []),
-            "term_card_ids": result.get("term_card_ids", []),
+            "flashcard_ids": result.get("term_card_ids", []),
             "status": "completed" if not user_cancelled else "cancelled",
             "thread_id": thread_id,
         }
