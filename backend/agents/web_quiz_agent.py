@@ -88,6 +88,42 @@ class WebQuizAgent:
         except Exception as e:
             logger.warning("WebQuizAgent: Cache save failed", error=str(e))
 
+    def _normalize_search_results(self, raw_results) -> List[dict]:
+        """Normalize Tavily/cache payloads into a list of {url, content} dicts."""
+        if raw_results is None:
+            return []
+
+        if isinstance(raw_results, str):
+            try:
+                raw_results = json.loads(raw_results)
+            except Exception:
+                return []
+
+        if isinstance(raw_results, dict):
+            # Tavily wrappers may return {"results": [...]} or similar envelopes.
+            if isinstance(raw_results.get("results"), list):
+                raw_results = raw_results["results"]
+            else:
+                raw_results = [raw_results]
+
+        if not isinstance(raw_results, list):
+            return []
+
+        normalized: List[dict] = []
+        for item in raw_results:
+            if not isinstance(item, dict):
+                continue
+            url = item.get("url") or item.get("source") or ""
+            content = item.get("content") or item.get("snippet") or item.get("raw_content") or ""
+            if not isinstance(content, str):
+                content = str(content)
+            if not isinstance(url, str):
+                url = str(url)
+            if not content.strip():
+                continue
+            normalized.append({"url": url, "content": content})
+        return normalized
+
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def find_quizzes(
         self, 
@@ -116,15 +152,20 @@ class WebQuizAgent:
                 search_results = await self.search.ainvoke(query)
                 # Cache the results
                 await self._cache_search(query, search_results)
+
+            search_results = self._normalize_search_results(search_results)
+            if not search_results:
+                logger.warning("WebQuizAgent: No usable search results", concept=concept_name)
+                return [], ""
             
             # Format context from search results
             context_text = "\n\n".join([
-                f"Source: {res['url']}\nContent: {res['content']}" 
+                f"Source: {res.get('url', '')}\nContent: {res.get('content', '')}"
                 for res in search_results
             ])
             
             # Use the first result as the primary source URL (simplification)
-            primary_source_url = search_results[0]['url'] if search_results else ""
+            primary_source_url = search_results[0].get("url", "") if search_results else ""
             
             if not context_text:
                 return [], ""

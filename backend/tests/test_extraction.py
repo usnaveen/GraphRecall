@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.agents.extraction import ExtractionAgent
+from backend.agents.extraction import ExtractionAgent, _escape_invalid_json_backslashes
 from backend.models.schemas import ExtractionResult
 
 
@@ -132,3 +132,33 @@ class TestExtractionAgent:
             # Verify the LLM was called with context
             call_args = mock_llm.ainvoke.call_args[0][0]
             assert "Neural Network" in call_args
+
+    @pytest.mark.asyncio
+    async def test_extract_handles_regex_backslash_escapes(self, mock_llm):
+        """Test extraction can recover from invalid regex escapes in LLM JSON."""
+        malformed_json = (
+            '{"concepts":[{"name":"Negative Lookbehind","definition":"Regex assertion",'
+            '"domain":"Regular Expressions","complexity_score":5,"confidence":0.95,'
+            '"evidence_span":"The expressions (?<!\\\\\\S) and (?!\\\\S) isolate tokens.",'
+            '"related_concepts":["Negative Lookahead"],"prerequisites":[]}]}'
+        )
+        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content=malformed_json))
+
+        with patch.object(ExtractionAgent, "__init__", lambda self, **kwargs: None):
+            agent = ExtractionAgent()
+            agent.model_name = "gpt-3.5-turbo-1106"
+            agent.llm = mock_llm
+            agent._prompt_template = "Test prompt: {content}"
+
+            result = await agent.extract("regex content")
+
+            assert isinstance(result, ExtractionResult)
+            assert len(result.concepts) == 1
+            assert result.concepts[0].name == "Negative Lookbehind"
+
+    def test_escape_helper_preserves_valid_unicode_escapes(self):
+        """Valid JSON unicode escapes should remain untouched."""
+        raw = '{"concepts":[{"name":"Unicode","evidence_span":"Line \\u00A9 symbol"}]}'
+        cleaned = _escape_invalid_json_backslashes(raw)
+        parsed = json.loads(cleaned)
+        assert parsed["concepts"][0]["evidence_span"] == "Line © symbol"
