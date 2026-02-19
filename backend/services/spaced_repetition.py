@@ -495,9 +495,9 @@ class SpacedRepetitionService:
             await self.pg_client.execute_insert(
                 """
                 INSERT INTO study_sessions
-                    (id, user_id, concept_id, reviewed_at, is_correct, item_type, response_time_ms)
+                    (id, user_id, concept_id, reviewed_at, is_correct, item_type, response_time_ms, session_type)
                 VALUES
-                    (:id, :user_id, :concept_id, :reviewed_at, :is_correct, :item_type, :response_time_ms)
+                    (:id, :user_id, :concept_id, :reviewed_at, :is_correct, :item_type, :response_time_ms, :session_type)
                 """,
                 {
                     "id": str(uuid.uuid4()),
@@ -507,6 +507,7 @@ class SpacedRepetitionService:
                     "is_correct": is_correct,
                     "item_type": review.item_type,
                     "response_time_ms": review.response_time_ms,
+                    "session_type": "flashcard" if review.item_type == "flashcard" else "quiz",
                 }
             )
         except Exception as e:
