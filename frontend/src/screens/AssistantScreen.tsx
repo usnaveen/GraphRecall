@@ -689,9 +689,32 @@ export function AssistantScreen() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-6 pr-2 mb-4 mt-2 p-1">
         {chatMessages.length === 0 && !showQuickActions && (
-          <div className="h-full flex flex-col items-center justify-center opacity-30">
-            <MessageSquare className="w-12 h-12 mb-2" />
-            <p>Start a conversation</p>
+          <div className="h-full flex flex-col items-center justify-center opacity-70">
+            <MessageSquare className="w-12 h-12 mb-4 text-white/30" />
+            <p className="text-white/60 mb-6 font-medium">Start a conversation</p>
+
+            <div className="flex flex-col gap-2 w-full max-w-xs">
+              <button
+                onClick={() => {
+                  setInputValue("Explain the Transformer Architecture and show me a diagram of its components.");
+                  inputRef.current?.focus();
+                }}
+                className="text-xs text-left px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all flex items-center gap-2"
+              >
+                <Cpu className="w-4 h-4 text-[#B6FF2E]" />
+                Explain Transformer Architecture
+              </button>
+              <button
+                onClick={() => {
+                  setInputValue("How does the Self-Attention mechanism work? Please provide visual evidence.");
+                  inputRef.current?.focus();
+                }}
+                className="text-xs text-left px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all flex items-center gap-2"
+              >
+                <Lightbulb className="w-4 h-4 text-[#2EFFE6]" />
+                How does Self-Attention work?
+              </button>
+            </div>
           </div>
         )}
 
@@ -1049,8 +1072,13 @@ export function AssistantScreen() {
                   <X className="w-5 h-5 text-white/60" />
                 </button>
               </div>
-              <div className="text-sm text-white/70 leading-relaxed whitespace-pre-wrap">
-                {citationModal.source.content || 'No content available'}
+              <div className="text-sm text-white/70 leading-relaxed">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={createMarkdownComponents()}
+                >
+                  {citationModal.source.content || 'No content available'}
+                </ReactMarkdown>
               </div>
 
               {/* Render Images if available */}

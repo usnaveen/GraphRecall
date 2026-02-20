@@ -293,6 +293,13 @@ async def get_concept_notes(
             {"note_ids": note_ids, "uid": user_id},
         )
 
+        # Get the concept title to use as fallback matching
+        concept_res = await neo4j.execute_query(
+            "MATCH (c:Concept {id: $id}) RETURN c.title AS title",
+            {"id": concept_id}
+        )
+        concept_title = concept_res[0]["title"] if concept_res else ""
+
         notes = []
         for note_row in notes_result or []:
             note = dict(note_row)
@@ -300,10 +307,6 @@ async def get_concept_notes(
             evidence_span = note_link_map.get(note_id, {}).get("evidence_span")
 
             # Get chunks for this note, ordered by index
-            # To avoid returning 1000s of chunks for a book, if we have an evidence span, we try to return only chunks
-            # that have images OR match the evidence span loosely. Actually, let's just return all chunks that have images 
-            # and the chunks that best match the evidence span. If no evidence span, return first 10 chunks.
-            
             chunks_query = """
                 SELECT c.id, c.content, c.chunk_level, c.chunk_index,
                        c.page_start, c.page_end, c.images,
@@ -330,17 +333,19 @@ async def get_concept_notes(
                         images = []
                 chunk["images"] = images or []
                 
-                # Filter logic: if evidence_span exists, we want to show the chunk that contains it
-                # or just show the evidence span as a chunk if we can't find a good match.
-                # To prevent huge payloads, we will filter chunks.
+                # Filter logic: if evidence_span exists, show the chunk that contains it.
+                # If evidence_span is missing, show chunks that mention the concept title!
                 has_images = len(chunk["images"]) > 0
                 is_match = False
                 
                 if evidence_span and chunk["content"] and evidence_span.lower()[:50] in chunk["content"].lower():
                     is_match = True
                     matched_evidence = True
+                elif not evidence_span and concept_title and chunk["content"] and concept_title.lower() in chunk["content"].lower():
+                    is_match = True
+                    matched_evidence = True
                     
-                if has_images or is_match or not evidence_span:
+                if has_images or is_match:
                     chunks.append(chunk)
 
             # If we had an evidence span but didn't match any chunk, prepend it as a synthetic chunk
