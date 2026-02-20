@@ -170,6 +170,7 @@ async def get_chat_suggestions(
         suggestions.extend([
             "What topics should I review today?",
             "Summarize my notes on [topic]",
+            "Show me images related to...",
             "Quiz me on my weakest concepts",
         ])
         

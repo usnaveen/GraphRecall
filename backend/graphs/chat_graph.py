@@ -717,16 +717,16 @@ async def generate_response_node(state: ChatState) -> dict:
         return {
             "messages": [AIMessage(content=response.content)],
             "related_concepts": [
-                {"id": c.get("id"), "name": c.get("name")}
+                {"id": str(c.get("id")) if c.get("id") else None, "name": c.get("name")}
                 for c in graph_context.get("concepts", [])
             ],
             "sources": [
                 {
-                    "id": n.get("id"),
+                    "id": str(n.get("id")) if n.get("id") else None,
                     "title": n.get("title"),
                     "content": n.get("content", "")[:500],
                     "images": n.get("images", []),
-                    "note_id": n.get("note_id"),
+                    "note_id": str(n.get("note_id")) if n.get("note_id") else None,
                     "page_start": n.get("page_start"),
                     "page_end": n.get("page_end"),
                 }

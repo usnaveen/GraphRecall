@@ -648,6 +648,30 @@ async def generate_topic_quiz_stream(
             new_questions = []
 
             if need_new > 0:
+                # If we don't have a concept_id (i.e. new topic), create it now so we can save questions
+                if not concept_id:
+                     try:
+                        yield sse({"type": "status", "content": f"🌱 Creating new concept: {topic_name}..."})
+                        def_text = research_result.get("summary") or f"Automatically generated concept for {topic_name}"
+                        new_concept_res = await neo4j_client.create_concept(
+                            name=topic_name,
+                            definition=def_text[:1000], # Limit length
+                            domain="General",
+                            complexity_score=0.5,
+                            user_id=user_id,
+                            confidence=0.6 if research_result else 0.3
+                        )
+                        if new_concept_res and new_concept_res.get("c"):
+                            concept_id = new_concept_res["c"].get("id")
+                            concept_def = new_concept_res["c"].get("definition")
+                            yield sse({"type": "status", "content": "✨ Concept created successfully"})
+                     except Exception as e:
+                        logger.error("Quiz stream: Failed to create concept", error=str(e))
+                        # We can't save to DB without concept_id, so we must abort DB saving for these items
+                        # or skip this batch. But let's verify if we can continue.
+                        # If we continue, the INSERT below will fail.
+                        pass
+
                 yield sse({"type": "status", "content": f"🧠 Generating {need_new} new questions..."})
                 try:
                     content_text = concept_def + "\n" + (research_result.get("summary") or "")

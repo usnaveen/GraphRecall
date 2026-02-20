@@ -271,7 +271,7 @@ async def get_concept_notes(
         note_links = await neo4j.execute_query(
             """
             MATCH (n:NoteSource)-[r:EXPLAINS]->(c:Concept {id: $id, user_id: $uid})
-            RETURN n.note_id AS note_id, r.relevance AS relevance
+            RETURN n.id AS note_id, r.relevance AS relevance, r.evidence_span AS evidence_span
             ORDER BY r.relevance DESC
             """,
             {"id": concept_id, "uid": user_id},
@@ -281,6 +281,7 @@ async def get_concept_notes(
             return {"notes": []}
 
         note_ids = [r["note_id"] for r in note_links]
+        note_link_map = {r["note_id"]: r for r in note_links}
 
         # Get note metadata
         notes_result = await pg_client.execute_query(
@@ -296,22 +297,29 @@ async def get_concept_notes(
         for note_row in notes_result or []:
             note = dict(note_row)
             note_id = note["id"]
+            evidence_span = note_link_map.get(note_id, {}).get("evidence_span")
 
             # Get chunks for this note, ordered by index
-            chunks_result = await pg_client.execute_query(
-                """
+            # To avoid returning 1000s of chunks for a book, if we have an evidence span, we try to return only chunks
+            # that have images OR match the evidence span loosely. Actually, let's just return all chunks that have images 
+            # and the chunks that best match the evidence span. If no evidence span, return first 10 chunks.
+            
+            chunks_query = """
                 SELECT c.id, c.content, c.chunk_level, c.chunk_index,
                        c.page_start, c.page_end, c.images,
                        p.content as parent_content
                 FROM chunks c
                 LEFT JOIN chunks p ON c.parent_chunk_id = p.id
                 WHERE c.note_id = :note_id
-                ORDER BY c.chunk_level DESC, c.chunk_index
-                """,
+            """
+            
+            chunks_result = await pg_client.execute_query(
+                chunks_query + "\nORDER BY c.chunk_level DESC, c.chunk_index",
                 {"note_id": note_id},
             )
 
             chunks = []
+            matched_evidence = False
             for chunk_row in chunks_result or []:
                 chunk = dict(chunk_row)
                 images = chunk.get("images")
@@ -321,12 +329,40 @@ async def get_concept_notes(
                     except Exception:
                         images = []
                 chunk["images"] = images or []
-                chunks.append(chunk)
+                
+                # Filter logic: if evidence_span exists, we want to show the chunk that contains it
+                # or just show the evidence span as a chunk if we can't find a good match.
+                # To prevent huge payloads, we will filter chunks.
+                has_images = len(chunk["images"]) > 0
+                is_match = False
+                
+                if evidence_span and chunk["content"] and evidence_span.lower()[:50] in chunk["content"].lower():
+                    is_match = True
+                    matched_evidence = True
+                    
+                if has_images or is_match or not evidence_span:
+                    chunks.append(chunk)
+
+            # If we had an evidence span but didn't match any chunk, prepend it as a synthetic chunk
+            if evidence_span and not matched_evidence:
+                synthetic_chunk = {
+                    "id": f"evidence-{note_id}",
+                    "content": evidence_span,
+                    "chunk_level": "parent",
+                    "chunk_index": -1,
+                    "images": []
+                }
+                chunks.insert(0, synthetic_chunk)
+                
+            # Limit chunks to avoid freezing the UI for book type notes if not using evidence span
+            if not evidence_span and len(chunks) > 20:
+                chunks = chunks[:20]
 
             notes.append({
                 "id": note_id,
                 "title": note["title"],
                 "resource_type": note.get("resource_type"),
+                "evidence_span": evidence_span,
                 "chunks": chunks,
             })
 
