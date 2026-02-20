@@ -10,8 +10,13 @@ from backend.graphs.chat_graph import run_chat, QueryAnalysis
 async def test_chat():
     mock_llm = MagicMock()
     structured = MagicMock()
-    structured.ainvoke = AsyncMock(return_value=QueryAnalysis(intent="general", entities=[]))
+    structured.ainvoke = AsyncMock(return_value=QueryAnalysis(intent="general", entities=[], needs_search=False))
     mock_llm.with_structured_output.return_value = structured
+    
+    mock_configured = MagicMock()
+    mock_configured.ainvoke = AsyncMock(return_value=AIMessage(content="Spaced repetition is a learning technique."))
+    mock_llm.with_config.return_value = mock_configured
+    
     mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="Spaced repetition is a learning technique."))
 
     mock_neo4j = AsyncMock()
