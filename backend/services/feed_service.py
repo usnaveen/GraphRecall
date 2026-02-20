@@ -607,9 +607,11 @@ class FeedService:
                     priority_score=concept.get("priority_score", 0.6),
                 )
             
-            # 2. Try Web Augmentation (for MCQs only)
+            # 2. Try Web Augmentation (for MCQs only) - DISABLED TO PREVENT VERCEL TIMEOUTS
             web_search_failed = False
-            if item_type == FeedItemType.MCQ and not content:
+            ENABLE_WEB_SEARCH_FALLBACK = False  # Disabled: causes 10s timeout on Vercel
+            
+            if item_type == FeedItemType.MCQ and not content and ENABLE_WEB_SEARCH_FALLBACK:
                 try:
                     # Only search if we really lack content
                     logger.info("FeedService: DB empty, trying Web Search", concept=concept.get("name"))
@@ -1042,6 +1044,19 @@ class FeedService:
         
         feed_items: list[FeedItem] = []
         
+        # Determine if we've hit the daily generation limit before trying to generate new content
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        q_generated_res = await self.pg_client.execute_query(
+            """
+            SELECT COUNT(*) as cnt 
+            FROM quizzes q
+            WHERE q.user_id = :uid AND q.created_at >= :today AND q.source = 'batch_gen'
+            """,
+            {"uid": request.user_id, "today": today_start}
+        )
+        generated_today = q_generated_res[0]["cnt"] if q_generated_res else 0
+        generation_limit_reached = generated_today >= 20
+        
         # Filter by domains if specified
         if request.domains:
             due_concepts = [
@@ -1058,39 +1073,41 @@ class FeedService:
         # Limit candidates to prevents spawning too many parallel LLM calls (e.g. max 5)
         candidates = due_concepts[:min(request.max_items, 10)]
         
-        for concept in candidates:
-            # Randomly select a content type
-            possible_types = [
-                t for t in [
-                    FeedItemType.CONCEPT_SHOWCASE,
-                    FeedItemType.MCQ,
-                    FeedItemType.FILL_BLANK,
-                    FeedItemType.MCQ,
-                    FeedItemType.TERM_CARD, 
-                    FeedItemType.MERMAID_DIAGRAM,
+        # Only attempt new generation if under daily limit
+        if not generation_limit_reached:
+            for concept in candidates:
+                # Randomly select a content type
+                possible_types = [
+                    t for t in [
+                        FeedItemType.CONCEPT_SHOWCASE,
+                        FeedItemType.MCQ,
+                        FeedItemType.FILL_BLANK,
+                        FeedItemType.MCQ,
+                        FeedItemType.TERM_CARD, 
+                        FeedItemType.MERMAID_DIAGRAM,
+                    ]
+                    if t in allowed_types
                 ]
-                if t in allowed_types
-            ]
-            
-            if not possible_types:
-                continue
-            
-            item_type = random.choice(possible_types)
-            
-            tasks.append(
-                asyncio.create_task(
-                    self.generate_feed_item(
-                        request.user_id,
-                        concept,
-                        item_type,
-                        allow_llm=True, # We control timeout via asyncio.wait
+                
+                if not possible_types:
+                    continue
+                
+                item_type = random.choice(possible_types)
+                
+                tasks.append(
+                    asyncio.create_task(
+                        self.generate_feed_item(
+                            request.user_id,
+                            concept,
+                            item_type,
+                            allow_llm=True, # We control timeout via asyncio.wait
+                        )
                     )
                 )
-            )
             
         if tasks:
-            # Wait for tasks with a hard global timeout (9s for Vercel Hobby tier safety)
-            done, pending = await asyncio.wait(tasks, timeout=9.0)
+            # Wait for tasks with a hard global timeout (6s to safely fit inside Vercel 10s limit)
+            done, pending = await asyncio.wait(tasks, timeout=6.0)
             
             for task in done:
                 try:
@@ -1252,7 +1269,23 @@ class FeedService:
             completed_scheduled = max(0, completed_total - adhoc_completed)
             
             # If current_due is 0, goal is completed_scheduled.
-            return current_due_count + completed_scheduled
+            total_goal = current_due_count + completed_scheduled
+            
+            # Enforce hard limit of 20 maximum generated items per day in the feed
+            q_generated_res = await self.pg_client.execute_query(
+                """
+                SELECT COUNT(*) as cnt 
+                FROM quizzes q
+                WHERE q.user_id = :uid AND q.created_at >= :today AND q.source = 'batch_gen'
+                """,
+                {"uid": user_id, "today": today_start}
+            )
+            generated_today = q_generated_res[0]["cnt"] if q_generated_res else 0
+            
+            if generated_today >= 20:
+                logger.info("FeedService: Daily quiz generation limit (20) reached.", user_id=user_id, generated_today=generated_today)
+                
+            return total_goal
         except Exception as e:
             logger.error("get_daily_goal error", error=str(e))
             return 20

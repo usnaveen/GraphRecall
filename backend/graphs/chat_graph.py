@@ -597,9 +597,48 @@ async def generate_response_node(state: ChatState) -> dict:
     intent = state.get("intent", "general")
     graph_context = state.get("graph_context", {})
     rag_context = state.get("rag_context", [])
+    user_id = state.get("user_id", "default")
     
     logger.info("generate_response_node: Generating", intent=intent)
     
+    # Custom Handler for 'quiz' intent: Generate 10 quizzes proactively
+    if intent == "quiz":
+        # Determine the topic from the entities or the last message
+        topic = state.get("entities")[0] if state.get("entities") else "General Knowledge"
+        
+        # We fire the quiz generation asynchronously so it doesn't block the chat response
+        import asyncio
+        from backend.services.feed_service import FeedService
+        from backend.db.postgres_client import get_postgres_client
+        from backend.db.neo4j_client import get_neo4j_client
+        
+        async def generate_quizzes_bg(uid: str, t: str):
+            try:
+                pg = await get_postgres_client()
+                n4j = await get_neo4j_client()
+                fs = FeedService(pg, n4j)
+                await fs.generate_content_batch(
+                    topic_name=t,
+                    user_id=uid,
+                    target_size=10, # Hardcoded requirement from user
+                    force_research=False 
+                )
+            except Exception as e:
+                logger.error("generate_response_node: Quiz gen bg failed", error=str(e))
+                
+        asyncio.create_task(generate_quizzes_bg(user_id, topic))
+        
+        return {
+            "messages": [AIMessage(content=f"I am generating 10 quizzes about '{topic}' for you right now! They will appear in your feed shortly.")],
+            "related_concepts": [],
+            "sources": [],
+            "metadata": {
+                "intent": intent,
+                "entities": state.get("entities", []),
+                "action": "quiz_generation_started"
+            }
+        }
+        
     # Format context
     context_parts = []
     
