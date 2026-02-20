@@ -96,16 +96,87 @@ export function GraphScreen() {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.graph.getGraph();
+
+      const BATCH_SIZE = 200;
+      let currentOffset = 0;
+
+      const data = await api.graph.getGraph(BATCH_SIZE, currentOffset);
       const adapted = adaptGraphData(data);
       const sim = new ForceSimulation3D();
-      const layoutResult = await sim.generateLayout(adapted);
+      let layoutResult = await sim.generateLayout(adapted);
+
       setLayout(layoutResult);
       setGraphCache(adapted, layoutResult);
+      setLoading(false);
+
+      if (data.nodes && data.nodes.length === BATCH_SIZE) {
+        currentOffset += BATCH_SIZE;
+        let hasMore = true;
+        let currentAdapted = adapted;
+
+        (async () => {
+          try {
+            while (hasMore) {
+              const nextData = await api.graph.getGraph(BATCH_SIZE, currentOffset);
+              if (!nextData.nodes || nextData.nodes.length === 0) {
+                hasMore = false;
+                break;
+              }
+
+              const nextAdapted = adaptGraphData(nextData);
+              const existingNodeIds = new Set(currentAdapted.entities.map((e) => e.id));
+              const newEntities = nextAdapted.entities.filter((e) => !existingNodeIds.has(e.id));
+
+              const existingRelIds = new Set(currentAdapted.relationships.map((r) => r.id));
+              const newRels = nextAdapted.relationships.filter((r) => !existingRelIds.has(r.id));
+
+              const existingCommIds = new Set(currentAdapted.communities.map((c) => c.id));
+              const newComms = nextAdapted.communities.filter((c) => !existingCommIds.has(c.id));
+
+              if (newEntities.length === 0 && newRels.length === 0) {
+                hasMore = false;
+                break;
+              }
+
+              currentAdapted = {
+                entities: [...currentAdapted.entities, ...newEntities],
+                relationships: [...currentAdapted.relationships, ...newRels],
+                communities: [...currentAdapted.communities, ...newComms]
+              };
+
+              const posMap = new Map();
+              if (layoutResult?.nodes) {
+                layoutResult.nodes.forEach((n) => {
+                  posMap.set(n.id, { x: n.x, y: n.y, z: n.z });
+                });
+              }
+              currentAdapted.entities.forEach((e) => {
+                if (posMap.has(e.id)) {
+                  const p = posMap.get(e.id);
+                  e.x = p.x;
+                  e.y = p.y;
+                  e.z = p.z;
+                }
+              });
+
+              const nextSim = new ForceSimulation3D();
+              layoutResult = await nextSim.generateLayout(currentAdapted);
+
+              setLayout(layoutResult);
+              setGraphCache(currentAdapted, layoutResult);
+
+              currentOffset += BATCH_SIZE;
+              hasMore = nextData.nodes.length === BATCH_SIZE;
+            }
+          } catch (bgErr) {
+            console.error("Background graph load failed:", bgErr);
+          }
+        })();
+      }
+
     } catch (err: any) {
       console.error("Failed to load graph:", err);
       setError("Failed to load knowledge graph.");
-    } finally {
       setLoading(false);
     }
   }, [setGraphCache]);

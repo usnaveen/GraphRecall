@@ -64,18 +64,38 @@ def _parse_llm_json(response) -> dict:
         raise ValueError("LLM returned empty response")
 
     text = content.strip()
-    # Strip markdown code fences if present
-    if text.startswith("```json"):
-        text = text.split("```json", 1)[1].split("```", 1)[0].strip()
-    elif text.startswith("```"):
-        text = text.split("```", 1)[1].split("```", 1)[0].strip()
+
+    import re
+    # Extract content between ```json and ```
+    match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+    if match:
+        text = match.group(1).strip()
+    else:
+        # Find the first { or [ and last } or ]
+        first_brace = text.find('{')
+        first_bracket = text.find('[')
+        start_idx = first_brace if first_bracket == -1 else (first_bracket if first_brace == -1 else min(first_brace, first_bracket))
+        
+        last_brace = text.rfind('}')
+        last_bracket = text.rfind(']')
+        end_idx = last_brace if last_bracket == -1 else (last_bracket if last_brace == -1 else max(last_brace, last_bracket))
+        
+        if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
+            text = text[start_idx:end_idx+1]
 
     # Additional cleaning for common LLM JSON errors
-    import re
     # Remove control characters that often break json.loads
     text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    
+    # Fix trailing commas
+    text = re.sub(r',\s*}', '}', text)
+    text = re.sub(r',\s*\]', ']', text)
 
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON parsing failed. Extracted text: {text[:200]}...", error=str(e))
+        raise
 
 
 class ContentGeneratorAgent:

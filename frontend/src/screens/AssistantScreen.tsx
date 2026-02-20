@@ -88,7 +88,7 @@ export function AssistantScreen() {
   const [selectedSources, setSelectedSources] = useState<{ id: string; title: string }[]>([]);
 
   // Citation modal state
-  const [citationModal, setCitationModal] = useState<{ show: boolean; source?: { id: string; title: string; content?: string } }>({ show: false });
+  const [citationModal, setCitationModal] = useState<{ show: boolean; source?: { id: string; title: string; content?: string; images?: any[] } }>({ show: false });
 
   // Expanded metadata toggle per message
   const [expandedMetadata, setExpandedMetadata] = useState<Set<string>>(new Set());
@@ -228,12 +228,19 @@ export function AssistantScreen() {
       clearChatMessages();
       messages.forEach((m: any) => {
         let sources: string[] | undefined = undefined;
+        let sourceObjects: any[] | undefined = undefined;
         if (m.sources_json) {
           try {
             const parsed = typeof m.sources_json === 'string' ? JSON.parse(m.sources_json) : m.sources_json;
             sources = parsed.map((s: any) => s.title || s.name || s);
+            sourceObjects = parsed.map((s: any) =>
+              typeof s === 'string'
+                ? { id: s, title: s }
+                : { id: s.id || s.title, title: s.title || s.name || String(s), content: s.content, images: s.images }
+            );
           } catch {
             sources = undefined;
+            sourceObjects = undefined;
           }
         }
         addChatMessage({
@@ -241,6 +248,7 @@ export function AssistantScreen() {
           role: m.role,
           content: m.content,
           sources,
+          sourceObjects,
           serverId: m.id,
         });
       });
@@ -369,7 +377,7 @@ export function AssistantScreen() {
                   const rawSources = (data.sources || []).map((s: any) =>
                     typeof s === 'string'
                       ? { id: s, title: s }
-                      : { id: s.id || s.title, title: s.title || s.name || String(s), content: s.content }
+                      : { id: s.id || s.title, title: s.title || s.name || String(s), content: s.content, images: s.images }
                   );
                   const finalMsg: ChatMessage = {
                     ...assistantMessage,
@@ -1041,9 +1049,29 @@ export function AssistantScreen() {
                   <X className="w-5 h-5 text-white/60" />
                 </button>
               </div>
-              <div className="text-sm text-white/70 leading-relaxed">
+              <div className="text-sm text-white/70 leading-relaxed whitespace-pre-wrap">
                 {citationModal.source.content || 'No content available'}
               </div>
+
+              {/* Render Images if available */}
+              {citationModal.source.images && citationModal.source.images.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  {citationModal.source.images.map((img: any, idx: number) => {
+                    const url = typeof img === 'string' ? img : img.url;
+                    if (!url) return null;
+                    return (
+                      <img
+                        key={idx}
+                        src={url}
+                        alt={`Figure from ${citationModal.source?.title}`}
+                        className="w-full rounded-lg border border-white/10"
+                        loading="lazy"
+                      />
+                    );
+                  })}
+                </div>
+              )}
+
               <button
                 onClick={() => {
                   setSelectedSources(prev => [...prev, {

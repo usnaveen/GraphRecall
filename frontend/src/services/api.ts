@@ -197,8 +197,8 @@ export const feedService = {
 
 export const graphService = {
     /** Get 3D graph data */
-    getGraph: async () => {
-        const response = await authFetch(`${API_BASE}/graph3d`);
+    getGraph: async (limit: number = 200, offset: number = 0) => {
+        const response = await authFetch(`${API_BASE}/graph3d?limit=${limit}&offset=${offset}`);
         if (!response.ok) throw new Error('Failed to fetch graph data');
         return response.json();
     },
@@ -486,8 +486,8 @@ export const api = {
     },
 
     graph: {
-        getGraph: async () => {
-            const response = await authFetch(`${API_BASE}/graph3d`);
+        getGraph: async (limit: number = 200, offset: number = 0) => {
+            const response = await authFetch(`${API_BASE}/graph3d?limit=${limit}&offset=${offset}`);
             if (!response.ok) throw new Error('Failed to fetch graph data');
             return response.json();
         },

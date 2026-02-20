@@ -18,6 +18,7 @@ interface NoteData {
   id: string;
   title: string;
   resource_type?: string;
+  evidence_span?: string;
   chunks: ChunkData[];
 }
 
@@ -48,14 +49,10 @@ export default function NotePanel({ conceptId, conceptName, onClose }: NotePanel
     return () => { cancelled = true; };
   }, [conceptId]);
 
-  // Get only parent-level chunks for display (avoid duplicating parent+child content)
+  // Get chunks for display. The backend now pre-filters the most relevant chunks 
+  // (e.g. matching evidence_span, or having images).
   const getDisplayChunks = (chunks: ChunkData[]) => {
-    const parents = chunks.filter((c) => c.chunk_level === "parent");
-    if (parents.length > 0) return parents.sort((a, b) => a.chunk_index - b.chunk_index);
-    // Fallback: show child chunks if no parents
-    return chunks
-      .filter((c) => c.chunk_level === "child")
-      .sort((a, b) => a.chunk_index - b.chunk_index);
+    return chunks.slice().sort((a, b) => a.chunk_index - b.chunk_index);
   };
 
   return (
