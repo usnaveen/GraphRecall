@@ -14,8 +14,7 @@ import GalaxyBackground from "./GalaxyBackground";
 
 const BLOOM_SCENE = 1;
 
-// Threshold: links with weight >= this get energy tube treatment
-const ENERGY_TUBE_WEIGHT_THRESHOLD = 0.7;
+
 
 // Parent/child coloring
 const PARENT_COLOR = "#3B82F6";  // blue
@@ -183,61 +182,6 @@ function Link({ link, isHighlighted }: { link: Link3D; isHighlighted: boolean })
   );
 }
 
-// Animated energy tube for strong relationships
-function EnergyEdge({ link }: { link: Link3D }) {
-  const meshRef = useRef<THREE.Mesh>(null);
-
-  const curve = useMemo(() => {
-    const src = new THREE.Vector3(link.source.x, link.source.y, link.source.z);
-    const tgt = new THREE.Vector3(link.target.x, link.target.y, link.target.z);
-    return new THREE.CatmullRomCurve3([src, tgt]);
-  }, [link.source.x, link.source.y, link.source.z, link.target.x, link.target.y, link.target.z]);
-
-  const tubularSegments = 32;
-  const radius = useMemo(() => Math.max(0.06, calculateLinkThickness(link.weight) * 0.25), [link.weight]);
-  const radialSegments = 6;
-  const closed = false;
-
-  const mat = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        uniforms: {
-          time: { value: 0.0 },
-          c1: { value: new THREE.Color("#6be6ff") },
-          c2: { value: new THREE.Color("#ff8bcb") },
-        },
-        vertexShader: `
-      varying float vLen;
-      void main(){ vLen = position.y; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }
-    `,
-        fragmentShader: `
-      uniform float time; uniform vec3 c1,c2; varying float vLen;
-      void main(){
-        float t = fract(vLen*0.1 - time*0.8);
-        float band = smoothstep(0.0,0.05,t)*smoothstep(0.2,0.15,t);
-        vec3 col = mix(c1,c2, t);
-        gl_FragColor = vec4(col*(0.5+band*2.0), 0.7);
-      }
-    `,
-      }),
-    []
-  );
-
-  useFrame((state) => {
-    (mat.uniforms.time as { value: number }).value = state.clock.getElapsedTime();
-  });
-
-  return (
-    <mesh ref={meshRef} onUpdate={(m) => m.layers.enable(BLOOM_SCENE)}>
-      <tubeGeometry args={[curve, tubularSegments, radius, radialSegments, closed]} />
-      <primitive object={mat} attach="material" />
-    </mesh>
-  );
-}
-
 function CommunityBoundary({ community }: { community: Community }) {
   if (!community.computedBounds) return null;
   const bounds = community.computedBounds;
@@ -364,7 +308,6 @@ export type GraphVisualizerProps = {
   showCommunities: boolean;
   searchTerm: string;
   visibleNodeIds?: Set<string>;
-  showLabels: boolean;
   isMobile: boolean;
   onEmptyContextMenu?: (point: { x: number; y: number; z: number }) => void;
   onDoubleClickEmpty?: (point: { x: number; y: number; z: number }) => void;
@@ -391,7 +334,6 @@ function GraphScene({
   showCommunities,
   searchTerm,
   visibleNodeIds,
-  showLabels,
   isMobile,
   onEmptyContextMenu,
   onDoubleClickEmpty,
@@ -437,20 +379,6 @@ function GraphScene({
     }
     return filtered;
   }, [links, visibleNodeIdSet, minRelationshipWeight]);
-
-  // Separate strong links for energy tube rendering
-  const { regularLinks, energyLinks } = useMemo(() => {
-    const regular: Link3D[] = [];
-    const energy: Link3D[] = [];
-    for (const link of visibleLinks) {
-      if (link.weight >= ENERGY_TUBE_WEIGHT_THRESHOLD) {
-        energy.push(link);
-      }
-      // Always render the regular line too (energy is an overlay)
-      regular.push(link);
-    }
-    return { regularLinks: regular, energyLinks: energy };
-  }, [visibleLinks]);
 
   const visibleCommunities = useMemo(() => {
     if (!layout?.communities) return [];
@@ -544,7 +472,8 @@ function GraphScene({
             <CommunityGlow community={c} />
           </group>
         ))}
-        {regularLinks.map((link) => {
+        {/* Regular Links Only */}
+        {visibleLinks.map((link) => {
           const isHighlighted =
             (selectedNode && (link.source.id === selectedNode.id || link.target.id === selectedNode.id)) ||
             (hoveredNode && (link.source.id === hoveredNode.id || link.target.id === hoveredNode.id));
@@ -552,10 +481,7 @@ function GraphScene({
             !!pulseNodeId && (link.source.id === pulseNodeId || link.target.id === pulseNodeId);
           return <Link key={link.id} link={link} isHighlighted={!!isHighlighted || isPulse} />;
         })}
-        {/* Energy tubes overlay for strong relationships */}
-        {energyLinks.map((link) => (
-          <EnergyEdge key={`energy-${link.id}`} link={link} />
-        ))}
+
         {visibleNodes.map((node) => (
           <Node
             key={node.id}
@@ -567,7 +493,7 @@ function GraphScene({
             onClick={(n) => onNodeSelect(n)}
             onPointerOver={(n) => onNodeHover?.(n)}
             onPointerOut={() => onNodeHover?.(null)}
-            showLabel={showLabels || selectedNode?.id === node.id || hoveredNode?.id === node.id}
+            showLabel={true}
             springTarget={connectedNodeIds?.has(node.id) ? springTarget : null}
           />
         ))}

@@ -1160,6 +1160,64 @@ class FeedService:
         
         # Sort by priority
         feed_items.sort(key=lambda x: x.priority_score, reverse=True)
+
+        # Inject Demo Transformer Cards at the very top of the feed for demonstration purposes
+        demo_items = [
+            FeedItem(
+                id=f"demo-transformer-mcq-{uuid.uuid4()}",
+                item_type=FeedItemType.MCQ,
+                concept_id="demo-transformer",
+                concept_name="Transformer Architecture",
+                domain="Gen AI",
+                priority_score=10.0,
+                content={
+                    "question": "Which mechanism in the Transformer architecture allows it to weigh the importance of different words in a sequence simultaneously?",
+                    "options": [
+                        "Recurrent Neural Networks (RNNs)",
+                        "Self-Attention Mechanism",
+                        "Convolutional Layers",
+                        "Long Short-Term Memory (LSTM)"
+                    ],
+                    "correct_answer": "Self-Attention Mechanism",
+                    "explanation": "The self-attention mechanism is a core component of the Transformer model, allowing it to evaluate the importance of all words in a sequence relative to one another at the same time, overcoming the sequential processing limitations of RNNs."
+                },
+                created_at=datetime.utcnow()
+            ),
+            FeedItem(
+                id=f"demo-transformer-flashcard-{uuid.uuid4()}",
+                item_type=FeedItemType.TERM_CARD,
+                concept_id="demo-attention",
+                concept_name="Attention Mechanism",
+                domain="Gen AI",
+                priority_score=9.5,
+                content={
+                    "front": "What role do Queries, Keys, and Values play in the Self-Attention mechanism?",
+                    "back": "Queries determine what the current token is looking for, Keys represent what each token offers, and Values hold the actual information. The dot product of a Query and a Key determines the attention weight applied to the corresponding Value."
+                },
+                created_at=datetime.utcnow()
+            ),
+            FeedItem(
+                id=f"demo-transformer-showcase-{uuid.uuid4()}",
+                item_type=FeedItemType.CONCEPT_SHOWCASE,
+                concept_id="demo-transformer-2",
+                concept_name="Transformer Architecture",
+                domain="Gen AI",
+                priority_score=9.0,
+                content={
+                    "title": "The Power of Transformers",
+                    "description": "Transformers revolutionized NLP by abandoning recurrence entirely in favor of attention mechanisms, enabling massive parallelization during training and leading to LLMs like GPT-4.",
+                    "key_points": [
+                        "Introduced in 'Attention Is All You Need' (2017)",
+                        "Eliminates sequential processing bottlenecks",
+                        "Uses multi-head attention to capture different contextual relationships"
+                    ]
+                },
+                created_at=datetime.utcnow()
+            )
+        ]
+        
+        # Prepend the demo items to the feed
+        feed_items = demo_items + feed_items
         
         # Get metadata
         sr_stats = await self.sr_service.get_user_stats(request.user_id)

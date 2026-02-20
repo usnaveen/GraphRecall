@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { X, FileText, Loader2, Image as ImageIcon } from "lucide-react";
+import { X, FileText, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
+import ReactMarkdown from 'react-markdown';
 import { conceptsService } from "../../services/api";
 
 interface ChunkData {
@@ -128,41 +129,74 @@ export default function NotePanel({ conceptId, conceptName, onClose }: NotePanel
                         </p>
                       )}
 
-                      {/* Text content */}
-                      <div className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap">
-                        {chunk.content}
+                      {/* Text content rendered via Markdown */}
+                      <div className="text-sm text-white/80 leading-relaxed prose prose-invert max-w-none">
+                        <ReactMarkdown
+                          components={{
+                            img: ({ node, ...props }) => {
+                              // If it's a relative/asset path from backend
+                              let src = props.src;
+                              if (src && !src.startsWith('http') && !src.startsWith('data:')) {
+                                src = `/api/v2/files/${src}`;
+                              }
+                              return (
+                                <img
+                                  {...props}
+                                  src={src}
+                                  className="max-w-full rounded-lg my-2 border border-white/10"
+                                  loading="lazy"
+                                />
+                              );
+                            },
+                            p: ({ children }) => <span className="mb-2 block break-words whitespace-pre-wrap">{children}</span>,
+                            a: ({ node, ...props }) => <a {...props} className="text-[#B6FF2E] hover:underline" target="_blank" rel="noopener noreferrer" />,
+                          }}
+                        >
+                          {chunk.content}
+                        </ReactMarkdown>
                       </div>
 
-                      {/* Images */}
-                      {chunk.images && chunk.images.length > 0 && (
+                      {/* Images (Fallback for explicit JSON images that aren't in markdown) */}
+                      {chunk.images && chunk.images.length > 0 && chunk.content && !chunk.content.includes("![") && (
                         <div className="mt-3 space-y-2">
-                          {chunk.images.map((img, idx) => (
-                            <div
-                              key={idx}
-                              className="rounded-lg overflow-hidden border border-white/10 bg-white/5"
-                            >
-                              {typeof img === "string" && img.startsWith("http") ? (
+                          {chunk.images.map((img, idx) => {
+                            let ImgSrc = undefined;
+                            let ImgAlt = `Figure ${idx + 1}`;
+
+                            if (typeof img === "string") {
+                              if (img.startsWith("http") || img.startsWith("data:")) {
+                                ImgSrc = img;
+                              } else {
+                                // Assume it's a dictionary string or a filename and try parsing
+                                try {
+                                  let parsed = JSON.parse(img);
+                                  ImgSrc = parsed.filename ? `/api/v2/files/${parsed.filename}` : parsed.url;
+                                  ImgAlt = parsed.caption || parsed.alt || ImgAlt;
+                                } catch (e) {
+                                  // Raw string filename
+                                  ImgSrc = `/api/v2/files/${img}`;
+                                }
+                              }
+                            } else if (typeof img === "object") {
+                              const typedImg = img as any;
+                              ImgSrc = typedImg.filename ? `/api/v2/files/${typedImg.filename}` : typedImg.url;
+                              ImgAlt = typedImg.caption || typedImg.alt || ImgAlt;
+                            }
+
+                            return ImgSrc ? (
+                              <div
+                                key={idx}
+                                className="rounded-lg overflow-hidden border border-white/10 bg-white/5"
+                              >
                                 <img
-                                  src={img}
-                                  alt={`Figure from ${note.title}`}
+                                  src={ImgSrc}
+                                  alt={ImgAlt}
                                   className="max-w-full h-auto"
                                   loading="lazy"
                                 />
-                              ) : typeof img === "object" && (img as any).url ? (
-                                <img
-                                  src={(img as any).url}
-                                  alt={(img as any).alt || `Figure ${idx + 1}`}
-                                  className="max-w-full h-auto"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <div className="flex items-center gap-2 p-3 text-xs text-white/40">
-                                  <ImageIcon className="w-4 h-4" />
-                                  <span>Image: {typeof img === "string" ? img : JSON.stringify(img)}</span>
-                                </div>
-                              )}
-                            </div>
-                          ))}
+                              </div>
+                            ) : null;
+                          })}
                         </div>
                       )}
                     </div>

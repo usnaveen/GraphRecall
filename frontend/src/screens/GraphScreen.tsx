@@ -237,11 +237,6 @@ export function GraphScreen() {
     return new Set(selectedNode.community.entity_ids);
   }, [isolateCommunity, selectedNode]);
 
-  const showLabels = useMemo(() => {
-    const count = layout?.nodes.length || 0;
-    return count <= 220;
-  }, [layout]);
-
   // Connected links for inspector panel
   const connectedLinks = useMemo<Link3D[]>(() => {
     if (!selectedNode || !layout?.links) return [];
@@ -616,7 +611,6 @@ export function GraphScreen() {
             showCommunities={showCommunities}
             searchTerm={searchQuery}
             visibleNodeIds={visibleNodeIds}
-            showLabels={showLabels}
             isMobile={isMobile}
             onEmptyContextMenu={(point) => {
               openCreateModal(undefined, point);
