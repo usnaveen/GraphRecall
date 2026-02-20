@@ -139,7 +139,7 @@ function Node({
   );
 }
 
-function Link({ link, isHighlighted, sourceNodeId, targetNodeId }: { link: Link3D; isHighlighted: boolean; sourceNodeId?: string; targetNodeId?: string }) {
+function Link({ link, isHighlighted }: { link: Link3D; isHighlighted: boolean }) {
   const lineRef = useRef<any>(null);
   const points = useMemo(() => {
     return [
@@ -159,26 +159,15 @@ function Link({ link, isHighlighted, sourceNodeId, targetNodeId }: { link: Link3
     RELATED_TO: "#FFFFFF",
     PART_OF: "#EC4899",
   };
-  let color = isHighlighted ? "#ffffff" : "#888888";
-  if (isHighlighted) {
-    // Color by relationship type first, fallback to direction-based
-    const relType = link.description?.toUpperCase();
-    if (relType && REL_COLORS[relType]) {
-      color = REL_COLORS[relType];
-    } else if (sourceNodeId && link.source.id === sourceNodeId) {
-      color = "#2EFFE6";
-    } else if (targetNodeId && link.target.id === targetNodeId) {
-      color = "#DF2EFF";
-    }
-  }
 
-  useFrame(({ clock }) => {
+  const relType = link.description?.toUpperCase() || "";
+  let color = REL_COLORS[relType] || (isHighlighted ? "#ffffff" : "#aaaaaa");
+
+  useFrame(() => {
     if (!lineRef.current) return;
-    const t = (Math.sin(clock.elapsedTime * 3) + 1) / 2;
-    const pulse = isHighlighted ? t : 0;
-    lineRef.current.material.opacity = baseOpacity + pulse * 0.35;
+    lineRef.current.material.opacity = baseOpacity;
     if (lineRef.current.material.linewidth !== undefined) {
-      lineRef.current.material.linewidth = (isHighlighted ? thickness * 2 : thickness) * (1 + pulse * 0.4);
+      lineRef.current.material.linewidth = isHighlighted ? thickness * 2 : thickness;
     }
     lineRef.current.material.color.set(color);
   });
@@ -285,10 +274,8 @@ function CommunityGlow({ community }: { community: Community }) {
         meshRef.current.visible = false;
       } else {
         meshRef.current.visible = true;
-        const t = Date.now() * 0.001;
-        const pulse = 0.9 + Math.sin(t) * 0.1;
-        meshRef.current.scale.setScalar(pulse);
-        (meshRef.current.material as THREE.MeshBasicMaterial).opacity = 0.15 * fade;
+        meshRef.current.scale.setScalar(1.0);
+        (meshRef.current.material as THREE.MeshBasicMaterial).opacity = 0.03 * fade;
       }
     }
   });
@@ -299,9 +286,8 @@ function CommunityGlow({ community }: { community: Community }) {
       <meshBasicMaterial
         color={community.computedColor || "#2A2A35"}
         transparent
-        opacity={0.1}
+        opacity={0.03}
         depthWrite={false}
-        blending={THREE.AdditiveBlending}
       />
     </mesh>
   );
@@ -564,7 +550,7 @@ function GraphScene({
             (hoveredNode && (link.source.id === hoveredNode.id || link.target.id === hoveredNode.id));
           const isPulse =
             !!pulseNodeId && (link.source.id === pulseNodeId || link.target.id === pulseNodeId);
-          return <Link key={link.id} link={link} isHighlighted={!!isHighlighted || isPulse} sourceNodeId={selectedNode?.id} targetNodeId={selectedNode?.id} />;
+          return <Link key={link.id} link={link} isHighlighted={!!isHighlighted || isPulse} />;
         })}
         {/* Energy tubes overlay for strong relationships */}
         {energyLinks.map((link) => (

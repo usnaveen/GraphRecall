@@ -74,6 +74,8 @@ async def get_3d_graph(
         le=5,
         description="Maximum depth for graph traversal from center",
     ),
+    limit: int = Query(200, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
 ):
     """
     Get 3D graph data for visualization.
@@ -137,7 +139,7 @@ async def get_3d_graph(
         else:
             # Get all concepts
             where_clauses = ["c.user_id = $user_id"]
-            params = {"user_id": user_id}
+            params = {"user_id": user_id, "limit": limit, "offset": offset}
             
             where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
             
@@ -146,7 +148,8 @@ async def get_3d_graph(
             {where_clause}
             RETURN c as concept
             ORDER BY c.created_at DESC
-            LIMIT 200
+            SKIP $offset
+            LIMIT $limit
             """
             
             result = await neo4j_client.execute_query(query, params)
@@ -372,7 +375,8 @@ async def focus_on_concept(
             """
             MATCH (n:NoteSource)-[r:EXPLAINS]->(c:Concept {id: $id, user_id: $user_id})
             RETURN n.id AS note_id, n.summary AS summary,
-                   r.relevance AS relevance
+                   r.relevance AS relevance,
+                   r.evidence_span AS evidence_span
             ORDER BY r.relevance DESC
             LIMIT 10
             """,
@@ -390,15 +394,34 @@ async def focus_on_concept(
                 """,
                 {"note_id": ln["note_id"], "user_id": user_id},
             )
+            
+            # Fetch images from chunks for this note
+            chunk_data = await pg_client.execute_query(
+                """
+                SELECT images
+                FROM chunks
+                WHERE note_id = :note_id AND jsonb_array_length(images) > 0
+                LIMIT 5
+                """,
+                {"note_id": ln["note_id"]},
+            )
+            images = []
+            for row in chunk_data:
+                images.extend(row.get("images", []))
+                
             if note_data:
                 nd = note_data[0]
+                # Use evidence_span if available, fallback to full text
+                preview_text = ln.get("evidence_span") or nd.get("content_text", "")
+                
                 linked_notes.append({
                     "id": str(nd["id"]),
                     "title": nd.get("title", "Untitled"),
-                    "preview": (nd.get("content_text", "") or "")[:150],
+                    "preview": preview_text,
                     "resource_type": nd.get("resource_type", "note"),
                     "relevance": ln.get("relevance", 0),
                     "created_at": str(nd.get("created_at", "")),
+                    "images": images,
                 })
 
         # Get mastery for all concepts
