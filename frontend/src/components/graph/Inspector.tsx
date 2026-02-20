@@ -22,6 +22,8 @@ interface InspectorProps {
   onShowResources: (topic: string, type: "note" | "link") => void;
   onMerge?: () => void;
   onOpenNotes?: () => void;
+  isolateCommunity?: boolean;
+  onToggleCommunityFocus?: () => void;
 }
 
 export default function Inspector({
@@ -34,6 +36,8 @@ export default function Inspector({
   onShowResources,
   onMerge,
   onOpenNotes,
+  isolateCommunity,
+  onToggleCommunityFocus,
 }: InspectorProps) {
   // Build connected nodes sorted by weight
   const connectedNodes = useMemo(() => {
@@ -126,7 +130,19 @@ export default function Inspector({
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-2 mt-3">
+        <div className="flex flex-wrap gap-2 mt-3">
+          {selectedNode.community && onToggleCommunityFocus && (
+            <button
+              onClick={onToggleCommunityFocus}
+              className={`w-full py-1.5 rounded-lg text-[10px] font-medium flex items-center justify-center gap-1 transition-colors ${isolateCommunity
+                  ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
+                  : "bg-white/5 text-white/70 hover:bg-white/10"
+                }`}
+            >
+              <Layers className="w-3 h-3" />
+              {isolateCommunity ? "Unfocus Community" : "Focus Community"}
+            </button>
+          )}
           <button
             onClick={() => onQuiz(selectedNode.title)}
             className="flex-1 py-1.5 rounded-lg bg-[#B6FF2E]/20 text-[#B6FF2E] text-[10px] font-medium flex items-center justify-center gap-1 hover:bg-[#B6FF2E]/30 transition-colors"

@@ -683,7 +683,7 @@ async def generate_response_node(state: ChatState) -> dict:
     
     if rag_context:
         note_lines = []
-        for n in rag_context:
+        for i, n in enumerate(rag_context, 1):
             page_start = n.get("page_start")
             page_end = n.get("page_end")
             page_text = ""
@@ -694,7 +694,7 @@ async def generate_response_node(state: ChatState) -> dict:
                     else f" (p. {page_start})"
                 )
             note_lines.append(
-                f"- {n.get('title', 'Note')}{page_text}: {n.get('content', '')[:500]}..."
+                f"[{i}] {n.get('title', 'Note')}{page_text}: {n.get('content', '')[:500]}..."
             )
             
             # Explicitly append image markdown so LLM can see and reference them
