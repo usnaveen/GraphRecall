@@ -526,7 +526,7 @@ function CodeContent({ card }: { card: any }) {
           <Sparkles className="w-4 h-4 text-[#2EFFE6]" />
           <span className="text-xs font-mono text-[#2EFFE6] uppercase tracking-wider">Code Challenge</span>
         </div>
-        <span className="px-2 py-0.5 rounded bg-white/5 text-[10px] text-white/50 font-mono uppercase">{card.language}</span>
+        <span className="px-2 py-0.5 rounded bg-white/5 text-[10px] text-white/50 font-mono uppercase">PYTHON</span>
       </div>
 
       <div className="flex-1 flex flex-col h-full overscroll-contain">
