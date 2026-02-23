@@ -256,7 +256,7 @@ from pydantic import Field
 
 class QueryAnalysis(BaseModel):
     """Structured analysis of user query."""
-    intent: Literal["explain", "compare", "find", "summarize", "quiz", "path", "general"] = Field(
+    intent: Literal["explain", "compare", "find", "summarize", "quiz", "path", "show_images", "general"] = Field(
         description="The primary intent of the user's query"
     )
     entities: list[str] = Field(
@@ -298,6 +298,7 @@ async def analyze_query_node(state: ChatState) -> dict:
     - summarize: Requesting a summary of a topic
     - quiz: Asking to be quizzed
     - path: Asking for a learning path or prerequisites
+    - show_images: Asking to see images, diagrams, figures, or visual content related to a topic (e.g. "show me images of transformer architecture", "what does the attention diagram look like", "show figures from my notes")
     - general: General conversation or greeting
 
     Entities:
@@ -514,6 +515,9 @@ async def get_context_node(state: ChatState) -> dict:
             query_embedding = await embeddings_model.aembed_query(query, output_dimensionality=get_embedding_dims())
             embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
+            # For show_images intent, retrieve more chunks and also fetch image-bearing chunks
+            rag_limit = 10 if intent == "show_images" else 5
+
             if focused_source_ids:
                 result = await pg_client.execute_query(
                     """
@@ -530,9 +534,9 @@ async def get_context_node(state: ChatState) -> dict:
                       AND c.chunk_level = 'child'
                       AND c.embedding IS NOT NULL
                     ORDER BY c.embedding <=> cast(:embedding as vector)
-                    LIMIT 5
+                    LIMIT :lim
                     """,
-                    {"user_id": user_id, "source_ids": focused_source_ids, "embedding": embedding_literal},
+                    {"user_id": user_id, "source_ids": focused_source_ids, "embedding": embedding_literal, "lim": rag_limit},
                 )
             else:
                 result = await pg_client.execute_query(
@@ -549,26 +553,100 @@ async def get_context_node(state: ChatState) -> dict:
                       AND c.chunk_level = 'child'
                       AND c.embedding IS NOT NULL
                     ORDER BY c.embedding <=> cast(:embedding as vector)
-                    LIMIT 5
+                    LIMIT :lim
                     """,
-                    {"user_id": user_id, "embedding": embedding_literal},
+                    {"user_id": user_id, "embedding": embedding_literal, "lim": rag_limit},
                 )
 
-            rag_context = []
-            for row in result or []:
-                row_dict = dict(row)
+            # For show_images, also fetch parent chunks that have images (even if not top similarity)
+            image_chunks_result = []
+            if intent == "show_images":
+                try:
+                    image_chunks_result = await pg_client.execute_query(
+                        """
+                        SELECT DISTINCT ON (p.id) p.id, p.content, p.images,
+                               p.chunk_index, p.page_start, p.page_end,
+                               p.content as parent_content,
+                               n.title, n.id AS note_id,
+                               1 - (c.embedding <=> cast(:embedding as vector)) as similarity
+                        FROM chunks p
+                        JOIN chunks c ON c.parent_chunk_id = p.id
+                        JOIN notes n ON p.note_id = n.id
+                        WHERE n.user_id = :user_id
+                          AND p.chunk_level = 'parent'
+                          AND p.images IS NOT NULL
+                          AND p.images != '[]'
+                          AND p.images != 'null'
+                          AND c.embedding IS NOT NULL
+                        ORDER BY p.id, c.embedding <=> cast(:embedding as vector)
+                        LIMIT 10
+                        """,
+                        {"user_id": user_id, "embedding": embedding_literal},
+                    )
+                except Exception as e:
+                    logger.warning("get_context_node: Image chunks query failed", error=str(e))
+
+            def _resolve_image_url(img) -> str | None:
+                """Extract actual URL from image metadata.
+
+                Images can be stored as:
+                - String URL directly
+                - Dict with 'url' field (set by S3 upload)
+                - Dict with 'filename' field containing the S3 URL (from BookChunker
+                  after zip processing replaces local paths with S3 URLs)
+                """
+                if isinstance(img, str):
+                    return img if img.startswith("http") else None
+                if isinstance(img, dict):
+                    # Prefer explicit url field
+                    url = img.get("url")
+                    if url and isinstance(url, str) and url.startswith("http"):
+                        return url
+                    # Fallback: filename may contain S3 URL (after _replace_image_references)
+                    filename = img.get("filename", "")
+                    if isinstance(filename, str) and filename.startswith("http"):
+                        return filename
+                return None
+
+            def _process_row(row_dict: dict) -> dict:
+                """Parse images and resolve URLs."""
                 images = row_dict.get("images")
                 if isinstance(images, str):
                     try:
                         images = json.loads(images)
                     except Exception:
                         images = []
-                row_dict["images"] = images or []
+                if not isinstance(images, list):
+                    images = []
+
+                # Resolve actual URLs and keep only images with valid URLs
+                resolved_images = []
+                for img in images:
+                    url = _resolve_image_url(img)
+                    if url:
+                        caption = img.get("caption", "") if isinstance(img, dict) else ""
+                        resolved_images.append({"url": url, "caption": caption})
+
+                row_dict["images"] = resolved_images
                 # Use parent content for richer context if available
                 parent_content = row_dict.get("parent_content")
                 if parent_content:
                     row_dict["content"] = parent_content
+                return row_dict
+
+            rag_context = []
+            seen_ids = set()
+            for row in result or []:
+                row_dict = _process_row(dict(row))
                 rag_context.append(row_dict)
+                seen_ids.add(row_dict.get("id"))
+
+            # Merge image-bearing chunks (avoid duplicates)
+            for row in image_chunks_result or []:
+                row_dict = _process_row(dict(row))
+                if row_dict.get("id") not in seen_ids and row_dict.get("images"):
+                    rag_context.append(row_dict)
+                    seen_ids.add(row_dict.get("id"))
 
         except Exception as e:
             logger.warning("get_context_node: Notes query failed", error=str(e))
@@ -709,15 +787,25 @@ async def generate_response_node(state: ChatState) -> dict:
     
     context = "\n\n".join(context_parts) if context_parts else "No specific context found."
     
+    # Collect all available image URLs from RAG context for post-processing
+    all_image_urls = []
+    for n in rag_context:
+        for img in n.get("images", []):
+            url = img.get("url") if isinstance(img, dict) else None
+            caption = img.get("caption", "") if isinstance(img, dict) else ""
+            if url:
+                all_image_urls.append({"url": url, "caption": caption})
+
     # Intent-specific system prompts
     intent_instructions = {
-        "explain": "Provide a clear, educational explanation.",
-        "compare": "Compare and contrast the concepts.",
-        "find": "Find and present the specific information.",
-        "summarize": "Provide a concise summary.",
+        "explain": "Provide a clear, educational explanation. If images/diagrams are available in the context, reference them by including their markdown image syntax (![caption](url)) at relevant points in your explanation.",
+        "compare": "Compare and contrast the concepts. Include any relevant diagrams or figures from the context.",
+        "find": "Find and present the specific information requested.",
+        "summarize": "Provide a concise summary. Include relevant figures if available.",
         "quiz": "Generate a quiz question about the topic.",
         "path": "Outline a learning path with prerequisites.",
-        "general": "Provide a helpful response.",
+        "show_images": "Show and explain all relevant images, diagrams, and figures from the user's notes. For EVERY image available in the context, you MUST include it using markdown image syntax: ![caption](url). Describe what each image shows and how it relates to the topic. Structure your response as: brief intro, then each image with its explanation.",
+        "general": "Provide a helpful response. If relevant images or diagrams exist in the context, include them.",
     }
     
     instruction = intent_instructions.get(intent, intent_instructions["general"])
@@ -725,6 +813,24 @@ async def generate_response_node(state: ChatState) -> dict:
     # Build prompt with proper message types (Gemini)
     llm = get_chat_model(temperature=0.3)
     
+    # Build image reference block for the system prompt
+    image_instruction = ""
+    if all_image_urls:
+        image_list = "\n".join(
+            f"  - ![{img['caption'] or 'Figure'}]({img['url']})"
+            for img in all_image_urls
+        )
+        image_instruction = f"""
+
+**Available Images/Figures:**
+{image_list}
+
+**Image Guidelines:**
+- When an image is relevant to your explanation, include it using the EXACT markdown syntax shown above: ![caption](url)
+- Do NOT describe images you cannot see — instead embed them so the user can see them
+- For 'show_images' intent: you MUST include ALL available images with explanations
+- For other intents: include images when they help illustrate the topic"""
+
     prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content=f"""You are GraphRecall, a knowledge assistant helping users learn from their notes.
 
@@ -732,6 +838,7 @@ async def generate_response_node(state: ChatState) -> dict:
 {context}
 
 **Instructions:** {instruction}
+{image_instruction}
 
 **Citation Guidelines:**
 1. When referencing specific information from the context, include a citation number in brackets like [1], [2]
@@ -749,12 +856,37 @@ async def generate_response_node(state: ChatState) -> dict:
         formatted = prompt.format_messages(history=history)
         # Add tag for streaming filter in chat router
         response = await llm.with_config({"tags": ["final_response"]}).ainvoke(formatted)
-        
-        logger.info("generate_response_node: Complete")
-        
+
+        response_content = response.content
+
+        # Post-processing: For show_images intent, ensure ALL images are in the response
+        # For other intents, append any images the LLM missed
+        if all_image_urls:
+            missing_images = [
+                img for img in all_image_urls
+                if img["url"] not in response_content
+            ]
+
+            if intent == "show_images" and missing_images:
+                # For show_images, always append ALL missing images
+                img_section = "\n\n---\n**Additional Figures:**\n"
+                for img in missing_images:
+                    caption = img["caption"] or "Figure"
+                    img_section += f"\n![{caption}]({img['url']})\n"
+                response_content += img_section
+            elif missing_images and len(missing_images) <= 5:
+                # For other intents, append a compact image section if relevant
+                img_section = "\n\n**Related Figures:**\n"
+                for img in missing_images[:3]:  # Max 3 for non-image intents
+                    caption = img["caption"] or "Figure"
+                    img_section += f"\n![{caption}]({img['url']})\n"
+                response_content += img_section
+
+        logger.info("generate_response_node: Complete", images_in_response=len(all_image_urls))
+
         # Return with AI message added to state plus full metadata
         return {
-            "messages": [AIMessage(content=response.content)],
+            "messages": [AIMessage(content=response_content)],
             "related_concepts": [
                 {"id": str(c.get("id")) if c.get("id") else None, "name": c.get("name")}
                 for c in graph_context.get("concepts", [])
