@@ -586,50 +586,72 @@ async def get_context_node(state: ChatState) -> dict:
                 except Exception as e:
                     logger.warning("get_context_node: Image chunks query failed", error=str(e))
 
+            # Regex to extract image URLs from markdown content (these have S3 URLs)
+            import re
+            MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^)]+)\)")
+
             def _resolve_image_url(img) -> str | None:
                 """Extract actual URL from image metadata.
 
                 Images can be stored as:
                 - String URL directly
                 - Dict with 'url' field (set by S3 upload)
-                - Dict with 'filename' field containing the S3 URL (from BookChunker
-                  after zip processing replaces local paths with S3 URLs)
+                - Dict with 'filename' field containing the S3 URL
                 """
                 if isinstance(img, str):
                     return img if img.startswith("http") else None
                 if isinstance(img, dict):
-                    # Prefer explicit url field
                     url = img.get("url")
                     if url and isinstance(url, str) and url.startswith("http"):
                         return url
-                    # Fallback: filename may contain S3 URL (after _replace_image_references)
                     filename = img.get("filename", "")
                     if isinstance(filename, str) and filename.startswith("http"):
                         return filename
                 return None
 
             def _process_row(row_dict: dict) -> dict:
-                """Parse images and resolve URLs."""
-                images = row_dict.get("images")
-                if isinstance(images, str):
-                    try:
-                        images = json.loads(images)
-                    except Exception:
-                        images = []
-                if not isinstance(images, list):
-                    images = []
+                """Parse images and resolve URLs.
 
-                # Resolve actual URLs and keep only images with valid URLs
+                Primary strategy: extract image URLs from parent_content markdown
+                (which has S3 URLs after _replace_image_references).
+                Fallback: try the images JSONB field.
+                """
+                # Strategy 1: Extract images from parent_content markdown (most reliable)
+                # The parent_content has S3 URLs embedded in ![alt](url) syntax
+                parent_content = row_dict.get("parent_content") or ""
+                content = row_dict.get("content") or ""
+
                 resolved_images = []
-                for img in images:
-                    url = _resolve_image_url(img)
-                    if url:
-                        caption = img.get("caption", "") if isinstance(img, dict) else ""
-                        resolved_images.append({"url": url, "caption": caption})
+                seen_urls = set()
+
+                # Extract from parent content first (has S3 URLs)
+                for text in [parent_content, content]:
+                    for match in MD_IMAGE_RE.finditer(text):
+                        alt_text = match.group(1)
+                        url = match.group(2)
+                        if url not in seen_urls:
+                            resolved_images.append({"url": url, "caption": alt_text or ""})
+                            seen_urls.add(url)
+
+                # Strategy 2: Try images JSONB field as fallback
+                if not resolved_images:
+                    images = row_dict.get("images")
+                    if isinstance(images, str):
+                        try:
+                            images = json.loads(images)
+                        except Exception:
+                            images = []
+                    if not isinstance(images, list):
+                        images = []
+                    for img in images:
+                        url = _resolve_image_url(img)
+                        if url and url not in seen_urls:
+                            caption = img.get("caption", "") if isinstance(img, dict) else ""
+                            resolved_images.append({"url": url, "caption": caption})
+                            seen_urls.add(url)
 
                 row_dict["images"] = resolved_images
                 # Use parent content for richer context if available
-                parent_content = row_dict.get("parent_content")
                 if parent_content:
                     row_dict["content"] = parent_content
                 return row_dict

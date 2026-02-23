@@ -1044,19 +1044,6 @@ class FeedService:
         
         feed_items: list[FeedItem] = []
         
-        # Determine if we've hit the daily generation limit before trying to generate new content
-        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        q_generated_res = await self.pg_client.execute_query(
-            """
-            SELECT COUNT(*) as cnt 
-            FROM quizzes q
-            WHERE q.user_id = :uid AND q.created_at >= :today AND q.source = 'batch_gen'
-            """,
-            {"uid": request.user_id, "today": today_start}
-        )
-        generated_today = q_generated_res[0]["cnt"] if q_generated_res else 0
-        generation_limit_reached = generated_today >= 20
-        
         # Filter by domains if specified
         if request.domains:
             due_concepts = [
@@ -1067,16 +1054,139 @@ class FeedService:
         # Determine content type distribution
         allowed_types = request.item_types or list(FeedItemType)
 
-        # Parallelize generation
-        tasks = []
+        # ---------------------------------------------------------------
+        # PHASE 1: Serve cached content from DB first (instant, no LLM)
+        # ---------------------------------------------------------------
+        cached_items: list[FeedItem] = []
+        concept_ids_available = [c.get("id") for c in due_concepts if c.get("id")]
         
-        # Limit candidates to prevents spawning too many parallel LLM calls (e.g. max 5)
-        candidates = due_concepts[:min(request.max_items, 10)]
+        # Build concept name lookup for annotation
+        concept_map: dict[str, dict] = {}
+        for c in due_concepts:
+            cid = c.get("id")
+            if cid:
+                concept_map[cid] = c
+
+        if concept_ids_available:
+            try:
+                # Fetch existing quizzes
+                cached_quizzes = await self.pg_client.execute_query(
+                    """
+                    SELECT id, question_text, question_type, options_json,
+                           correct_answer, explanation, concept_id
+                    FROM quizzes
+                    WHERE user_id = :uid
+                      AND concept_id = ANY(:cids)
+                    ORDER BY created_at DESC
+                    LIMIT :lim
+                    """,
+                    {
+                        "uid": request.user_id,
+                        "cids": concept_ids_available,
+                        "lim": request.max_items,
+                    },
+                )
+
+                for q in cached_quizzes or []:
+                    opts = q.get("options_json")
+                    if isinstance(opts, str):
+                        try:
+                            opts = json.loads(opts)
+                        except Exception:
+                            opts = []
+                    cid = q.get("concept_id")
+                    c_info = concept_map.get(cid, {})
+                    cached_items.append(
+                        FeedItem(
+                            id=str(q["id"]),
+                            item_type=FeedItemType(q.get("question_type", "mcq")),
+                            content={
+                                "question": q.get("question_text", ""),
+                                "options": opts or [],
+                                "correct_answer": q.get("correct_answer", ""),
+                                "explanation": q.get("explanation", ""),
+                            },
+                            concept_id=cid,
+                            concept_name=c_info.get("name", ""),
+                            domain=c_info.get("domain"),
+                            priority_score=c_info.get("priority_score", 0.8),
+                        )
+                    )
+
+                # Fetch existing flashcards
+                cached_flashcards = await self.pg_client.execute_query(
+                    """
+                    SELECT id, front_content, back_content, concept_id
+                    FROM flashcards
+                    WHERE user_id = :uid
+                      AND concept_id = ANY(:cids)
+                    ORDER BY created_at DESC
+                    LIMIT :lim
+                    """,
+                    {
+                        "uid": request.user_id,
+                        "cids": concept_ids_available,
+                        "lim": request.max_items,
+                    },
+                )
+
+                for f in cached_flashcards or []:
+                    cid = f.get("concept_id")
+                    c_info = concept_map.get(cid, {})
+                    cached_items.append(
+                        FeedItem(
+                            id=str(f["id"]),
+                            item_type=FeedItemType.TERM_CARD,
+                            content={
+                                "front": f.get("front_content", ""),
+                                "back": f.get("back_content", ""),
+                            },
+                            concept_id=cid,
+                            concept_name=c_info.get("name", ""),
+                            domain=c_info.get("domain"),
+                            priority_score=c_info.get("priority_score", 0.7),
+                        )
+                    )
+
+                # Shuffle and trim cached items
+                random.shuffle(cached_items)
+                feed_items.extend(cached_items[:request.max_items])
+                logger.info(
+                    "FeedService: Loaded cached DB items",
+                    count=len(feed_items),
+                )
+
+            except Exception as e:
+                logger.warning("FeedService: Cached items query failed", error=str(e))
+
+        # ---------------------------------------------------------------
+        # PHASE 2: Fill remaining slots with LLM generation (with timeout)
+        # ---------------------------------------------------------------
+        remaining_slots = max(0, request.max_items - len(feed_items))
         
-        # Only attempt new generation if under daily limit
-        if not generation_limit_reached:
+        # Determine if we've hit the daily generation limit
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        generated_today = 0
+        try:
+            q_generated_res = await self.pg_client.execute_query(
+                """
+                SELECT COUNT(*) as cnt 
+                FROM quizzes q
+                WHERE q.user_id = :uid AND q.created_at >= :today AND q.source = 'batch_gen'
+                """,
+                {"uid": request.user_id, "today": today_start}
+            )
+            generated_today = q_generated_res[0]["cnt"] if q_generated_res else 0
+        except Exception:
+            pass
+        generation_limit_reached = generated_today >= 20
+
+        if remaining_slots > 0 and not generation_limit_reached:
+            # Limit candidates to avoid too many parallel LLM calls
+            candidates = due_concepts[:min(remaining_slots, 5)]
+            tasks = []
+            
             for concept in candidates:
-                # Randomly select a content type
                 possible_types = [
                     t for t in [
                         FeedItemType.CONCEPT_SHOWCASE,
@@ -1100,30 +1210,26 @@ class FeedService:
                             request.user_id,
                             concept,
                             item_type,
-                            allow_llm=True, # We control timeout via asyncio.wait
+                            allow_llm=True,
                         )
                     )
                 )
             
-        if tasks:
-            # Wait for tasks with a hard global timeout (6s to safely fit inside Vercel 10s limit)
-            done, pending = await asyncio.wait(tasks, timeout=6.0)
-            
-            for task in done:
-                try:
-                    res = await task
-                    if res:
-                        feed_items.append(res)
-                except Exception as e:
-                    logger.warning("FeedService: Task failed", error=str(e))
-            
-            # Cancel pending tasks to free resources
-            for task in pending:
-                task.cancel()
+            if tasks:
+                # Shorter timeout since we already have cached items to show
+                timeout = 4.0 if feed_items else 6.0
+                done, pending = await asyncio.wait(tasks, timeout=timeout)
                 
-            if not feed_items and not due_concepts:
-                 # Only if we truly have nothing and no due concepts
-                 pass
+                for task in done:
+                    try:
+                        res = await task
+                        if res:
+                            feed_items.append(res)
+                    except Exception as e:
+                        logger.warning("FeedService: Task failed", error=str(e))
+                
+                for task in pending:
+                    task.cancel()
         
         # Add user uploads if allowed
         if (
