@@ -382,13 +382,34 @@ class FeedService:
                 include_overdue=True,
             )
             
-            # Enrich with concept data from Neo4j
+            if not due_items:
+                return []
+                
+            # Extract all concept IDs
+            concept_ids = [item["sm2_data"]["item_id"] for item in due_items]
+            
+            # Fetch all concepts from Neo4j in a single bulk query
+            concepts_map = {}
+            if concept_ids:
+                query = """
+                MATCH (c:Concept)
+                WHERE c.id IN $concept_ids AND c.user_id = $user_id
+                RETURN c
+                """
+                results = await self.neo4j_client.execute_query(
+                    query, 
+                    {"concept_ids": concept_ids, "user_id": user_id}
+                )
+                for row in results:
+                    c = row["c"]
+                    concepts_map[c["id"]] = c
+            
+            # Enrich with concept data
             enriched_concepts = []
             for item in due_items:
                 concept_id = item["sm2_data"]["item_id"]
+                concept = concepts_map.get(concept_id)
                 
-                # Get concept details
-                concept = await self.neo4j_client.get_concept(concept_id, user_id=user_id)
                 if concept:
                     enriched_concepts.append({
                         **concept,
@@ -1073,7 +1094,7 @@ class FeedService:
                 cached_quizzes = await self.pg_client.execute_query(
                     """
                     SELECT id, question_text, question_type, options_json,
-                           correct_answer, explanation, concept_id
+                           correct_answer, explanation, concept_id, language, initial_code
                     FROM quizzes
                     WHERE user_id = :uid
                       AND concept_id = ANY(:cids)
@@ -1094,18 +1115,33 @@ class FeedService:
                             opts = json.loads(opts)
                         except Exception:
                             opts = []
+                    
+                    q_type = q.get("question_type", "mcq")
                     cid = q.get("concept_id")
                     c_info = concept_map.get(cid, {})
+                    
+                    # Map the content fields differently depending on question type
+                    if q_type == "code_challenge":
+                        content = {
+                            "instruction": q.get("question_text", ""),
+                            "initialCode": q.get("initial_code", ""),
+                            "solutionCode": q.get("correct_answer", ""),
+                            "explanation": q.get("explanation", ""),
+                            "language": q.get("language") or "Python",
+                        }
+                    else:
+                        content = {
+                            "question": q.get("question_text", ""),
+                            "options": opts or [],
+                            "correct_answer": q.get("correct_answer", ""),
+                            "explanation": q.get("explanation", ""),
+                        }
+
                     cached_items.append(
                         FeedItem(
                             id=str(q["id"]),
-                            item_type=FeedItemType(q.get("question_type", "mcq")),
-                            content={
-                                "question": q.get("question_text", ""),
-                                "options": opts or [],
-                                "correct_answer": q.get("correct_answer", ""),
-                                "explanation": q.get("explanation", ""),
-                            },
+                            item_type=FeedItemType(q_type),
+                            content=content,
                             concept_id=cid,
                             concept_name=c_info.get("name", ""),
                             domain=c_info.get("domain"),
