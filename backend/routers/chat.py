@@ -910,9 +910,23 @@ async def stream_chat(
             # Get final state for metadata
             final_state = await chat_graph.aget_state(config)
             values = final_state.values
-            
+
             related_concepts = values.get("related_concepts", [])
             sources = values.get("sources", [])
+
+            # Inject images that weren't streamed (post-processing added them after streaming)
+            # The generate_response_node may have appended images to the response content
+            # but those weren't part of the streaming tokens. Check and send them.
+            final_messages = values.get("messages", [])
+            if final_messages:
+                last_msg = final_messages[-1]
+                final_content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+                # If the final content has more than what was streamed, send the extra
+                if len(final_content) > len(full_content) and full_content:
+                    extra_content = final_content[len(full_content):]
+                    if extra_content.strip():
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': extra_content})}\n\n"
+                        full_content = final_content
 
             # Fix: Ensure UUIDs are strings for JSON serialization
             def json_safe(obj):
