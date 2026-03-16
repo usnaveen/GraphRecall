@@ -10,9 +10,9 @@ import {
   Plus, FileQuestion, CreditCard, Loader2
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { useAuthStore } from '../store/useAuthStore';
 import type { ChatMessage, FeedItem } from '../types';
 import { api, chatService } from '../services/api';
+import { DEMO_MODE } from '../lib/demoMode';
 
 /**
  * Extract topic from "quiz me on X" style messages.
@@ -79,7 +79,9 @@ export function AssistantScreen() {
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveTopic, setSaveTopic] = useState('');
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(
+    DEMO_MODE ? 'conv-transformer-intuition' : null,
+  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [swipingMessageId, setSwipingMessageId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -315,92 +317,54 @@ export function AssistantScreen() {
     };
     addChatMessage(assistantMessage);
 
-    const token = useAuthStore.getState().idToken;
-    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-
     try {
       const activeConversationId = await ensureConversation();
-      const response = await fetch(`${API_BASE}/chat/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          message: messageText, // Send expanded text
-          user_id: '00000000-0000-0000-0000-000000000001',
-          conversation_id: activeConversationId,
-          source_ids: selectedSources.length > 0 ? selectedSources.map(s => s.id) : undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Stream failed');
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
       let fullContent = '';
       let currentStatus = 'Thinking...';
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-
-                if (data.type === 'status') {
-                  currentStatus = data.content;
-                  const updatedMsg = { ...assistantMessage, content: fullContent, status: currentStatus };
-                  addChatMessage(updatedMsg);
-                } else if (data.type === 'chunk') {
-                  fullContent += data.content;
-                  const updatedMsg = { ...assistantMessage, content: fullContent, status: currentStatus };
-                  addChatMessage(updatedMsg);
-                } else if (data.type === 'done') {
-                  // Backend sends objects: {id, title, content} for sources, {id, name} for concepts
-                  // Extract string values for display, but keep IDs for source-scoped chat
-                  const mappedSources = (data.sources || []).map((s: any) =>
-                    typeof s === 'string' ? s : s.title || s.name || String(s)
-                  );
-                  const mappedConcepts = (data.related_concepts || []).map((c: any) =>
-                    typeof c === 'string' ? c : c.name || c.title || String(c)
-                  );
-                  // Keep raw source objects with content for citation display
-                  const rawSources = (data.sources || []).map((s: any) =>
-                    typeof s === 'string'
-                      ? { id: s, title: s }
-                      : { id: s.id || s.title, title: s.title || s.name || String(s), content: s.content, images: s.images }
-                  );
-                  const finalMsg: ChatMessage = {
-                    ...assistantMessage,
-                    content: fullContent,
-                    status: undefined, // Clear status when done
-                    sources: mappedSources,
-                    relatedConcepts: mappedConcepts,
-                    serverId: data.message_id,
-                    sourceObjects: rawSources,
-                    metadata: data.metadata || {},
-                  };
-                  addChatMessage(finalMsg);
-                  if (data.conversation_id) {
-                    setConversationId(data.conversation_id);
-                  }
-                }
-              } catch (e) {
-                // Ignore parse errors
-              }
-            }
+      await chatService.streamMessage({
+        message: messageText,
+        conversationId: activeConversationId,
+        sourceIds: selectedSources.length > 0 ? selectedSources.map(s => s.id) : undefined,
+        onStatus: (status: string) => {
+          currentStatus = status;
+          addChatMessage({ ...assistantMessage, content: fullContent, status: currentStatus });
+        },
+        onChunk: (chunk: string) => {
+          fullContent += chunk;
+          addChatMessage({ ...assistantMessage, content: fullContent, status: currentStatus });
+        },
+        onDone: (data: any) => {
+          const mappedSources = (data.sources || []).map((s: any) =>
+            typeof s === 'string' ? s : s.title || s.name || String(s)
+          );
+          const mappedConcepts = (data.related_concepts || []).map((c: any) =>
+            typeof c === 'string' ? c : c.name || c.title || String(c)
+          );
+          const rawSources = (data.sources || []).map((s: any) =>
+            typeof s === 'string'
+              ? { id: s, title: s }
+              : { id: s.id || s.title, title: s.title || s.name || String(s), content: s.content, images: s.images }
+          );
+          const finalMsg: ChatMessage = {
+            ...assistantMessage,
+            content: fullContent,
+            status: undefined,
+            sources: mappedSources,
+            relatedConcepts: mappedConcepts,
+            serverId: data.message_id,
+            sourceObjects: rawSources,
+            metadata: data.metadata || {},
+          };
+          addChatMessage(finalMsg);
+          if (data.conversation_id) {
+            setConversationId(data.conversation_id);
           }
-        }
-      }
+        },
+        onError: (error: string) => {
+          throw new Error(error);
+        },
+      });
 
     } catch (error) {
       console.error('Chat error:', error);

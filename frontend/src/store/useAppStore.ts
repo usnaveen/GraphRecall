@@ -3,6 +3,8 @@ import type { FeedItem, ChatMessage, UserStats, TabType } from '../types';
 import type { GraphData } from '../lib/graphData';
 import type { GraphLayout } from '../lib/forceSimulation3d';
 import { feedService, chatService, notesService, conceptsService, uploadsService } from '../services/api';
+import { DEMO_MODE } from '../lib/demoMode';
+import { getDemoInitialChatMessages } from '../services/demoBackend';
 
 interface NoteItem {
   id: string;
@@ -114,7 +116,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   dailyItemLimit: 20,
   isLoading: false,
   error: null,
-  chatMessages: [],
+  chatMessages: DEMO_MODE ? getDemoInitialChatMessages() : [],
   notesList: [],
   conceptsList: [],
   uploadsList: [],
@@ -131,7 +133,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     streakDays: 0
   },
 
-  feedMode: 'history',
+  feedMode: DEMO_MODE ? 'daily' : 'history',
   quizHistory: [],
   savedCards: [],
   activeRecallSchedule: [],
@@ -337,6 +339,17 @@ export const useAppStore = create<AppState>((set, get) => ({
               emojiIcon: content.emoji_icon || '📚',
               prerequisites: content.prerequisites || [],
               relatedConcepts: content.related_concepts || [],
+            };
+          case 'code_challenge':
+            return {
+              id: item.id,
+              type: 'code_challenge',
+              language: content.language || 'python',
+              instruction: content.question || content.instruction || '',
+              initialCode: content.initial_code || content.initialCode || '',
+              solutionCode: content.correct_answer || content.solutionCode || '',
+              explanation: content.explanation || '',
+              relatedConcept: concept_name,
             };
           default:
             return {

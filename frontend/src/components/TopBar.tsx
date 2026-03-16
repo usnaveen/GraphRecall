@@ -3,6 +3,7 @@ import { Flame, Wifi, WifiOff, Layers, ChevronDown, Bookmark } from 'lucide-reac
 import { useAppStore } from '../store/useAppStore';
 import { useEffect, useState } from 'react';
 import { BackendStatusPanel } from './BackendStatusPanel';
+import { DEMO_MODE } from '../lib/demoMode';
 
 export function TopBar() {
   const { itemsReviewedToday, dailyItemLimit, userStats, setActiveTab, feedMode, setFeedMode } = useAppStore();
@@ -13,6 +14,11 @@ export function TopBar() {
 
   // Check backend connection on mount
   useEffect(() => {
+    if (DEMO_MODE) {
+      setBackendStatus('connected');
+      return;
+    }
+
     const checkBackend = async () => {
       try {
         const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -51,6 +57,11 @@ export function TopBar() {
             <span className="font-heading font-semibold text-white text-sm hidden sm:block">
               GraphRecall
             </span>
+            {DEMO_MODE && (
+              <span className="text-[10px] uppercase tracking-[0.24em] text-[#B6FF2E]/80 hidden sm:block">
+                Demo
+              </span>
+            )}
           </div>
 
           {/* Center: WiFi + Daily Goal Pill */}

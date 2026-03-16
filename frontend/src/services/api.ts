@@ -5,6 +5,8 @@
  */
 
 import { getAuthToken } from '../store/useAuthStore';
+import { DEMO_MODE } from '../lib/demoMode';
+import { handleDemoRequest, streamDemoChat, streamDemoTopicQuiz } from './demoBackend';
 
 // Use environment variable if available, otherwise default to local backend
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -31,6 +33,10 @@ const getHeaders = (includeContentType: boolean = false): HeadersInit => {
  * Automatically logs the user out on 401 (expired Google ID token).
  */
 const authFetch = async (url: string, options: RequestInit = {}): Promise<Response> => {
+    if (DEMO_MODE) {
+        return handleDemoRequest(url, options);
+    }
+
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const response = await fetch(url, {
         ...options,
@@ -124,6 +130,12 @@ export const feedService = {
         onError: (error: string) => void,
         allowWebSearch: boolean = true,  // If false, skips Tavily web search
     ) => {
+        if (DEMO_MODE) {
+            void allowWebSearch;
+            await streamDemoTopicQuiz({ topic, onStatus, onDone, onError });
+            return;
+        }
+
         const token = getAuthToken();
         const response = await fetch(
             `${API_BASE}/feed/quiz/topic/${encodeURIComponent(topic)}/stream`,
@@ -230,7 +242,87 @@ export const chatService = {
         });
         if (!response.ok) throw new Error('Failed to create card');
         return response.json();
-    }
+    },
+
+    streamMessage: async ({
+        message,
+        conversationId,
+        sourceIds,
+        onStatus,
+        onChunk,
+        onDone,
+        onError,
+    }: {
+        message: string;
+        conversationId: string;
+        sourceIds?: string[];
+        onStatus: (status: string) => void;
+        onChunk: (chunk: string) => void;
+        onDone: (data: any) => void;
+        onError: (error: string) => void;
+    }) => {
+        if (DEMO_MODE) {
+            await streamDemoChat({
+                message,
+                conversationId,
+                sourceIds,
+                onStatus,
+                onChunk,
+                onDone,
+                onError,
+            });
+            return;
+        }
+
+        const token = getAuthToken();
+        const response = await fetch(`${API_BASE}/chat/stream`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+                message,
+                user_id: '00000000-0000-0000-0000-000000000001',
+                conversation_id: conversationId,
+                source_ids: sourceIds && sourceIds.length > 0 ? sourceIds : undefined,
+            }),
+        });
+
+        if (!response.ok) {
+            onError('Stream failed');
+            return;
+        }
+
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+
+        if (!reader) {
+            onError('Stream not available');
+            return;
+        }
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                try {
+                    const data = JSON.parse(line.slice(6));
+                    if (data.type === 'status') onStatus(data.content);
+                    if (data.type === 'chunk') onChunk(data.content);
+                    if (data.type === 'done') onDone(data);
+                    if (data.type === 'error') onError(data.content);
+                } catch {
+                    // Ignore malformed stream chunks.
+                }
+            }
+        }
+    },
 };
 
 export const notesService = {

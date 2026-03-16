@@ -14,6 +14,7 @@ import {
   SheetTitle, SheetDescription, SheetFooter,
 } from './ui/sheet';
 import { getAuthToken } from '../store/useAuthStore';
+import { DEMO_MODE } from '../lib/demoMode';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -234,6 +235,21 @@ export function BackendStatusPanel({ open, onOpenChange }: BackendStatusPanelPro
   const [lastRunAt, setLastRunAt] = useState<Date | null>(null);
 
   const runAllChecks = useCallback(async () => {
+    if (DEMO_MODE) {
+      setResults({
+        'backend-server': { status: 'ok', responseTimeMs: 12, error: null, detail: 'Demo backend online' },
+        'postgresql': { status: 'ok', responseTimeMs: null, error: null, detail: 'In-memory demo state' },
+        'neo4j': { status: 'ok', responseTimeMs: null, error: null, detail: 'Demo graph loaded' },
+        'feed-api': { status: 'ok', responseTimeMs: 9, error: null, detail: 'Serving mixed card feed' },
+        'graph-api': { status: 'ok', responseTimeMs: 14, error: null, detail: 'Graph ready with NLP / LLM topics' },
+        'chat-api': { status: 'ok', responseTimeMs: 18, error: null, detail: 'Streaming demo chat active' },
+        'ingestion-api': { status: 'ok', responseTimeMs: 11, error: null, detail: 'Demo ingestion flows enabled' },
+      });
+      setLastRunAt(new Date());
+      setIsRunning(false);
+      return;
+    }
+
     setIsRunning(true);
 
     // Set all to "checking"

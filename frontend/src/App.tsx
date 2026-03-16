@@ -12,6 +12,7 @@ import { LoginScreen } from './screens/LoginScreen';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { DEMO_MODE } from './lib/demoMode';
 
 // Get Google Client ID from environment
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
@@ -110,6 +111,7 @@ function AuthenticatedApp() {
 
 function App() {
   const { isAuthenticated, isLoading } = useAuthStore();
+  const appContent = DEMO_MODE || isAuthenticated ? <AuthenticatedApp /> : <LoginScreen />;
 
   // Show loading state while checking persisted auth
   if (isLoading) {
@@ -120,11 +122,9 @@ function App() {
     );
   }
 
-  return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      {isAuthenticated ? <AuthenticatedApp /> : <LoginScreen />}
-    </GoogleOAuthProvider>
-  );
+  if (DEMO_MODE) return appContent;
+
+  return <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{appContent}</GoogleOAuthProvider>;
 }
 
 export default App;

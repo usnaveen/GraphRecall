@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { DEMO_MODE, DEMO_USER } from '../lib/demoMode';
 
 export interface User {
     id: string;
@@ -55,12 +56,23 @@ function decodeGoogleJwt(token: string): User | null {
 export const useAuthStore = create<AuthState>()(
     persist(
         (set) => ({
-            user: null,
-            idToken: null,
-            isAuthenticated: false,
+            user: DEMO_MODE ? DEMO_USER : null,
+            idToken: DEMO_MODE ? 'demo-id-token' : null,
+            isAuthenticated: DEMO_MODE,
             isLoading: false,
 
             login: async (credential: string) => {
+                if (DEMO_MODE) {
+                    void credential;
+                    set({
+                        user: DEMO_USER,
+                        idToken: 'demo-id-token',
+                        isAuthenticated: true,
+                        isLoading: false,
+                    });
+                    return;
+                }
+
                 set({ isLoading: true });
                 try {
                     // Call backend to verify token and get/create user
@@ -115,6 +127,15 @@ export const useAuthStore = create<AuthState>()(
             },
 
             logout: () => {
+                if (DEMO_MODE) {
+                    set({
+                        user: DEMO_USER,
+                        idToken: 'demo-id-token',
+                        isAuthenticated: true,
+                    });
+                    return;
+                }
+
                 set({
                     user: null,
                     idToken: null,
