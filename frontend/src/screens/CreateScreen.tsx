@@ -8,6 +8,7 @@ import {
 import * as pdfjsLib from 'pdfjs-dist';
 import { ingestService, uploadsService } from '../services/api';
 import { useAppStore } from '../store/useAppStore';
+import { DEMO_MODE } from '../lib/demoMode';
 
 // Set PDF Worker - interacting with CDN to avoid Vite build complexity
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -564,7 +565,27 @@ export function CreateScreen() {
             {/* Header */}
             <div className="text-center mb-6">
               <h2 className="font-heading text-xl font-bold text-white mb-1">Add Knowledge</h2>
-              <p className="text-sm text-white/50">Upload notes, images, or paste text</p>
+              <p className="text-sm text-white/50">
+                {DEMO_MODE
+                  ? 'Seed the demo with Transformer notes, RAG ideas, agent patterns, or eval checklists'
+                  : 'Upload notes, images, or paste text'}
+              </p>
+              {DEMO_MODE && (
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  {['Transformer intuition', 'RAG system design', 'Agent tool routing', 'LLM eval checklist'].map((idea) => (
+                    <button
+                      key={idea}
+                      onClick={() => {
+                        setInputType('text');
+                        setTextInput(`Working note: ${idea}\n\nKey ideas:\n- `);
+                      }}
+                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      {idea}
+                    </button>
+                  ))}
+                </div>
+              )}
               {error && (
                 <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-center gap-2 text-red-400 text-sm">
                   <AlertCircle className="w-4 h-4" />
@@ -582,7 +603,11 @@ export function CreateScreen() {
                   <textarea
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
-                    placeholder="Paste your notes, lecture transcript, or type something to remember..."
+                    placeholder={
+                      DEMO_MODE
+                        ? 'Paste a note on Transformers, tokenization, RAG, tool calling, agent design, or LLM evaluation...'
+                        : 'Paste your notes, lecture transcript, or type something to remember...'
+                    }
                     className="w-full h-full bg-transparent border-none outline-none resize-none text-white/90 placeholder:text-white/20 font-mono text-sm leading-relaxed scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pr-2"
                     autoFocus
                   />
@@ -640,7 +665,11 @@ export function CreateScreen() {
                   <textarea
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
-                    placeholder={"Human: What is gradient descent?\n\nAI: Gradient descent is an optimization algorithm...\n\nHuman: How does it differ from SGD?\n\nAI: ..."}
+                    placeholder={
+                      DEMO_MODE
+                        ? "Human: Explain RAG vs fine-tuning for enterprise search.\n\nAI: RAG injects retrieved evidence at generation time, while fine-tuning changes model weights...\n\nHuman: When would you add reranking?\n\nAI: ..."
+                        : "Human: What is gradient descent?\n\nAI: Gradient descent is an optimization algorithm...\n\nHuman: How does it differ from SGD?\n\nAI: ..."
+                    }
                     className="w-full flex-1 bg-transparent border-none outline-none resize-none text-white/90 placeholder:text-white/20 font-mono text-sm leading-relaxed"
                     autoFocus
                   />

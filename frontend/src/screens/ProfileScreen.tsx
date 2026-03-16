@@ -8,10 +8,28 @@ import {
 import { useAppStore } from '../store/useAppStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { authService, feedService, usersService } from '../services/api';
+import { DEMO_MODE } from '../lib/demoMode';
 
 type ProfileView = 'main' | 'settings' | 'notes' | 'concepts' | 'uploads' | 'quizzes' | 'books';
 
 import { AgentDeck } from '../components/geekout/AgentDeck';
+
+const DOMAIN_COLORS: Record<string, string> = {
+  "NLP Foundations": "#2EFFE6",
+  "LLM Systems": "#B6FF2E",
+  "Retrieval & Agents": "#F59E0B",
+  "Alignment & Evaluation": "#FF6B6B",
+  "Generative AI": "#8B5CF6",
+  "General": "#6B7280",
+};
+
+function getDomainColor(domain: string): string {
+  if (DOMAIN_COLORS[domain]) return DOMAIN_COLORS[domain];
+
+  const hash = Array.from(domain).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const hue = hash % 360;
+  return `hsl(${hue} 72% 58%)`;
+}
 
 export function ProfileScreen() {
   const [currentView, setCurrentView] = useState<ProfileView>('main');
@@ -155,6 +173,11 @@ export function ProfileScreen() {
 
         <h2 className="font-heading text-xl font-bold text-white">{user?.name || 'User'}</h2>
         <p className="text-sm text-white/50">{user?.email || 'Learning since Jan 2026'}</p>
+        {DEMO_MODE && (
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#B6FF2E]/20 bg-[#B6FF2E]/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-[#B6FF2E]">
+            NLP / LLM Demo Workspace
+          </div>
+        )}
       </motion.div>
 
       {/* Stats Grid */}
@@ -887,16 +910,6 @@ function ConceptsListView({
     return matchesSearch && matchesDomain;
   });
 
-  const domainColors: Record<string, string> = {
-    "Machine Learning": "#7C3AED",
-    "Mathematics": "#3B82F6",
-    "Computer Science": "#10B981",
-    "Database Systems": "#F59E0B",
-    "System Design": "#EF4444",
-    "Programming": "#06B6D4",
-    "General": "#6B7280",
-  };
-
   return (
     <div className="h-[calc(100vh-120px)] overflow-y-auto pr-1">
       {/* Header */}
@@ -969,7 +982,7 @@ function ConceptsListView({
         <div className="space-y-2">
           <p className="text-xs text-white/30 text-center mb-2">Swipe left to delete</p>
           {filtered.map((concept) => {
-            const color = domainColors[concept.domain] || '#6B7280';
+            const color = getDomainColor(concept.domain || 'General');
             return (
               <ConceptItem
                 key={concept.id}
