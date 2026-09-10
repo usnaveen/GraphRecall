@@ -1,7 +1,14 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var tab: GRTab = .feed
+    @State private var tab: GRTab = ContentView.initialTab()
+
+    private static func initialTab() -> GRTab {
+        guard let raw = ProcessInfo.processInfo.environment["GR_TAB"]?.lowercased() else { return .feed }
+        if let match = GRTab(rawValue: raw) { return match }
+        let alias: [String: GRTab] = ["today": .feed, "home": .feed, "chat": .assistant, "plus": .create]
+        return alias[raw] ?? .feed
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -11,9 +18,9 @@ struct ContentView: View {
                 switch tab {
                 case .feed: FeedView()
                 case .graph: GraphView()
-                case .create: CreatePlaceholderView()
+                case .create: CreateView()
                 case .assistant: ChatView()
-                case .profile: ProfilePlaceholderView()
+                case .profile: ProfileView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

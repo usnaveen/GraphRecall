@@ -64,6 +64,11 @@ actor APIClient {
         try await get("/api/feed/due-count")
     }
 
+    // MARK: - Concept Dump
+    func dumpConcepts(_ concepts: [String]) async throws -> ConceptDumpResponse {
+        try await post("/api/concepts/dump", body: ConceptDumpRequest(concepts: concepts))
+    }
+
     // MARK: - Graph
     func fetchGraph() async throws -> Graph3DResponse {
         try await get("/api/graph3d")
