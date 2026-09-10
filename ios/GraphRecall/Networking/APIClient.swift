@@ -131,6 +131,49 @@ actor APIClient {
         try await get("/api/v2/ingest/\(threadId)/status")
     }
 
+    /// Multipart processed-book ZIP → `POST /api/v2/ingest/processed-zip`
+    /// Form fields: `file`, `skip_review`, optional `title`, optional `resource_type` (default book).
+    func ingestProcessedZip(
+        fileURL: URL,
+        title: String? = nil,
+        resourceType: String? = "book",
+        skipReview: Bool = true
+    ) async throws -> ProcessedZipIngestResponse {
+        let filename = fileURL.lastPathComponent
+        let data = try Data(contentsOf: fileURL)
+        var fields: [String: String] = [
+            "skip_review": skipReview ? "true" : "false"
+        ]
+        if let title, !title.isEmpty { fields["title"] = title }
+        if let resourceType, !resourceType.isEmpty { fields["resource_type"] = resourceType }
+        return try await postMultipart(
+            "/api/v2/ingest/processed-zip",
+            fileFieldName: "file",
+            filename: filename,
+            fileData: data,
+            mimeType: "application/zip",
+            fields: fields,
+            timeout: 300
+        )
+    }
+
+    // MARK: - Notes / Library
+
+    func fetchNotes(resourceType: String? = nil, limit: Int = 50, offset: Int = 0) async throws -> NotesListResponse {
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ]
+        if let resourceType, !resourceType.isEmpty {
+            items.append(URLQueryItem(name: "resource_type", value: resourceType))
+        }
+        return try await get("/api/notes", query: items)
+    }
+
+    func fetchLibraryBooks(limit: Int = 100, offset: Int = 0) async throws -> NotesListResponse {
+        try await fetchNotes(resourceType: "book", limit: limit, offset: offset)
+    }
+
     // MARK: - Graph
     func fetchGraph() async throws -> Graph3DResponse {
         try await get("/api/graph3d")
@@ -142,6 +185,37 @@ actor APIClient {
             "/api/graph3d/communities/recompute",
             method: "POST",
             body: Data("{}".utf8)
+        )
+    }
+
+    /// GET `/api/concepts/{id}/notes` — NotePanel source chunks.
+    func fetchConceptNotes(conceptId: String) async throws -> ConceptNotesResponse {
+        let encoded = conceptId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? conceptId
+        return try await get("/api/concepts/\(encoded)/notes")
+    }
+
+    /// GET `/api/feed/resources/{name}` — notes / links / saved responses for a concept title.
+    func fetchConceptResources(conceptName: String) async throws -> ConceptResourcesResponse {
+        let encoded = conceptName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? conceptName
+        return try await get("/api/feed/resources/\(encoded)")
+    }
+
+    /// POST `/api/feed/quiz/topic/{name}` — generate quiz cards into Feed (returns count).
+    func generateTopicQuiz(
+        topic: String,
+        targetPoolSize: Int = 8,
+        forceResearch: Bool = false,
+        allowWebSearch: Bool = false
+    ) async throws -> TopicQuizGenerateResponse {
+        let encoded = topic.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? topic
+        return try await post(
+            "/api/feed/quiz/topic/\(encoded)",
+            body: TopicQuizRequestBody(
+                forceResearch: forceResearch,
+                targetPoolSize: targetPoolSize,
+                allowWebSearch: allowWebSearch
+            ),
+            timeout: 180
         )
     }
 
@@ -198,6 +272,101 @@ actor APIClient {
     }
 
     // MARK: - Core
+
+    private func get<T: Decodable>(_ path: String, query: [URLQueryItem]) async throws -> T {
+        guard let base = URL(string: path, relativeTo: APIConfig.baseURL)?.absoluteURL else {
+            throw APIError.invalidURL
+        }
+        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            throw APIError.invalidURL
+        }
+        components.queryItems = query
+        guard let url = components.url else { throw APIError.invalidURL }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = APIConfig.defaultTimeout
+        if let accessToken {
+            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        do {
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw APIError.http(-1, "No HTTP response")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                throw APIError.http(http.statusCode, body)
+            }
+            do {
+                return try makeDecoder().decode(T.self, from: data)
+            } catch {
+                throw APIError.decoding(error)
+            }
+        } catch let err as APIError {
+            throw err
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+
+    private func postMultipart<T: Decodable>(
+        _ path: String,
+        fileFieldName: String,
+        filename: String,
+        fileData: Data,
+        mimeType: String,
+        fields: [String: String],
+        auth: Bool = true,
+        timeout: TimeInterval? = nil
+    ) async throws -> T {
+        guard let url = URL(string: path, relativeTo: APIConfig.baseURL)?.absoluteURL else {
+            throw APIError.invalidURL
+        }
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+        for (key, value) in fields {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(value)\r\n".data(using: .utf8)!)
+        }
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append(
+            "Content-Disposition: form-data; name=\"\(fileFieldName)\"; filename=\"\(filename)\"\r\n"
+                .data(using: .utf8)!
+        )
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout ?? APIConfig.defaultTimeout
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body
+        if auth, let accessToken {
+            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        do {
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw APIError.http(-1, "No HTTP response")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let text = String(data: data, encoding: .utf8) ?? ""
+                throw APIError.http(http.statusCode, text)
+            }
+            do {
+                return try makeDecoder().decode(T.self, from: data)
+            } catch {
+                throw APIError.decoding(error)
+            }
+        } catch let err as APIError {
+            throw err
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
 
     private func makeDecoder() -> JSONDecoder {
         let d = JSONDecoder()
