@@ -179,6 +179,7 @@ struct GraphCommunity: Decodable, Hashable, Identifiable {
     let label: String?
     let size: Int?
     let level: Int?
+    let parent: String?
     let entityIds: [String]
 
     init(
@@ -187,6 +188,7 @@ struct GraphCommunity: Decodable, Hashable, Identifiable {
         label: String? = nil,
         size: Int? = nil,
         level: Int? = nil,
+        parent: String? = nil,
         entityIds: [String] = []
     ) {
         self.id = id
@@ -194,6 +196,7 @@ struct GraphCommunity: Decodable, Hashable, Identifiable {
         self.label = label
         self.size = size
         self.level = level
+        self.parent = parent
         self.entityIds = entityIds
     }
 
@@ -209,11 +212,17 @@ struct GraphCommunity: Decodable, Hashable, Identifiable {
         size = try c.decodeIfPresent(Int.self, forKey: DynamicCodingKeys("size"))
             ?? c.decodeIfPresent(Int.self, forKey: DynamicCodingKeys("member_count"))
         level = try c.decodeIfPresent(Int.self, forKey: DynamicCodingKeys("level"))
+        parent = try c.decodeIfPresent(String.self, forKey: DynamicCodingKeys("parent"))
         entityIds = try c.decodeIfPresent([String].self, forKey: DynamicCodingKeys("entity_ids"))
             ?? c.decodeIfPresent([String].self, forKey: DynamicCodingKeys("entityIds"))
             ?? c.decodeIfPresent([String].self, forKey: DynamicCodingKeys("members"))
             ?? []
     }
+}
+
+struct CommunitiesRecomputeResponse: Decodable {
+    let status: String?
+    let count: Int?
 }
 
 private struct DynamicCodingKeys: CodingKey {
