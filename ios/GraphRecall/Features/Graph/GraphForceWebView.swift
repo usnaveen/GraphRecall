@@ -17,11 +17,13 @@ struct GraphForceWebView: UIViewRepresentable {
         let userController = config.userContentController
         userController.add(context.coordinator, name: "graphBridge")
 
+        let canvas = UIColor(red: 7 / 255, green: 7 / 255, blue: 10 / 255, alpha: 1) // #07070A
         let webView = WKWebView(frame: .zero, configuration: config)
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
+        webView.isOpaque = true
+        webView.backgroundColor = canvas
+        webView.underPageBackgroundColor = canvas
         webView.scrollView.isScrollEnabled = false
-        webView.scrollView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = canvas
         webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
 
@@ -30,7 +32,7 @@ struct GraphForceWebView: UIViewRepresentable {
         } else {
             // Fallback: inline minimal shell so the screen still compiles/runs without resource copy.
             let fallback = """
-            <html><body style="background:transparent;color:#B6FF2E;font-family:-apple-system;padding:24px">
+            <html><body style="background:#07070A;color:#B6FF2E;font-family:-apple-system;padding:24px;margin:0">
             Graph resource missing — add graph_force.html to the app bundle.
             </body></html>
             """
