@@ -14,6 +14,7 @@ struct GraphQuizSheet: View {
     @State private var inlineQuestions: [TopicQuizQuestion] = []
     @State private var revealed = false
     @State private var selectedOption: String?
+    @State private var feedReady = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -93,13 +94,18 @@ struct GraphQuizSheet: View {
                 .buttonStyle(.plain)
             } else if !inlineQuestions.isEmpty {
                 questionPreview(inlineQuestions[0])
+                if canOpenFeed {
+                    Text("Full set is queued in Feed.")
+                        .font(GRType.micro)
+                        .foregroundStyle(GRColor.textTertiary)
+                }
             } else if let statusMessage {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(statusMessage)
                         .font(GRType.caption)
                         .foregroundStyle(GRColor.textPrimary)
                     if let generatedCount {
-                        Text("Created \(generatedCount) card\(generatedCount == 1 ? "" : "s"). Open Feed to practice.")
+                        Text("Created \(generatedCount) card\(generatedCount == 1 ? "" : "s") for Feed.")
                             .font(GRType.micro)
                             .foregroundStyle(GRColor.textTertiary)
                     }
@@ -107,21 +113,52 @@ struct GraphQuizSheet: View {
             }
 
             if !isGenerating {
-                Button {
-                    Task { await generate() }
-                } label: {
-                    Label(didRun ? "Generate again" : "Generate quiz", systemImage: "sparkles")
-                        .font(GRType.caption.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundStyle(GRColor.canvas)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(GRColor.accent)
-                        )
+                if canOpenFeed {
+                    Button(action: openFeed) {
+                        Label("Practice in Feed", systemImage: "house.fill")
+                            .font(GRType.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .foregroundStyle(GRColor.canvas)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(GRColor.accent)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Practice quiz cards in Feed")
+
+                    Button {
+                        Task { await generate() }
+                    } label: {
+                        Label("Generate again", systemImage: "sparkles")
+                            .font(GRType.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .foregroundStyle(GRColor.accent)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(GRColor.accent.opacity(0.4), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        Task { await generate() }
+                    } label: {
+                        Label(didRun ? "Generate again" : "Generate quiz", systemImage: "sparkles")
+                            .font(GRType.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .foregroundStyle(GRColor.canvas)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(GRColor.accent)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isGenerating)
                 }
-                .buttonStyle(.plain)
-                .disabled(isGenerating)
             }
         }
         .padding(14)
@@ -179,6 +216,7 @@ struct GraphQuizSheet: View {
         inlineQuestions = []
         revealed = false
         selectedOption = nil
+        feedReady = false
         defer {
             isGenerating = false
             didRun = true
@@ -194,17 +232,36 @@ struct GraphQuizSheet: View {
             if let questions = response.questions, !questions.isEmpty {
                 inlineQuestions = Array(questions.prefix(3))
                 statusMessage = "Quiz ready"
-                generatedCount = questions.count
+                generatedCount = response.generated ?? response.total ?? questions.count
+                notifyFeedReady()
             } else if response.status == "error" {
                 errorMessage = response.error ?? "Quiz generation failed"
             } else {
-                generatedCount = response.generated
+                generatedCount = response.generated ?? response.total
                 statusMessage = response.status == "generated"
                     ? "Quiz generated"
                     : (response.status ?? "Quiz request finished")
+                // Cards land server-side even when the payload omits an inline preview.
+                notifyFeedReady()
             }
         } catch {
             errorMessage = APIError.userFacing(error, resource: "quiz")
         }
+    }
+
+    /// True once generation produced Feed-bound cards (API success, not demo stub).
+    private var canOpenFeed: Bool {
+        !isDemo && feedReady && errorMessage == nil
+    }
+
+    private func notifyFeedReady() {
+        feedReady = true
+        NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+    }
+
+    private func openFeed() {
+        notifyFeedReady()
+        NotificationCenter.default.post(name: .grNavigateFeed, object: nil)
+        onClose()
     }
 }
