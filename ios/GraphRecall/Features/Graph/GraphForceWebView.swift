@@ -36,7 +36,7 @@ struct GraphForceWebView: UIViewRepresentable {
         } else {
             let fallback = """
             <html><body style="background:#07070A;color:#B6FF2E;font-family:-apple-system;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
-            Loading graph…
+            Demo graph — reopen after rebuild, or check Settings API base
             </body></html>
             """
             webView.loadHTMLString(fallback, baseURL: nil)
