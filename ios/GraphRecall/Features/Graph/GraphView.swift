@@ -13,6 +13,7 @@ struct GraphView: View {
                     highlightIds: highlightSet,
                     isDemo: model.usingStub,
                     focusIds: model.focusCommunityIds,
+                    selectedId: model.selectedNodeId,
                     onSelect: { id in model.select(nodeId: id) },
                     onCommunitiesRecompute: {
                         Task { await model.recomputeCommunities() }
@@ -40,7 +41,11 @@ struct GraphView: View {
                             .transition(.opacity)
                     }
 
-                    if let node = model.selectedNode {
+                    if let sheet = model.activeSheet, let node = model.selectedNode {
+                        sheetContent(sheet, node: node)
+                            .padding(.horizontal, 16)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    } else if let node = model.selectedNode {
                         GraphInspectorPanel(
                             node: node,
                             edges: model.connectedEdges,
@@ -50,7 +55,10 @@ struct GraphView: View {
                             onClose: { model.select(nodeId: nil) },
                             onSelectNode: { model.select(nodeId: $0) },
                             onFocusCommunity: { model.toggleCommunityFocus() },
-                            isolateCommunity: model.isolateCommunity
+                            isolateCommunity: model.isolateCommunity,
+                            onQuiz: { model.openQuiz() },
+                            onNotes: { model.openNotes() },
+                            onLinks: { model.openLinks() }
                         )
                         .padding(.horizontal, 16)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -59,11 +67,37 @@ struct GraphView: View {
                 .padding(.bottom, 12)
                 .animation(.easeInOut(duration: 0.22), value: model.selectedNodeId)
                 .animation(.easeInOut(duration: 0.22), value: model.communityRecomputeNotice)
+                .animation(.easeInOut(duration: 0.22), value: model.activeSheet?.id)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(.bottom, GRLayout.dockClearance)
         .task { await model.load() }
+    }
+
+    @ViewBuilder
+    private func sheetContent(_ sheet: GraphViewModel.InspectorSheet, node: GraphNode) -> some View {
+        switch sheet {
+        case .notes:
+            GraphNotePanel(
+                conceptId: node.id,
+                conceptName: node.name,
+                isDemo: model.usingStub,
+                onClose: { model.closeSheet() }
+            )
+        case .links:
+            GraphLinksSheet(
+                conceptName: node.name,
+                isDemo: model.usingStub,
+                onClose: { model.closeSheet() }
+            )
+        case .quiz:
+            GraphQuizSheet(
+                topic: node.name,
+                isDemo: model.usingStub,
+                onClose: { model.closeSheet() }
+            )
+        }
     }
 
     private var highlightSet: Set<String> {
