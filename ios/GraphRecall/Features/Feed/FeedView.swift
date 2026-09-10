@@ -11,7 +11,10 @@ struct FeedView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top, spacing: 12) {
-                        GRScreenHeader(title: "Today", subtitle: "Cards due for review")
+                        GRScreenHeader(
+                            title: "Today",
+                            subtitle: model.isDemoMode ? "Demo teach cards" : "Cards due for review"
+                        )
                         Button {
                             Task { await model.load() }
                         } label: {
@@ -26,6 +29,11 @@ struct FeedView: View {
 
                     statsRow
                         .padding(.horizontal, 20)
+
+                    if model.isDemoMode {
+                        demoBanner
+                            .padding(.horizontal, 20)
+                    }
 
                     if model.dumpBannerCount > 0 {
                         GlassCard(cornerRadius: 14) {
@@ -46,7 +54,7 @@ struct FeedView: View {
                         .padding(.horizontal, 20)
                     }
 
-                    if model.isOffline || model.pendingFlushCount > 0 {
+                    if (model.isOffline || model.pendingFlushCount > 0) && !model.isDemoMode {
                         offlineBanner
                             .padding(.horizontal, 20)
                     }
@@ -57,7 +65,7 @@ struct FeedView: View {
                                 .tint(GRColor.accent)
                                 .frame(maxWidth: .infinity, minHeight: 160)
                         } else if let item = model.currentItem {
-                            reviewCard(item)
+                            reviewSession(item)
                         } else if model.items.isEmpty {
                             emptyState
                         } else {
@@ -105,6 +113,24 @@ struct FeedView: View {
         }
     }
 
+    private var demoBanner: some View {
+        GlassCard(cornerRadius: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(GRColor.warning)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Demo mode")
+                        .font(GRType.headline)
+                        .foregroundStyle(GRColor.textPrimary)
+                    Text(model.errorMessage ?? "Sample teach cards for Simulator / offline demos. Grades stay local.")
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.textSecondary)
+                }
+                Spacer()
+            }
+        }
+    }
+
     private var offlineBanner: some View {
         GlassCard(cornerRadius: 14) {
             HStack(spacing: 10) {
@@ -125,62 +151,22 @@ struct FeedView: View {
         }
     }
 
-    private func reviewCard(_ item: FeedItem) -> some View {
+    private func reviewSession(_ item: FeedItem) -> some View {
         let revealed = model.revealedIds.contains(item.id)
         return VStack(spacing: 14) {
-            GlassCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text(item.itemType.rawValue.replacingOccurrences(of: "_", with: " ").uppercased())
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.accent)
-                        Spacer()
-                        if let domain = item.domain {
-                            Text(domain == "concept_dump" ? "DUMP" : domain)
-                                .font(GRType.caption)
-                                .foregroundStyle(GRColor.textTertiary)
-                        }
-                    }
-                    Text(item.prompt)
-                        .font(GRType.title)
-                        .foregroundStyle(GRColor.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
+            FeedTypedCard(
+                item: item,
+                revealed: revealed,
+                selectedOptionId: model.selectedOptionIds[item.id],
+                fillAnswer: model.fillAnswers[item.id] ?? "",
+                showHint: model.hintIds.contains(item.id),
+                onReveal: { model.reveal(item.id) },
+                onSelectOption: { model.selectOption(itemId: item.id, optionId: $0) },
+                onFillAnswerChange: { model.setFillAnswer(itemId: item.id, text: $0) },
+                onToggleHint: { model.toggleHint(item.id) }
+            )
 
-                    if revealed, let answer = item.answer {
-                        Divider().overlay(GRColor.stroke)
-                        Text(answer)
-                            .font(GRType.body)
-                            .foregroundStyle(GRColor.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if revealed, let sources = item.content["sources"]?.value as? [[String: String]], !sources.isEmpty {
-                        Text("Sources")
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.textTertiary)
-                        ForEach(Array(sources.prefix(3).enumerated()), id: \.offset) { _, src in
-                            if let urlString = src["url"], let url = URL(string: urlString), !urlString.isEmpty {
-                                Link(src["title"].flatMap { $0.isEmpty ? nil : $0 } ?? urlString, destination: url)
-                                    .font(GRType.caption)
-                                    .foregroundStyle(GRColor.accentCyan)
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !revealed {
-                Button {
-                    model.reveal(item.id)
-                } label: {
-                    Text("Show answer")
-                        .font(GRType.headline)
-                        .foregroundStyle(GRColor.canvas)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(GRColor.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-            } else {
+            if revealed {
                 HStack(spacing: 8) {
                     ForEach(ReviewDifficulty.allCases) { grade in
                         Button {
@@ -222,10 +208,12 @@ struct FeedView: View {
     private var doneState: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Session clear")
+                Text(model.isDemoMode ? "Demo pack complete" : "Session clear")
                     .font(GRType.headline)
                     .foregroundStyle(GRColor.accent)
-                Text("You graded this batch. Pull to refresh for more due cards.")
+                Text(model.isDemoMode
+                     ? "You walked through the sample teach cards. Pull to refresh when the API is up."
+                     : "You graded this batch. Pull to refresh for more due cards.")
                     .font(GRType.body)
                     .foregroundStyle(GRColor.textSecondary)
             }
