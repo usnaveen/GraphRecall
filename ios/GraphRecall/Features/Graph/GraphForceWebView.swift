@@ -7,6 +7,7 @@ struct GraphForceWebView: UIViewRepresentable {
     var highlightIds: Set<String> = []
     var isDemo: Bool = false
     var focusIds: Set<String> = []
+    var selectedId: String? = nil
     var onSelect: ((String?) -> Void)?
     var onCommunitiesRecompute: (() -> Void)?
 
@@ -49,6 +50,7 @@ struct GraphForceWebView: UIViewRepresentable {
         context.coordinator.pendingGraph = graph
         context.coordinator.pendingHighlight = highlightIds
         context.coordinator.pendingFocus = focusIds
+        context.coordinator.pendingSelectedId = selectedId
         context.coordinator.pendingDemo = isDemo
         if context.coordinator.pageReady {
             context.coordinator.pushGraph()
@@ -63,6 +65,7 @@ struct GraphForceWebView: UIViewRepresentable {
         var pendingGraph: Graph3DResponse?
         var pendingHighlight: Set<String> = []
         var pendingFocus: Set<String> = []
+        var pendingSelectedId: String?
         var pendingDemo = false
         private var lastPushSignature: String?
 
@@ -112,10 +115,15 @@ struct GraphForceWebView: UIViewRepresentable {
             else { return }
             let highlights = Array(pendingHighlight.union(pendingFocus))
             let hlData = (try? JSONSerialization.data(withJSONObject: highlights)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-            let opts: [String: Any] = [
+            var opts: [String: Any] = [
                 "demo": pendingDemo,
                 "focusIds": Array(pendingFocus)
             ]
+            if let selected = pendingSelectedId {
+                opts["selectedId"] = selected
+            } else {
+                opts["selectedId"] = NSNull()
+            }
             let optsData = (try? JSONSerialization.data(withJSONObject: opts)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
             let signature = json + "|" + hlData + "|" + optsData
             guard signature != lastPushSignature else { return }

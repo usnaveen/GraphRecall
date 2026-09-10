@@ -11,6 +11,9 @@ struct GraphInspectorPanel: View {
     var onSelectNode: (String) -> Void
     var onFocusCommunity: (() -> Void)? = nil
     var isolateCommunity: Bool = false
+    var onQuiz: (() -> Void)? = nil
+    var onNotes: (() -> Void)? = nil
+    var onLinks: (() -> Void)? = nil
 
     private static let relColors: [String: Color] = [
         "PREREQUISITE_OF": Color(hex: "#2EFFE6") ?? .cyan,
@@ -172,9 +175,9 @@ struct GraphInspectorPanel: View {
                     }
                     .buttonStyle(.plain)
                 }
-                softAction(title: "Quiz", systemImage: "target", accent: true)
-                softAction(title: "Notes", systemImage: "book")
-                softAction(title: "Links", systemImage: "link")
+                softAction(title: "Quiz", systemImage: "target", accent: true, action: onQuiz)
+                softAction(title: "Notes", systemImage: "book", action: onNotes)
+                softAction(title: "Links", systemImage: "link", action: onLinks)
             }
 
             if isRecomputing {
@@ -362,18 +365,29 @@ struct GraphInspectorPanel: View {
             .background(Capsule().fill(GRColor.fillSubtle))
     }
 
-    private func softAction(title: String, systemImage: String, accent: Bool = false) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(GRType.micro)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .foregroundStyle(accent ? GRColor.accent : GRColor.textSecondary)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(accent ? GRColor.accent.opacity(0.18) : GRColor.fillSubtle)
-            )
-            .opacity(0.85)
-            .accessibilityLabel("\(title) (coming soon)")
+    private func softAction(
+        title: String,
+        systemImage: String,
+        accent: Bool = false,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        Button {
+            action?()
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(GRType.micro)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .foregroundStyle(accent ? GRColor.accent : GRColor.textSecondary)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(accent ? GRColor.accent.opacity(0.18) : GRColor.fillSubtle)
+                )
+                .opacity(action == nil ? 0.55 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(action == nil)
+        .accessibilityLabel(action == nil ? "\(title) (coming soon)" : title)
     }
 }
 

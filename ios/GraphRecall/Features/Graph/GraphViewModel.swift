@@ -13,6 +13,12 @@ final class GraphViewModel {
     var searchQuery: String = ""
     var isolateCommunity = false
     var communityRecomputeNotice: String?
+    var activeSheet: InspectorSheet?
+
+    enum InspectorSheet: String, Identifiable {
+        case notes, links, quiz
+        var id: String { rawValue }
+    }
 
     var filteredNodes: [GraphNode] {
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -75,8 +81,14 @@ final class GraphViewModel {
         selectedNodeId = nodeId
         if nodeId == nil {
             isolateCommunity = false
+            activeSheet = nil
         }
     }
+
+    func openNotes() { activeSheet = .notes }
+    func openLinks() { activeSheet = .links }
+    func openQuiz() { activeSheet = .quiz }
+    func closeSheet() { activeSheet = nil }
 
     func toggleCommunityFocus() {
         isolateCommunity.toggle()
