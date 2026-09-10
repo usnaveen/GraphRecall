@@ -13,7 +13,7 @@ struct ChatView: View {
             }
             composer
         }
-        .padding(.bottom, 88)
+        .padding(.bottom, GRLayout.dockClearance)
         .task { await model.onAppear() }
     }
 

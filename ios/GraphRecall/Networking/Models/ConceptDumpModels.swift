@@ -24,6 +24,24 @@ struct ConceptDumpCard: Codable, Sendable, Hashable {
     let id: String
     let type: String
     let front: String?
+    let back: String?
+
+    enum CodingKeys: String, CodingKey { case id, type, front, back }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "flashcard"
+        front = try c.decodeIfPresent(String.self, forKey: .front)
+        back = try c.decodeIfPresent(String.self, forKey: .back)
+    }
+
+    init(id: String, type: String, front: String?, back: String?) {
+        self.id = id
+        self.type = type
+        self.front = front
+        self.back = back
+    }
 }
 
 struct ConceptDumpItemResult: Codable, Sendable, Identifiable, Hashable {
