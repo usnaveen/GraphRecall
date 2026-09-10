@@ -36,6 +36,8 @@
 		EA91840184ADA49500E76AD3 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4AB921E260606FD5618584 /* APIClient.swift */; };
 		EF31F821B5D52CD61798BDB9 /* GraphViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12ACAFF6FE6A4E2FC61274B /* GraphViewModel.swift */; };
 		FE7A11C962F00CC8ECC0E618 /* ConceptDumpModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877AC1570FFB645C19F03AF7 /* ConceptDumpModels.swift */; };
+		90B48154B63E4E6BA0B6D047 /* DemoFeedSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2C68DA2934EC087DCB648 /* DemoFeedSeed.swift */; };
+		90911AFC6EA54051827579A9 /* FeedCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DDA7CD9BA2744D9A1578305 /* FeedCardViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -69,6 +71,8 @@
 		DE2F576A29F1A4101ADB03AE /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
 		E12ACAFF6FE6A4E2FC61274B /* GraphViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphViewModel.swift; sourceTree = "<group>"; };
 		FFEB0867569B5D9A228B3E7C /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
+		C1D2C68DA2934EC087DCB648 /* DemoFeedSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFeedSeed.swift; sourceTree = "<group>"; };
+		5DDA7CD9BA2744D9A1578305 /* FeedCardViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCardViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -184,6 +188,8 @@
 		827D12B04839C3724638E2DF /* Feed */ = {
 			isa = PBXGroup;
 			children = (
+				C1D2C68DA2934EC087DCB648 /* DemoFeedSeed.swift */,
+				5DDA7CD9BA2744D9A1578305 /* FeedCardViews.swift */,
 				25717B008D78F115654FA98B /* FeedView.swift */,
 				6FE14E2BBC801DE9BC6A5BA7 /* FeedViewModel.swift */,
 				96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */,
@@ -304,6 +310,8 @@
 				D2A05657AAACF954D3E49D31 /* ContentView.swift in Sources */,
 				D6C1E3C34FF1FB23F0940C77 /* CreateView.swift in Sources */,
 				3547DFDCB16A23B79DC931F6 /* FeedModels.swift in Sources */,
+				90B48154B63E4E6BA0B6D047 /* DemoFeedSeed.swift in Sources */,
+				90911AFC6EA54051827579A9 /* FeedCardViews.swift in Sources */,
 				6CAA41BF9F94661E27E5128A /* FeedView.swift in Sources */,
 				81F71FDA03D069B4197F7F46 /* FeedViewModel.swift in Sources */,
 				74487DC936815D7E43050870 /* GRScreenHeader.swift in Sources */,

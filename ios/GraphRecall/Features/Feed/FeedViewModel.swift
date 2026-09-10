@@ -12,9 +12,13 @@ final class FeedViewModel {
     var dailyGoal: Int = 20
     var isLoading = false
     var isOffline = false
+    var isDemoMode = false
     var pendingFlushCount = 0
     var errorMessage: String?
     var revealedIds: Set<String> = []
+    var selectedOptionIds: [String: String] = [:]
+    var fillAnswers: [String: String] = [:]
+    var hintIds: Set<String> = []
     var currentIndex: Int = 0
     var dumpBannerCount: Int = 0
 
@@ -42,38 +46,73 @@ final class FeedViewModel {
             let userStats = try? await APIClient.shared.fetchStats()
             let due = try? await APIClient.shared.dueCount()
 
-            items = Self.merge(server: feed.items, dump: dumpItems)
-            completedToday = feed.completedToday
-            dailyGoal = feed.dailyGoal
-            streak = feed.streakDays
-            dueTotal = max(due?.total ?? feed.totalDueToday, items.count)
-            stats = userStats
-            isOffline = false
-            currentIndex = 0
-            revealedIds.removeAll()
+            let merged = Self.merge(server: feed.items, dump: dumpItems)
+            isDemoMode = false
 
-            await OfflineReviewStore.shared.cacheFeed(feed)
-            // Drop dump-local cards that already arrived from server
+            // NAV-24: empty live feed → seed rich demo cards (never blank Simulator).
+            if merged.isEmpty {
+                isOffline = false
+                applyDemoSeed(reason: "Feed returned no cards — showing Demo pack.")
+            } else {
+                items = merged
+                completedToday = feed.completedToday
+                dailyGoal = feed.dailyGoal
+                streak = feed.streakDays
+                dueTotal = max(due?.total ?? feed.totalDueToday, items.count)
+                stats = userStats
+                isOffline = false
+                await OfflineReviewStore.shared.cacheFeed(feed)
+            }
+
             let serverIds = Set(feed.items.map(\.id))
             await OfflineReviewStore.shared.clearDumpItems(ids: serverIds)
             dumpBannerCount = await OfflineReviewStore.shared.loadDumpItems().count
             pendingFlushCount = await OfflineReviewStore.shared.load().count
+            currentIndex = 0
+            resetCardState()
         } catch {
             isOffline = true
             errorMessage = APIError.userFacing(error, resource: "feed")
-            if let cached = await OfflineReviewStore.shared.cachedFeed() {
+            if let cached = await OfflineReviewStore.shared.cachedFeed(), !cached.items.isEmpty {
                 items = Self.merge(server: cached.items, dump: dumpItems)
                 completedToday = cached.completedToday
                 dailyGoal = cached.dailyGoal
                 streak = cached.streakDays
                 dueTotal = max(cached.totalDueToday, items.count)
-            } else {
+                isDemoMode = items.contains(where: \.isDemo)
+            } else if !dumpItems.isEmpty {
                 items = dumpItems
                 dueTotal = items.count
+                isDemoMode = false
+            } else {
+                // NAV-24: 404 / offline with no cache → demo pack
+                applyDemoSeed(reason: errorMessage ?? "Couldn't reach feed — showing Demo pack.")
             }
             pendingFlushCount = await OfflineReviewStore.shared.load().count
             currentIndex = 0
+            resetCardState()
         }
+    }
+
+    private func applyDemoSeed(reason: String) {
+        let demo = DemoFeedSeed.response
+        items = demo.items
+        completedToday = demo.completedToday
+        dailyGoal = demo.dailyGoal
+        streak = demo.streakDays
+        dueTotal = demo.totalDueToday
+        isDemoMode = true
+        errorMessage = reason
+        Task {
+            await OfflineReviewStore.shared.cacheFeed(demo)
+        }
+    }
+
+    private func resetCardState() {
+        revealedIds.removeAll()
+        selectedOptionIds.removeAll()
+        fillAnswers.removeAll()
+        hintIds.removeAll()
     }
 
     private static func merge(server: [FeedItem], dump: [FeedItem]) -> [FeedItem] {
@@ -86,10 +125,33 @@ final class FeedViewModel {
         revealedIds.insert(id)
     }
 
+    func selectOption(itemId: String, optionId: String) {
+        selectedOptionIds[itemId] = optionId
+    }
+
+    func setFillAnswer(itemId: String, text: String) {
+        fillAnswers[itemId] = text
+    }
+
+    func toggleHint(_ id: String) {
+        if hintIds.contains(id) {
+            hintIds.remove(id)
+        } else {
+            hintIds.insert(id)
+        }
+    }
+
     func grade(_ difficulty: ReviewDifficulty) async {
         guard let item = currentItem else { return }
         let itemType = item.itemType.rawValue
         let gradedId = item.id
+
+        // Demo cards are local-only — never hit the API / offline queue.
+        if item.isDemo || isDemoMode {
+            completedToday += 1
+            advance()
+            return
+        }
 
         do {
             if isOffline {
@@ -124,6 +186,9 @@ final class FeedViewModel {
     private func advance() {
         if let item = currentItem {
             revealedIds.remove(item.id)
+            selectedOptionIds.removeValue(forKey: item.id)
+            fillAnswers.removeValue(forKey: item.id)
+            hintIds.remove(item.id)
         }
         if currentIndex + 1 < items.count {
             currentIndex += 1

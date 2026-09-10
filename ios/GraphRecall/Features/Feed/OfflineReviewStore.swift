@@ -74,7 +74,7 @@ actor OfflineReviewStore {
         for result in response.results where result.status == "ok" {
             for card in result.cards {
                 if existing.contains(card.id) { continue }
-                let type = FeedItemType(rawValue: card.type) ?? .flashcard
+                let type = FeedItemType.parse(card.type)
                 var content: [String: AnyCodable] = [:]
                 if let front = card.front { content["front"] = AnyCodable(front) }
                 if let back = card.back { content["back"] = AnyCodable(back) }
