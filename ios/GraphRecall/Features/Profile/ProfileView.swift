@@ -1,44 +1,105 @@
 import SwiftUI
 
+enum ProfileNavRoute: Hashable {
+    case library
+}
+
 struct ProfileView: View {
+    var openLibraryToken: Int = 0
+
     @State private var showSettings = false
     @State private var tokenPresent = false
     @State private var stats: UserStats?
     @State private var statsError: String?
     @State private var isLoadingStats = false
+    @State private var path = NavigationPath()
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(GRColor.accent.opacity(0.10))
-                .frame(width: 240, height: 240)
-                .blur(radius: 50)
-                .offset(x: -100, y: -160)
-                .allowsHitTesting(false)
+        NavigationStack(path: $path) {
+            ZStack {
+                Circle()
+                    .fill(GRColor.accent.opacity(0.10))
+                    .frame(width: 240, height: 240)
+                    .blur(radius: 50)
+                    .offset(x: -100, y: -160)
+                    .allowsHitTesting(false)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
 
-                    identityCard
-                        .padding(.horizontal, 20)
+                        identityCard
+                            .padding(.horizontal, 20)
 
-                    statsRow
-                        .padding(.horizontal, 20)
+                        statsRow
+                            .padding(.horizontal, 20)
 
-                    activitySection
-                        .padding(.horizontal, 20)
+                        libraryRow
+                            .padding(.horizontal, 20)
+
+                        activitySection
+                            .padding(.horizontal, 20)
+                    }
+                    .padding(.bottom, GRLayout.dockClearance)
                 }
-                .padding(.bottom, GRLayout.dockClearance)
             }
+            .navigationDestination(for: ProfileNavRoute.self) { route in
+                switch route {
+                case .library:
+                    LibraryView()
+                }
+            }
+            .navigationBarHidden(true)
         }
         .task { await refresh() }
         .refreshable { await refresh() }
+        .onChange(of: openLibraryToken) { _, newValue in
+            guard newValue > 0 else { return }
+            path.append(ProfileNavRoute.library)
+        }
         .sheet(isPresented: $showSettings) {
             ProfileSettingsSheet(tokenPresent: $tokenPresent)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+    }
+
+    private var libraryRow: some View {
+        Button {
+            path.append(ProfileNavRoute.library)
+        } label: {
+            GlassCard {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [GRColor.accent.opacity(0.25), GRColor.accentCyan.opacity(0.2)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "books.vertical.fill")
+                            .foregroundStyle(GRColor.accent)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Library")
+                            .font(GRType.headline)
+                            .foregroundStyle(GRColor.textPrimary)
+                        Text("Books & processed ZIP ingestions")
+                            .font(GRType.caption)
+                            .foregroundStyle(GRColor.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(GRColor.textTertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Library")
     }
 
     private var header: some View {
