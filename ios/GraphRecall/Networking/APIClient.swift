@@ -96,6 +96,41 @@ actor APIClient {
         try await post("/api/concepts/dump", body: ConceptDumpRequest(concepts: concepts))
     }
 
+    // MARK: - V2 Ingest
+    /// Text / notes ingestion. Uses `skip_review: true` on iOS v1 (no HITL UI yet).
+    func ingestText(content: String, title: String? = nil, resourceType: String? = "notes") async throws -> IngestResponse {
+        try await post(
+            "/api/v2/ingest",
+            body: IngestTextRequest(
+                content: content,
+                title: title,
+                skipReview: true,
+                resourceType: resourceType
+            ),
+            timeout: 300
+        )
+    }
+
+    func ingestURL(_ url: String) async throws -> IngestResponse {
+        try await post("/api/v2/ingest/url", body: IngestURLRequest(url: url), timeout: 300)
+    }
+
+    func ingestYouTube(url: String, title: String? = nil) async throws -> IngestYouTubeResponse {
+        try await post("/api/v2/ingest/youtube", body: IngestYouTubeRequest(url: url, title: title), timeout: 60)
+    }
+
+    func ingestChatTranscript(content: String, title: String? = nil) async throws -> IngestResponse {
+        try await post(
+            "/api/v2/ingest/chat-transcript",
+            body: IngestChatTranscriptRequest(content: content, title: title),
+            timeout: 300
+        )
+    }
+
+    func ingestStatus(threadId: String) async throws -> IngestStatusResponse {
+        try await get("/api/v2/ingest/\(threadId)/status")
+    }
+
     // MARK: - Graph
     func fetchGraph() async throws -> Graph3DResponse {
         try await get("/api/graph3d")
@@ -182,9 +217,14 @@ actor APIClient {
         try await send(path, method: "GET", body: Data?.none)
     }
 
-    private func post<T: Decodable, B: Encodable>(_ path: String, body: B, auth: Bool = true) async throws -> T {
+    private func post<T: Decodable, B: Encodable>(
+        _ path: String,
+        body: B,
+        auth: Bool = true,
+        timeout: TimeInterval? = nil
+    ) async throws -> T {
         let data = try JSONEncoder().encode(body)
-        return try await send(path, method: "POST", body: data, auth: auth)
+        return try await send(path, method: "POST", body: data, auth: auth, timeout: timeout)
     }
 
 
@@ -224,13 +264,19 @@ actor APIClient {
         }
     }
 
-    private func send<T: Decodable>(_ path: String, method: String, body: Data?, auth: Bool = true) async throws -> T {
+    private func send<T: Decodable>(
+        _ path: String,
+        method: String,
+        body: Data?,
+        auth: Bool = true,
+        timeout: TimeInterval? = nil
+    ) async throws -> T {
         guard let url = URL(string: path, relativeTo: APIConfig.baseURL)?.absoluteURL else {
             throw APIError.invalidURL
         }
         var req = URLRequest(url: url)
         req.httpMethod = method
-        req.timeoutInterval = APIConfig.defaultTimeout
+        req.timeoutInterval = timeout ?? APIConfig.defaultTimeout
         if let body {
             req.httpBody = body
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
