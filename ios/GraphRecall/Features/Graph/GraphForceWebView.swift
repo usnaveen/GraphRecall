@@ -1,10 +1,11 @@
 import SwiftUI
 import WebKit
 
-/// WKWebView host for force-graph — parity with the web knowledge-graph viz.
+/// WKWebView host for force-graph — visual parity toward web GraphVisualizer.
 struct GraphForceWebView: UIViewRepresentable {
     let graph: Graph3DResponse
     var highlightIds: Set<String> = []
+    var isDemo: Bool = false
     var onSelect: ((String?) -> Void)?
 
     func makeCoordinator() -> Coordinator {
@@ -30,7 +31,6 @@ struct GraphForceWebView: UIViewRepresentable {
         if let url = Bundle.main.url(forResource: "graph_force", withExtension: "html") {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
-            // Fallback: inline minimal shell so the screen still compiles/runs without resource copy.
             let fallback = """
             <html><body style="background:#07070A;color:#B6FF2E;font-family:-apple-system;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
             Loading graph…
@@ -45,6 +45,7 @@ struct GraphForceWebView: UIViewRepresentable {
         context.coordinator.onSelect = onSelect
         context.coordinator.pendingGraph = graph
         context.coordinator.pendingHighlight = highlightIds
+        context.coordinator.pendingDemo = isDemo
         if context.coordinator.pageReady {
             context.coordinator.pushGraph()
         }
@@ -56,6 +57,7 @@ struct GraphForceWebView: UIViewRepresentable {
         var pageReady = false
         var pendingGraph: Graph3DResponse?
         var pendingHighlight: Set<String> = []
+        var pendingDemo = false
 
         init(onSelect: ((String?) -> Void)?) {
             self.onSelect = onSelect
@@ -91,7 +93,9 @@ struct GraphForceWebView: UIViewRepresentable {
             else { return }
             let highlights = Array(pendingHighlight)
             let hlData = (try? JSONSerialization.data(withJSONObject: highlights)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-            let js = "window.setGraphData && window.setGraphData(\(json), \(hlData));"
+            let opts: [String: Any] = ["demo": pendingDemo]
+            let optsData = (try? JSONSerialization.data(withJSONObject: opts)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+            let js = "window.setGraphData && window.setGraphData(\(json), \(hlData), \(optsData));"
             webView.evaluateJavaScript(js, completionHandler: nil)
         }
 
@@ -105,6 +109,8 @@ struct GraphForceWebView: UIViewRepresentable {
                 if let domain = n.domain { dict["domain"] = domain }
                 if let color = n.color { dict["color"] = color }
                 if let definition = n.definition { dict["definition"] = definition }
+                if let x = n.x { dict["x"] = x }
+                if let y = n.y { dict["y"] = y }
                 return dict
             }
             let links: [[String: Any]] = graph.edges.map { e in
@@ -116,7 +122,20 @@ struct GraphForceWebView: UIViewRepresentable {
                 if let s = e.strength { dict["strength"] = s }
                 return dict
             }
-            return ["nodes": nodes, "links": links]
+            let communities: [[String: Any]] = graph.communities.map { c in
+                var dict: [String: Any] = ["id": c.id]
+                if let title = c.title { dict["title"] = title }
+                if let label = c.label { dict["label"] = label }
+                if let size = c.size { dict["size"] = size }
+                if let level = c.level { dict["level"] = level }
+                if !c.entityIds.isEmpty { dict["entity_ids"] = c.entityIds }
+                return dict
+            }
+            return [
+                "nodes": nodes,
+                "links": links,
+                "communities": communities
+            ]
         }
     }
 }

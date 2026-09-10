@@ -11,6 +11,7 @@ struct GraphView: View {
                 GraphForceWebView(
                     graph: model.graph,
                     highlightIds: highlightSet,
+                    isDemo: model.usingStub,
                     onSelect: { id in model.select(nodeId: id) }
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -101,6 +102,17 @@ struct GraphView: View {
                             .font(GRType.caption)
                             .foregroundStyle(GRColor.textSecondary)
                             .lineLimit(3)
+                    }
+                    if !model.connectedEdges.isEmpty {
+                        Text(model.connectedEdges.prefix(3).map { edge in
+                            let other = edge.source == node.id ? edge.target : edge.source
+                            let name = model.graph.nodes.first(where: { $0.id == other })?.name ?? other
+                            let rel = edge.relationshipType ?? "RELATED_TO"
+                            return "\(rel) → \(name)"
+                        }.joined(separator: "  ·  "))
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.accent.opacity(0.85))
+                            .lineLimit(2)
                     }
                     if let err = model.errorMessage, model.usingStub {
                         Text(err)

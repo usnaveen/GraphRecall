@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		B11B11B11B11B11B11B11B01 /* graph_force.html in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A01 /* graph_force.html */; };
 		B11B11B11B11B11B11B11B02 /* graph_force_boot.js in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A02 /* graph_force_boot.js */; };
+		B11B11B11B11B11B11B11B03 /* graph_force.css in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A03 /* graph_force.css */; };
 		17EF10D95152450277DAFDC0 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE2F576A29F1A4101ADB03AE /* AuthModels.swift */; };
 		1CC0BDE712010385C102706D /* OfflineReviewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */; };
 		1F44B6FC7FD4A5BF4513781B /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0DF464E1FE4615C662F789E /* ProfileView.swift */; };
@@ -43,6 +44,7 @@
 /* Begin PBXFileReference section */
 		A11A11A11A11A11A11A11A01 /* graph_force.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = graph_force.html; sourceTree = "<group>"; };
 		A11A11A11A11A11A11A11A02 /* graph_force_boot.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = graph_force_boot.js; sourceTree = "<group>"; };
+		A11A11A11A11A11A11A11A03 /* graph_force.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = graph_force.css; sourceTree = "<group>"; };
 		08EF6500A115E505F0EB5B7A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0B6149E4976D7EDB8AFEB78E /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
 		25717B008D78F115654FA98B /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
@@ -81,6 +83,7 @@
 			children = (
 				A11A11A11A11A11A11A11A01 /* graph_force.html */,
 				A11A11A11A11A11A11A11A02 /* graph_force_boot.js */,
+				A11A11A11A11A11A11A11A03 /* graph_force.css */,
 			);
 			path = WebAssets;
 			sourceTree = "<group>";
@@ -288,6 +291,7 @@
 				B9F72CD6D433BE39DA5BB103 /* Assets.xcassets in Resources */,
 				B11B11B11B11B11B11B11B01 /* graph_force.html in Resources */,
 				B11B11B11B11B11B11B11B02 /* graph_force_boot.js in Resources */,
+				B11B11B11B11B11B11B11B03 /* graph_force.css in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
