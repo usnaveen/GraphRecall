@@ -27,6 +27,7 @@ targets:
           - Resources/Info.plist
           - Resources/graph_force.html
           - Resources/graph_force_boot.js
+          - Resources/graph_force.css
     resources:
       - path: WebAssets
     settings:
