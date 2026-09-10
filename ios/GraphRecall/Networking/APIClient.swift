@@ -194,6 +194,38 @@ actor APIClient {
         try await fetchNotes(resourceType: "book", limit: limit, offset: offset)
     }
 
+    // MARK: - Profile (schedule + nested lists)
+
+    /// GET `/api/feed/schedule` — upcoming review days with topic chips.
+    func fetchSchedule(days: Int = 14) async throws -> [ScheduleDay] {
+        try await get(
+            "/api/feed/schedule",
+            query: [URLQueryItem(name: "days", value: String(min(max(days, 1), 60)))]
+        )
+    }
+
+    /// GET `/api/uploads` — user screenshots / resources.
+    func fetchUploads(limit: Int = 50, offset: Int = 0) async throws -> UploadsListResponse {
+        try await get(
+            "/api/uploads",
+            query: [
+                URLQueryItem(name: "limit", value: String(min(max(limit, 1), 50))),
+                URLQueryItem(name: "offset", value: String(max(offset, 0)))
+            ]
+        )
+    }
+
+    /// GET `/api/feed/history/quizzes` — quiz + flashcard history.
+    func fetchQuizHistory() async throws -> QuizHistoryResponse {
+        try await get("/api/feed/history/quizzes")
+    }
+
+    /// Concepts for Profile list — graph3d nodes mapped to `ProfileConcept`.
+    func fetchProfileConcepts() async throws -> [ProfileConcept] {
+        let graph = try await fetchGraph()
+        return graph.nodes.map(ProfileConcept.init(from:))
+    }
+
     // MARK: - Graph
     func fetchGraph() async throws -> Graph3DResponse {
         try await get("/api/graph3d")
