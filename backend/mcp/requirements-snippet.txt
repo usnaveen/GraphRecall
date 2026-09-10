@@ -1,0 +1,1 @@
+# MCP skeleton (NAV-28) — already in requirements.txt: mcp>=1.0.0, httpx>=0.26.0
