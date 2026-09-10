@@ -156,6 +156,12 @@ struct GraphCluster: Decodable, Hashable, Identifiable {
     let label: String?
     let color: String?
 
+    init(id: String, label: String? = nil, color: String? = nil) {
+        self.id = id
+        self.label = label
+        self.color = color
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: DynamicCodingKeys.self)
         id = try c.decodeIfPresent(String.self, forKey: DynamicCodingKeys("id"))
@@ -169,18 +175,44 @@ struct GraphCluster: Decodable, Hashable, Identifiable {
 
 struct GraphCommunity: Decodable, Hashable, Identifiable {
     var id: String
+    let title: String?
     let label: String?
     let size: Int?
+    let level: Int?
+    let entityIds: [String]
+
+    init(
+        id: String,
+        title: String? = nil,
+        label: String? = nil,
+        size: Int? = nil,
+        level: Int? = nil,
+        entityIds: [String] = []
+    ) {
+        self.id = id
+        self.title = title
+        self.label = label
+        self.size = size
+        self.level = level
+        self.entityIds = entityIds
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: DynamicCodingKeys.self)
         id = try c.decodeIfPresent(String.self, forKey: DynamicCodingKeys("id"))
             ?? UUID().uuidString
+        title = try c.decodeIfPresent(String.self, forKey: DynamicCodingKeys("title"))
         label = try c.decodeIfPresent(String.self, forKey: DynamicCodingKeys("label"))
             ?? c.decodeIfPresent(String.self, forKey: DynamicCodingKeys("name"))
+            ?? title
             ?? c.decodeIfPresent(String.self, forKey: DynamicCodingKeys("summary"))
         size = try c.decodeIfPresent(Int.self, forKey: DynamicCodingKeys("size"))
             ?? c.decodeIfPresent(Int.self, forKey: DynamicCodingKeys("member_count"))
+        level = try c.decodeIfPresent(Int.self, forKey: DynamicCodingKeys("level"))
+        entityIds = try c.decodeIfPresent([String].self, forKey: DynamicCodingKeys("entity_ids"))
+            ?? c.decodeIfPresent([String].self, forKey: DynamicCodingKeys("entityIds"))
+            ?? c.decodeIfPresent([String].self, forKey: DynamicCodingKeys("members"))
+            ?? []
     }
 }
 
