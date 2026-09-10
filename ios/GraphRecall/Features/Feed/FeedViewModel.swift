@@ -21,6 +21,11 @@ final class FeedViewModel {
     var hintIds: Set<String> = []
     var currentIndex: Int = 0
     var dumpBannerCount: Int = 0
+    /// NAV-34 — optimistic like / save chrome (web likedItems / savedItems parity).
+    var likedIds: Set<String> = []
+    var savedIds: Set<String> = []
+    var softBanner: String?
+    @ObservationIgnored private var softBannerTask: Task<Void, Never>?
 
     var currentItem: FeedItem? {
         guard items.indices.contains(currentIndex) else { return nil }
@@ -219,4 +224,95 @@ final class FeedViewModel {
             isOffline = false
         }
     }
+
+    // MARK: - NAV-34 Like / Save / soft banner
+
+    func showSoftBanner(_ message: String) {
+        softBanner = message
+        softBannerTask?.cancel()
+        softBannerTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            guard !Task.isCancelled else { return }
+            softBanner = nil
+        }
+    }
+
+    func dismissSoftBanner() {
+        softBannerTask?.cancel()
+        softBanner = nil
+    }
+
+    func toggleLike(for item: FeedItem? = nil) async {
+        guard let item = item ?? currentItem else { return }
+        let wasLiked = likedIds.contains(item.id)
+        if wasLiked { likedIds.remove(item.id) } else { likedIds.insert(item.id) }
+
+        // Demo / demo-mode: local-only — never POST.
+        if item.isDemo || isDemoMode {
+            showSoftBanner(wasLiked ? "Unliked (demo)" : "Liked (demo)")
+            return
+        }
+
+        guard let apiType = item.likeSaveAPIItemType else {
+            // Unsupported type: keep local optimistic state.
+            showSoftBanner(wasLiked ? "Unliked" : "Liked")
+            return
+        }
+
+        if isOffline {
+            // Soft-disable: revert optimistic flip.
+            if wasLiked { likedIds.insert(item.id) } else { likedIds.remove(item.id) }
+            showSoftBanner("Can\u{2019}t like while offline")
+            return
+        }
+
+        do {
+            let result = try await APIClient.shared.likeFeedItem(id: item.id, itemType: apiType)
+            if result.isLiked {
+                likedIds.insert(item.id)
+            } else {
+                likedIds.remove(item.id)
+            }
+            showSoftBanner(result.isLiked ? "Liked" : "Unliked")
+        } catch {
+            if wasLiked { likedIds.insert(item.id) } else { likedIds.remove(item.id) }
+            showSoftBanner(APIError.userFacing(error, resource: "like"))
+        }
+    }
+
+    func toggleSave(for item: FeedItem? = nil) async {
+        guard let item = item ?? currentItem else { return }
+        let wasSaved = savedIds.contains(item.id)
+        if wasSaved { savedIds.remove(item.id) } else { savedIds.insert(item.id) }
+
+        if item.isDemo || isDemoMode {
+            showSoftBanner(wasSaved ? "Removed save (demo)" : "Saved (demo)")
+            return
+        }
+
+        guard let apiType = item.likeSaveAPIItemType else {
+            showSoftBanner(wasSaved ? "Removed save" : "Saved")
+            return
+        }
+
+        if isOffline {
+            if wasSaved { savedIds.insert(item.id) } else { savedIds.remove(item.id) }
+            showSoftBanner("Can\u{2019}t save while offline")
+            return
+        }
+
+        do {
+            let result = try await APIClient.shared.saveFeedItem(id: item.id, itemType: apiType)
+            if result.isSaved {
+                savedIds.insert(item.id)
+            } else {
+                savedIds.remove(item.id)
+            }
+            showSoftBanner(result.isSaved ? "Saved" : "Removed save")
+        } catch {
+            if wasSaved { savedIds.insert(item.id) } else { savedIds.remove(item.id) }
+            showSoftBanner(APIError.userFacing(error, resource: "save"))
+        }
+    }
+
 }

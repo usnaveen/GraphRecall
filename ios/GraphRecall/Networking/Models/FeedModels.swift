@@ -273,6 +273,32 @@ struct FeedItem: Codable, Sendable, Identifiable, Hashable {
         return url
     }
 
+
+    /// Backend `item_type` for like/save POSTs. Nil when the API does not support the type.
+    var likeSaveAPIItemType: String? {
+        switch itemType {
+        case .flashcard: return "flashcard"
+        case .mcq: return "mcq"
+        case .fillBlank: return "fill_blank"
+        default: return nil
+        }
+    }
+
+    /// Plain-text share payload (front/back or question) — v1 ShareLink / activity sheet.
+    var sharePlainText: String {
+        var lines: [String] = ["GraphRecall · \(itemType.displayLabel)"]
+        if let name = conceptName, !name.isEmpty {
+            lines.append(name)
+        }
+        let body = prompt
+        if !body.isEmpty { lines.append(body) }
+        if let answer, !answer.isEmpty {
+            lines.append("")
+            lines.append(answer)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     var linkedConcepts: [String] {
         stringArrayContent("linked_concepts").isEmpty
             ? stringArrayContent("linkedConcepts")
@@ -469,3 +495,36 @@ struct PendingOfflineReview: Codable, Sendable, Identifiable, Hashable {
     let difficulty: ReviewDifficulty
     let queuedAt: Date
 }
+
+struct FeedLikeResponse: Codable, Sendable {
+    let id: String?
+    let isLiked: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case isLiked = "is_liked"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        isLiked = try c.decodeIfPresent(Bool.self, forKey: .isLiked) ?? false
+    }
+}
+
+struct FeedSaveResponse: Codable, Sendable {
+    let id: String?
+    let isSaved: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case isSaved = "is_saved"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        isSaved = try c.decodeIfPresent(Bool.self, forKey: .isSaved) ?? false
+    }
+}
+

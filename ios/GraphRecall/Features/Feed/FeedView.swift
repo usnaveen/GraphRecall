@@ -78,6 +78,19 @@ struct FeedView: View {
             }
             .opacity(contentReady ? 1 : 0)
             .animation(.easeOut(duration: 0.18), value: contentReady)
+
+            if let banner = model.softBanner {
+                VStack {
+                    Spacer()
+                    softBannerChip(banner)
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, GRLayout.dockClearance + 8)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.softBanner)
+                .allowsHitTesting(true)
+                .onTapGesture { model.dismissSoftBanner() }
+            }
         }
         .task {
             await model.load()
@@ -166,6 +179,14 @@ struct FeedView: View {
                 onToggleHint: { model.toggleHint(item.id) }
             )
 
+            FeedCardActionBar(
+                item: item,
+                isLiked: model.likedIds.contains(item.id),
+                isSaved: model.savedIds.contains(item.id),
+                onLike: { Task { await model.toggleLike(for: item) } },
+                onSave: { Task { await model.toggleSave(for: item) } }
+            )
+
             if revealed {
                 HStack(spacing: 8) {
                     ForEach(ReviewDifficulty.allCases) { grade in
@@ -218,6 +239,30 @@ struct FeedView: View {
                     .foregroundStyle(GRColor.textSecondary)
             }
         }
+    }
+
+    private func softBannerChip(_ message: String) -> some View {
+        let isError = message.localizedCaseInsensitiveContains("can\u{2019}t")
+            || message.localizedCaseInsensitiveContains("couldn\u{2019}t")
+            || message.localizedCaseInsensitiveContains("sign in")
+            || message.localizedCaseInsensitiveContains("failed")
+            || message.localizedCaseInsensitiveContains("not found")
+        return HStack(spacing: 8) {
+            Image(systemName: isError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(isError ? GRColor.textPrimary : GRColor.canvas)
+            Text(message)
+                .font(GRType.caption.weight(.semibold))
+                .foregroundStyle(isError ? GRColor.textPrimary : GRColor.canvas)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            (isError ? Color.white.opacity(0.14) : GRColor.accent.opacity(0.92)),
+            in: Capsule()
+        )
+        .overlay(Capsule().stroke(GRColor.stroke, lineWidth: isError ? 1 : 0))
+        .shadow(color: (isError ? Color.black.opacity(0.35) : GRColor.accent.opacity(0.25)), radius: 12, y: 4)
     }
 }
 
