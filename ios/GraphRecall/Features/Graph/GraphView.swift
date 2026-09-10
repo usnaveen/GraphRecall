@@ -12,7 +12,11 @@ struct GraphView: View {
                     graph: model.graph,
                     highlightIds: highlightSet,
                     isDemo: model.usingStub,
-                    onSelect: { id in model.select(nodeId: id) }
+                    focusIds: model.focusCommunityIds,
+                    onSelect: { id in model.select(nodeId: id) },
+                    onCommunitiesRecompute: {
+                        Task { await model.recomputeCommunities() }
+                    }
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .padding(.horizontal, 16)
@@ -25,9 +29,36 @@ struct GraphView: View {
                         .grGlassEffect(in: Capsule())
                 }
 
-                detailCard
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
+                VStack(spacing: 8) {
+                    if let notice = model.communityRecomputeNotice {
+                        Text(notice)
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.textSecondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .grGlassEffect(in: Capsule())
+                            .transition(.opacity)
+                    }
+
+                    if let node = model.selectedNode {
+                        GraphInspectorPanel(
+                            node: node,
+                            edges: model.connectedEdges,
+                            communities: model.graph.communities,
+                            nodesById: model.nodesById,
+                            isRecomputing: model.isRecomputingCommunities,
+                            onClose: { model.select(nodeId: nil) },
+                            onSelectNode: { model.select(nodeId: $0) },
+                            onFocusCommunity: { model.toggleCommunityFocus() },
+                            isolateCommunity: model.isolateCommunity
+                        )
+                        .padding(.horizontal, 16)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .padding(.bottom, 12)
+                .animation(.easeInOut(duration: 0.22), value: model.selectedNodeId)
+                .animation(.easeInOut(duration: 0.22), value: model.communityRecomputeNotice)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -36,6 +67,9 @@ struct GraphView: View {
     }
 
     private var highlightSet: Set<String> {
+        if !model.focusCommunityIds.isEmpty {
+            return model.focusCommunityIds
+        }
         let q = model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if !q.isEmpty {
             return Set(model.filteredNodes.map(\.id))
@@ -76,69 +110,6 @@ struct GraphView: View {
         .padding(.vertical, 12)
         .grGlassEffect(.interactive, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.horizontal, 20)
-    }
-
-    @ViewBuilder
-    private var detailCard: some View {
-        if let node = model.selectedNode {
-            GlassCard(cornerRadius: 18) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Circle()
-                            .fill(Color(hex: node.color ?? "#B6FF2E") ?? GRColor.accent)
-                            .frame(width: 10, height: 10)
-                        Text(node.name)
-                            .font(GRType.headline)
-                            .foregroundStyle(GRColor.textPrimary)
-                        Spacer()
-                        if let domain = node.domain {
-                            Text(domain)
-                                .font(GRType.caption)
-                                .foregroundStyle(GRColor.textSecondary)
-                        }
-                    }
-                    if let definition = node.definition, !definition.isEmpty {
-                        Text(definition)
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.textSecondary)
-                            .lineLimit(3)
-                    }
-                    if !model.connectedEdges.isEmpty {
-                        Text(model.connectedEdges.prefix(3).map { edge in
-                            let other = edge.source == node.id ? edge.target : edge.source
-                            let name = model.graph.nodes.first(where: { $0.id == other })?.name ?? other
-                            let rel = edge.relationshipType ?? "RELATED_TO"
-                            return "\(rel) → \(name)"
-                        }.joined(separator: "  ·  "))
-                            .font(GRType.micro)
-                            .foregroundStyle(GRColor.accent.opacity(0.85))
-                            .lineLimit(2)
-                    }
-                    if let err = model.errorMessage, model.usingStub {
-                        Text(err)
-                            .font(GRType.micro)
-                            .foregroundStyle(GRColor.warning)
-                            .lineLimit(2)
-                    }
-                }
-            }
-        }
-    }
-}
-
-private extension Color {
-    init?(hex: String) {
-        var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if s.hasPrefix("#") { s.removeFirst() }
-        guard s.count == 6 || s.count == 8 else { return nil }
-        var value: UInt64 = 0
-        guard Scanner(string: s).scanHexInt64(&value) else { return nil }
-        let hasAlpha = s.count == 8
-        let a = hasAlpha ? Double((value & 0xFF000000) >> 24) / 255 : 1
-        let r = Double((value & 0x00FF0000) >> 16) / 255
-        let g = Double((value & 0x0000FF00) >> 8) / 255
-        let b = Double(value & 0x000000FF) / 255
-        self.init(.sRGB, red: r, green: g, blue: b, opacity: a)
     }
 }
 

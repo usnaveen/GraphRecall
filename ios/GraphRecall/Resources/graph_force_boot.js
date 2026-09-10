@@ -95,6 +95,7 @@
   let rawLinks = [];
   let communities = [];
   let highlightIds = new Set();
+  let focusIds = new Set();
   let selectedId = null;
   let showCommunities = true;
   let selectedDomain = '';
@@ -115,9 +116,14 @@
     .backgroundColor('rgba(0,0,0,0)')
     .nodeId('id')
     .nodeLabel((n) => n.name || n.id)
-    .linkDirectionalParticles(1)
-    .linkDirectionalParticleWidth((l) => (l.__hot ? 2.4 : 1.2))
-    .linkDirectionalParticleSpeed(0.004)
+    .linkDirectionalArrowLength((l) => {
+      const t = (l.type || l.relationshipType || '').toUpperCase();
+      return (t === 'PREREQUISITE_OF' || t === 'BUILDS_ON' || t === 'PART_OF' || t === 'SUBTOPIC_OF') ? 4.5 : 0;
+    })
+    .linkDirectionalArrowRelPos(0.92)
+    .linkDirectionalParticles((l) => (l.__hot ? 2 : 0))
+    .linkDirectionalParticleWidth((l) => (l.__hot ? 2.2 : 1.1))
+    .linkDirectionalParticleSpeed(0.0045)
     .cooldownTicks(90)
     .d3AlphaDecay(0.022)
     .d3VelocityDecay(0.35)
@@ -135,37 +141,49 @@
     })
     .nodeCanvasObject((node, ctx, globalScale) => {
       const label = node.name || node.id;
+      // Web calculateNodeSize maps ~1.5–10; scale for 2D canvas readability.
       const val = node.val || 1;
-      const r = Math.max(3.5, Math.sqrt(val) * 5.5);
+      const r = Math.max(3.2, Math.min(14, Math.sqrt(val) * 4.8));
       const isSel = selectedId === node.id;
-      const isHl = highlightIds.has(node.id) || neighborIds.has(node.id);
+      const isHl = highlightIds.has(node.id) || neighborIds.has(node.id) || focusIds.has(node.id);
+      const dimmed = focusIds.size > 0 && !focusIds.has(node.id) && !isSel;
       const color = node.__highlight ? ACCENT : (node.color || domainColor(node.domain));
 
+      ctx.save();
+      if (dimmed) ctx.globalAlpha = 0.22;
+
       // glow bloom (web UnrealBloom stand-in)
-      const glow = ctx.createRadialGradient(node.x, node.y, r * 0.2, node.x, node.y, r * (isSel ? 3.2 : 2.2));
-      glow.addColorStop(0, color + 'cc');
-      glow.addColorStop(0.45, color + '55');
+      const glow = ctx.createRadialGradient(node.x, node.y, r * 0.2, node.x, node.y, r * (isSel ? 3.4 : 2.35));
+      glow.addColorStop(0, color + 'dd');
+      glow.addColorStop(0.4, color + '66');
       glow.addColorStop(1, color + '00');
       ctx.beginPath();
       ctx.fillStyle = glow;
-      ctx.arc(node.x, node.y, r * (isSel ? 3.2 : 2.2), 0, Math.PI * 2);
+      ctx.arc(node.x, node.y, r * (isSel ? 3.4 : 2.35), 0, Math.PI * 2);
       ctx.fill();
 
+      // emissive core
       ctx.beginPath();
       ctx.fillStyle = color;
       ctx.arc(node.x, node.y, r * (isSel ? 1.35 : isHl ? 1.15 : 1), 0, Math.PI * 2);
       ctx.fill();
 
+      // soft inner highlight
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.arc(node.x - r * 0.25, node.y - r * 0.25, r * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+
       if (isSel) {
         ctx.beginPath();
         ctx.strokeStyle = ACCENT;
-        ctx.lineWidth = 1.5 / globalScale;
-        ctx.arc(node.x, node.y, r * 1.7, 0, Math.PI * 2);
+        ctx.lineWidth = 1.6 / globalScale;
+        ctx.arc(node.x, node.y, r * 1.75, 0, Math.PI * 2);
         ctx.stroke();
       }
 
       const fontSize = Math.max(10 / globalScale, 2.6);
-      if (globalScale > 0.55 || isSel || isHl) {
+      if (!dimmed && (globalScale > 0.55 || isSel || isHl)) {
         ctx.font = `${isSel ? 600 : 500} ${fontSize}px -apple-system, system-ui, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
@@ -176,6 +194,7 @@
         ctx.strokeText(text, node.x, node.y + r + 2);
         ctx.fillText(text, node.x, node.y + r + 2);
       }
+      ctx.restore();
     })
     .nodePointerAreaPaint((node, color, ctx) => {
       const r = Math.max(4, Math.sqrt(node.val || 1) * 6);
@@ -194,7 +213,12 @@
       }
       return 'rgba(182,255,46,0.28)';
     })
-    .linkWidth((l) => Math.max(0.6, (l.strength || 0.5) * (l.__hot ? 3.2 : 2)))
+    .linkWidth((l) => {
+      // web: max(0.2, min(2.5, weight * 0.15)); 2D needs a larger scale factor
+      const w = l.strength != null ? l.strength : 0.5;
+      const base = Math.max(0.5, Math.min(3.2, w * 2.2));
+      return l.__hot ? base * 1.7 : base;
+    })
     .onRenderFramePre((ctx, globalScale) => {
       if (!showCommunities || !communities.length) return;
       const nodesById = {};
@@ -245,9 +269,9 @@
 
   function filteredPayload() {
     let nodes = rawNodes.map((n) => Object.assign({}, n, {
-      __highlight: highlightIds.has(n.id),
+      __highlight: highlightIds.has(n.id) || focusIds.has(n.id),
       color: n.color || domainColor(n.domain),
-      val: n.val || n.size || 1
+      val: n.val || n.size || Math.max(1.5, Math.min(10, 2 + (n.degree || 1) * 0.4 + 0.2))
     }));
     if (selectedDomain) nodes = nodes.filter((n) => n.domain === selectedDomain);
     const idSet = new Set(nodes.map((n) => n.id));
@@ -368,6 +392,7 @@
     rawLinks = (payload.links || payload.edges || []).map((l) => Object.assign({}, l));
     communities = payload.communities || [];
     highlightIds = new Set(hlIds || []);
+    focusIds = new Set(opts.focusIds || []);
     if (opts.selectedId) selectedId = opts.selectedId;
     if (typeof opts.showCommunities === 'boolean') {
       showCommunities = opts.showCommunities;

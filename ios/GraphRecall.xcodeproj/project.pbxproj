@@ -7,24 +7,25 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B11B11B11B11B11B11B11B01 /* graph_force.html in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A01 /* graph_force.html */; };
-		B11B11B11B11B11B11B11B02 /* graph_force_boot.js in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A02 /* graph_force_boot.js */; };
-		B11B11B11B11B11B11B11B03 /* graph_force.css in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A03 /* graph_force.css */; };
 		17EF10D95152450277DAFDC0 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE2F576A29F1A4101ADB03AE /* AuthModels.swift */; };
 		1CC0BDE712010385C102706D /* OfflineReviewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */; };
 		1F44B6FC7FD4A5BF4513781B /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0DF464E1FE4615C662F789E /* ProfileView.swift */; };
 		343759C438F9E31769B6A82A /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 354389AA6E635E3758568334 /* ChatView.swift */; };
 		3547DFDCB16A23B79DC931F6 /* FeedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6149E4976D7EDB8AFEB78E /* FeedModels.swift */; };
+		3E02F3AF69D407BE9DF907F3 /* GraphInspectorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBE13CB88D5744985FFF987 /* GraphInspectorPanel.swift */; };
 		5112E312DEEFF11F487E1FE4 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEB0867569B5D9A228B3E7C /* ChatModels.swift */; };
 		60863DCC9DEB830A14505BA3 /* GraphForceWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26ED0F962F6EDE15C8A91B2D /* GraphForceWebView.swift */; };
 		60FF4F0896591B3C7A8F0EF7 /* ChatSSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0A25E9DDEB6FA4EA9F3A30 /* ChatSSEClient.swift */; };
 		6101AF7D0815012D1D0AFC96 /* APIConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D60F0755297C074FCE2F88D /* APIConfig.swift */; };
+		677AC8792FA0E88D851F90AD /* DemoFeedSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */; };
 		6CAA41BF9F94661E27E5128A /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25717B008D78F115654FA98B /* FeedView.swift */; };
 		704A0F8042B14BCB99B5B5B0 /* GraphModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681EB7E42D12061208FB2034 /* GraphModels.swift */; };
 		74487DC936815D7E43050870 /* GRScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F78211E1B8741510C9AA24D /* GRScreenHeader.swift */; };
 		81F71FDA03D069B4197F7F46 /* FeedViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE14E2BBC801DE9BC6A5BA7 /* FeedViewModel.swift */; };
 		8D91C62AA931A09C9BF1B2E6 /* Glass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31B4155BF84146B9C4C8466B /* Glass.swift */; };
 		95CC6AFBFECBA2ABF3CBC41F /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B0EF21DCB77A720FA6139F /* GlassCard.swift */; };
+		9D0082A37375C67E27A2039D /* FeedCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D53E4786769C667032C743FF /* FeedCardViews.swift */; };
+		A4FBEADE9B9144ED6FDE3BC8 /* graph_force.css in Resources */ = {isa = PBXBuildFile; fileRef = 47E58C85317C0B6DBF5585A0 /* graph_force.css */; };
 		B283C8D35E3713761D2D4156 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63297E6164BBF835B5F2FCDD /* Typography.swift */; };
 		B30FD14AD974FE565F3E24DC /* LiquidDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AB33FAE9682E59CBE334E53 /* LiquidDock.swift */; };
 		B9F72CD6D433BE39DA5BB103 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 08EF6500A115E505F0EB5B7A /* Assets.xcassets */; };
@@ -37,14 +38,9 @@
 		EA91840184ADA49500E76AD3 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4AB921E260606FD5618584 /* APIClient.swift */; };
 		EF31F821B5D52CD61798BDB9 /* GraphViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12ACAFF6FE6A4E2FC61274B /* GraphViewModel.swift */; };
 		FE7A11C962F00CC8ECC0E618 /* ConceptDumpModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877AC1570FFB645C19F03AF7 /* ConceptDumpModels.swift */; };
-		90B48154B63E4E6BA0B6D047 /* DemoFeedSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D2C68DA2934EC087DCB648 /* DemoFeedSeed.swift */; };
-		90911AFC6EA54051827579A9 /* FeedCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DDA7CD9BA2744D9A1578305 /* FeedCardViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A11A11A11A11A11A11A11A01 /* graph_force.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = graph_force.html; sourceTree = "<group>"; };
-		A11A11A11A11A11A11A11A02 /* graph_force_boot.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = graph_force_boot.js; sourceTree = "<group>"; };
-		A11A11A11A11A11A11A11A03 /* graph_force.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = graph_force.css; sourceTree = "<group>"; };
 		08EF6500A115E505F0EB5B7A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0B6149E4976D7EDB8AFEB78E /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
 		25717B008D78F115654FA98B /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
@@ -53,6 +49,7 @@
 		31B4155BF84146B9C4C8466B /* Glass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Glass.swift; sourceTree = "<group>"; };
 		354389AA6E635E3758568334 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		3F78211E1B8741510C9AA24D /* GRScreenHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRScreenHeader.swift; sourceTree = "<group>"; };
+		47E58C85317C0B6DBF5585A0 /* graph_force.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = graph_force.css; sourceTree = "<group>"; };
 		4D60F0755297C074FCE2F88D /* APIConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfig.swift; sourceTree = "<group>"; };
 		4F4AB921E260606FD5618584 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		63297E6164BBF835B5F2FCDD /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
@@ -64,34 +61,24 @@
 		877AC1570FFB645C19F03AF7 /* ConceptDumpModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptDumpModels.swift; sourceTree = "<group>"; };
 		96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineReviewStore.swift; sourceTree = "<group>"; };
 		A30114AD9B85E20BDC976757 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFeedSeed.swift; sourceTree = "<group>"; };
 		C9A445A661372B6B67E29ADF /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		CCBE13CB88D5744985FFF987 /* GraphInspectorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphInspectorPanel.swift; sourceTree = "<group>"; };
 		D0DF464E1FE4615C662F789E /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		D15AEBE53BAF79659722715F /* Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Colors.swift; sourceTree = "<group>"; };
+		D53E4786769C667032C743FF /* FeedCardViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCardViews.swift; sourceTree = "<group>"; };
 		DB0A25E9DDEB6FA4EA9F3A30 /* ChatSSEClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSSEClient.swift; sourceTree = "<group>"; };
 		DC1D08115F01D059725E1075 /* GraphRecallApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphRecallApp.swift; sourceTree = "<group>"; };
 		DDDDE8140031142096BC86BF /* GraphRecall.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = GraphRecall.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DE2F576A29F1A4101ADB03AE /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
 		E12ACAFF6FE6A4E2FC61274B /* GraphViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphViewModel.swift; sourceTree = "<group>"; };
 		FFEB0867569B5D9A228B3E7C /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
-		C1D2C68DA2934EC087DCB648 /* DemoFeedSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFeedSeed.swift; sourceTree = "<group>"; };
-		5DDA7CD9BA2744D9A1578305 /* FeedCardViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCardViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
-		C11C11C11C11C11C11C11C01 /* WebAssets */ = {
-			isa = PBXGroup;
-			children = (
-				A11A11A11A11A11A11A11A01 /* graph_force.html */,
-				A11A11A11A11A11A11A11A02 /* graph_force_boot.js */,
-				A11A11A11A11A11A11A11A03 /* graph_force.css */,
-			);
-			path = WebAssets;
-			sourceTree = "<group>";
-		};
 		11FD262BE73BA684DA00327A = {
 			isa = PBXGroup;
 			children = (
-				C11C11C11C11C11C11C11C01 /* WebAssets */,
 				1256D2A7828AB87225F5AC2B /* GraphRecall */,
 				BE8E45FC4436261A75D15B00 /* Products */,
 			);
@@ -115,6 +102,7 @@
 			isa = PBXGroup;
 			children = (
 				26ED0F962F6EDE15C8A91B2D /* GraphForceWebView.swift */,
+				CCBE13CB88D5744985FFF987 /* GraphInspectorPanel.swift */,
 				7F6B4BB4C9768BAB47A1235D /* GraphView.swift */,
 				E12ACAFF6FE6A4E2FC61274B /* GraphViewModel.swift */,
 			);
@@ -125,6 +113,7 @@
 			isa = PBXGroup;
 			children = (
 				08EF6500A115E505F0EB5B7A /* Assets.xcassets */,
+				47E58C85317C0B6DBF5585A0 /* graph_force.css */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -191,8 +180,8 @@
 		827D12B04839C3724638E2DF /* Feed */ = {
 			isa = PBXGroup;
 			children = (
-				C1D2C68DA2934EC087DCB648 /* DemoFeedSeed.swift */,
-				5DDA7CD9BA2744D9A1578305 /* FeedCardViews.swift */,
+				A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */,
+				D53E4786769C667032C743FF /* FeedCardViews.swift */,
 				25717B008D78F115654FA98B /* FeedView.swift */,
 				6FE14E2BBC801DE9BC6A5BA7 /* FeedViewModel.swift */,
 				96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */,
@@ -289,9 +278,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B9F72CD6D433BE39DA5BB103 /* Assets.xcassets in Resources */,
-				B11B11B11B11B11B11B11B01 /* graph_force.html in Resources */,
-				B11B11B11B11B11B11B11B02 /* graph_force_boot.js in Resources */,
-				B11B11B11B11B11B11B11B03 /* graph_force.css in Resources */,
+				A4FBEADE9B9144ED6FDE3BC8 /* graph_force.css in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -313,15 +300,16 @@
 				FE7A11C962F00CC8ECC0E618 /* ConceptDumpModels.swift in Sources */,
 				D2A05657AAACF954D3E49D31 /* ContentView.swift in Sources */,
 				D6C1E3C34FF1FB23F0940C77 /* CreateView.swift in Sources */,
+				677AC8792FA0E88D851F90AD /* DemoFeedSeed.swift in Sources */,
+				9D0082A37375C67E27A2039D /* FeedCardViews.swift in Sources */,
 				3547DFDCB16A23B79DC931F6 /* FeedModels.swift in Sources */,
-				90B48154B63E4E6BA0B6D047 /* DemoFeedSeed.swift in Sources */,
-				90911AFC6EA54051827579A9 /* FeedCardViews.swift in Sources */,
 				6CAA41BF9F94661E27E5128A /* FeedView.swift in Sources */,
 				81F71FDA03D069B4197F7F46 /* FeedViewModel.swift in Sources */,
 				74487DC936815D7E43050870 /* GRScreenHeader.swift in Sources */,
 				8D91C62AA931A09C9BF1B2E6 /* Glass.swift in Sources */,
 				95CC6AFBFECBA2ABF3CBC41F /* GlassCard.swift in Sources */,
 				60863DCC9DEB830A14505BA3 /* GraphForceWebView.swift in Sources */,
+				3E02F3AF69D407BE9DF907F3 /* GraphInspectorPanel.swift in Sources */,
 				704A0F8042B14BCB99B5B5B0 /* GraphModels.swift in Sources */,
 				CDA03F95E4C9FADB6C409478 /* GraphRecallApp.swift in Sources */,
 				C25E93AFF53FB438B794FDA5 /* GraphView.swift in Sources */,

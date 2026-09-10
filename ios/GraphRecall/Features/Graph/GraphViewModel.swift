@@ -6,10 +6,13 @@ import Observation
 final class GraphViewModel {
     var graph = Graph3DResponse()
     var isLoading = false
+    var isRecomputingCommunities = false
     var errorMessage: String?
     var usingStub = false
     var selectedNodeId: String?
     var searchQuery: String = ""
+    var isolateCommunity = false
+    var communityRecomputeNotice: String?
 
     var filteredNodes: [GraphNode] {
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -30,6 +33,18 @@ final class GraphViewModel {
             .sorted { ($0.strength ?? 0) > ($1.strength ?? 0) }
     }
 
+    var nodesById: [String: GraphNode] {
+        Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.id, $0) })
+    }
+
+    var focusCommunityIds: Set<String> {
+        guard isolateCommunity, let selectedNodeId else { return [] }
+        guard let community = graph.communities.first(where: { $0.entityIds.contains(selectedNodeId) }) else {
+            return []
+        }
+        return Set(community.entityIds)
+    }
+
     var statsLabel: String {
         let comm = graph.communities.isEmpty ? "" : " · \(graph.communities.count) communities"
         return "\(graph.totalNodes) nodes · \(graph.totalEdges) edges\(comm)"
@@ -38,13 +53,14 @@ final class GraphViewModel {
     func load() async {
         isLoading = true
         errorMessage = nil
+        communityRecomputeNotice = nil
         defer { isLoading = false }
 
         do {
             let response = try await APIClient.shared.fetchGraph()
             graph = response
             usingStub = false
-            if selectedNodeId == nil {
+            if selectedNodeId == nil || !response.nodes.contains(where: { $0.id == selectedNodeId }) {
                 selectedNodeId = response.nodes.first?.id
             }
         } catch {
@@ -57,6 +73,42 @@ final class GraphViewModel {
 
     func select(nodeId: String?) {
         selectedNodeId = nodeId
+        if nodeId == nil {
+            isolateCommunity = false
+        }
+    }
+
+    func toggleCommunityFocus() {
+        isolateCommunity.toggle()
+    }
+
+    /// Bridge from WebView Controls → POST /api/graph3d/communities/recompute (graceful fallback).
+    func recomputeCommunities() async {
+        guard !isRecomputingCommunities else { return }
+        isRecomputingCommunities = true
+        defer { isRecomputingCommunities = false }
+
+        if usingStub {
+            communityRecomputeNotice = "Demo graph — recompute skipped"
+            return
+        }
+
+        do {
+            let result = try await APIClient.shared.recomputeCommunities()
+            let count = result.count.map(String.init) ?? "?"
+            communityRecomputeNotice = "Communities recomputed (\(count))"
+            // Refresh graph so new memberships / hulls land in the WebView.
+            let response = try await APIClient.shared.fetchGraph()
+            graph = response
+            usingStub = false
+            if let selectedNodeId, !response.nodes.contains(where: { $0.id == selectedNodeId }) {
+                self.selectedNodeId = response.nodes.first?.id
+            }
+        } catch {
+            // Graceful fallback: keep current graph; WebView still reheats layout locally.
+            communityRecomputeNotice = "Recompute unavailable — showing current communities"
+            errorMessage = Self.sanitizeError(error)
+        }
     }
 
     private static func sanitizeError(_ error: Error) -> String {

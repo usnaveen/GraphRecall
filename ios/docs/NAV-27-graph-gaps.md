@@ -13,19 +13,22 @@ Goal: Graph tab must be **one-to-one** with the web GraphVisualizer aesthetic �
 | Accent | `#B6FF2E` | `#B6FF2E` + Liquid Glass chrome around WebView |
 | Data | `GET /api/graph3d` (+ focus/search/communities) | `APIClient.fetchGraph()` → `/api/graph3d`, stub on failure |
 | Layout | Client `ForceSimulation3D` (d3 3D) | Library force-graph (2D) |
+| Inspector | `Inspector.tsx` (right glass panel) | `GraphInspectorPanel` (Liquid Glass bottom panel) |
 
 ## Visual aesthetic
 
-| Item | Web | iOS (before → after this PR) | Status |
+| Item | Web | iOS | Status |
 | --- | --- | --- | --- |
-| Canvas `#07070A` | Yes | Yes → Yes | Matched |
-| Accent `#B6FF2E` | Yes | Yes → Yes (selection ring / highlight / controls) | Matched |
-| Galaxy background | Three.js points + slow rotation | Flat bg → animated cyan/teal starfield + vignette | Closer (2D stand-in) |
-| Domain colors | Backend `DOMAIN_COLORS` | Partial node.color → same palette + hash fallback | Matched |
-| Community glow / hulls | `CommunityGlow` + wireframe bounds | None → soft radial hulls + dashed rings | Closer |
-| Bloom / emissive nodes | UnrealBloomPass | Flat circles → radial glow + emissive fill | Closer |
-| Link type colors | PREREQUISITE_OF / etc. | Uniform lime → REL_COLORS map | Matched |
-| Link particles | No (solid lines) | Yes (kept; web uses Line thickness) | Differ (acceptable) |
+| Canvas `#07070A` | Yes | Yes | Matched |
+| Accent `#B6FF2E` | Yes | Yes (selection ring / highlight / controls) | Matched |
+| Galaxy background | Three.js points + slow rotation | Animated cyan/teal starfield + vignette | Closer (2D stand-in) |
+| Domain colors | Backend `DOMAIN_COLORS` | Same palette + hash fallback | Matched |
+| Community glow / hulls | `CommunityGlow` + wireframe bounds | Soft radial hulls + dashed rings | Closer |
+| Bloom / emissive nodes | UnrealBloomPass | Radial glow + emissive fill + inner highlight | Closer |
+| Node sizing | `calculateNodeSize(degree, frequency)` | Degree-derived `val` (web formula) + canvas radius scale | Closer |
+| Link type colors | PREREQUISITE_OF / etc. | `REL_COLORS` map (incl. USES / SUPPORTS) | Matched |
+| Link direction | Line thickness / type color | Directed arrows for prerequisite/builds/part/subtopic; hot particles on selection | Closer |
+| Link particles | No (solid lines) | Hot-only particles | Differ (acceptable) |
 | True 3D orbit / Z depth | Yes | 2D pan/zoom only | **Remaining** |
 
 ## Interactions
@@ -33,14 +36,15 @@ Goal: Graph tab must be **one-to-one** with the web GraphVisualizer aesthetic �
 | Feature | Web | iOS | Status |
 | --- | --- | --- | --- |
 | Search + highlight | Yes | Liquid Glass search → highlight set | Matched (chrome) |
-| Domain filter | Controls panel | None → in-WebView Controls | Matched (in WebView) |
-| Min relationship weight | Slider | None → slider in WebView | Matched (in WebView) |
-| Communities toggle | On/Off + Recompute API | None → On/Off + hull reheat | Partial (no `POST /communities/recompute` yet) |
-| Inspector (links, quiz, merge, notes) | Full `Inspector.tsx` | Compact detail card | **Remaining** |
+| Domain filter | Controls panel | In-WebView Controls | Matched (in WebView) |
+| Min relationship weight | Slider | Slider in WebView | Matched (in WebView) |
+| Communities toggle | On/Off + Recompute API | On/Off + `POST /api/graph3d/communities/recompute` with graceful fallback + graph reload | Matched (API wired) |
+| Community focus | Isolate community | Inspector Focus Community → dim non-members in WebView | Matched (read-only focus) |
+| Inspector (links, quiz, merge, notes) | Full `Inspector.tsx` | Rich Glass inspector: description, hierarchy, strongest relationships, connected chips; Quiz/Notes/Links chrome stubs | Closer (**actions** remaining) |
 | NotePanel | Split pane + chunks | Missing | **Remaining** |
 | Create node / link suggestions | Modals + `/api/nodes` | Missing | **Remaining** |
 | Merge mode | Multi-select + `/api/concepts/merge` | Missing | **Remaining** |
-| Demo / empty fallback | Error UI | Stub 5 nodes → richer 10-node demo + communities badge | Improved |
+| Demo / empty fallback | Error UI | Stub 10-node demo + communities badge | Improved |
 
 ## Data shape (`/api/graph3d`)
 
@@ -51,13 +55,13 @@ Web `adaptGraphData` and iOS `Graph3DResponse` both consume:
 - `clusters[]`: domain aggregates with colors
 - `communities[]`: `id`, `title`, `level`, `parent`, `entity_ids`, `size`, `summary`
 
-iOS now forwards `communities` into the WebView payload (was nodes/links only).
+iOS forwards `communities` (+ `parent`) into the WebView payload.
 
 Related routes:
 
 - `GET /api/graph3d/focus/{concept_id}`
 - `GET /api/graph3d/search?query=`
-- `POST /api/graph3d/communities/recompute`
+- `POST /api/graph3d/communities/recompute` ← wired from WebView Controls via `graphBridge`
 - `POST /api/nodes`, `POST /api/nodes/{id}/suggest-links`, `POST /api/nodes/{id}/link`
 - `POST /api/concepts/merge`, `GET /api/concepts/{id}/notes`
 
@@ -74,17 +78,24 @@ Agents should treat these **logical tools** as aliases of existing HTTP routes (
 
 Create / link flows (future Inspector parity): `POST /api/nodes`, `POST /api/nodes/{node_id}/suggest-links`, `POST /api/nodes/{node_id}/link`.
 
-## Gaps remaining after this PR (honest)
+## Closed this pass (after aesthetic milestone `10fd3e9`)
 
-1. **Not true 3D** — still 2D force-graph inside WKWebView (no OrbitControls / Z spring).
-2. **Inspector / NotePanel / Create / Merge / Link suggestions** — not ported; Liquid Glass detail card only.
-3. **Communities recompute** — UI reheats layout only; does not call backend yet.
-4. **Bloom / galaxy** — canvas approximations, not Three.js post-processing.
+1. **Inspector panel** — `GraphInspectorPanel` mirrors web layout (badges, hierarchy, strongest relationships, connected entities) in Liquid Glass.
+2. **Communities recompute** — WebView `commRecompute` → native `POST /api/graph3d/communities/recompute` → reload graph; demo/API failure falls back gracefully with notice.
+3. **Visualizer fidelity** — degree-based node sizing (web formula), directed arrows, selection-only particles, community focus dimming, richer glow.
+
+## Gaps remaining (honest)
+
+1. **Not true 3D** — still 2D force-graph inside WKWebView (no OrbitControls / Z spring / Three.js path yet).
+2. **Inspector actions** — Quiz / Notes / Links / Merge are chrome-only; NotePanel + API mutations not ported.
+3. **Bloom / galaxy** — canvas approximations, not Three.js post-processing.
+4. **Create / link suggestions** — not ported.
 5. Do **not** claim full 1:1 until Naveen signs off on deferred Controls/Inspector/NotePanel behaviors.
 
-## Files touched
+## Files touched (this pass)
 
-- `ios/WebAssets/graph_force.html`, `graph_force.css`, `graph_force_boot.js` (+ mirrored under `ios/GraphRecall/Resources/`)
-- `ios/GraphRecall/Features/Graph/GraphForceWebView.swift`, `GraphViewModel.swift`
-- `ios/GraphRecall/Networking/Models/GraphModels.swift`
-- Xcode resources entry for `graph_force.css`
+- `ios/GraphRecall/Features/Graph/GraphInspectorPanel.swift` (new)
+- `ios/GraphRecall/Features/Graph/GraphView.swift`, `GraphViewModel.swift`, `GraphForceWebView.swift`
+- `ios/GraphRecall/Networking/APIClient.swift`, `Networking/Models/GraphModels.swift`
+- `ios/WebAssets/graph_force_boot.js` (+ mirrored `Resources/`)
+- `ios/docs/NAV-27-graph-gaps.md`
