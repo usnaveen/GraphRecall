@@ -46,6 +46,10 @@ actor OfflineReviewStore {
         defaults.removeObject(forKey: dumpKey)
     }
 
+    func clearAll() {
+        clear()
+    }
+
     private func save(_ reviews: [PendingOfflineReview]) {
         if let data = try? isoEncoder.encode(reviews) {
             defaults.set(data, forKey: key)

@@ -15,6 +15,10 @@ final class CreateViewModel {
             .filter { !$0.isEmpty }
     }
 
+    var canSubmit: Bool {
+        !isSubmitting && !parsedConcepts.isEmpty
+    }
+
     func submit() async {
         let concepts = parsedConcepts
         guard !concepts.isEmpty else {
@@ -54,7 +58,7 @@ struct CreateView: View {
                             Text("Concept dump")
                                 .font(GRType.headline)
                                 .foregroundStyle(GRColor.textPrimary)
-                            Text("One per line (or commas). We’ll pull Wikipedia/articles and build cards.")
+                            Text("One per line (or commas). We'll pull Wikipedia/articles and build cards.")
                                 .font(GRType.caption)
                                 .foregroundStyle(GRColor.textSecondary)
 
@@ -64,7 +68,7 @@ struct CreateView: View {
                                 .padding(10)
                                 .background(
                                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(Color.white.opacity(0.06))
+                                        .fill(GRColor.fillSubtle)
                                 )
                                 .foregroundStyle(GRColor.textPrimary)
                                 .font(GRType.body)
@@ -85,19 +89,26 @@ struct CreateView: View {
                                 }
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
-                                .foregroundStyle(Color(red: 0.027, green: 0.027, blue: 0.039))
-                                .background(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [GRColor.accent, GRColor.accentCyan],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
-                                            )
-                                        )
-                                )
+                                .foregroundStyle(model.canSubmit ? GRColor.canvas : GRColor.textTertiary)
+                                .background {
+                                    Group {
+                                        if model.canSubmit {
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [GRColor.accent, GRColor.accentCyan],
+                                                        startPoint: .leading,
+                                                        endPoint: .trailing
+                                                    )
+                                                )
+                                        } else {
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .fill(GRColor.fillSubtle)
+                                        }
+                                    }
+                                }
                             }
-                            .disabled(model.isSubmitting || model.parsedConcepts.isEmpty)
+                            .disabled(!model.canSubmit)
                         }
                     }
                     .padding(.horizontal, 20)
@@ -105,7 +116,7 @@ struct CreateView: View {
                     if let err = model.errorMessage {
                         Text(err)
                             .font(GRType.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(GRColor.warning)
                             .padding(.horizontal, 20)
                     }
 
@@ -121,7 +132,6 @@ struct CreateView: View {
 
     private var backgroundGlow: some View {
         ZStack {
-            GRColor.canvas.ignoresSafeArea()
             Circle()
                 .fill(GRColor.accent.opacity(0.12))
                 .frame(width: 280, height: 280)
@@ -133,6 +143,7 @@ struct CreateView: View {
                 .blur(radius: 50)
                 .offset(x: -140, y: 220)
         }
+        .allowsHitTesting(false)
     }
 
     @ViewBuilder
@@ -152,7 +163,7 @@ struct CreateView: View {
                             Spacer()
                             Text(item.status == "ok" ? "Ready" : "Failed")
                                 .font(GRType.caption)
-                                .foregroundStyle(item.status == "ok" ? GRColor.accent : .orange)
+                                .foregroundStyle(item.status == "ok" ? GRColor.accent : GRColor.warning)
                         }
                         if !item.sources.isEmpty {
                             Text("Sources")

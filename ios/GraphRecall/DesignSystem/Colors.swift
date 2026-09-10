@@ -12,6 +12,6 @@ enum GRColor {
     static let textTertiary = Color.white.opacity(0.40)
     static let stroke = Color.white.opacity(0.12)
     static let strokeStrong = Color.white.opacity(0.18)
-    static let warning = Color.orange
+    static let warning = Color(red: 1.0, green: 0.72, blue: 0.30)
+    static let fillSubtle = Color.white.opacity(0.06)
 }
-

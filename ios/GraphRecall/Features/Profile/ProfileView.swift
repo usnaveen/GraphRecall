@@ -7,12 +7,12 @@ struct ProfileView: View {
 
     var body: some View {
         ZStack {
-            GRColor.canvas.ignoresSafeArea()
             Circle()
                 .fill(GRColor.accent.opacity(0.10))
                 .frame(width: 240, height: 240)
                 .blur(radius: 50)
                 .offset(x: -100, y: -160)
+                .allowsHitTesting(false)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -29,7 +29,7 @@ struct ProfileView: View {
                                 .padding(12)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color.white.opacity(0.06))
+                                        .fill(GRColor.fillSubtle)
                                 )
                                 .foregroundStyle(GRColor.textPrimary)
                                 .font(GRType.body)
@@ -47,7 +47,7 @@ struct ProfileView: View {
                                 .foregroundStyle(GRColor.textPrimary)
                             HStack {
                                 Circle()
-                                    .fill(tokenPresent ? GRColor.accent : Color.orange.opacity(0.8))
+                                    .fill(tokenPresent ? GRColor.accent : GRColor.warning.opacity(0.8))
                                     .frame(width: 8, height: 8)
                                 Text(tokenPresent ? "Signed in" : "Not signed in")
                                     .font(GRType.body)
@@ -56,6 +56,25 @@ struct ProfileView: View {
                             Text("Concept Dump and feed sync need auth against your backend.")
                                 .font(GRType.caption)
                                 .foregroundStyle(GRColor.textTertiary)
+                            if !tokenPresent {
+                                Button {
+                                    Task {
+                                        await APIClient.shared.setAccessToken("demo-local-token")
+                                        tokenPresent = await APIClient.shared.getAccessToken() != nil
+                                    }
+                                } label: {
+                                    Text("Sign in")
+                                        .font(GRType.headline)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .foregroundStyle(GRColor.canvas)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                .fill(GRColor.accent)
+                                        )
+                                }
+                                .padding(.top, 4)
+                            }
                         }
                     }
                     .padding(.horizontal, 20)

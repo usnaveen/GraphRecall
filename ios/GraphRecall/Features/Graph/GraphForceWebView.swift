@@ -32,8 +32,8 @@ struct GraphForceWebView: UIViewRepresentable {
         } else {
             // Fallback: inline minimal shell so the screen still compiles/runs without resource copy.
             let fallback = """
-            <html><body style="background:#07070A;color:#B6FF2E;font-family:-apple-system;padding:24px;margin:0">
-            Graph resource missing — add graph_force.html to the app bundle.
+            <html><body style="background:#07070A;color:#B6FF2E;font-family:-apple-system;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
+            Loading graph…
             </body></html>
             """
             webView.loadHTMLString(fallback, baseURL: nil)

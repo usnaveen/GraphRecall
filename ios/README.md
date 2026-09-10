@@ -9,8 +9,12 @@ Native **SwiftUI** client for GraphRecall on **iOS 26+**, using Apple **Liquid G
 ```bash
 cd ios
 xcodegen generate
+# REQUIRED: restore WebAssets into pbx (xcodegen wipes custom Resources)
+python3 _patch_resources.py
 open GraphRecall.xcodeproj
 ```
+
+`ios/WebAssets/graph_force.html` + `graph_force_boot.js` must stay in the app bundle for the Graph tab WKWebView. After any `xcodegen generate`, re-run `_patch_resources.py`.
 
 ## Layout
 - `DesignSystem/` — colors (`#07070A`, `#B6FF2E`), type, glass helpers
