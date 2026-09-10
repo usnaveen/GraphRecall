@@ -1,16 +1,47 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <style>
-    html, body { margin: 0; padding: 0; background: #07070A; overflow: hidden; height: 100%; width: 100%; color: #B6FF2E; }
-    #graph { width: 100vw; height: 100vh; background: #07070A; }
-  </style>
+  <title>GraphRecall Force Graph</title>
+  <link rel="stylesheet" href="graph_force.css" />
   <script src="https://cdn.jsdelivr.net/npm/force-graph@1.49.3/dist/force-graph.min.js"></script>
 </head>
 <body>
+
+  <canvas id="stars"></canvas>
+  <div id="vignette"></div>
   <div id="graph"></div>
+  <div id="badge">Demo graph</div>
+  <aside id="controls" aria-label="Graph Controls">
+    <div class="hdr">Graph Controls</div>
+    <div class="row">
+      <label for="domainSelect">Domain</label>
+      <select id="domainSelect"><option value="">All Domains</option></select>
+    </div>
+    <div class="row">
+      <div class="weight-meta">
+        <label for="weightSlider" style="margin:0">Min Weight</label>
+        <span id="weightLabel">0%</span>
+      </div>
+      <input id="weightSlider" type="range" min="0" max="100" step="5" value="0" />
+    </div>
+    <div class="row">
+      <label>Communities</label>
+      <div class="btn-row">
+        <button type="button" id="commToggle" class="on">On</button>
+        <button type="button" id="commRecompute" class="off">Hulls</button>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="title">Statistics</div>
+      <div class="vals">
+        <span id="statNodes">Nodes: 0</span>
+        <span id="statLinks">Links: 0</span>
+      </div>
+    </div>
+  </aside>
+
   <script src="graph_force_boot.js"></script>
 </body>
 </html>
