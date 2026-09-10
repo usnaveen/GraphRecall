@@ -92,6 +92,26 @@ struct FeedItem: Codable, Sendable, Identifiable, Hashable {
     let priorityScore: Double?
     let dueDate: Date?
 
+    init(
+        id: String,
+        itemType: FeedItemType,
+        content: [String: AnyCodable] = [:],
+        conceptId: String? = nil,
+        conceptName: String? = nil,
+        domain: String? = nil,
+        priorityScore: Double? = nil,
+        dueDate: Date? = nil
+    ) {
+        self.id = id
+        self.itemType = itemType
+        self.content = content
+        self.conceptId = conceptId
+        self.conceptName = conceptName
+        self.domain = domain
+        self.priorityScore = priorityScore
+        self.dueDate = dueDate
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case itemType = "item_type"

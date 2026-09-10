@@ -30,7 +30,7 @@ struct GraphView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.bottom, 88)
+        .padding(.bottom, GRLayout.dockClearance)
         .task { await model.load() }
     }
 
