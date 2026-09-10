@@ -1,0 +1,40 @@
+name: GraphRecall
+options:
+  bundleIdPrefix: com.usnaveen
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    INFOPLIST_FILE: GraphRecall/Resources/Info.plist
+    PRODUCT_BUNDLE_IDENTIFIER: com.usnaveen.graphrecall
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: false
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    DEVELOPMENT_TEAM: ""
+targets:
+  GraphRecall:
+    type: application
+    platform: iOS
+    sources:
+      - path: GraphRecall
+        excludes:
+          - Resources/Info.plist
+    settings:
+      base:
+        PRODUCT_NAME: GraphRecall
+    info:
+      path: GraphRecall/Resources/Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    scheme:
+      testTargets: []
