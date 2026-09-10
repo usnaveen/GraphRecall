@@ -9,7 +9,7 @@ enum GRTab: String, CaseIterable, Identifiable {
         case .feed: return "Feed"
         case .graph: return "Graph"
         case .create: return "Create"
-        case .assistant: return "Chat"
+        case .assistant: return "Assistant"
         case .profile: return "Profile"
         }
     }
