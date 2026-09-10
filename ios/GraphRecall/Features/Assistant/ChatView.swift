@@ -18,16 +18,11 @@ struct ChatView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Assistant")
-                    .font(GRType.largeTitle)
-                    .foregroundStyle(GRColor.textPrimary)
-                Text(model.usingStub ? "Offline demo" : "Connected")
-                    .font(GRType.body)
-                    .foregroundStyle(GRColor.textSecondary)
-            }
-            Spacer()
+        HStack(alignment: .top, spacing: 12) {
+            GRScreenHeader(
+                title: "Assistant",
+                subtitle: model.usingStub ? "Offline demo" : "Connected"
+            )
             if model.isStreaming {
                 Button {
                     model.cancelStream()
@@ -37,11 +32,10 @@ struct ChatView: View {
                         .padding(10)
                         .grGlassEffect(.interactive, in: Circle())
                 }
+                .padding(.trailing, 20)
+                .padding(.top, 12)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 8)
     }
 
     private var messagesScroll: some View {
@@ -52,7 +46,7 @@ struct ChatView: View {
                         GlassCard(cornerRadius: 14) {
                             Text(error)
                                 .font(GRType.caption)
-                                .foregroundStyle(Color.orange)
+                                .foregroundStyle(GRColor.warning)
                         }
                     }
                     ForEach(model.messages) { message in
@@ -114,6 +108,9 @@ struct ChatView: View {
                         Text(tip)
                             .font(GRType.caption)
                             .foregroundStyle(GRColor.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 220, alignment: .leading)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             .grGlassEffect(.interactive, in: Capsule())
