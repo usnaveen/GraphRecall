@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5C2D230608F5861D86BA065A /* GraphQuizSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FAF3F8500A705DE2A97E92E /* GraphQuizSheet.swift */; };
+		0486E72921960DBB31154C19 /* GraphLinksSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03DF08BE0AD5F4709816DEB8 /* GraphLinksSheet.swift */; };
+		271981B070AD6FD65101D56B /* GraphNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 545D42EE9086B45002792B7A /* GraphNotePanel.swift */; };
 		B11B11B11B11B11B11B11B01 /* graph_force.html in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A01 /* graph_force.html */; };
 		B11B11B11B11B11B11B11B02 /* graph_force_boot.js in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A02 /* graph_force_boot.js */; };
 		B11B11B11B11B11B11B11B03 /* graph_force.css in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A03 /* graph_force.css */; };
@@ -46,6 +49,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		1FAF3F8500A705DE2A97E92E /* GraphQuizSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphQuizSheet.swift; sourceTree = "<group>"; };
+		03DF08BE0AD5F4709816DEB8 /* GraphLinksSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphLinksSheet.swift; sourceTree = "<group>"; };
+		545D42EE9086B45002792B7A /* GraphNotePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphNotePanel.swift; sourceTree = "<group>"; };
 		A11A11A11A11A11A11A11A01 /* graph_force.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = graph_force.html; sourceTree = "<group>"; };
 		A11A11A11A11A11A11A11A02 /* graph_force_boot.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = graph_force_boot.js; sourceTree = "<group>"; };
 		A11A11A11A11A11A11A11A03 /* graph_force.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = graph_force.css; sourceTree = "<group>"; };
@@ -123,6 +129,9 @@
 			isa = PBXGroup;
 			children = (
 				26ED0F962F6EDE15C8A91B2D /* GraphForceWebView.swift */,
+				1FAF3F8500A705DE2A97E92E /* GraphQuizSheet.swift */,
+				03DF08BE0AD5F4709816DEB8 /* GraphLinksSheet.swift */,
+				545D42EE9086B45002792B7A /* GraphNotePanel.swift */,
 				CCBE13CB88D5744985FFF987 /* GraphInspectorPanel.swift */,
 				7F6B4BB4C9768BAB47A1235D /* GraphView.swift */,
 				E12ACAFF6FE6A4E2FC61274B /* GraphViewModel.swift */,
@@ -342,6 +351,9 @@
 				8D91C62AA931A09C9BF1B2E6 /* Glass.swift in Sources */,
 				95CC6AFBFECBA2ABF3CBC41F /* GlassCard.swift in Sources */,
 				60863DCC9DEB830A14505BA3 /* GraphForceWebView.swift in Sources */,
+				5C2D230608F5861D86BA065A /* GraphQuizSheet.swift in Sources */,
+				0486E72921960DBB31154C19 /* GraphLinksSheet.swift in Sources */,
+				271981B070AD6FD65101D56B /* GraphNotePanel.swift in Sources */,
 				3E02F3AF69D407BE9DF907F3 /* GraphInspectorPanel.swift in Sources */,
 				704A0F8042B14BCB99B5B5B0 /* GraphModels.swift in Sources */,
 				CDA03F95E4C9FADB6C409478 /* GraphRecallApp.swift in Sources */,

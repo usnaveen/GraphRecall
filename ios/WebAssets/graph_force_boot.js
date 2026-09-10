@@ -145,8 +145,11 @@
       const val = node.val || 1;
       const r = Math.max(3.2, Math.min(14, Math.sqrt(val) * 4.8));
       const isSel = selectedId === node.id;
-      const isHl = highlightIds.has(node.id) || neighborIds.has(node.id) || focusIds.has(node.id);
-      const dimmed = focusIds.size > 0 && !focusIds.has(node.id) && !isSel;
+      const isNeighbor = neighborIds.has(node.id);
+      const isHl = highlightIds.has(node.id) || isNeighbor || focusIds.has(node.id);
+      const focusDim = focusIds.size > 0 && !focusIds.has(node.id) && !isSel;
+      const selectDim = !!selectedId && !isSel && !isNeighbor && !highlightIds.has(node.id);
+      const dimmed = focusDim || selectDim;
       const color = node.__highlight ? ACCENT : (node.color || domainColor(node.domain));
 
       ctx.save();
@@ -182,14 +185,18 @@
         ctx.stroke();
       }
 
+      // Labels: always for selected/neighbors/highlights; otherwise when zoomed or high-degree.
       const fontSize = Math.max(10 / globalScale, 2.6);
-      if (!dimmed && (globalScale > 0.55 || isSel || isHl)) {
+      const showLabel = !dimmed && (
+        isSel || isHl || globalScale > 0.7 || (node.val || 0) >= 3.2 || (node.degree || 0) >= 4
+      );
+      if (showLabel) {
         ctx.font = `${isSel ? 600 : 500} ${fontSize}px -apple-system, system-ui, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = isSel || isHl ? '#ffffff' : 'rgba(255,255,255,0.78)';
-        ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-        ctx.lineWidth = 3 / globalScale;
+        ctx.fillStyle = isSel || isHl ? '#ffffff' : 'rgba(255,255,255,0.82)';
+        ctx.strokeStyle = 'rgba(0,0,0,0.78)';
+        ctx.lineWidth = 3.2 / globalScale;
         const text = label.length > 28 ? label.slice(0, 28) + '…' : label;
         ctx.strokeText(text, node.x, node.y + r + 2);
         ctx.fillText(text, node.x, node.y + r + 2);
@@ -253,6 +260,21 @@
         ctx.arc(cx, cy, maxR + pad * 0.6, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
+        // Community title (web community badge stand-in)
+        const title = comm.title || comm.label || '';
+        if (title && globalScale > 0.45) {
+          const fs = Math.max(9 / globalScale, 2.4);
+          ctx.font = `600 ${fs}px -apple-system, system-ui, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = color + 'cc';
+          ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+          ctx.lineWidth = 3 / globalScale;
+          const label = title.length > 22 ? title.slice(0, 22) + '…' : title;
+          const ly = cy - (maxR + pad * 0.6) - 6 / globalScale;
+          ctx.strokeText(label, cx, ly);
+          ctx.fillText(label, cx, ly);
+        }
       });
     });
 
@@ -393,7 +415,9 @@
     communities = payload.communities || [];
     highlightIds = new Set(hlIds || []);
     focusIds = new Set(opts.focusIds || []);
-    if (opts.selectedId) selectedId = opts.selectedId;
+    if (Object.prototype.hasOwnProperty.call(opts, 'selectedId')) {
+      selectedId = opts.selectedId || null;
+    }
     if (typeof opts.showCommunities === 'boolean') {
       showCommunities = opts.showCommunities;
       commToggle.textContent = showCommunities ? 'On' : 'Off';
