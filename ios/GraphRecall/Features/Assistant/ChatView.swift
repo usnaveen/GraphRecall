@@ -33,27 +33,54 @@ struct ChatView: View {
         }
         .animation(.easeOut(duration: 0.22), value: model.bannerMessage)
         .task { await model.onAppear() }
+        .sheet(isPresented: $model.showHistory) {
+            ConversationHistorySheet(model: model)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             GRScreenHeader(
                 title: "Assistant",
-                subtitle: model.usingStub ? "Offline demo" : "Connected"
+                subtitle: headerSubtitle
             )
-            if model.isStreaming {
+            HStack(spacing: 8) {
+                if model.isStreaming {
+                    Button {
+                        model.cancelStream()
+                    } label: {
+                        Image(systemName: "stop.circle.fill")
+                            .foregroundStyle(GRColor.accent)
+                            .padding(10)
+                            .grGlassEffect(.interactive, in: Circle())
+                    }
+                    .accessibilityLabel("Stop streaming")
+                }
                 Button {
-                    model.cancelStream()
+                    model.openHistory()
                 } label: {
-                    Image(systemName: "stop.circle.fill")
-                        .foregroundStyle(GRColor.accent)
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(GRColor.textSecondary)
                         .padding(10)
                         .grGlassEffect(.interactive, in: Circle())
                 }
-                .padding(.trailing, 20)
-                .padding(.top, 12)
+                .accessibilityLabel("Chat history")
+                .disabled(model.isStreaming)
             }
+            .padding(.trailing, 20)
+            .padding(.top, 12)
         }
+    }
+
+    private var headerSubtitle: String {
+        if model.usingStub { return "Offline demo" }
+        if let cid = model.conversationId, !cid.isEmpty {
+            return "Thread active"
+        }
+        return "Connected"
     }
 
     private var messagesScroll: some View {
@@ -278,6 +305,159 @@ private struct FlowChips: View {
                 }
             }
         }
+    }
+}
+
+
+// MARK: - Conversation history sheet (L6)
+
+private struct ConversationHistorySheet: View {
+    @Bindable var model: ChatViewModel
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                GRColor.canvas.ignoresSafeArea()
+                Group {
+                    if model.isLoadingHistory && model.conversationSummaries.isEmpty {
+                        ProgressView()
+                            .tint(GRColor.accent)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if model.conversationSummaries.isEmpty {
+                        emptyState
+                    } else {
+                        listContent
+                    }
+                }
+            }
+            .navigationTitle("Chat History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("New chat") {
+                        model.startNewChat()
+                    }
+                    .font(GRType.caption)
+                    .foregroundStyle(GRColor.accent)
+                    .disabled(model.isStreaming || model.isLoadingConversation)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        model.showHistory = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(GRColor.textTertiary)
+                    }
+                    .accessibilityLabel("Close")
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if model.isLoadingConversation {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small).tint(GRColor.accent)
+                        Text("Loading conversation…")
+                            .font(GRType.caption)
+                            .foregroundStyle(GRColor.textSecondary)
+                    }
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
+                    .background(GRColor.canvas.opacity(0.92))
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            GlassCard(cornerRadius: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No conversations")
+                        .font(GRType.headline)
+                        .foregroundStyle(GRColor.textPrimary)
+                    Text(model.historyEmptyCopy ?? "Past chats will show up here.")
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.textSecondary)
+                    if let err = model.historyError {
+                        Text(err)
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.warning)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+
+            Button {
+                Task { await model.loadHistory() }
+            } label: {
+                Text("Retry")
+                    .font(GRType.caption)
+                    .foregroundStyle(GRColor.accent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .grGlassEffect(.interactive, in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var listContent: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                if let err = model.historyError {
+                    GlassCard(cornerRadius: 14) {
+                        Text(err)
+                            .font(GRType.caption)
+                            .foregroundStyle(GRColor.warning)
+                    }
+                }
+                ForEach(model.conversationSummaries) { conv in
+                    Button {
+                        Task { await model.selectConversation(conv.id) }
+                    } label: {
+                        GlassCard(cornerRadius: 16) {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "bubble.left.and.bubble.right.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(GRColor.accent)
+                                    .padding(10)
+                                    .background(Circle().fill(GRColor.accent.opacity(0.14)))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(conv.displayTitle)
+                                        .font(GRType.headline)
+                                        .foregroundStyle(GRColor.textPrimary)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.leading)
+                                    Text(conv.displaySubtitle)
+                                        .font(GRType.caption)
+                                        .foregroundStyle(GRColor.textSecondary)
+                                    if let preview = conv.lastMessage, !preview.isEmpty {
+                                        Text(preview)
+                                            .font(GRType.micro)
+                                            .foregroundStyle(GRColor.textTertiary)
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                                if model.conversationId == conv.id {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(GRColor.accent)
+                                }
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isLoadingConversation || model.isStreaming)
+                    .opacity(model.conversationId == conv.id ? 1 : 0.96)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .padding(.bottom, GRLayout.dockClearance)
+        }
+        .refreshable { await model.loadHistory() }
     }
 }
 

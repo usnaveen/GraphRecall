@@ -123,6 +123,211 @@ enum ChatSSEEvent: Equatable {
     }
 }
 
+// MARK: - Conversation list / history (L6)
+
+struct ChatConversationSummary: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String?
+    let createdAt: String?
+    let updatedAt: String?
+    let messageCount: Int?
+    let lastMessage: String?
+    let summary: String?
+    let isSavedToKnowledge: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, summary
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case messageCount = "message_count"
+        case lastMessage = "last_message"
+        case isSavedToKnowledge = "is_saved_to_knowledge"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let s = try? c.decode(String.self, forKey: .id) {
+            id = s
+        } else if let i = try? c.decode(Int.self, forKey: .id) {
+            id = String(i)
+        } else {
+            id = UUID().uuidString
+        }
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        createdAt = try Self.decodeLooseString(c, forKey: .createdAt)
+        updatedAt = try Self.decodeLooseString(c, forKey: .updatedAt)
+        if let n = try? c.decode(Int.self, forKey: .messageCount) {
+            messageCount = n
+        } else if let d = try? c.decode(Double.self, forKey: .messageCount) {
+            messageCount = Int(d)
+        } else {
+            messageCount = try c.decodeIfPresent(Int.self, forKey: .messageCount)
+        }
+        lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
+        summary = try c.decodeIfPresent(String.self, forKey: .summary)
+        isSavedToKnowledge = try c.decodeIfPresent(Bool.self, forKey: .isSavedToKnowledge)
+    }
+
+    private static func decodeLooseString(_ c: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> String? {
+        if let s = try? c.decodeIfPresent(String.self, forKey: key) { return s }
+        return nil
+    }
+
+    var displayTitle: String {
+        let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "New Chat" : t
+    }
+
+    var displaySubtitle: String {
+        let count = messageCount ?? 0
+        let countLabel = count == 1 ? "1 message" : "\(count) messages"
+        if let updated = updatedAt, let short = Self.shortDate(updated) {
+            return "\(countLabel) · \(short)"
+        }
+        return countLabel
+    }
+
+    private static func shortDate(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let display = DateFormatter()
+        display.dateStyle = .medium
+        display.timeStyle = .none
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = isoFrac.date(from: trimmed) { return display.string(from: d) }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        if let d = iso.date(from: trimmed) { return display.string(from: d) }
+        // Python `str(datetime)` often looks like "2024-01-01 12:00:00.123456+00:00"
+        let normalized = trimmed.replacingOccurrences(of: " ", with: "T")
+        if let d = iso.date(from: normalized) { return display.string(from: d) }
+        if trimmed.count >= 10 { return String(trimmed.prefix(10)) }
+        return nil
+    }
+}
+
+struct ChatHistoryResponse: Codable, Sendable {
+    let conversations: [ChatConversationSummary]
+    let total: Int?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        conversations = try c.decodeIfPresent([ChatConversationSummary].self, forKey: .conversations) ?? []
+        total = try c.decodeIfPresent(Int.self, forKey: .total)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case conversations, total
+    }
+}
+
+struct ChatConversationsListResponse: Codable, Sendable {
+    let conversations: [ChatConversationSummary]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        conversations = try c.decodeIfPresent([ChatConversationSummary].self, forKey: .conversations) ?? []
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case conversations
+    }
+}
+
+struct ChatConversationMeta: Codable, Hashable, Sendable {
+    let id: String
+    let title: String?
+    let createdAt: String?
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let s = try? c.decode(String.self, forKey: .id) {
+            id = s
+        } else if let i = try? c.decode(Int.self, forKey: .id) {
+            id = String(i)
+        } else {
+            id = UUID().uuidString
+        }
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
+    }
+}
+
+struct ChatHistoryMessageDTO: Codable, Hashable, Sendable {
+    let id: String
+    let role: String
+    let content: String
+    let sourcesJson: [AnyCodable]?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, role, content
+        case sourcesJson = "sources_json"
+        case createdAt = "created_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let s = try? c.decode(String.self, forKey: .id) {
+            id = s
+        } else if let i = try? c.decode(Int.self, forKey: .id) {
+            id = String(i)
+        } else {
+            id = UUID().uuidString
+        }
+        role = try c.decodeIfPresent(String.self, forKey: .role) ?? "assistant"
+        content = try c.decodeIfPresent(String.self, forKey: .content) ?? ""
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+
+        if let arr = try? c.decode([AnyCodable].self, forKey: .sourcesJson) {
+            sourcesJson = arr
+        } else if let raw = try? c.decode(String.self, forKey: .sourcesJson),
+                  let data = raw.data(using: .utf8),
+                  let parsed = try? JSONDecoder().decode([AnyCodable].self, from: data) {
+            sourcesJson = parsed
+        } else {
+            sourcesJson = nil
+        }
+    }
+
+    func asUIMessage() -> ChatMessageUI {
+        let mappedRole = ChatRole(rawValue: role) ?? .assistant
+        let sources: [ChatSourceRef] = (sourcesJson ?? []).map { ChatSourceRef(from: $0.value) }
+        return ChatMessageUI(
+            id: id,
+            role: mappedRole,
+            content: content,
+            sources: sources,
+            serverId: mappedRole == .assistant ? id : nil,
+            isStreaming: false
+        )
+    }
+}
+
+struct ChatConversationDetailResponse: Codable, Sendable {
+    let conversation: ChatConversationMeta?
+    let messages: [ChatHistoryMessageDTO]
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        conversation = try c.decodeIfPresent(ChatConversationMeta.self, forKey: .conversation)
+        messages = try c.decodeIfPresent([ChatHistoryMessageDTO].self, forKey: .messages) ?? []
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case conversation, messages
+    }
+}
+
 // MARK: - Create card / save message (M8)
 
 enum CreateCardOutputType: String, Codable, Sendable {
