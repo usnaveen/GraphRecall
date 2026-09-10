@@ -45,8 +45,8 @@ Goal: Graph tab must be **one-to-one** with the web GraphVisualizer aesthetic �
 | Inspector (links, quiz, notes) | Full `Inspector.tsx` | Rich Glass inspector + **wired** Notes / Links / Quiz sheets | Closer |
 | NotePanel | Split pane + chunks | `GraphNotePanel` → `GET /api/concepts/{id}/notes` (demo fallback) | Matched (API) |
 | Links / resources | Resources modal + `source_url` | `GraphLinksSheet` → `GET /api/feed/resources/{name}` + `openURL` | Matched (API) |
-| Quiz | `startQuizForTopic` → Feed | `GraphQuizSheet` → `POST /api/feed/quiz/topic/{name}` (cards land in Feed; demo skips) | Matched (API; no tab hop) |
-| Create node / link suggestions | Modals + `/api/nodes` | Missing | **Remaining** |
+| Quiz | `startQuizForTopic` → Feed | `GraphQuizSheet` → `POST /api/feed/quiz/topic/{name}` + **Practice in Feed** (`grNavigateFeed` + `grFeedShouldReload`) | Matched (API + tab handoff) |
+| Create node / link suggestions | Modals + `/api/nodes` | Backend exists; **no iOS APIClient / UI** (skipped stub — prefer clean UX) | **Remaining** |
 | Merge mode | Multi-select + `/api/concepts/merge` | Missing | **Remaining** |
 | Demo / empty fallback | Error UI | Stub 10-node demo + communities badge | Improved |
 
@@ -85,29 +85,32 @@ Agents should treat these **logical tools** as aliases of existing HTTP routes (
 
 Create / link flows (future Inspector parity): `POST /api/nodes`, `POST /api/nodes/{node_id}/suggest-links`, `POST /api/nodes/{node_id}/link`.
 
-## Closed this pass (after inspector milestone `fa80985`)
+## Closed previously (inspector + fidelity, through `f14c424`)
 
 1. **Notes** — `GraphNotePanel` fetches `GET /api/concepts/{id}/notes`, renders chunk excerpts (markdown inline); demo graph shows sample note.
 2. **Links** — `GraphLinksSheet` fetches `GET /api/feed/resources/{name}`, filters URL-bearing resources, opens via `openURL`.
-3. **Quiz** — `GraphQuizSheet` calls `POST /api/feed/quiz/topic/{name}` (local-only, no web search by default); reports generated count / optional inline questions; demo stays honest stub.
+3. **Quiz generation** — `GraphQuizSheet` calls `POST /api/feed/quiz/topic/{name}` (local-only, no web search by default); reports generated count / optional inline questions; demo stays honest stub.
 4. **Visualizer fidelity** — community title labels on hulls; stronger always-on labels for selected/neighbor/high-degree nodes; selection neighbor-dimming; native `selectedId` pushed into WebView.
-5. **Deferred 3D** — no Three.js WKWebView path this pass (would risk Liquid Glass / perf); prefer working Notes/Links.
+5. **Deferred 3D** — no Three.js WKWebView path (would risk Liquid Glass / perf); prefer working Inspector actions.
+
+## Closed this pass (Quiz → Feed handoff)
+
+1. **`grNavigateFeed`** — `Notification.Name` + `ContentView` switches dock tab to `.feed` (same pattern as `grNavigateLibrary`).
+2. **Quiz success → Feed reload** — `GraphQuizSheet` posts `.grFeedShouldReload` after a successful generate (FeedView already listens).
+3. **Practice in Feed CTA** — primary button after success closes the sheet and posts `.grNavigateFeed` (Create→Library style; no dock hack). Fresh `FeedView` loads server cards on appear.
+4. **Create-node / suggest-links** — **not stubbed**. Backend routes exist (`POST /api/nodes`, `…/suggest-links`, `…/link` in `backend/routers/nodes.py`, auth-gated + LangGraph for suggestions). iOS has no `APIClient` methods yet; a half-wired Inspector create flow would be worse than documenting the gap.
 
 ## Gaps remaining (honest)
 
-1. **Not true 3D** — still 2D force-graph inside WKWebView (no OrbitControls / Z spring / Three.js path yet).
-2. **Quiz → Feed handoff** — generation is wired, but iOS does not auto-switch dock tab / inject cards into `FeedViewModel` yet.
-3. **Bloom / galaxy** — canvas approximations, not Three.js post-processing.
-4. **Create / link suggestions / Merge** — not ported.
-5. Do **not** claim full 1:1 until Naveen signs off on deferred Controls/Inspector/NotePanel behaviors.
+1. **Not true 3D** — still 2D force-graph inside WKWebView (no OrbitControls / Z spring / Three.js path yet). Deferred unless Quiz→Feed is solid and 3D is a small incremental win.
+2. **Bloom / galaxy** — canvas approximations, not Three.js post-processing.
+3. **Create node / suggest-links / apply-link** — backend ready; need iOS `APIClient` + Inspector UI (create sheet, suggestion list, confirm links) + graph reload.
+4. **Merge mode** — multi-select + `POST /api/concepts/merge` not ported.
+5. Do **not** claim full 1:1 until Naveen signs off on deferred Controls/Inspector/3D behaviors.
 
-## Files touched (this pass)
+## Files touched (this pass — Quiz → Feed)
 
-- `ios/GraphRecall/Features/Graph/GraphNotePanel.swift` (new)
-- `ios/GraphRecall/Features/Graph/GraphLinksSheet.swift` (new)
-- `ios/GraphRecall/Features/Graph/GraphQuizSheet.swift` (new)
-- `ios/GraphRecall/Features/Graph/GraphInspectorPanel.swift`, `GraphView.swift`, `GraphViewModel.swift`, `GraphForceWebView.swift`
-- `ios/GraphRecall/Networking/APIClient.swift`, `Networking/Models/GraphModels.swift`
-- `ios/WebAssets/graph_force_boot.js` (+ mirrored `Resources/`)
-- `ios/GraphRecall.xcodeproj/project.pbxproj`
+- `ios/GraphRecall/Features/Graph/GraphQuizSheet.swift` — Feed reload + Practice in Feed handoff
+- `ios/GraphRecall/ContentView.swift` — `.grNavigateFeed` → `.feed`
+- `ios/GraphRecall/Networking/Models/LibraryModels.swift` — `grNavigateFeed` notification
 - `ios/docs/NAV-27-graph-gaps.md`
