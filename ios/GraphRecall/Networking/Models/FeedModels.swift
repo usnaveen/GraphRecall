@@ -328,6 +328,45 @@ struct AnyCodable: Codable, @unchecked Sendable, Hashable {
     }
 }
 
+struct DailyActivity: Codable, Sendable, Hashable {
+    let date: String
+    let reviewsCompleted: Int
+    let conceptsLearned: Int
+    let notesAdded: Int
+    let accuracy: Double
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case reviewsCompleted = "reviews_completed"
+        case conceptsLearned = "concepts_learned"
+        case notesAdded = "notes_added"
+        case accuracy
+    }
+
+    init(
+        date: String,
+        reviewsCompleted: Int = 0,
+        conceptsLearned: Int = 0,
+        notesAdded: Int = 0,
+        accuracy: Double = 0
+    ) {
+        self.date = date
+        self.reviewsCompleted = reviewsCompleted
+        self.conceptsLearned = conceptsLearned
+        self.notesAdded = notesAdded
+        self.accuracy = accuracy
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        date = try c.decode(String.self, forKey: .date)
+        reviewsCompleted = try c.decodeIfPresent(Int.self, forKey: .reviewsCompleted) ?? 0
+        conceptsLearned = try c.decodeIfPresent(Int.self, forKey: .conceptsLearned) ?? 0
+        notesAdded = try c.decodeIfPresent(Int.self, forKey: .notesAdded) ?? 0
+        accuracy = try c.decodeIfPresent(Double.self, forKey: .accuracy) ?? 0
+    }
+}
+
 struct UserStats: Codable, Sendable {
     let userId: String?
     let totalConcepts: Int?
@@ -339,6 +378,7 @@ struct UserStats: Codable, Sendable {
     let completedToday: Int?
     let dailyGoal: Int?
     let overdue: Int?
+    let dailyActivity: [DailyActivity]
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
@@ -351,6 +391,48 @@ struct UserStats: Codable, Sendable {
         case completedToday = "completed_today"
         case dailyGoal = "daily_goal"
         case overdue
+        case dailyActivity = "daily_activity"
+    }
+
+    init(
+        userId: String? = nil,
+        totalConcepts: Int? = nil,
+        totalNotes: Int? = nil,
+        totalReviews: Int? = nil,
+        streakDays: Int? = nil,
+        accuracyRate: Double? = nil,
+        dueToday: Int? = nil,
+        completedToday: Int? = nil,
+        dailyGoal: Int? = nil,
+        overdue: Int? = nil,
+        dailyActivity: [DailyActivity] = []
+    ) {
+        self.userId = userId
+        self.totalConcepts = totalConcepts
+        self.totalNotes = totalNotes
+        self.totalReviews = totalReviews
+        self.streakDays = streakDays
+        self.accuracyRate = accuracyRate
+        self.dueToday = dueToday
+        self.completedToday = completedToday
+        self.dailyGoal = dailyGoal
+        self.overdue = overdue
+        self.dailyActivity = dailyActivity
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        userId = try c.decodeIfPresent(String.self, forKey: .userId)
+        totalConcepts = try c.decodeIfPresent(Int.self, forKey: .totalConcepts)
+        totalNotes = try c.decodeIfPresent(Int.self, forKey: .totalNotes)
+        totalReviews = try c.decodeIfPresent(Int.self, forKey: .totalReviews)
+        streakDays = try c.decodeIfPresent(Int.self, forKey: .streakDays)
+        accuracyRate = try c.decodeIfPresent(Double.self, forKey: .accuracyRate)
+        dueToday = try c.decodeIfPresent(Int.self, forKey: .dueToday)
+        completedToday = try c.decodeIfPresent(Int.self, forKey: .completedToday)
+        dailyGoal = try c.decodeIfPresent(Int.self, forKey: .dailyGoal)
+        overdue = try c.decodeIfPresent(Int.self, forKey: .overdue)
+        dailyActivity = try c.decodeIfPresent([DailyActivity].self, forKey: .dailyActivity) ?? []
     }
 }
 
