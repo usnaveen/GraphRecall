@@ -23,7 +23,7 @@ struct ChatView: View {
                 Text("Assistant")
                     .font(GRType.largeTitle)
                     .foregroundStyle(GRColor.textPrimary)
-                Text(model.usingStub ? "Stub SSE · set auth to hit FastAPI" : "GraphRAG streaming")
+                Text(model.usingStub ? "Offline demo" : "Connected")
                     .font(GRType.body)
                     .foregroundStyle(GRColor.textSecondary)
             }
@@ -99,18 +99,6 @@ struct ChatView: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                if isUser {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(GRColor.accent.opacity(0.18))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(GRColor.accent.opacity(0.35), lineWidth: 1)
-                        )
-                } else {
-                    Color.clear
-                }
-            }
             .grGlassEffect(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             if !isUser { Spacer(minLength: 24) }
         }

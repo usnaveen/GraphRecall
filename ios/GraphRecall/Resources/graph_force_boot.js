@@ -1,6 +1,6 @@
 const root = document.getElementById('graph');
 const Graph = ForceGraph()(root)
-  .backgroundColor('rgba(0,0,0,0)')
+  .backgroundColor('#07070A')
   .nodeId('id')
   .nodeLabel(n => n.name || n.id)
   .nodeColor(n => n.__highlight ? '#B6FF2E' : (n.color || '#7C3AED'))
