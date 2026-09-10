@@ -25,10 +25,12 @@ final class CreateViewModel {
         errorMessage = nil
         defer { isSubmitting = false }
         do {
-            lastResponse = try await APIClient.shared.dumpConcepts(concepts)
+            let response = try await APIClient.shared.dumpConcepts(concepts)
+            lastResponse = response
+            await OfflineReviewStore.shared.ingestDump(response)
+            NotificationCenter.default.post(name: .grDumpCompleted, object: nil)
         } catch {
             errorMessage = error.localizedDescription
-            // Local demo result so UI is usable without auth/backend
             lastResponse = nil
         }
     }

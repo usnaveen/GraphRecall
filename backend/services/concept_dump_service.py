@@ -148,7 +148,7 @@ async def _save_note_and_cards(
             "source": "concept_dump",
         },
     )
-    cards.append({"id": card_id, "type": "flashcard", "front": front})
+    cards.append({"id": card_id, "type": "flashcard", "front": front, "back": back})
 
     # Explain card in generated_content for feed diversity
     gen_id = str(uuid.uuid4())
@@ -170,7 +170,7 @@ async def _save_note_and_cards(
             "content_json": json.dumps(payload),
         },
     )
-    cards.append({"id": gen_id, "type": "showcase", "front": name})
+    cards.append({"id": gen_id, "type": "showcase", "front": name, "back": payload["summary"]})
 
     return {"note_id": note_id, "cards": cards}
 
