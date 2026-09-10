@@ -251,6 +251,27 @@ actor APIClient {
     /// True when a Bearer token has been set (Google auth wiring comes later).
     var hasAuthToken: Bool { accessToken != nil && !(accessToken?.isEmpty ?? true) }
 
+    /// GET `/api/chat/history` — recent conversations with preview (web Assistant list).
+    func getChatHistory(limit: Int = 20) async throws -> ChatHistoryResponse {
+        try await get(
+            "/api/chat/history",
+            query: [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 50)))]
+        )
+    }
+
+    /// GET `/api/chat/conversations` — simpler conversation list.
+    func listConversations(limit: Int = 20) async throws -> ChatConversationsListResponse {
+        try await get(
+            "/api/chat/conversations",
+            query: [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 50)))]
+        )
+    }
+
+    /// GET `/api/chat/conversations/{id}` — conversation meta + messages for thread restore.
+    func getConversation(id: String) async throws -> ChatConversationDetailResponse {
+        try await get("/api/chat/conversations/\(id)")
+    }
+
     /// POST `/api/chat/messages/{id}/create-card` — quiz | concept_card.
     func createCardFromMessage(
         messageId: String,

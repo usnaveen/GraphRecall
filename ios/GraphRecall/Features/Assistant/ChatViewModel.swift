@@ -21,6 +21,15 @@ final class ChatViewModel {
     var actionBusyMessageId: String?
     var savedMessageIds: Set<String> = []
 
+    /// Conversation history sheet (L6).
+    var showHistory = false
+    var conversationSummaries: [ChatConversationSummary] = []
+    var isLoadingHistory = false
+    var isLoadingConversation = false
+    var historyError: String?
+    /// Soft empty-state when offline / unsigned — never HTML.
+    var historyEmptyCopy: String?
+
     private var streamTask: Task<Void, Never>?
     private var bannerTask: Task<Void, Never>?
 
@@ -174,6 +183,87 @@ final class ChatViewModel {
         await OfflineReviewStore.shared.ingestFeedItem(local)
         NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
         showBanner("Saved locally for quiz — check Feed")
+    }
+
+
+    // MARK: - Conversation history (L6)
+
+    func openHistory() {
+        showHistory = true
+        Task { await loadHistory() }
+    }
+
+    func loadHistory() async {
+        isLoadingHistory = true
+        historyError = nil
+        historyEmptyCopy = nil
+        defer { isLoadingHistory = false }
+
+        let hasAuth = await APIClient.shared.hasAuthToken
+        guard hasAuth else {
+            conversationSummaries = []
+            usingStub = true
+            historyEmptyCopy = "Sign in to see past conversations. Offline demo mode keeps this chat local."
+            return
+        }
+
+        do {
+            let response = try await APIClient.shared.getChatHistory()
+            conversationSummaries = response.conversations
+            usingStub = false
+            if conversationSummaries.isEmpty {
+                historyEmptyCopy = "No past conversations yet. Send a message to start one."
+            }
+        } catch {
+            conversationSummaries = []
+            historyError = APIError.userFacing(error, resource: "chat history")
+            historyEmptyCopy = "Couldn’t load history right now. Check your connection and try again."
+        }
+    }
+
+    func selectConversation(_ id: String) async {
+        guard !isStreaming, !isLoadingConversation else { return }
+        isLoadingConversation = true
+        historyError = nil
+        defer { isLoadingConversation = false }
+
+        do {
+            let detail = try await APIClient.shared.getConversation(id: id)
+            let uiMessages = detail.messages.map { $0.asUIMessage() }
+            conversationId = detail.conversation?.id ?? id
+            messages = uiMessages.isEmpty
+                ? [
+                    ChatMessageUI(
+                        role: .assistant,
+                        content: "This conversation has no messages yet — ask anything about your graph."
+                    )
+                  ]
+                : uiMessages
+            savedMessageIds = []
+            addToFeedMessageId = nil
+            errorMessage = nil
+            showHistory = false
+            usingStub = false
+        } catch {
+            historyError = APIError.userFacing(error, resource: "conversation")
+        }
+    }
+
+    func startNewChat() {
+        cancelStream()
+        conversationId = nil
+        messages = [
+            ChatMessageUI(
+                role: .assistant,
+                content: "Ask anything about your knowledge graph — I’ll stream GraphRAG answers here."
+            )
+        ]
+        savedMessageIds = []
+        addToFeedMessageId = nil
+        errorMessage = nil
+        statusLine = nil
+        showHistory = false
+        Task { await loadSuggestions() }
     }
 
     private func showBanner(_ text: String) {
