@@ -460,11 +460,17 @@ async def dump_concepts(
     if len(request.concepts) > 40:
         raise HTTPException(status_code=400, detail="Max 40 concepts per dump")
 
-    from backend.services.concept_dump_service import dump_concepts as run_dump
+    from backend.services.concept_dump_service import (
+        dump_concepts as run_dump,
+        user_facing_error,
+    )
 
     user_id = str(current_user["id"])
     try:
         return await run_dump(user_id, request.concepts)
     except Exception as e:
         logger.error("Concepts: dump failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=user_facing_error(e, resource="concept dump"),
+        )
