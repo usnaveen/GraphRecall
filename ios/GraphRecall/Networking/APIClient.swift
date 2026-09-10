@@ -48,15 +48,20 @@ actor APIClient {
         try await get("/api/feed/stats")
     }
 
-    func dueCount() async throws -> [String: Int] {
-        try await get("/api/feed/due-count")
+    func submitReview(itemId: String, itemType: String, difficulty: ReviewDifficulty, responseTimeMs: Int? = nil) async throws -> ReviewSubmitResult {
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "item_id", value: itemId),
+            URLQueryItem(name: "item_type", value: itemType),
+            URLQueryItem(name: "difficulty", value: difficulty.rawValue)
+        ]
+        if let responseTimeMs {
+            items.append(URLQueryItem(name: "response_time_ms", value: String(responseTimeMs)))
+        }
+        return try await postQuery("/api/feed/review", query: items)
     }
 
-    func submitReview(itemId: String, quality: Int) async throws {
-        let _: EmptyJSON = try await post(
-            "/api/feed/review",
-            body: ReviewSubmitRequest(itemId: itemId, quality: quality)
-        )
+    func dueCount() async throws -> DueCountResponse {
+        try await get("/api/feed/due-count")
     }
 
     // MARK: - Graph
@@ -81,6 +86,21 @@ actor APIClient {
     }
 
     // MARK: - Core
+
+    private func makeDecoder() -> JSONDecoder {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .custom { decoder in
+            let c = try decoder.singleValueContainer()
+            let s = try c.decode(String.self)
+            if let date = ISO8601DateFormatter().date(from: s) { return date }
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = f.date(from: s) { return date }
+            throw DecodingError.dataCorruptedError(in: c, debugDescription: "Bad date: \(s)")
+        }
+        return d
+    }
+
     private func get<T: Decodable>(_ path: String) async throws -> T {
         try await send(path, method: "GET", body: Data?.none)
     }
@@ -88,6 +108,43 @@ actor APIClient {
     private func post<T: Decodable, B: Encodable>(_ path: String, body: B, auth: Bool = true) async throws -> T {
         let data = try JSONEncoder().encode(body)
         return try await send(path, method: "POST", body: data, auth: auth)
+    }
+
+
+    private func postQuery<T: Decodable>(_ path: String, query: [URLQueryItem], auth: Bool = true) async throws -> T {
+        guard let base = URL(string: path, relativeTo: APIConfig.baseURL)?.absoluteURL else {
+            throw APIError.invalidURL
+        }
+        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            throw APIError.invalidURL
+        }
+        components.queryItems = query
+        guard let url = components.url else { throw APIError.invalidURL }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = APIConfig.defaultTimeout
+        if auth, let accessToken {
+            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        do {
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw APIError.http(-1, "No HTTP response")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                throw APIError.http(http.statusCode, body)
+            }
+            do {
+                return try makeDecoder().decode(T.self, from: data)
+            } catch {
+                throw APIError.decoding(error)
+            }
+        } catch let err as APIError {
+            throw err
+        } catch {
+            throw APIError.transport(error)
+        }
     }
 
     private func send<T: Decodable>(_ path: String, method: String, body: Data?, auth: Bool = true) async throws -> T {
@@ -114,7 +171,7 @@ actor APIClient {
                 throw APIError.http(http.statusCode, text)
             }
             do {
-                return try JSONDecoder().decode(T.self, from: data)
+                return try makeDecoder().decode(T.self, from: data)
             } catch {
                 throw APIError.decoding(error)
             }
