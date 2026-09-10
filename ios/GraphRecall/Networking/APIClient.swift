@@ -14,6 +14,33 @@ enum APIError: Error, LocalizedError {
         case .transport(let err): return err.localizedDescription
         }
     }
+
+    /// Short, UI-safe copy — never dump HTML / huge bodies into empty states.
+    static func userFacing(_ error: Error, resource: String) -> String {
+        let raw = error.localizedDescription
+        let lower = raw.lowercased()
+        let isHTML = lower.contains("<html") || lower.contains("<!doctype")
+        let tooLong = raw.count > 180
+
+        if case let APIError.http(code, _) = error {
+            switch code {
+            case 401, 403: return "Sign in to load your \(resource)."
+            case 404: return "\(resource.capitalized) API not found (404)."
+            case 408, 504: return "Couldn\u{2019}t reach the \(resource) API."
+            default: break
+            }
+        }
+
+        if isHTML || tooLong {
+            if lower.contains("404") { return "\(resource.capitalized) API not found (404)." }
+            if lower.contains("401") || lower.contains("403") { return "Sign in to load your \(resource)." }
+            if lower.contains("timed out") || lower.contains("offline") || lower.contains("notconnected") {
+                return "Couldn\u{2019}t reach the \(resource) API."
+            }
+            return "Couldn\u{2019}t reach the \(resource) API."
+        }
+        return raw
+    }
 }
 
 struct EmptyJSON: Decodable {}
