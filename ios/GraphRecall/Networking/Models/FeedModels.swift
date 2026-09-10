@@ -9,6 +9,49 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
     case screenshot
     case showcase
     case codeChallenge = "code_challenge"
+
+    /// Accept backend wire values *and* web CardType aliases (`quiz`, `fillblank`, etc.).
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = FeedItemType.parse(raw)
+    }
+
+    static func parse(_ raw: String) -> FeedItemType {
+        switch raw.lowercased() {
+        case "flashcard", "term_card": return .flashcard
+        case "mcq", "quiz": return .mcq
+        case "fill_blank", "fillblank": return .fillBlank
+        case "infographic": return .infographic
+        case "diagram": return .diagram
+        case "screenshot": return .screenshot
+        case "showcase", "concept_showcase": return .showcase
+        case "code_challenge": return .codeChallenge
+        default: return .flashcard
+        }
+    }
+
+    var displayLabel: String {
+        switch self {
+        case .flashcard: return "Term Card"
+        case .mcq: return "Quiz"
+        case .fillBlank: return "Fill in the Blank"
+        case .infographic: return "Infographic"
+        case .diagram: return "Diagram"
+        case .screenshot: return "Screenshot"
+        case .showcase: return "Concept Showcase"
+        case .codeChallenge: return "Code Challenge"
+        }
+    }
+
+    var accentColorName: String {
+        switch self {
+        case .flashcard, .showcase: return "accent"
+        case .mcq: return "accent"
+        case .fillBlank, .codeChallenge: return "cyan"
+        case .diagram: return "purple"
+        case .screenshot, .infographic: return "coral"
+        }
+    }
 }
 
 enum ReviewDifficulty: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -82,6 +125,12 @@ struct FeedResponse: Codable, Sendable {
     }
 }
 
+struct FeedMCQOption: Hashable, Sendable, Identifiable {
+    let id: String
+    let text: String
+    let isCorrect: Bool
+}
+
 struct FeedItem: Codable, Sendable, Identifiable, Hashable {
     let id: String
     let itemType: FeedItemType
@@ -123,11 +172,16 @@ struct FeedItem: Codable, Sendable, Identifiable, Hashable {
         case dueDate = "due_date"
     }
 
+    var isDemo: Bool {
+        id.hasPrefix("demo-") || domain?.caseInsensitiveCompare("Demo") == .orderedSame
+    }
+
     var title: String {
         if let name = conceptName, !name.isEmpty { return name }
         if let front = stringContent("front") { return front }
         if let q = stringContent("question") { return q }
-        return itemType.rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+        if let t = stringContent("title") { return t }
+        return itemType.displayLabel
     }
 
     var prompt: String {
@@ -135,6 +189,8 @@ struct FeedItem: Codable, Sendable, Identifiable, Hashable {
             ?? stringContent("question")
             ?? stringContent("sentence")
             ?? stringContent("instruction")
+            ?? stringContent("description")
+            ?? stringContent("definition")
             ?? title
     }
 
@@ -142,11 +198,90 @@ struct FeedItem: Codable, Sendable, Identifiable, Hashable {
         stringContent("back")
             ?? stringContent("explanation")
             ?? stringContent("solution_code")
+            ?? stringContent("solutionCode")
+            ?? firstAnswerFromList()
     }
 
     func stringContent(_ key: String) -> String? {
         guard let v = content[key]?.value as? String, !v.isEmpty else { return nil }
         return v
+    }
+
+    func stringArrayContent(_ key: String) -> [String] {
+        if let arr = content[key]?.value as? [String] { return arr }
+        if let arr = content[key]?.value as? [Any] {
+            return arr.compactMap { $0 as? String }
+        }
+        return []
+    }
+
+    func firstAnswerFromList() -> String? {
+        let answers = stringArrayContent("answers")
+        if let first = answers.first { return first }
+        return stringContent("answer")
+    }
+
+    var mcqOptions: [FeedMCQOption] {
+        guard let raw = content["options"]?.value else { return [] }
+
+        if let strings = raw as? [String] {
+            let correct = stringContent("correct_answer")
+            return strings.enumerated().map { idx, text in
+                FeedMCQOption(
+                    id: "opt-\(idx)",
+                    text: text,
+                    isCorrect: correct.map { $0 == text } ?? false
+                )
+            }
+        }
+
+        if let dicts = raw as? [[String: Any]] {
+            return dicts.enumerated().map { idx, d in
+                let text = (d["text"] as? String) ?? (d["label"] as? String) ?? "Option \(idx + 1)"
+                let id = (d["id"] as? String) ?? "opt-\(idx)"
+                let isCorrect = (d["is_correct"] as? Bool)
+                    ?? (d["isCorrect"] as? Bool)
+                    ?? false
+                return FeedMCQOption(id: id, text: text, isCorrect: isCorrect)
+            }
+        }
+
+        if let boxed = raw as? [Any] {
+            return boxed.enumerated().compactMap { idx, el -> FeedMCQOption? in
+                if let s = el as? String {
+                    let correct = stringContent("correct_answer")
+                    return FeedMCQOption(id: "opt-\(idx)", text: s, isCorrect: correct == s)
+                }
+                if let d = el as? [String: Any] {
+                    let text = (d["text"] as? String) ?? "Option \(idx + 1)"
+                    let id = (d["id"] as? String) ?? "opt-\(idx)"
+                    let isCorrect = (d["is_correct"] as? Bool) ?? (d["isCorrect"] as? Bool) ?? false
+                    return FeedMCQOption(id: id, text: text, isCorrect: isCorrect)
+                }
+                return nil
+            }
+        }
+        return []
+    }
+
+    var imageURL: URL? {
+        let s = stringContent("file_url")
+            ?? stringContent("imageUrl")
+            ?? stringContent("thumbnail_url")
+            ?? stringContent("thumbnailUrl")
+        guard let s, let url = URL(string: s) else { return nil }
+        return url
+    }
+
+    var linkedConcepts: [String] {
+        stringArrayContent("linked_concepts").isEmpty
+            ? stringArrayContent("linkedConcepts")
+            : stringArrayContent("linked_concepts")
+    }
+
+    var keyPoints: [String] {
+        let a = stringArrayContent("key_points")
+        return a.isEmpty ? stringArrayContent("keyPoints") : a
     }
 }
 
