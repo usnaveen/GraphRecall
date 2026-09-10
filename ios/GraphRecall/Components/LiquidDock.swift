@@ -89,7 +89,7 @@ struct LiquidDock: View {
                 Text(tab.title)
                     .font(GRType.micro)
                     .foregroundStyle(isActive || isCenter ? GRColor.accent : GRColor.textTertiary)
-                    .opacity(isCenter ? 0 : 1)
+                    .opacity(1)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())

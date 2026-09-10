@@ -41,7 +41,7 @@ final class GraphViewModel {
                 selectedNodeId = response.nodes.first?.id
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.sanitizeError(error)
             graph = Self.stubGraph()
             usingStub = true
             selectedNodeId = graph.nodes.first?.id
@@ -50,6 +50,19 @@ final class GraphViewModel {
 
     func select(nodeId: String?) {
         selectedNodeId = nodeId
+    }
+
+
+    private static func sanitizeError(_ error: Error) -> String {
+        let raw = error.localizedDescription
+        let lower = raw.lowercased()
+        if lower.contains("<html") || lower.contains("<!doctype") || raw.count > 180 {
+            if lower.contains("404") { return "Graph API not found (404)." }
+            if lower.contains("401") || lower.contains("403") { return "Sign in to load your graph." }
+            if lower.contains("timed out") || lower.contains("offline") { return "Couldn\u{2019}t reach the graph API." }
+            return "Couldn\u{2019}t reach the graph API."
+        }
+        return raw
     }
 
     static func stubGraph() -> Graph3DResponse {
