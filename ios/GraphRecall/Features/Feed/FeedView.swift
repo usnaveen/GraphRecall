@@ -4,65 +4,69 @@ struct FeedView: View {
     @State private var model = FeedViewModel()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 12) {
-                    GRScreenHeader(title: "Today", subtitle: "SM-2 active recall")
-                    Button {
-                        Task { await model.load() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .foregroundStyle(GRColor.accent)
-                            .padding(10)
-                            .grGlassEffect(.interactive, in: Circle())
-                    }
-                    .padding(.trailing, 20)
-                    .padding(.top, 12)
-                }
+        ZStack {
+            GRColor.canvas.ignoresSafeArea()
 
-                statsRow
-                    .padding(.horizontal, 20)
-
-                if model.dumpBannerCount > 0 {
-                    GlassCard(cornerRadius: 14) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "tray.and.arrow.down.fill")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 12) {
+                        GRScreenHeader(title: "Today", subtitle: "Cards due for review")
+                        Button {
+                            Task { await model.load() }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
                                 .foregroundStyle(GRColor.accent)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("New teach cards")
-                                    .font(GRType.headline)
-                                    .foregroundStyle(GRColor.textPrimary)
-                                Text("\(model.dumpBannerCount) from Concept Dump — graded into SM-2")
-                                    .font(GRType.caption)
-                                    .foregroundStyle(GRColor.textSecondary)
+                                .padding(10)
+                                .grGlassEffect(.interactive, in: Circle())
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.top, 12)
+                    }
+
+                    statsRow
+                        .padding(.horizontal, 20)
+
+                    if model.dumpBannerCount > 0 {
+                        GlassCard(cornerRadius: 14) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "tray.and.arrow.down.fill")
+                                    .foregroundStyle(GRColor.accent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("New teach cards")
+                                        .font(GRType.headline)
+                                        .foregroundStyle(GRColor.textPrimary)
+                                    Text("\(model.dumpBannerCount) new cards ready to review")
+                                        .font(GRType.caption)
+                                        .foregroundStyle(GRColor.textSecondary)
+                                }
+                                Spacer()
                             }
-                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+                    }
+
+                    if model.isOffline || model.pendingFlushCount > 0 {
+                        offlineBanner
+                            .padding(.horizontal, 20)
+                    }
+
+                    Group {
+                        if model.isLoading && model.items.isEmpty {
+                            ProgressView()
+                                .tint(GRColor.accent)
+                                .frame(maxWidth: .infinity, minHeight: 160)
+                        } else if let item = model.currentItem {
+                            reviewCard(item)
+                        } else if model.items.isEmpty {
+                            emptyState
+                        } else {
+                            doneState
                         }
                     }
                     .padding(.horizontal, 20)
                 }
-
-                if model.isOffline || model.pendingFlushCount > 0 {
-                    offlineBanner
-                        .padding(.horizontal, 20)
-                }
-
-                Group {
-                    if model.isLoading && model.items.isEmpty {
-                        ProgressView()
-                            .tint(GRColor.accent)
-                            .frame(maxWidth: .infinity, minHeight: 160)
-                    } else if let item = model.currentItem {
-                        reviewCard(item)
-                    } else if model.items.isEmpty {
-                        emptyState
-                    } else {
-                        doneState
-                    }
-                }
-                .padding(.horizontal, 20)
+                .padding(.bottom, GRLayout.dockClearance)
             }
-            .padding(.bottom, GRLayout.dockClearance)
         }
         .task { await model.load() }
         .refreshable { await model.load() }
@@ -105,8 +109,8 @@ struct FeedView: View {
                         .font(GRType.headline)
                         .foregroundStyle(GRColor.textPrimary)
                     Text(model.pendingFlushCount > 0
-                         ? "\(model.pendingFlushCount) review(s) queued for SM-2 sync"
-                         : "Showing cached feed")
+                         ? "\(model.pendingFlushCount) review(s) waiting to sync"
+                         : "Showing cached cards — stats may be stale")
                         .font(GRType.caption)
                         .foregroundStyle(GRColor.textSecondary)
                 }
@@ -202,7 +206,7 @@ struct FeedView: View {
                 Text("Nothing due")
                     .font(GRType.headline)
                     .foregroundStyle(GRColor.accent)
-                Text(model.errorMessage ?? "Dump concepts in Create, or wait for the next SM-2 window.")
+                Text(model.errorMessage ?? "Dump concepts in Create, or check back when cards are due.")
                     .font(GRType.body)
                     .foregroundStyle(GRColor.textSecondary)
             }
@@ -224,9 +228,6 @@ struct FeedView: View {
 }
 
 #Preview {
-    ZStack {
-        GRColor.canvas.ignoresSafeArea()
-        FeedView()
-    }
-    .preferredColorScheme(.dark)
+    FeedView()
+        .preferredColorScheme(.dark)
 }
