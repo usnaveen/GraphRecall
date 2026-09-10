@@ -124,4 +124,6 @@ struct ProcessedZipIngestResponse: Codable, Sendable {
 extension Notification.Name {
     /// Switch to Profile and push Library (Create success deep link).
     static let grNavigateLibrary = Notification.Name("gr.navigate.library")
+    /// Switch to Feed tab (Graph quiz / Assistant create-card handoff).
+    static let grNavigateFeed = Notification.Name("gr.navigate.feed")
 }

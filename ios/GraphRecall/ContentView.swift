@@ -33,6 +33,9 @@ struct ContentView: View {
             tab = .profile
             openLibraryToken += 1
         }
+        .onReceive(NotificationCenter.default.publisher(for: .grNavigateFeed)) { _ in
+            tab = .feed
+        }
     }
 }
 
