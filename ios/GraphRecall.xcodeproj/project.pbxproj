@@ -23,10 +23,12 @@
 		677AC8792FA0E88D851F90AD /* DemoFeedSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */; };
 		6CAA41BF9F94661E27E5128A /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25717B008D78F115654FA98B /* FeedView.swift */; };
 		704A0F8042B14BCB99B5B5B0 /* GraphModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681EB7E42D12061208FB2034 /* GraphModels.swift */; };
+		7125C8D2C47981BAA7021609 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7FF515475618D8C73AE527 /* LibraryView.swift */; };
 		74487DC936815D7E43050870 /* GRScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F78211E1B8741510C9AA24D /* GRScreenHeader.swift */; };
 		8014C3E9EE7B41AD300C9DF2 /* IngestModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54D8E856C0FE63DA3A324D85 /* IngestModels.swift */; };
 		81F71FDA03D069B4197F7F46 /* FeedViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE14E2BBC801DE9BC6A5BA7 /* FeedViewModel.swift */; };
 		8D91C62AA931A09C9BF1B2E6 /* Glass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31B4155BF84146B9C4C8466B /* Glass.swift */; };
+		8ECDA2E26F74AF0B3BE83CA8 /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3872EBE43ED39B904A7D19A0 /* LibraryModels.swift */; };
 		95CC6AFBFECBA2ABF3CBC41F /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B0EF21DCB77A720FA6139F /* GlassCard.swift */; };
 		9D0082A37375C67E27A2039D /* FeedCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D53E4786769C667032C743FF /* FeedCardViews.swift */; };
 		B283C8D35E3713761D2D4156 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63297E6164BBF835B5F2FCDD /* Typography.swift */; };
@@ -54,10 +56,12 @@
 		2AB33FAE9682E59CBE334E53 /* LiquidDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidDock.swift; sourceTree = "<group>"; };
 		31B4155BF84146B9C4C8466B /* Glass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Glass.swift; sourceTree = "<group>"; };
 		354389AA6E635E3758568334 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		3872EBE43ED39B904A7D19A0 /* LibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryModels.swift; sourceTree = "<group>"; };
 		3F78211E1B8741510C9AA24D /* GRScreenHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRScreenHeader.swift; sourceTree = "<group>"; };
 		4D60F0755297C074FCE2F88D /* APIConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfig.swift; sourceTree = "<group>"; };
 		4F4AB921E260606FD5618584 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		54D8E856C0FE63DA3A324D85 /* IngestModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestModels.swift; sourceTree = "<group>"; };
+		5D7FF515475618D8C73AE527 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		63297E6164BBF835B5F2FCDD /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		681EB7E42D12061208FB2034 /* GraphModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphModels.swift; sourceTree = "<group>"; };
 		6D5550930146E10280F9D9BE /* CreateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateView.swift; sourceTree = "<group>"; };
@@ -154,6 +158,7 @@
 				0B6149E4976D7EDB8AFEB78E /* FeedModels.swift */,
 				681EB7E42D12061208FB2034 /* GraphModels.swift */,
 				54D8E856C0FE63DA3A324D85 /* IngestModels.swift */,
+				3872EBE43ED39B904A7D19A0 /* LibraryModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -213,6 +218,7 @@
 				5B4079737C7615CCDC1E8888 /* Create */,
 				827D12B04839C3724638E2DF /* Feed */,
 				13F7E798EAFE027D6F37F0A5 /* Graph */,
+				CC5E4306A52F2A56E75533AB /* Library */,
 				4ED911F0E84C5F54553EBC31 /* Profile */,
 			);
 			path = Features;
@@ -224,6 +230,14 @@
 				DDDDE8140031142096BC86BF /* GraphRecall.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		CC5E4306A52F2A56E75533AB /* Library */ = {
+			isa = PBXGroup;
+			children = (
+				5D7FF515475618D8C73AE527 /* LibraryView.swift */,
+			);
+			path = Library;
 			sourceTree = "<group>";
 		};
 		E0D4846F57DB15EB6DC055CB /* Assistant */ = {
@@ -334,6 +348,8 @@
 				C25E93AFF53FB438B794FDA5 /* GraphView.swift in Sources */,
 				EF31F821B5D52CD61798BDB9 /* GraphViewModel.swift in Sources */,
 				8014C3E9EE7B41AD300C9DF2 /* IngestModels.swift in Sources */,
+				8ECDA2E26F74AF0B3BE83CA8 /* LibraryModels.swift in Sources */,
+				7125C8D2C47981BAA7021609 /* LibraryView.swift in Sources */,
 				B30FD14AD974FE565F3E24DC /* LiquidDock.swift in Sources */,
 				1CC0BDE712010385C102706D /* OfflineReviewStore.swift in Sources */,
 				1F44B6FC7FD4A5BF4513781B /* ProfileView.swift in Sources */,

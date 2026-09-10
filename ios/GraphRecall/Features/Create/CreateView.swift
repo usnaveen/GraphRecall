@@ -1,4 +1,6 @@
 import SwiftUI
+import UniformTypeIdentifiers
+import PDFKit
 
 enum CreateIngestMode: String, CaseIterable, Identifiable, Sendable {
     case concepts
@@ -21,7 +23,7 @@ enum CreateIngestMode: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var isStub: Bool { self == .file }
+    var isStub: Bool { false }
 }
 
 @MainActor
@@ -41,6 +43,14 @@ final class CreateViewModel {
     var successMessage: String?
     var lastIngest: IngestResponse?
     var lastYouTube: IngestYouTubeResponse?
+    var lastZip: ProcessedZipIngestResponse?
+
+    // File / ZIP picker
+    var showFileImporter = false
+    var selectedFileName: String?
+    var selectedFileURL: URL?
+    var selectedFileIsZip = false
+    var showLibraryLink = false
 
     var parsedConcepts: [String] {
         conceptsText
@@ -50,14 +60,14 @@ final class CreateViewModel {
     }
 
     var canSubmit: Bool {
-        guard !isSubmitting, !mode.isStub else { return false }
+        guard !isSubmitting else { return false }
         switch mode {
         case .concepts: return !parsedConcepts.isEmpty
         case .text, .chat: return !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .url, .youtube:
             let raw = urlField.trimmingCharacters(in: .whitespacesAndNewlines)
             return URL(string: raw)?.scheme != nil && !raw.isEmpty
-        case .file: return false
+        case .file: return selectedFileURL != nil
         }
     }
 
@@ -66,6 +76,7 @@ final class CreateViewModel {
             switch mode {
             case .concepts: return "Researching…"
             case .youtube: return "Saving…"
+            case .file: return selectedFileIsZip ? "Uploading ZIP…" : "Ingesting file…"
             default: return "Ingesting…"
             }
         }
@@ -75,7 +86,7 @@ final class CreateViewModel {
         case .url: return "Ingest URL"
         case .youtube: return "Save YouTube link"
         case .chat: return "Ingest transcript"
-        case .file: return "Coming soon"
+        case .file: return selectedFileIsZip ? "Upload processed ZIP" : "Ingest file"
         }
     }
 
@@ -85,6 +96,36 @@ final class CreateViewModel {
         lastDumpResponse = nil
         lastIngest = nil
         lastYouTube = nil
+        lastZip = nil
+        showLibraryLink = false
+    }
+
+    func clearSelectedFile() {
+        selectedFileName = nil
+        selectedFileURL = nil
+        selectedFileIsZip = false
+    }
+
+    func applyPickedFile(url: URL) {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+
+        // Copy into temp so the security-scoped bookmark isn't required later.
+        let ext = url.pathExtension.lowercased()
+        let name = url.lastPathComponent
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gr-ingest-\(UUID().uuidString)-\(name)")
+        try? FileManager.default.removeItem(at: dest)
+        do {
+            try FileManager.default.copyItem(at: url, to: dest)
+            selectedFileURL = dest
+            selectedFileName = name
+            selectedFileIsZip = (ext == "zip")
+            clearResults()
+        } catch {
+            errorMessage = "Couldn’t read file: \(error.localizedDescription)"
+            clearSelectedFile()
+        }
     }
 
     func selectMode(_ newMode: CreateIngestMode) {
@@ -95,12 +136,7 @@ final class CreateViewModel {
 
     func submit() async {
         guard canSubmit else {
-            if mode.isStub {
-                errorMessage = nil
-                successMessage = "File / ZIP ingest is coming soon."
-            } else {
-                errorMessage = "Fill in the required fields."
-            }
+            errorMessage = "Fill in the required fields."
             return
         }
 
@@ -110,6 +146,8 @@ final class CreateViewModel {
         lastDumpResponse = nil
         lastIngest = nil
         lastYouTube = nil
+        lastZip = nil
+        showLibraryLink = false
         defer { isSubmitting = false }
 
         do {
@@ -150,10 +188,60 @@ final class CreateViewModel {
                 applyIngestSuccess(response, verb: "Chat transcript")
 
             case .file:
-                successMessage = "File / ZIP ingest is coming soon."
+                try await submitFile()
             }
         } catch {
             errorMessage = APIError.userFacing(error, resource: "ingest")
+        }
+    }
+
+
+    private func submitFile() async throws {
+        guard let fileURL = selectedFileURL else {
+            errorMessage = "Pick a file first."
+            return
+        }
+        let name = selectedFileName ?? fileURL.lastPathComponent
+        let title = optionalTitle ?? name.replacingOccurrences(
+            of: #"\.\w+$"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        if selectedFileIsZip {
+            let response = try await APIClient.shared.ingestProcessedZip(
+                fileURL: fileURL,
+                title: title,
+                resourceType: "book",
+                skipReview: true
+            )
+            lastZip = response
+            if let err = response.error, response.status == "error" {
+                errorMessage = err
+                return
+            }
+            var parts: [String] = ["ZIP \(response.status)"]
+            if !response.threadId.isEmpty {
+                parts.append("thread \(shortId(response.threadId))")
+            }
+            if !response.message.isEmpty {
+                parts.append(response.message)
+            }
+            successMessage = parts.joined(separator: " · ")
+            showLibraryLink = true
+        } else {
+            let content = try CreateFileReader.extractText(from: fileURL)
+            guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                errorMessage = "No extractable text in this file."
+                return
+            }
+            let response = try await APIClient.shared.ingestText(
+                content: content,
+                title: title,
+                resourceType: "notes"
+            )
+            lastIngest = response
+            applyIngestSuccess(response, verb: "File")
         }
     }
 
@@ -236,8 +324,27 @@ struct CreateView: View {
                         ingestSummaryCard(ingest)
                             .padding(.horizontal, 20)
                     }
+
+                    if let zip = model.lastZip {
+                        zipSummaryCard(zip)
+                            .padding(.horizontal, 20)
+                    }
                 }
                 .padding(.bottom, GRLayout.dockClearance)
+            }
+        }
+        .fileImporter(
+            isPresented: $model.showFileImporter,
+            allowedContentTypes: CreateFileReader.allowedTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    model.applyPickedFile(url: url)
+                }
+            case .failure(let error):
+                model.errorMessage = APIError.userFacing(error, resource: "file picker")
             }
         }
     }
@@ -249,7 +356,7 @@ struct CreateView: View {
         case .url: return "Ingest an article from a URL (Substack, Medium, blogs)"
         case .youtube: return "Save a YouTube link as a resource (no transcript processing)"
         case .chat: return "Paste an LLM chat transcript (Human: / AI:)"
-        case .file: return "Upload files & processed ZIPs — coming soon"
+        case .file: return "PDF, markdown, text, or processed-book ZIP → your graph / library"
         }
     }
 
@@ -379,10 +486,76 @@ struct CreateView: View {
             Text("File / ZIP")
                 .font(GRType.headline)
                 .foregroundStyle(GRColor.textPrimary)
-            Text("PDF, markdown, and processed-book ZIP uploads will land here next. Use Text or URL for now.")
+            Text("Documents (PDF, .md, .txt) extract text and POST /api/v2/ingest. Processed ZIPs upload multipart to /api/v2/ingest/processed-zip.")
                 .font(GRType.caption)
                 .foregroundStyle(GRColor.textSecondary)
+
+            titleField
+
+            Button {
+                model.showFileImporter = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(GRColor.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.selectedFileName == nil ? "Choose file" : "Change file")
+                            .font(GRType.headline)
+                            .foregroundStyle(GRColor.textPrimary)
+                        Text(model.selectedFileName ?? "PDF · Markdown · Text · ZIP")
+                            .font(GRType.caption)
+                            .foregroundStyle(GRColor.textSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    if model.selectedFileIsZip {
+                        Text("ZIP")
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.accentCyan)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(GRColor.accentCyan.opacity(0.15)))
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(GRColor.fillSubtle)
+                )
+            }
+            .buttonStyle(.plain)
+
+            if model.selectedFileURL != nil {
+                Button("Clear selection") {
+                    model.clearSelectedFile()
+                    model.clearResults()
+                }
+                .font(GRType.caption)
+                .foregroundStyle(GRColor.textTertiary)
+            }
+
             submitButton
+
+            if model.showLibraryLink {
+                Button {
+                    NotificationCenter.default.post(name: .grNavigateLibrary, object: nil)
+                } label: {
+                    HStack {
+                        Image(systemName: "books.vertical.fill")
+                        Text("Open Library")
+                            .font(GRType.headline)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .foregroundStyle(GRColor.accent)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(GRColor.accent.opacity(0.4), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -543,6 +716,95 @@ struct CreateView: View {
                 }
             }
         }
+    }
+
+    private func zipSummaryCard(_ response: ProcessedZipIngestResponse) -> some View {
+        GlassCard(cornerRadius: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("ZIP queued")
+                        .font(GRType.headline)
+                        .foregroundStyle(GRColor.textPrimary)
+                    Spacer()
+                    Text(response.status)
+                        .font(GRType.caption)
+                        .foregroundStyle(
+                            response.status == "error" ? GRColor.warning : GRColor.accent
+                        )
+                }
+                if !response.threadId.isEmpty {
+                    Text("thread_id: \(response.threadId)")
+                        .font(GRType.micro)
+                        .foregroundStyle(GRColor.textTertiary)
+                        .textSelection(.enabled)
+                }
+                if !response.message.isEmpty {
+                    Text(response.message)
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.textSecondary)
+                }
+                if let err = response.error, !err.isEmpty {
+                    Text(err)
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.warning)
+                }
+            }
+        }
+    }
+}
+
+enum CreateFileReader {
+    static var allowedTypes: [UTType] {
+        var types: [UTType] = [.pdf, .plainText, .utf8PlainText, .zip]
+        if let md = UTType(filenameExtension: "md") { types.append(md) }
+        if let markdown = UTType(filenameExtension: "markdown") { types.append(markdown) }
+        return types
+    }
+
+    static func extractText(from url: URL) throws -> String {
+        let ext = url.pathExtension.lowercased()
+        switch ext {
+        case "pdf":
+            return try extractPDF(url)
+        case "md", "markdown", "txt", "text", "":
+            return try String(contentsOf: url, encoding: .utf8)
+        default:
+            // Best-effort UTF-8 for unknown text-like types
+            if let s = try? String(contentsOf: url, encoding: .utf8), !s.isEmpty {
+                return s
+            }
+            throw NSError(
+                domain: "CreateFileReader",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Unsupported file type .\(ext). Use PDF, Markdown, TXT, or ZIP."]
+            )
+        }
+    }
+
+    private static func extractPDF(_ url: URL) throws -> String {
+        guard let doc = PDFDocument(url: url) else {
+            throw NSError(
+                domain: "CreateFileReader",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Couldn’t open PDF."]
+            )
+        }
+        var parts: [String] = []
+        for i in 0..<doc.pageCount {
+            if let page = doc.page(at: i), let s = page.string {
+                parts.append(s)
+            }
+        }
+        let text = parts.joined(separator: "\n\n")
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw NSError(
+                domain: "CreateFileReader",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "PDF has no extractable text (scanned image?)."]
+            )
+        }
+        let name = url.deletingPathExtension().lastPathComponent
+        return "Draft Note: \(name)\n\n\(text)"
     }
 }
 
