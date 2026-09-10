@@ -60,7 +60,7 @@ final class FeedViewModel {
             pendingFlushCount = await OfflineReviewStore.shared.load().count
         } catch {
             isOffline = true
-            errorMessage = error.localizedDescription
+            errorMessage = APIError.userFacing(error, resource: "feed")
             if let cached = await OfflineReviewStore.shared.cachedFeed() {
                 items = Self.merge(server: cached.items, dump: dumpItems)
                 completedToday = cached.completedToday

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FeedView: View {
     @State private var model = FeedViewModel()
+    @State private var contentReady = false
 
     var body: some View {
         ZStack {
@@ -67,8 +68,13 @@ struct FeedView: View {
                 }
                 .padding(.bottom, GRLayout.dockClearance)
             }
+            .opacity(contentReady ? 1 : 0)
+            .animation(.easeOut(duration: 0.18), value: contentReady)
         }
-        .task { await model.load() }
+        .task {
+            await model.load()
+            contentReady = true
+        }
         .refreshable { await model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .grDumpCompleted)) { _ in
             Task { await model.load() }
