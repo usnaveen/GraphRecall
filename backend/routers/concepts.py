@@ -436,3 +436,41 @@ async def backfill_embeddings(
     except Exception as e:
         logger.error("Backfill: Error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Concept Dump (bulk learn list → research → teach cards)
+# ---------------------------------------------------------------------------
+
+class ConceptDumpRequest(BaseModel):
+    concepts: List[str]
+
+
+@router.post("/dump")
+async def dump_concepts(
+    request: ConceptDumpRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Accept a list of concept names, research each, create teach cards + sources.
+
+    Cards land in flashcards/generated_content so the SM-2 feed can pick them up.
+    """
+    if not request.concepts:
+        raise HTTPException(status_code=400, detail="concepts list is empty")
+    if len(request.concepts) > 40:
+        raise HTTPException(status_code=400, detail="Max 40 concepts per dump")
+
+    from backend.services.concept_dump_service import (
+        dump_concepts as run_dump,
+        user_facing_error,
+    )
+
+    user_id = str(current_user["id"])
+    try:
+        return await run_dump(user_id, request.concepts)
+    except Exception as e:
+        logger.error("Concepts: dump failed", error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=user_facing_error(e, resource="concept dump"),
+        )

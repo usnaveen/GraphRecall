@@ -14,6 +14,7 @@ from backend.models.feed_schemas import (
     Graph3DResponse,
 )
 from backend.services.community_service import CommunityService
+from backend.services.concept_dump_service import user_facing_error
 
 logger = structlog.get_logger()
 
@@ -302,7 +303,10 @@ async def get_3d_graph(
         raise
     except Exception as e:
         logger.error("Graph3D: Error getting graph", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=user_facing_error(e, resource="graph"),
+        )
 
 
 @router.get("/focus/{concept_id}")
@@ -474,7 +478,10 @@ async def focus_on_concept(
         raise
     except Exception as e:
         logger.error("Graph3D: Error focusing on concept", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=user_facing_error(e, resource="graph"),
+        )
 
 
 @router.get("/search")
@@ -523,7 +530,10 @@ async def search_for_3d_navigation(
         
     except Exception as e:
         logger.error("Graph3D: Error searching", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=user_facing_error(e, resource="graph search"),
+        )
 @router.post("/communities/recompute")
 async def recompute_communities(
     current_user: dict = Depends(get_current_user),
@@ -538,4 +548,7 @@ async def recompute_communities(
         return {"status": "recomputed", "count": len(communities)}
     except Exception as e:
         logger.error("Graph3D: Failed to recompute communities", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=user_facing_error(e, resource="communities"),
+        )

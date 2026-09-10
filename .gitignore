@@ -101,3 +101,9 @@ verify_output.txt
 .cursorrules
 .claude/
 .langgraph_api/
+
+# Xcode / iOS
+ios/**/xcuserdata/
+ios/**/*.xcuserstate
+ios/GraphRecall.xcodeproj/project.xcworkspace/xcuserdata/
+DerivedData/
