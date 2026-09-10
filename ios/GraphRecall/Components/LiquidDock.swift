@@ -36,10 +36,12 @@ struct LiquidDock: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
         .background { dockBackground }
         .padding(.horizontal, 20)
-        .padding(.bottom, 8)
+        // Sit on the home-indicator safe area — not floating mid-air.
+        .padding(.bottom, 2)
     }
 
     @ViewBuilder
@@ -52,7 +54,7 @@ struct LiquidDock: View {
                 selection = tab
             }
         } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: 3) {
                 ZStack {
                     if isCenter {
                         Circle()
@@ -63,9 +65,8 @@ struct LiquidDock: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 46, height: 46)
-                            .offset(y: -8)
-                            .shadow(color: GRColor.accent.opacity(0.45), radius: 12, y: 4)
+                            .frame(width: 40, height: 40)
+                            .shadow(color: GRColor.accent.opacity(0.35), radius: 8, y: 2)
                     } else if isActive {
                         if #available(iOS 26.0, *) {
                             Capsule()
@@ -80,16 +81,14 @@ struct LiquidDock: View {
                     }
 
                     Image(systemName: tab.systemImage)
-                        .font(.system(size: isCenter ? 18 : 16, weight: isActive || isCenter ? .semibold : .regular))
-                        .foregroundStyle(isCenter ? Color(red: 0.027, green: 0.027, blue: 0.039) : (isActive ? GRColor.accent : GRColor.textSecondary))
-                        .offset(y: isCenter ? -8 : 0)
-                        .frame(width: 44, height: isCenter ? 44 : 36)
+                        .font(.system(size: isCenter ? 17 : 16, weight: isActive || isCenter ? .semibold : .regular))
+                        .foregroundStyle(isCenter ? GRColor.canvas : (isActive ? GRColor.accent : GRColor.textSecondary))
+                        .frame(width: 44, height: 36)
                 }
 
                 Text(tab.title)
                     .font(GRType.micro)
                     .foregroundStyle(isActive || isCenter ? GRColor.accent : GRColor.textTertiary)
-                    .opacity(1)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
@@ -105,7 +104,7 @@ struct LiquidDock: View {
             GlassEffectContainer(spacing: 12) {
                 shape
                     .fill(Color.clear)
-                    .frame(height: 64)
+                    .frame(height: 62)
                     .glassEffect(.regular.interactive(), in: shape)
             }
         } else {
@@ -113,7 +112,7 @@ struct LiquidDock: View {
                 .fill(.ultraThinMaterial)
                 .overlay(shape.stroke(GRColor.stroke, lineWidth: 1))
                 .shadow(color: .black.opacity(0.35), radius: 20, y: 8)
-                .frame(height: 64)
+                .frame(height: 62)
         }
     }
 }
