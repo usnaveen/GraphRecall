@@ -25,6 +25,11 @@ targets:
       - path: GraphRecall
         excludes:
           - Resources/Info.plist
+          - Resources/graph_force.html
+          - Resources/graph_force_boot.js
+    resources:
+      - path: GraphRecall/Resources/graph_force.html
+      - path: GraphRecall/Resources/graph_force_boot.js
     settings:
       base:
         PRODUCT_NAME: GraphRecall
