@@ -2,6 +2,10 @@ import SwiftUI
 
 enum ProfileNavRoute: Hashable {
     case library
+    case notes
+    case concepts
+    case uploads
+    case quizzes
 }
 
 struct ProfileView: View {
@@ -12,6 +16,13 @@ struct ProfileView: View {
     @State private var stats: UserStats?
     @State private var statsError: String?
     @State private var isLoadingStats = false
+    @State private var schedule: [ScheduleDay] = []
+    @State private var scheduleError: String?
+    @State private var notesCount = 0
+    @State private var conceptsCount = 0
+    @State private var uploadsCount = 0
+    @State private var quizCount = 0
+    @State private var booksCount = 0
     @State private var path = NavigationPath()
 
     var body: some View {
@@ -31,11 +42,21 @@ struct ProfileView: View {
                         identityCard
                             .padding(.horizontal, 20)
 
-                        statsRow
+                        dueChips
                             .padding(.horizontal, 20)
 
-                        libraryRow
+                        nestedStatsGrid
                             .padding(.horizontal, 20)
+
+                        CalendarScheduleView(schedule: schedule)
+                            .padding(.horizontal, 20)
+
+                        if let scheduleError {
+                            Text(scheduleError)
+                                .font(GRType.caption)
+                                .foregroundStyle(GRColor.warning)
+                                .padding(.horizontal, 20)
+                        }
 
                         activitySection
                             .padding(.horizontal, 20)
@@ -47,6 +68,14 @@ struct ProfileView: View {
                 switch route {
                 case .library:
                     LibraryView()
+                case .notes:
+                    ProfileNotesListView()
+                case .concepts:
+                    ProfileConceptsListView()
+                case .uploads:
+                    ProfileUploadsListView()
+                case .quizzes:
+                    ProfileQuizzesListView()
                 }
             }
             .navigationBarHidden(true)
@@ -64,47 +93,11 @@ struct ProfileView: View {
         }
     }
 
-    private var libraryRow: some View {
-        Button {
-            path.append(ProfileNavRoute.library)
-        } label: {
-            GlassCard {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [GRColor.accent.opacity(0.25), GRColor.accentCyan.opacity(0.2)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 44, height: 44)
-                        Image(systemName: "books.vertical.fill")
-                            .foregroundStyle(GRColor.accent)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Library")
-                            .font(GRType.headline)
-                            .foregroundStyle(GRColor.textPrimary)
-                        Text("Books & processed ZIP ingestions")
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.textSecondary)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(GRColor.textTertiary)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Library")
-    }
+    // MARK: - Header / identity
 
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
-            GRScreenHeader(title: "Profile", subtitle: "Streak, activity & account")
+            GRScreenHeader(title: "Profile", subtitle: "Streak, schedule & library")
             Button {
                 showSettings = true
             } label: {
@@ -155,6 +148,16 @@ struct ProfileView: View {
                         Text(tokenPresent ? "Session active" : "Offline identity stub")
                             .font(GRType.micro)
                             .foregroundStyle(GRColor.textTertiary)
+                        if let streak = stats?.streakDays, streak > 0 {
+                            Text("·")
+                                .foregroundStyle(GRColor.textTertiary)
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(GRColor.accent)
+                            Text("\(streak)d streak")
+                                .font(GRType.micro)
+                                .foregroundStyle(GRColor.textTertiary)
+                        }
                     }
                     .padding(.top, 2)
                 }
@@ -163,8 +166,9 @@ struct ProfileView: View {
         }
     }
 
-    private var statsRow: some View {
-        let streak = stats?.streakDays ?? 0
+    // MARK: - Due chips (NAV-26 keep)
+
+    private var dueChips: some View {
         let due = stats?.dueToday ?? 0
         let done = stats?.completedToday ?? 0
         let overdue = stats?.overdue ?? 0
@@ -173,16 +177,14 @@ struct ProfileView: View {
             if isLoadingStats && stats == nil {
                 ProgressView()
                     .tint(GRColor.accent)
-                    .frame(maxWidth: .infinity, minHeight: 72)
+                    .frame(maxWidth: .infinity, minHeight: 56)
             } else {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    statChip(title: "Streak", value: "\(streak)d", icon: "flame.fill")
-                    statChip(title: "Due today", value: "\(due)", icon: "tray.full.fill")
-                    statChip(title: "Completed", value: "\(done)", icon: "checkmark.circle.fill")
-                    statChip(title: "Overdue", value: "\(overdue)", icon: "exclamationmark.triangle.fill")
+                HStack(spacing: 10) {
+                    miniChip(title: "Due", value: "\(due)", icon: "tray.full.fill")
+                    miniChip(title: "Done", value: "\(done)", icon: "checkmark.circle.fill")
+                    miniChip(title: "Overdue", value: "\(overdue)", icon: "exclamationmark.triangle.fill")
                 }
             }
-
             if let statsError {
                 Text(statsError)
                     .font(GRType.caption)
@@ -191,24 +193,104 @@ struct ProfileView: View {
         }
     }
 
-    private func statChip(title: String, value: String, icon: String) -> some View {
-        GlassCard(cornerRadius: 16) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(GRColor.accent)
-                VStack(alignment: .leading, spacing: 4) {
+    private func miniChip(title: String, value: String, icon: String) -> some View {
+        GlassCard(cornerRadius: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(GRColor.accent)
                     Text(title)
-                        .font(GRType.caption)
+                        .font(GRType.micro)
                         .foregroundStyle(GRColor.textTertiary)
-                    Text(value)
-                        .font(GRType.headline)
-                        .foregroundStyle(GRColor.textPrimary)
                 }
-                Spacer(minLength: 0)
+                Text(value)
+                    .font(GRType.headline)
+                    .foregroundStyle(GRColor.textPrimary)
             }
         }
     }
+
+    // MARK: - Nested list stats (web ProfileScreen grid)
+
+    private var nestedStatsGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            drillCard(
+                title: "Quizzes",
+                count: quizCount,
+                icon: "target",
+                color: Color(red: 0.61, green: 0.35, blue: 0.71),
+                route: .quizzes
+            )
+            drillCard(
+                title: "Notes",
+                count: notesCount,
+                icon: "doc.text.fill",
+                color: GRColor.accent,
+                route: .notes
+            )
+            drillCard(
+                title: "Concepts",
+                count: conceptsCount,
+                icon: "brain.head.profile",
+                color: GRColor.accentCyan,
+                route: .concepts
+            )
+            drillCard(
+                title: "Resources",
+                count: uploadsCount,
+                icon: "photo.on.rectangle",
+                color: Color(red: 1.0, green: 0.42, blue: 0.42),
+                route: .uploads
+            )
+            drillCard(
+                title: "Books",
+                count: booksCount,
+                icon: "books.vertical.fill",
+                color: Color(red: 0.96, green: 0.62, blue: 0.04),
+                route: .library,
+                wide: true
+            )
+        }
+    }
+
+    private func drillCard(
+        title: String,
+        count: Int,
+        icon: String,
+        color: Color,
+        route: ProfileNavRoute,
+        wide: Bool = false
+    ) -> some View {
+        Button {
+            path.append(route)
+        } label: {
+            GlassCard(cornerRadius: 16) {
+                VStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(color.opacity(0.18))
+                            .frame(width: 40, height: 40)
+                        Image(systemName: icon)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(color)
+                    }
+                    Text("\(count)")
+                        .font(GRType.title)
+                        .foregroundStyle(GRColor.textPrimary)
+                    Text(title)
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.textSecondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title), \(count)")
+        .gridCellColumns(wide ? 2 : 1)
+    }
+
+    // MARK: - Heatmap (NAV-26)
 
     private var activitySection: some View {
         GlassCard {
@@ -243,17 +325,93 @@ struct ProfileView: View {
         }
     }
 
+    // MARK: - Load
+
     @MainActor
     private func refresh() async {
         tokenPresent = await APIClient.shared.getAccessToken() != nil
         isLoadingStats = true
         defer { isLoadingStats = false }
+
+        async let statsTask: Void = loadStats()
+        async let scheduleTask: Void = loadSchedule()
+        async let countsTask: Void = loadNestedCounts()
+        _ = await (statsTask, scheduleTask, countsTask)
+    }
+
+    @MainActor
+    private func loadStats() async {
         do {
             stats = try await APIClient.shared.fetchStats()
             statsError = nil
         } catch {
             statsError = APIError.userFacing(error, resource: "stats")
-            // Keep prior stats if any; empty heatmap still renders.
+        }
+    }
+
+    @MainActor
+    private func loadSchedule() async {
+        do {
+            schedule = try await APIClient.shared.fetchSchedule(days: 14)
+            scheduleError = nil
+        } catch {
+            scheduleError = APIError.userFacing(error, resource: "schedule")
+        }
+    }
+
+    @MainActor
+    private func loadNestedCounts() async {
+        async let notesR = softNotesCount()
+        async let conceptsR = softConceptsCount()
+        async let uploadsR = softUploadsCount()
+        async let quizzesR = softQuizCount()
+        async let booksR = softBooksCount()
+        let (n, c, u, q, b) = await (notesR, conceptsR, uploadsR, quizzesR, booksR)
+        notesCount = n
+        conceptsCount = c
+        uploadsCount = u
+        quizCount = q
+        booksCount = b
+    }
+
+    private func softNotesCount() async -> Int {
+        do {
+            let r = try await APIClient.shared.fetchNotes(limit: 100)
+            return r.notes.filter { ($0.resourceType ?? "").lowercased() != "book" }.count
+        } catch {
+            return stats?.totalNotes ?? notesCount
+        }
+    }
+
+    private func softConceptsCount() async -> Int {
+        do {
+            return try await APIClient.shared.fetchProfileConcepts().count
+        } catch {
+            return stats?.totalConcepts ?? conceptsCount
+        }
+    }
+
+    private func softUploadsCount() async -> Int {
+        do {
+            return try await APIClient.shared.fetchUploads(limit: 50).total
+        } catch {
+            return uploadsCount
+        }
+    }
+
+    private func softQuizCount() async -> Int {
+        do {
+            return try await APIClient.shared.fetchQuizHistory().quizzes.count
+        } catch {
+            return quizCount
+        }
+    }
+
+    private func softBooksCount() async -> Int {
+        do {
+            return try await APIClient.shared.fetchLibraryBooks().total
+        } catch {
+            return booksCount
         }
     }
 }
