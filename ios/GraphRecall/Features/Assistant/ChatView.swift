@@ -5,15 +5,18 @@ struct ChatView: View {
     @FocusState private var inputFocused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            messagesScroll
-            if !model.suggestions.isEmpty && model.messages.count <= 2 {
-                suggestionsRow
+        ZStack {
+            GRColor.canvas.ignoresSafeArea()
+            VStack(spacing: 0) {
+                header
+                messagesScroll
+                if !model.suggestions.isEmpty && model.messages.count <= 2 {
+                    suggestionsRow
+                }
+                composer
             }
-            composer
+            .padding(.bottom, GRLayout.dockClearance)
         }
-        .padding(.bottom, GRLayout.dockClearance)
         .task { await model.onAppear() }
     }
 
