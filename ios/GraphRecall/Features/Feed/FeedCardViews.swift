@@ -519,3 +519,60 @@ private struct FlexibleChipStack: View {
         }
     }
 }
+
+/// NAV-34 — Shared like / save / share chrome under every review card.
+struct FeedCardActionBar: View {
+    let item: FeedItem
+    let isLiked: Bool
+    let isSaved: Bool
+    var onLike: () -> Void = {}
+    var onSave: () -> Void = {}
+
+    var body: some View {
+        HStack(spacing: 10) {
+            actionButton(
+                systemName: isLiked ? "heart.fill" : "heart",
+                active: isLiked,
+                accessibilityLabel: isLiked ? "Unlike" : "Like",
+                action: onLike
+            )
+            actionButton(
+                systemName: isSaved ? "bookmark.fill" : "bookmark",
+                active: isSaved,
+                accessibilityLabel: isSaved ? "Unsave" : "Save",
+                action: onSave
+            )
+            ShareLink(item: item.sharePlainText) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(GRColor.textTertiary)
+                    .frame(width: 40, height: 40)
+                    .background(GRColor.fillSubtle, in: Circle())
+            }
+            .accessibilityLabel("Share card")
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 2)
+    }
+
+    private func actionButton(
+        systemName: String,
+        active: Bool,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(active ? GRColor.accent : GRColor.textTertiary)
+                .frame(width: 40, height: 40)
+                .background(
+                    (active ? GRColor.accent.opacity(0.12) : GRColor.fillSubtle),
+                    in: Circle()
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+

@@ -91,6 +91,26 @@ actor APIClient {
         try await get("/api/feed/due-count")
     }
 
+
+    /// POST `/api/feed/{id}/like?item_type=` — toggle like; returns `{ id, is_liked }`.
+    func likeFeedItem(id: String, itemType: String) async throws -> FeedLikeResponse {
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await postQuery(
+            "/api/feed/\(encoded)/like",
+            query: [URLQueryItem(name: "item_type", value: itemType)]
+        )
+    }
+
+    /// POST `/api/feed/{id}/save?item_type=` — toggle save; returns `{ id, is_saved }`.
+    func saveFeedItem(id: String, itemType: String) async throws -> FeedSaveResponse {
+        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        return try await postQuery(
+            "/api/feed/\(encoded)/save",
+            query: [URLQueryItem(name: "item_type", value: itemType)]
+        )
+    }
+
+
     // MARK: - Concept Dump
     func dumpConcepts(_ concepts: [String]) async throws -> ConceptDumpResponse {
         try await post("/api/concepts/dump", body: ConceptDumpRequest(concepts: concepts))
