@@ -1,11 +1,23 @@
-"""Concept Dump: bulk concepts → web research → teach cards + sources → feed."""
+"""Concept Dump: bulk concepts → web research → teach cards + sources → feed.
+
+Hardening (NAV-17 / BE-001):
+- TTL cache + rate-limit for Tavily (cache key = normalized concept)
+- Real Wikipedia summary extract fallback (REST API)
+- Cheap LLM teach-card front/back via backend.config.llm when GOOGLE_API_KEY set
+- Per-item errors are sanitized JSON strings (never HTML/stacks)
+"""
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import re
+import time
 import uuid
-from typing import Any
+from typing import Any, Optional
+from urllib.parse import quote
 
+import httpx
 import structlog
 
 from backend.db.neo4j_client import get_neo4j_client
@@ -19,51 +31,259 @@ try:
 except ImportError:
     TAVILY_AVAILABLE = False
 
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+_CACHE_TTL_SECONDS = int(os.getenv("CONCEPT_DUMP_CACHE_TTL_SECONDS", str(24 * 3600)))
+_TAVILY_MIN_INTERVAL_SECONDS = float(os.getenv("CONCEPT_DUMP_TAVILY_MIN_INTERVAL_SECONDS", "0.75"))
+_WIKI_USER_AGENT = os.getenv(
+    "CONCEPT_DUMP_WIKI_USER_AGENT",
+    "GraphRecall/1.0 (concept-dump; https://github.com/usnaveen/GraphRecall)",
+)
+
+# In-memory TTL cache: normalized_concept -> (expires_at_monotonic, sources)
+_source_cache: dict[str, tuple[float, list[dict[str, str]]]] = {}
+_tavily_lock = asyncio.Lock()
+_tavily_last_call_at = 0.0
+
 
 def _normalize(name: str) -> str:
     return re.sub(r"\s+", " ", name.strip().lower())
 
 
-async def _search_sources(topic: str, max_results: int = 4) -> list[dict[str, str]]:
-    """Return [{title, url, snippet}] from Tavily, or Wikipedia fallback."""
-    sources: list[dict[str, str]] = []
-    if TAVILY_AVAILABLE:
-        try:
-            tavily = TavilySearch(max_results=max_results)
-            raw = await tavily.ainvoke(f"{topic} explained site:wikipedia.org OR article tutorial")
-            # langchain-tavily may return str or list/dict
-            if isinstance(raw, str):
-                sources.append({
-                    "title": f"Research: {topic}",
-                    "url": "",
-                    "snippet": raw[:500],
-                })
-            elif isinstance(raw, dict):
-                for item in raw.get("results", raw.get("organic", []))[:max_results]:
-                    sources.append({
-                        "title": str(item.get("title") or topic),
-                        "url": str(item.get("url") or item.get("link") or ""),
-                        "snippet": str(item.get("content") or item.get("snippet") or "")[:400],
-                    })
-            elif isinstance(raw, list):
-                for item in raw[:max_results]:
-                    if isinstance(item, dict):
-                        sources.append({
-                            "title": str(item.get("title") or topic),
-                            "url": str(item.get("url") or ""),
-                            "snippet": str(item.get("content") or item.get("snippet") or "")[:400],
-                        })
-        except Exception as e:
-            logger.warning("concept_dump: Tavily failed", topic=topic, error=str(e))
+def user_facing_error(exc: BaseException, *, resource: str = "request") -> str:
+    """Short JSON-safe message — never HTML, stacks, or raw exception dumps."""
+    raw = str(exc) if exc is not None else ""
+    lower = raw.lower()
+    if (
+        "<html" in lower
+        or "<!doctype" in lower
+        or "traceback" in lower
+        or len(raw) > 280
+        or "\n" in raw
+    ):
+        return f"Something went wrong loading {resource}. Please try again."
+    cleaned = raw.strip() or f"Something went wrong loading {resource}."
+    # Strip accidental angle-bracket tags
+    cleaned = re.sub(r"<[^>]+>", "", cleaned).strip()
+    return cleaned[:200]
 
-    if not sources:
-        wiki = topic.strip().replace(" ", "_")
-        sources.append({
-            "title": f"{topic} — Wikipedia",
-            "url": f"https://en.wikipedia.org/wiki/{wiki}",
-            "snippet": f"Open Wikipedia for an overview of {topic}.",
-        })
+
+def _cache_get(norm_key: str) -> Optional[list[dict[str, str]]]:
+    entry = _source_cache.get(norm_key)
+    if not entry:
+        return None
+    expires_at, sources = entry
+    if time.monotonic() >= expires_at:
+        _source_cache.pop(norm_key, None)
+        return None
+    return [dict(s) for s in sources]
+
+
+def _cache_set(norm_key: str, sources: list[dict[str, str]]) -> None:
+    _source_cache[norm_key] = (
+        time.monotonic() + max(60, _CACHE_TTL_SECONDS),
+        [dict(s) for s in sources],
+    )
+
+
+async def _rate_limit_tavily() -> None:
+    """Enforce a minimum interval between Tavily calls (process-local)."""
+    global _tavily_last_call_at
+    async with _tavily_lock:
+        now = time.monotonic()
+        wait = _TAVILY_MIN_INTERVAL_SECONDS - (now - _tavily_last_call_at)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _tavily_last_call_at = time.monotonic()
+
+
+def _normalize_tavily_raw(raw: Any, topic: str, max_results: int) -> list[dict[str, str]]:
+    sources: list[dict[str, str]] = []
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text:
+            sources.append({
+                "title": f"Research: {topic}",
+                "url": "",
+                "snippet": text[:500],
+            })
+        return sources
+
+    items: list = []
+    if isinstance(raw, dict):
+        items = raw.get("results") or raw.get("organic") or []
+        if not isinstance(items, list):
+            items = []
+    elif isinstance(raw, list):
+        items = raw
+
+    for item in items[:max_results]:
+        if not isinstance(item, dict):
+            continue
+        snippet = str(item.get("content") or item.get("snippet") or "")[:400]
+        title = str(item.get("title") or topic)
+        url = str(item.get("url") or item.get("link") or "")
+        if not snippet and not url:
+            continue
+        sources.append({"title": title, "url": url, "snippet": snippet})
     return sources
+
+
+async def _fetch_wikipedia_summary(topic: str) -> Optional[dict[str, str]]:
+    """Fetch a real Wikipedia page summary extract (not a URL stub)."""
+    title = topic.strip().replace(" ", "_")
+    if not title:
+        return None
+    url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(title, safe='_()')}"
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            resp = await client.get(
+                url,
+                headers={
+                    "User-Agent": _WIKI_USER_AGENT,
+                    "Accept": "application/json",
+                },
+            )
+            if resp.status_code == 404:
+                # Try search-like title (capitalize words)
+                alt = "_".join(w.capitalize() for w in topic.strip().split())
+                if alt != title:
+                    url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(alt, safe='_()')}"
+                    resp = await client.get(
+                        url,
+                        headers={
+                            "User-Agent": _WIKI_USER_AGENT,
+                            "Accept": "application/json",
+                        },
+                    )
+            if resp.status_code != 200:
+                logger.warning(
+                    "concept_dump: Wikipedia summary miss",
+                    topic=topic,
+                    status=resp.status_code,
+                )
+                return None
+            data = resp.json()
+            extract = (data.get("extract") or data.get("description") or "").strip()
+            if not extract:
+                return None
+            page_url = (
+                (data.get("content_urls") or {}).get("desktop", {}).get("page")
+                or f"https://en.wikipedia.org/wiki/{quote(title, safe='_()')}"
+            )
+            display_title = str(data.get("title") or topic)
+            return {
+                "title": f"{display_title} — Wikipedia",
+                "url": page_url,
+                "snippet": extract[:800],
+            }
+    except Exception as e:
+        logger.warning("concept_dump: Wikipedia fetch failed", topic=topic, error=str(e))
+        return None
+
+
+async def _wikipedia_fallback(topic: str) -> list[dict[str, str]]:
+    wiki = await _fetch_wikipedia_summary(topic)
+    if wiki:
+        return [wiki]
+    # Last-resort stub if Wikipedia itself is unreachable
+    slug = topic.strip().replace(" ", "_")
+    return [{
+        "title": f"{topic} — Wikipedia",
+        "url": f"https://en.wikipedia.org/wiki/{quote(slug, safe='_()')}",
+        "snippet": f"Overview of {topic} (Wikipedia summary unavailable).",
+    }]
+
+
+async def _search_tavily(topic: str, max_results: int = 4) -> list[dict[str, str]]:
+    if not TAVILY_AVAILABLE:
+        return []
+    if not os.getenv("TAVILY_API_KEY"):
+        logger.info("concept_dump: TAVILY_API_KEY missing; skipping Tavily")
+        return []
+    try:
+        await _rate_limit_tavily()
+        tavily = TavilySearch(max_results=max_results)
+        raw = await tavily.ainvoke(
+            f"{topic} explained site:wikipedia.org OR article tutorial"
+        )
+        return _normalize_tavily_raw(raw, topic, max_results)
+    except Exception as e:
+        logger.warning("concept_dump: Tavily failed", topic=topic, error=str(e))
+        return []
+
+
+async def _search_sources(topic: str, max_results: int = 4) -> list[dict[str, str]]:
+    """Return [{title, url, snippet}] from cache → Tavily → Wikipedia extract."""
+    norm_key = _normalize(topic)
+    cached = _cache_get(norm_key)
+    if cached is not None:
+        logger.info("concept_dump: cache hit", concept=norm_key)
+        return cached
+
+    sources = await _search_tavily(topic, max_results=max_results)
+    if not sources:
+        sources = await _wikipedia_fallback(topic)
+
+    _cache_set(norm_key, sources)
+    return sources
+
+
+async def _llm_teach_card(
+    name: str,
+    sources: list[dict[str, str]],
+) -> Optional[tuple[str, str]]:
+    """Generate cheap front/back teach card via Gemini when API key is present."""
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+        from backend.config.llm import get_fast_model
+
+        context_bits = []
+        for s in sources[:3]:
+            bit = (s.get("snippet") or "").strip()
+            if bit:
+                context_bits.append(bit)
+            if s.get("url"):
+                context_bits.append(f"Source: {s['url']}")
+        context = "\n".join(context_bits)[:2500] or f"Topic: {name}"
+
+        llm = get_fast_model(temperature=0.2, json_mode=True)
+        prompt = (
+            f'Create one concise teach flashcard for the concept "{name}".\n'
+            "Return ONLY valid JSON with keys front and back.\n"
+            "- front: a short question (max 120 chars)\n"
+            "- back: a clear 1-3 sentence explanation a learner can memorize "
+            "(max 400 chars; no markdown fences)\n\n"
+            f"CONTEXT:\n{context}"
+        )
+        resp = await llm.ainvoke([
+            SystemMessage(content="You write brief educational flashcards. Output JSON only."),
+            HumanMessage(content=prompt),
+        ])
+        text = getattr(resp, "content", None) or str(resp)
+        if isinstance(text, list):
+            # Some providers return content blocks
+            text = "".join(
+                (b.get("text") if isinstance(b, dict) else str(b)) for b in text
+            )
+        text = str(text).strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+        data = json.loads(text)
+        front = str(data.get("front") or "").strip()
+        back = str(data.get("back") or "").strip()
+        if not front or not back:
+            return None
+        return front[:200], back[:600]
+    except Exception as e:
+        logger.warning("concept_dump: LLM teach card failed", concept=name, error=str(e))
+        return None
 
 
 async def _ensure_concept(user_id: str, name: str) -> str:
@@ -111,7 +331,7 @@ async def _save_note_and_cards(
         if s.get("url"):
             body_parts.append(f"- [{s.get('title') or 'Source'}]({s['url']})")
         else:
-            body_parts.append(f"- {s.get('title') or 'Source'}: {s.get('snippet','')[:200]}")
+            body_parts.append(f"- {s.get('title') or 'Source'}: {s.get('snippet', '')[:200]}")
     content = "\n".join(body_parts)
 
     await pg.execute_insert(
@@ -127,12 +347,17 @@ async def _save_note_and_cards(
         },
     )
 
-    # Teach cards
+    # Teach cards — prefer cheap LLM backs when key present
+    llm_card = await _llm_teach_card(name, sources)
+    if llm_card:
+        front, back = llm_card
+    else:
+        front = f"What is {name}?"
+        back = sources[0].get("snippet") or f"See sources for {name}."
+        if sources and sources[0].get("url"):
+            back = f"{back}\n\nRead: {sources[0]['url']}"
+
     cards = []
-    front = f"What is {name}?"
-    back = sources[0].get("snippet") or f"See sources for {name}."
-    if sources and sources[0].get("url"):
-        back = f"{back}\n\nRead: {sources[0]['url']}"
     card_id = str(uuid.uuid4())
     await pg.execute_insert(
         """
@@ -207,7 +432,7 @@ async def dump_concepts(user_id: str, concepts: list[str]) -> dict[str, Any]:
             results.append({
                 "concept": name,
                 "status": "error",
-                "error": str(e),
+                "error": user_facing_error(e, resource="concept dump"),
                 "sources": [],
                 "cards": [],
             })
@@ -219,3 +444,8 @@ async def dump_concepts(user_id: str, concepts: list[str]) -> dict[str, Any]:
         "succeeded": sum(1 for r in results if r.get("status") == "ok"),
         "results": results,
     }
+
+
+# Test helpers (clear cache between unit tests)
+def _clear_source_cache_for_tests() -> None:
+    _source_cache.clear()
