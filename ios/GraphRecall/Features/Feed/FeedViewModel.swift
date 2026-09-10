@@ -34,13 +34,9 @@ final class FeedViewModel {
         await flushOfflineQueue()
 
         do {
-            async let feedTask = APIClient.shared.fetchFeed()
-            async let statsTask = APIClient.shared.fetchStats()
-            async let dueTask = APIClient.shared.dueCount()
-
-            let feed = try await feedTask
-            let userStats = try? await statsTask
-            let due = try? await dueTask
+            let feed = try await APIClient.shared.fetchFeed()
+            let userStats = try? await APIClient.shared.fetchStats()
+            let due = try? await APIClient.shared.dueCount()
 
             items = feed.items
             completedToday = feed.completedToday

@@ -1,6 +1,6 @@
 import Foundation
 
-enum FeedItemType: String, Codable, Hashable {
+enum FeedItemType: String, Codable, Hashable, Sendable {
     case flashcard
     case mcq
     case fillBlank = "fill_blank"
@@ -11,7 +11,7 @@ enum FeedItemType: String, Codable, Hashable {
     case codeChallenge = "code_challenge"
 }
 
-enum ReviewDifficulty: String, Codable, CaseIterable, Identifiable {
+enum ReviewDifficulty: String, Codable, CaseIterable, Identifiable, Sendable {
     case again, hard, good, easy
     var id: String { rawValue }
 
@@ -35,7 +35,7 @@ enum ReviewDifficulty: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct FeedResponse: Codable {
+struct FeedResponse: Codable, Sendable {
     let items: [FeedItem]
     let totalDueToday: Int
     let completedToday: Int
@@ -82,7 +82,7 @@ struct FeedResponse: Codable {
     }
 }
 
-struct FeedItem: Codable, Identifiable, Hashable {
+struct FeedItem: Codable, Sendable, Identifiable, Hashable {
     let id: String
     let itemType: FeedItemType
     let content: [String: AnyCodable]
@@ -131,7 +131,7 @@ struct FeedItem: Codable, Identifiable, Hashable {
 }
 
 /// Type-erased JSON value for feed content blobs.
-struct AnyCodable: Codable, Hashable {
+struct AnyCodable: Codable, @unchecked Sendable, Hashable {
     let value: Any
 
     init(_ value: Any) { self.value = value }
@@ -173,7 +173,7 @@ struct AnyCodable: Codable, Hashable {
     }
 }
 
-struct UserStats: Codable {
+struct UserStats: Codable, Sendable {
     let userId: String?
     let totalConcepts: Int?
     let totalNotes: Int?
@@ -199,7 +199,7 @@ struct UserStats: Codable {
     }
 }
 
-struct DueCountResponse: Codable {
+struct DueCountResponse: Codable, Sendable {
     let dueToday: Int
     let overdue: Int
     let total: Int
@@ -210,7 +210,7 @@ struct DueCountResponse: Codable {
     }
 }
 
-struct ReviewSubmitResult: Codable {
+struct ReviewSubmitResult: Codable, Sendable {
     let status: String?
     let nextReview: String?
     let newIntervalDays: Int?
@@ -225,7 +225,7 @@ struct ReviewSubmitResult: Codable {
     }
 }
 
-struct PendingOfflineReview: Codable, Identifiable, Hashable {
+struct PendingOfflineReview: Codable, Sendable, Identifiable, Hashable {
     var id: String { "\(itemId)-\(queuedAt.timeIntervalSince1970)" }
     let itemId: String
     let itemType: String
