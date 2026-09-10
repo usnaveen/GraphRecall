@@ -28,8 +28,7 @@ targets:
           - Resources/graph_force.html
           - Resources/graph_force_boot.js
     resources:
-      - path: GraphRecall/Resources/graph_force.html
-      - path: GraphRecall/Resources/graph_force_boot.js
+      - path: WebAssets
     settings:
       base:
         PRODUCT_NAME: GraphRecall

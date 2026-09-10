@@ -44,16 +44,11 @@ struct GraphView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Graph")
-                    .font(GRType.largeTitle)
-                    .foregroundStyle(GRColor.textPrimary)
-                Text(model.usingStub ? "Demo graph · API unreachable" : model.statsLabel)
-                    .font(GRType.body)
-                    .foregroundStyle(GRColor.textSecondary)
-            }
-            Spacer()
+        ZStack(alignment: .trailing) {
+            GRScreenHeader(
+                title: "Graph",
+                subtitle: model.usingStub ? "Demo graph · API unreachable" : model.statsLabel
+            )
             Button {
                 Task { await model.load() }
             } label: {
@@ -62,10 +57,9 @@ struct GraphView: View {
                     .padding(10)
                     .grGlassEffect(.interactive, in: Circle())
             }
+            .padding(.trailing, 20)
+            .padding(.top, 10)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 8)
     }
 
     private var searchBar: some View {
@@ -111,7 +105,7 @@ struct GraphView: View {
                     if let err = model.errorMessage, model.usingStub {
                         Text(err)
                             .font(GRType.micro)
-                            .foregroundStyle(Color.orange)
+                            .foregroundStyle(GRColor.warning)
                             .lineLimit(2)
                     }
                 }
