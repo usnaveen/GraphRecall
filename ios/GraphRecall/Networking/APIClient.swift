@@ -101,6 +101,15 @@ actor APIClient {
         try await get("/api/graph3d")
     }
 
+    /// Louvain recompute — returns status/count; caller should reload `/api/graph3d`.
+    func recomputeCommunities() async throws -> CommunitiesRecomputeResponse {
+        try await send(
+            "/api/graph3d/communities/recompute",
+            method: "POST",
+            body: Data("{}".utf8)
+        )
+    }
+
     // MARK: - Chat
     func chatStreamURLRequest(
         message: String,

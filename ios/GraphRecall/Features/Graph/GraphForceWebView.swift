@@ -6,10 +6,12 @@ struct GraphForceWebView: UIViewRepresentable {
     let graph: Graph3DResponse
     var highlightIds: Set<String> = []
     var isDemo: Bool = false
+    var focusIds: Set<String> = []
     var onSelect: ((String?) -> Void)?
+    var onCommunitiesRecompute: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onSelect: onSelect)
+        Coordinator(onSelect: onSelect, onCommunitiesRecompute: onCommunitiesRecompute)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -43,8 +45,10 @@ struct GraphForceWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.onSelect = onSelect
+        context.coordinator.onCommunitiesRecompute = onCommunitiesRecompute
         context.coordinator.pendingGraph = graph
         context.coordinator.pendingHighlight = highlightIds
+        context.coordinator.pendingFocus = focusIds
         context.coordinator.pendingDemo = isDemo
         if context.coordinator.pageReady {
             context.coordinator.pushGraph()
@@ -53,23 +57,36 @@ struct GraphForceWebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var onSelect: ((String?) -> Void)?
+        var onCommunitiesRecompute: (() -> Void)?
         weak var webView: WKWebView?
         var pageReady = false
         var pendingGraph: Graph3DResponse?
         var pendingHighlight: Set<String> = []
+        var pendingFocus: Set<String> = []
         var pendingDemo = false
+        private var lastPushSignature: String?
 
-        init(onSelect: ((String?) -> Void)?) {
+        init(onSelect: ((String?) -> Void)?, onCommunitiesRecompute: (() -> Void)?) {
             self.onSelect = onSelect
+            self.onCommunitiesRecompute = onCommunitiesRecompute
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == "graphBridge" else { return }
             if let body = message.body as? [String: Any] {
-                if let type = body["type"] as? String, type == "ready" {
-                    pageReady = true
-                    pushGraph()
-                    return
+                if let type = body["type"] as? String {
+                    switch type {
+                    case "ready":
+                        pageReady = true
+                        lastPushSignature = nil
+                        pushGraph()
+                        return
+                    case "communities.recompute":
+                        onCommunitiesRecompute?()
+                        return
+                    default:
+                        break
+                    }
                 }
                 if let id = body["id"] as? String {
                     onSelect?(id)
@@ -83,28 +100,47 @@ struct GraphForceWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             pageReady = true
+            lastPushSignature = nil
             pushGraph()
         }
 
         func pushGraph() {
             guard let webView, let graph = pendingGraph else { return }
-            guard let data = try? JSONSerialization.data(withJSONObject: graphPayload(graph)),
+            let payload = graphPayload(graph)
+            guard let data = try? JSONSerialization.data(withJSONObject: payload),
                   let json = String(data: data, encoding: .utf8)
             else { return }
-            let highlights = Array(pendingHighlight)
+            let highlights = Array(pendingHighlight.union(pendingFocus))
             let hlData = (try? JSONSerialization.data(withJSONObject: highlights)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-            let opts: [String: Any] = ["demo": pendingDemo]
+            let opts: [String: Any] = [
+                "demo": pendingDemo,
+                "focusIds": Array(pendingFocus)
+            ]
             let optsData = (try? JSONSerialization.data(withJSONObject: opts)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+            let signature = json + "|" + hlData + "|" + optsData
+            guard signature != lastPushSignature else { return }
+            lastPushSignature = signature
             let js = "window.setGraphData && window.setGraphData(\(json), \(hlData), \(optsData));"
             webView.evaluateJavaScript(js, completionHandler: nil)
         }
 
         private func graphPayload(_ graph: Graph3DResponse) -> [String: Any] {
+            // Degree for web-like sizing when backend size is missing / flat.
+            var degree: [String: Int] = [:]
+            for e in graph.edges {
+                degree[e.source, default: 0] += 1
+                degree[e.target, default: 0] += 1
+            }
+
             let nodes: [[String: Any]] = graph.nodes.map { n in
+                let deg = degree[n.id] ?? 0
+                // Mirror web calculateNodeSize(degree, frequency≈1): clamp 1.5…10
+                let computed = max(1.5, min(10.0, 2.0 + Double(deg) * 0.4 + 0.2))
                 var dict: [String: Any] = [
                     "id": n.id,
                     "name": n.name,
-                    "val": n.size ?? 1.0
+                    "val": n.size ?? computed,
+                    "degree": deg
                 ]
                 if let domain = n.domain { dict["domain"] = domain }
                 if let color = n.color { dict["color"] = color }
@@ -128,6 +164,7 @@ struct GraphForceWebView: UIViewRepresentable {
                 if let label = c.label { dict["label"] = label }
                 if let size = c.size { dict["size"] = size }
                 if let level = c.level { dict["level"] = level }
+                if let parent = c.parent { dict["parent"] = parent }
                 if !c.entityIds.isEmpty { dict["entity_ids"] = c.entityIds }
                 return dict
             }
