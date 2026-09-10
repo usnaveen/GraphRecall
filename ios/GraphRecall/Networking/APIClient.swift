@@ -142,6 +142,26 @@ actor APIClient {
     /// True when a Bearer token has been set (Google auth wiring comes later).
     var hasAuthToken: Bool { accessToken != nil && !(accessToken?.isEmpty ?? true) }
 
+    /// POST `/api/chat/messages/{id}/create-card` — quiz | concept_card.
+    func createCardFromMessage(
+        messageId: String,
+        outputType: CreateCardOutputType,
+        topic: String? = nil
+    ) async throws -> CreateCardResponse {
+        try await post(
+            "/api/chat/messages/\(messageId)/create-card",
+            body: CreateCardRequestBody(outputType: outputType, topic: topic)
+        )
+    }
+
+    /// POST `/api/chat/messages/{id}/save` — mark for future quiz generation.
+    func saveChatMessage(messageId: String, topic: String? = nil) async throws -> SaveMessageResponse {
+        try await post(
+            "/api/chat/messages/\(messageId)/save",
+            body: SaveMessageRequestBody(topic: topic)
+        )
+    }
+
     // MARK: - Core
 
     private func makeDecoder() -> JSONDecoder {
