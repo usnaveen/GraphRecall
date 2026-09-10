@@ -1,0 +1,120 @@
+import SwiftUI
+import WebKit
+
+/// WKWebView host for force-graph — parity with the web knowledge-graph viz.
+struct GraphForceWebView: UIViewRepresentable {
+    let graph: Graph3DResponse
+    var highlightIds: Set<String> = []
+    var onSelect: ((String?) -> Void)?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onSelect: onSelect)
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        let userController = config.userContentController
+        userController.add(context.coordinator, name: "graphBridge")
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.backgroundColor = .clear
+        webView.navigationDelegate = context.coordinator
+        context.coordinator.webView = webView
+
+        if let url = Bundle.main.url(forResource: "graph_force", withExtension: "html") {
+            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        } else {
+            // Fallback: inline minimal shell so the screen still compiles/runs without resource copy.
+            let fallback = """
+            <html><body style="background:transparent;color:#B6FF2E;font-family:-apple-system;padding:24px">
+            Graph resource missing — add graph_force.html to the app bundle.
+            </body></html>
+            """
+            webView.loadHTMLString(fallback, baseURL: nil)
+        }
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.onSelect = onSelect
+        context.coordinator.pendingGraph = graph
+        context.coordinator.pendingHighlight = highlightIds
+        if context.coordinator.pageReady {
+            context.coordinator.pushGraph()
+        }
+    }
+
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+        var onSelect: ((String?) -> Void)?
+        weak var webView: WKWebView?
+        var pageReady = false
+        var pendingGraph: Graph3DResponse?
+        var pendingHighlight: Set<String> = []
+
+        init(onSelect: ((String?) -> Void)?) {
+            self.onSelect = onSelect
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "graphBridge" else { return }
+            if let body = message.body as? [String: Any] {
+                if let type = body["type"] as? String, type == "ready" {
+                    pageReady = true
+                    pushGraph()
+                    return
+                }
+                if let id = body["id"] as? String {
+                    onSelect?(id)
+                } else if body["id"] is NSNull {
+                    onSelect?(nil)
+                }
+            } else if let id = message.body as? String {
+                onSelect?(id)
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            pageReady = true
+            pushGraph()
+        }
+
+        func pushGraph() {
+            guard let webView, let graph = pendingGraph else { return }
+            guard let data = try? JSONSerialization.data(withJSONObject: graphPayload(graph)),
+                  let json = String(data: data, encoding: .utf8)
+            else { return }
+            let highlights = Array(pendingHighlight)
+            let hlData = (try? JSONSerialization.data(withJSONObject: highlights)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+            let js = "window.setGraphData && window.setGraphData(\(json), \(hlData));"
+            webView.evaluateJavaScript(js, completionHandler: nil)
+        }
+
+        private func graphPayload(_ graph: Graph3DResponse) -> [String: Any] {
+            let nodes: [[String: Any]] = graph.nodes.map { n in
+                var dict: [String: Any] = [
+                    "id": n.id,
+                    "name": n.name,
+                    "val": n.size ?? 1.0
+                ]
+                if let domain = n.domain { dict["domain"] = domain }
+                if let color = n.color { dict["color"] = color }
+                if let definition = n.definition { dict["definition"] = definition }
+                return dict
+            }
+            let links: [[String: Any]] = graph.edges.map { e in
+                var dict: [String: Any] = [
+                    "source": e.source,
+                    "target": e.target
+                ]
+                if let t = e.relationshipType { dict["type"] = t }
+                if let s = e.strength { dict["strength"] = s }
+                return dict
+            }
+            return ["nodes": nodes, "links": links]
+        }
+    }
+}

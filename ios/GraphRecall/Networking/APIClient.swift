@@ -70,20 +70,36 @@ actor APIClient {
     }
 
     // MARK: - Chat
-    func chatStreamURLRequest(message: String, conversationId: String?) throws -> URLRequest {
+    func chatStreamURLRequest(
+        message: String,
+        conversationId: String?,
+        userId: String = ChatIdentity.stubUserId
+    ) throws -> URLRequest {
         guard let url = URL(string: "/api/chat/stream", relativeTo: APIConfig.baseURL)?.absoluteURL else {
             throw APIError.invalidURL
         }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         if let accessToken {
             req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         }
-        req.httpBody = try JSONEncoder().encode(ChatStreamRequest(message: message, conversationId: conversationId))
-        req.timeoutInterval = APIConfig.defaultTimeout
+        req.httpBody = try JSONEncoder().encode(
+            ChatStreamRequest(message: message, conversationId: conversationId, userId: userId)
+        )
+        // SSE can run longer than a normal REST call.
+        req.timeoutInterval = max(APIConfig.defaultTimeout, 300)
         return req
     }
+
+    func fetchChatSuggestions() async throws -> [String] {
+        let response: ChatSuggestionsResponse = try await get("/api/chat/suggestions")
+        return response.suggestions
+    }
+
+    /// True when a Bearer token has been set (Google auth wiring comes later).
+    var hasAuthToken: Bool { accessToken != nil && !(accessToken?.isEmpty ?? true) }
 
     // MARK: - Core
 
