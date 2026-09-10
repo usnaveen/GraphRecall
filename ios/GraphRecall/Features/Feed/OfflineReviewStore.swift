@@ -104,6 +104,16 @@ actor OfflineReviewStore {
         return (try? isoDecoder.decode([FeedItem].self, from: data)) ?? []
     }
 
+    /// Prepend a single FeedItem (chat create-card / offline local card) for Today merge.
+    func ingestFeedItem(_ item: FeedItem) {
+        var items = loadDumpItems()
+        if items.contains(where: { $0.id == item.id }) { return }
+        items.insert(item, at: 0)
+        if let data = try? isoEncoder.encode(items) {
+            defaults.set(data, forKey: dumpKey)
+        }
+    }
+
     func clearDumpItems(ids: Set<String>) {
         let kept = loadDumpItems().filter { !ids.contains($0.id) }
         if let data = try? isoEncoder.encode(kept) {

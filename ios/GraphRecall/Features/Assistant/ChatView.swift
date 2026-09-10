@@ -4,8 +4,10 @@ struct ChatView: View {
     @State private var model = ChatViewModel()
     @FocusState private var inputFocused: Bool
 
+    private let quizAccent = Color(red: 0.608, green: 0.349, blue: 0.714) // web #9B59B6
+
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             GRColor.canvas.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
@@ -16,7 +18,20 @@ struct ChatView: View {
                 composer
             }
             .padding(.bottom, GRLayout.dockClearance)
+
+            if let banner = model.bannerMessage {
+                Text(banner)
+                    .font(GRType.caption)
+                    .foregroundStyle(GRColor.textPrimary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .grGlassEffect(.regular, in: Capsule())
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(2)
+            }
         }
+        .animation(.easeOut(duration: 0.22), value: model.bannerMessage)
         .task { await model.onAppear() }
     }
 
@@ -93,12 +108,110 @@ struct ChatView: View {
                         .font(GRType.micro)
                         .foregroundStyle(GRColor.textTertiary)
                 }
+                if showsFeedActions(message) {
+                    feedActions(for: message)
+                }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .grGlassEffect(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             if !isUser { Spacer(minLength: 24) }
         }
+    }
+
+    private func showsFeedActions(_ message: ChatMessageUI) -> Bool {
+        message.role == .assistant
+            && !message.isStreaming
+            && !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && message.status == nil
+    }
+
+    @ViewBuilder
+    private func feedActions(for message: ChatMessageUI) -> some View {
+        let busy = model.actionBusyMessageId == message.id
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().overlay(GRColor.stroke)
+
+            if model.addToFeedMessageId == message.id {
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await model.createCard(from: message, outputType: .quiz) }
+                    } label: {
+                        Label("Quiz", systemImage: "questionmark.circle")
+                            .font(GRType.caption)
+                            .foregroundStyle(quizAccent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(quizAccent.opacity(0.15)))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+
+                    Button {
+                        Task { await model.createCard(from: message, outputType: .conceptCard) }
+                    } label: {
+                        Label("Flashcard", systemImage: "rectangle.on.rectangle")
+                            .font(GRType.caption)
+                            .foregroundStyle(GRColor.accentCyan)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(GRColor.accentCyan.opacity(0.15)))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+
+                    Button {
+                        model.toggleAddToFeed(for: message.id)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(GRType.caption)
+                            .foregroundStyle(GRColor.textTertiary)
+                            .padding(8)
+                            .background(Circle().fill(GRColor.fillSubtle))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    Button {
+                        model.toggleAddToFeed(for: message.id)
+                    } label: {
+                        Label("Create card", systemImage: "plus")
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+
+                    Button {
+                        Task { await model.saveMessage(message) }
+                    } label: {
+                        Label(
+                            model.savedMessageIds.contains(message.id) ? "Saved" : "Save",
+                            systemImage: model.savedMessageIds.contains(message.id)
+                                ? "bookmark.fill"
+                                : "bookmark"
+                        )
+                        .font(GRType.micro)
+                        .foregroundStyle(
+                            model.savedMessageIds.contains(message.id)
+                                ? GRColor.accent
+                                : GRColor.textTertiary
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy || model.savedMessageIds.contains(message.id))
+
+                    if busy {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(GRColor.accent)
+                    }
+                }
+            }
+        }
+        .padding(.top, 4)
     }
 
     private var suggestionsRow: some View {

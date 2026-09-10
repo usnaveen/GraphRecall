@@ -13,7 +13,16 @@ final class ChatViewModel {
     var errorMessage: String?
     var usingStub = false
 
+    /// Soft success banner after create-card / save (clears itself).
+    var bannerMessage: String?
+    /// Which assistant bubble has the Add-to-Feed picker expanded.
+    var addToFeedMessageId: String?
+    /// Message id currently running create-card / save.
+    var actionBusyMessageId: String?
+    var savedMessageIds: Set<String> = []
+
     private var streamTask: Task<Void, Never>?
+    private var bannerTask: Task<Void, Never>?
 
     var canSend: Bool {
         !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isStreaming
@@ -96,6 +105,86 @@ final class ChatViewModel {
         }
     }
 
+    func toggleAddToFeed(for messageId: String) {
+        if addToFeedMessageId == messageId {
+            addToFeedMessageId = nil
+        } else {
+            addToFeedMessageId = messageId
+        }
+    }
+
+    func createCard(from message: ChatMessageUI, outputType: CreateCardOutputType) async {
+        guard actionBusyMessageId == nil else { return }
+        guard !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        actionBusyMessageId = message.id
+        defer { actionBusyMessageId = nil }
+
+        let topic = message.relatedConcepts.first
+
+        if let serverId = message.serverId, !serverId.isEmpty {
+            do {
+                let result = try await APIClient.shared.createCardFromMessage(
+                    messageId: serverId,
+                    outputType: outputType,
+                    topic: topic
+                )
+                let item = result.asFeedItem()
+                await OfflineReviewStore.shared.ingestFeedItem(item)
+                NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+                NotificationCenter.default.post(name: .grDumpCompleted, object: nil)
+                addToFeedMessageId = nil
+                showBanner("\(outputType.feedLabel) added to Feed")
+            } catch {
+                errorMessage = APIError.userFacing(error, resource: "chat")
+            }
+            return
+        }
+
+        // Offline stub / missing server id — local Demo-style card still useful.
+        let local = ChatLocalFeedFactory.makeLocalCard(from: message, outputType: outputType)
+        await OfflineReviewStore.shared.ingestFeedItem(local)
+        NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+        NotificationCenter.default.post(name: .grDumpCompleted, object: nil)
+        addToFeedMessageId = nil
+        showBanner("\(outputType.feedLabel) saved locally — check Feed")
+    }
+
+    func saveMessage(_ message: ChatMessageUI, topic: String? = nil) async {
+        guard actionBusyMessageId == nil else { return }
+        guard !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        actionBusyMessageId = message.id
+        defer { actionBusyMessageId = nil }
+
+        let resolvedTopic = topic ?? message.relatedConcepts.first
+
+        if let serverId = message.serverId, !serverId.isEmpty {
+            do {
+                _ = try await APIClient.shared.saveChatMessage(messageId: serverId, topic: resolvedTopic)
+                savedMessageIds.insert(message.id)
+                showBanner("Saved for quiz")
+            } catch {
+                errorMessage = APIError.userFacing(error, resource: "chat")
+            }
+            return
+        }
+
+        // Offline: still mark locally so the affordance feels complete.
+        savedMessageIds.insert(message.id)
+        let local = ChatLocalFeedFactory.makeLocalCard(from: message, outputType: .conceptCard)
+        await OfflineReviewStore.shared.ingestFeedItem(local)
+        NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+        showBanner("Saved locally for quiz — check Feed")
+    }
+
+    private func showBanner(_ text: String) {
+        bannerMessage = text
+        bannerTask?.cancel()
+        bannerTask = Task {
+            try? await Task.sleep(nanoseconds: 2_800_000_000)
+            if !Task.isCancelled { bannerMessage = nil }
+        }
+    }
+
     private func runStream(assistantId: String, text: String) async {
         let hasAuth = await APIClient.shared.hasAuthToken
         usingStub = !hasAuth
@@ -117,10 +206,10 @@ final class ChatViewModel {
                 apply(event, assistantId: assistantId)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = APIError.userFacing(error, resource: "chat")
             updateAssistant(assistantId) { msg in
                 if msg.content.isEmpty {
-                    msg.content = "Sorry — I couldn’t reach the chat stream. \(error.localizedDescription)"
+                    msg.content = "Sorry — I couldn’t reach the chat stream."
                 }
                 msg.status = nil
                 msg.isStreaming = false
