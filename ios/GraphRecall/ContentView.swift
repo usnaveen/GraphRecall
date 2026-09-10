@@ -10,9 +10,9 @@ struct ContentView: View {
             Group {
                 switch tab {
                 case .feed: FeedView()
-                case .graph: GraphPlaceholderView()
+                case .graph: GraphView()
                 case .create: CreatePlaceholderView()
-                case .assistant: AssistantPlaceholderView()
+                case .assistant: ChatView()
                 case .profile: ProfilePlaceholderView()
                 }
             }

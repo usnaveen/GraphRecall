@@ -15,13 +15,16 @@ open GraphRecall.xcodeproj
 ## Layout
 - `DesignSystem/` — colors (`#07070A`, `#B6FF2E`), type, glass helpers
 - `Components/LiquidDock` — 5-tab floating glass dock (Feed / Graph / Create / Assistant / Profile)
-- `Networking/APIClient` — FastAPI client (auth, feed, graph, chat stream request helper)
-- `Features/*` — placeholders for Bot 1 (Feed/SM-2) and Bot 3 (Chat/Graph)
+- `Networking/APIClient` + `ChatSSEClient` — FastAPI client + URLSession SSE for GraphRAG
+- `Features/Feed` — SM-2 Today feed + offline queue (Bot 1)
+- `Features/Assistant` — Chat streaming UI (Bot 3)
+- `Features/Graph` — WKWebView force-graph viz (Bot 3)
 
 ## Backend
 Point `GRAPHRECALL_API_BASE` at your FastAPI host (default `http://127.0.0.1:8000` on simulator).
+Set a Bearer token via `APIClient.shared.setAccessToken` once Google auth is wired; without a token, Chat uses a local stub SSE stream and Graph falls back to a demo graph.
 
 ## Split
-- **Coder Bot 2**: shell + DesignSystem + dock + API client (this PR)
+- **Coder Bot 2**: shell + DesignSystem + dock + API client
 - **Coder Bot 1**: Feed / quiz / SM-2 + offline
 - **Coder Bot 3**: Chat SSE + graph viz
