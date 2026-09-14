@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import PDFKit
+import PhotosUI
 
 enum CreateIngestMode: String, CaseIterable, Identifiable, Sendable {
     case concepts
@@ -9,6 +10,8 @@ enum CreateIngestMode: String, CaseIterable, Identifiable, Sendable {
     case youtube
     case chat
     case file
+    case scan
+    case voice
 
     var id: String { rawValue }
 
@@ -20,10 +23,33 @@ enum CreateIngestMode: String, CaseIterable, Identifiable, Sendable {
         case .youtube: return "YouTube"
         case .chat: return "Chat"
         case .file: return "File"
+        case .scan: return "Scan"
+        case .voice: return "Voice"
         }
     }
 
-    var isStub: Bool { false }
+    var systemImage: String {
+        switch self {
+        case .concepts: return "lightbulb.fill"
+        case .text: return "doc.text.fill"
+        case .url: return "globe"
+        case .youtube: return "play.rectangle.fill"
+        case .chat: return "bubble.left.and.bubble.right.fill"
+        case .file: return "square.and.arrow.up.fill"
+        case .scan: return "doc.viewfinder"
+        case .voice: return "mic.fill"
+        }
+    }
+
+    var isNew: Bool { self == .scan || self == .voice }
+
+    /// Modes whose text can go through human-in-the-loop concept review first.
+    var supportsReview: Bool { self == .text || self == .scan || self == .voice || self == .file }
+}
+
+struct ReviewLaunch: Identifiable {
+    let id: String
+    let title: String
 }
 
 @MainActor
@@ -39,6 +65,7 @@ final class CreateViewModel {
     var urlField: String = ""
 
     var isSubmitting = false
+    var isRecognizing = false
     var errorMessage: String?
     var successMessage: String?
     var lastIngest: IngestResponse?
@@ -52,6 +79,10 @@ final class CreateViewModel {
     var selectedFileIsZip = false
     var showLibraryLink = false
 
+    // Import review
+    var reviewLaunch: ReviewLaunch?
+    var pendingSessions: [PendingReviewSession] = []
+
     var parsedConcepts: [String] {
         conceptsText
             .split(whereSeparator: { $0 == "\n" || $0 == "," || $0 == ";" })
@@ -60,10 +91,10 @@ final class CreateViewModel {
     }
 
     var canSubmit: Bool {
-        guard !isSubmitting else { return false }
+        guard !isSubmitting, !isRecognizing else { return false }
         switch mode {
         case .concepts: return !parsedConcepts.isEmpty
-        case .text, .chat: return !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .text, .chat, .scan, .voice: return !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .url, .youtube:
             let raw = urlField.trimmingCharacters(in: .whitespacesAndNewlines)
             return URL(string: raw)?.scheme != nil && !raw.isEmpty
@@ -71,15 +102,20 @@ final class CreateViewModel {
         }
     }
 
-    var primaryButtonTitle: String {
+    func usesReview(_ enabled: Bool) -> Bool {
+        enabled && mode.supportsReview && !(mode == .file && selectedFileIsZip)
+    }
+
+    func primaryButtonTitle(review: Bool) -> String {
         if isSubmitting {
             switch mode {
             case .concepts: return "Researching…"
             case .youtube: return "Saving…"
             case .file: return selectedFileIsZip ? "Uploading ZIP…" : "Ingesting file…"
-            default: return "Ingesting…"
+            default: return review ? "Extracting concepts…" : "Ingesting…"
             }
         }
+        if review { return "Extract & review concepts" }
         switch mode {
         case .concepts: return "Research & add to feed"
         case .text: return "Ingest text"
@@ -87,6 +123,8 @@ final class CreateViewModel {
         case .youtube: return "Save YouTube link"
         case .chat: return "Ingest transcript"
         case .file: return selectedFileIsZip ? "Upload processed ZIP" : "Ingest file"
+        case .scan: return "Ingest scanned text"
+        case .voice: return "Ingest voice note"
         }
     }
 
@@ -134,20 +172,37 @@ final class CreateViewModel {
         clearResults()
     }
 
-    func submit() async {
+    func loadPendingSessions() async {
+        pendingSessions = (try? await APIClient.shared.pendingReviewSessions()) ?? []
+    }
+
+    func recognize(images: [UIImage]) async {
+        guard !images.isEmpty else { return }
+        isRecognizing = true
+        errorMessage = nil
+        defer { isRecognizing = false }
+        do {
+            let text = try await TextRecognizer.recognizeText(in: images)
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                errorMessage = "No readable text found in those pages."
+            } else {
+                bodyText = bodyText.isEmpty ? text : bodyText + "\n\n" + text
+                successMessage = "Read \(images.count) page\(images.count == 1 ? "" : "s") — edit if needed, then ingest."
+            }
+        } catch {
+            errorMessage = "Couldn’t read text from the scan."
+        }
+    }
+
+    func submit(review reviewEnabled: Bool) async {
         guard canSubmit else {
             errorMessage = "Fill in the required fields."
             return
         }
+        let review = usesReview(reviewEnabled)
 
         isSubmitting = true
-        errorMessage = nil
-        successMessage = nil
-        lastDumpResponse = nil
-        lastIngest = nil
-        lastYouTube = nil
-        lastZip = nil
-        showLibraryLink = false
+        clearResults()
         defer { isSubmitting = false }
 
         do {
@@ -157,19 +212,30 @@ final class CreateViewModel {
                 lastDumpResponse = response
                 await OfflineReviewStore.shared.ingestDump(response)
                 NotificationCenter.default.post(name: .grDumpCompleted, object: nil)
-                successMessage = "Added \(response.succeeded)/\(response.processed) concepts."
+                successMessage = "Added \(response.succeeded)/\(response.processed) concepts — teach cards are in Today."
+                RecentImportsStore.shared.add(RecentImport(
+                    title: parsedConcepts.prefix(3).joined(separator: ", "),
+                    kind: mode.title,
+                    status: "added",
+                    detail: "\(response.succeeded) concepts researched"
+                ))
 
-            case .text:
+            case .text, .scan, .voice:
                 let content = bodyText.trimmingCharacters(in: .whitespacesAndNewlines)
-                let response = try await APIClient.shared.ingestText(content: content, title: optionalTitle)
-                lastIngest = response
-                applyIngestSuccess(response, verb: "Text")
+                let title = optionalTitle ?? defaultTitle
+                if review {
+                    try await submitForReview(content: content, title: title)
+                } else {
+                    let response = try await APIClient.shared.ingestText(content: content, title: title)
+                    lastIngest = response
+                    applyIngestSuccess(response, verb: mode.title, title: title)
+                }
 
             case .url:
                 let url = urlField.trimmingCharacters(in: .whitespacesAndNewlines)
                 let response = try await APIClient.shared.ingestURL(url)
                 lastIngest = response
-                applyIngestSuccess(response, verb: "URL")
+                applyIngestSuccess(response, verb: "URL", title: URL(string: url)?.host() ?? url)
 
             case .youtube:
                 let url = urlField.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -177,26 +243,42 @@ final class CreateViewModel {
                 lastYouTube = response
                 let note = response.noteId.map { " · note \($0.prefix(8))…" } ?? ""
                 successMessage = "YouTube link \(response.status)\(note)"
+                RecentImportsStore.shared.add(RecentImport(title: optionalTitle ?? url, kind: mode.title, status: response.status, detail: "Saved as a resource"))
 
             case .chat:
                 let content = bodyText.trimmingCharacters(in: .whitespacesAndNewlines)
-                let response = try await APIClient.shared.ingestChatTranscript(
-                    content: content,
-                    title: optionalTitle
-                )
+                let response = try await APIClient.shared.ingestChatTranscript(content: content, title: optionalTitle)
                 lastIngest = response
-                applyIngestSuccess(response, verb: "Chat transcript")
+                applyIngestSuccess(response, verb: "Chat transcript", title: optionalTitle ?? "Chat transcript")
 
             case .file:
-                try await submitFile()
+                try await submitFile(review: review)
             }
         } catch {
             errorMessage = APIError.userFacing(error, resource: "ingest")
         }
     }
 
+    private func submitForReview(content: String, title: String) async throws {
+        let response = try await APIClient.shared.ingestWithReview(content: content)
+        if let sessionId = response.sessionId {
+            successMessage = "Found \(response.conceptsCount) concepts — approve them before they’re added."
+            RecentImportsStore.shared.add(RecentImport(
+                title: title,
+                kind: mode.title,
+                status: "review",
+                detail: "\(response.conceptsCount) concepts waiting for approval",
+                sessionId: sessionId
+            ))
+            reviewLaunch = ReviewLaunch(id: sessionId, title: title)
+            await loadPendingSessions()
+        } else {
+            successMessage = response.message
+            RecentImportsStore.shared.add(RecentImport(title: title, kind: mode.title, status: response.status, detail: response.message))
+        }
+    }
 
-    private func submitFile() async throws {
+    private func submitFile(review: Bool) async throws {
         guard let fileURL = selectedFileURL else {
             errorMessage = "Pick a file first."
             return
@@ -221,18 +303,20 @@ final class CreateViewModel {
                 return
             }
             var parts: [String] = ["ZIP \(response.status)"]
-            if !response.threadId.isEmpty {
-                parts.append("thread \(shortId(response.threadId))")
-            }
             if !response.message.isEmpty {
                 parts.append(response.message)
             }
             successMessage = parts.joined(separator: " · ")
             showLibraryLink = true
+            RecentImportsStore.shared.add(RecentImport(title: title, kind: mode.title, status: response.status, detail: response.message))
         } else {
             let content = try CreateFileReader.extractText(from: fileURL)
             guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 errorMessage = "No extractable text in this file."
+                return
+            }
+            if review {
+                try await submitForReview(content: content, title: title)
                 return
             }
             let response = try await APIClient.shared.ingestText(
@@ -241,7 +325,7 @@ final class CreateViewModel {
                 resourceType: "notes"
             )
             lastIngest = response
-            applyIngestSuccess(response, verb: "File")
+            applyIngestSuccess(response, verb: "File", title: title)
         }
     }
 
@@ -250,18 +334,21 @@ final class CreateViewModel {
         return t.isEmpty ? nil : t
     }
 
-    private func applyIngestSuccess(_ response: IngestResponse, verb: String) {
+    private var defaultTitle: String {
+        switch mode {
+        case .scan: return "Scanned pages"
+        case .voice: return "Voice note"
+        default: return "Text note"
+        }
+    }
+
+    private func applyIngestSuccess(_ response: IngestResponse, verb: String, title: String) {
         if let err = response.error, response.status == "error" {
             errorMessage = err
+            RecentImportsStore.shared.add(RecentImport(title: title, kind: mode.title, status: "error", detail: err))
             return
         }
         var parts: [String] = ["\(verb) \(response.status)"]
-        if !response.threadId.isEmpty, response.threadId != "duplicate_skipped" {
-            parts.append("thread \(shortId(response.threadId))")
-        }
-        if let noteId = response.noteId, !noteId.isEmpty {
-            parts.append("note \(shortId(noteId))")
-        }
         if !response.conceptIds.isEmpty {
             parts.append("\(response.conceptIds.count) concepts")
         }
@@ -272,28 +359,35 @@ final class CreateViewModel {
             parts.append(err)
         }
         successMessage = parts.joined(separator: " · ")
-    }
-
-    private func shortId(_ id: String) -> String {
-        guard id.count > 10 else { return id }
-        return String(id.prefix(8)) + "…"
+        RecentImportsStore.shared.add(RecentImport(
+            title: title,
+            kind: mode.title,
+            status: response.status,
+            detail: "\(response.conceptIds.count) concepts · \(response.flashcardIds.count) cards"
+        ))
+        if !response.flashcardIds.isEmpty {
+            NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+        }
     }
 }
 
 struct CreateView: View {
     @State private var model = CreateViewModel()
+    @State private var dictation = GRDictation()
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var showScanner = false
+    @AppStorage(GRSettingsKey.reviewImports) private var reviewImports = true
 
     var body: some View {
+        @Bindable var bindable = model
+
         ZStack {
             backgroundGlow
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    GRScreenHeader(
-                        title: "Create",
-                        subtitle: subtitleForMode
-                    )
+                    GRScreenHeader(title: "Create", subtitle: subtitleForMode)
 
-                    modePicker
+                    sourceGrid
                         .padding(.horizontal, 20)
 
                     GlassCard {
@@ -301,19 +395,8 @@ struct CreateView: View {
                     }
                     .padding(.horizontal, 20)
 
-                    if let err = model.errorMessage {
-                        Text(err)
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.warning)
-                            .padding(.horizontal, 20)
-                    }
-
-                    if let ok = model.successMessage {
-                        Text(ok)
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.accent)
-                            .padding(.horizontal, 20)
-                    }
+                    feedback
+                        .padding(.horizontal, 20)
 
                     if let response = model.lastDumpResponse {
                         dumpResultsSection(response)
@@ -329,12 +412,24 @@ struct CreateView: View {
                         zipSummaryCard(zip)
                             .padding(.horizontal, 20)
                     }
+
+                    if model.mode.supportsReview && !(model.mode == .file && model.selectedFileIsZip) {
+                        optionsCard
+                            .padding(.horizontal, 20)
+                    }
+
+                    pendingSection
+                        .padding(.horizontal, 20)
+
+                    recentSection
+                        .padding(.horizontal, 20)
                 }
                 .padding(.bottom, GRLayout.dockClearance)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .fileImporter(
-            isPresented: $model.showFileImporter,
+            isPresented: $bindable.showFileImporter,
             allowedContentTypes: CreateFileReader.allowedTypes,
             allowsMultipleSelection: false
         ) { result in
@@ -347,45 +442,90 @@ struct CreateView: View {
                 model.errorMessage = APIError.userFacing(error, resource: "file picker")
             }
         }
+        .onChange(of: photoItems) { _, items in
+            Task { await loadPhotos(items) }
+        }
+        .fullScreenCover(isPresented: $showScanner) {
+            DocumentScannerView(
+                onFinish: { images in
+                    showScanner = false
+                    Task { await model.recognize(images: images) }
+                },
+                onCancel: { showScanner = false }
+            )
+            .ignoresSafeArea()
+        }
+        .sheet(item: $bindable.reviewLaunch) { launch in
+            ImportReviewView(sessionId: launch.id, sourceTitle: launch.title) { message in
+                model.successMessage = message
+                Task { await model.loadPendingSessions() }
+            }
+        }
+        .task { await model.loadPendingSessions() }
+        .onDisappear { dictation.stop() }
     }
 
     private var subtitleForMode: String {
         switch model.mode {
-        case .concepts: return "Dump concepts to research — teach cards land in your feed"
+        case .concepts: return "Dump concepts to research — teach cards land in Today"
         case .text: return "Paste notes or markdown — extracted into your graph"
         case .url: return "Ingest an article from a URL (Substack, Medium, blogs)"
-        case .youtube: return "Save a YouTube link as a resource (no transcript processing)"
+        case .youtube: return "Save a YouTube link as a resource"
         case .chat: return "Paste an LLM chat transcript (Human: / AI:)"
-        case .file: return "PDF, markdown, text, or processed-book ZIP → your graph / library"
+        case .file: return "PDF, markdown, text, or processed-book ZIP"
+        case .scan: return "Scan pages or pick photos — text is read on-device"
+        case .voice: return "Talk through what you learned"
         }
     }
 
-    private var modePicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(CreateIngestMode.allCases) { mode in
-                    Button {
-                        model.selectMode(mode)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(mode.title)
-                                .font(GRType.caption)
-                            if mode.isStub {
-                                Text("Soon")
-                                    .font(GRType.micro)
-                                    .opacity(0.7)
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .foregroundStyle(model.mode == mode ? GRColor.canvas : GRColor.textSecondary)
-                        .background {
-                            Capsule(style: .continuous)
-                                .fill(model.mode == mode ? GRColor.accent : GRColor.fillSubtle)
+    // MARK: - Source grid
+
+    private var sourceGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
+            ForEach(CreateIngestMode.allCases) { mode in
+                let selected = model.mode == mode
+                Button {
+                    dictation.stop()
+                    withAnimation(.easeOut(duration: 0.18)) { model.selectMode(mode) }
+                    GRHaptics.tap()
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: mode.systemImage)
+                            .font(.system(size: 19, weight: .semibold))
+                        Text(mode.title)
+                            .font(GRType.caption.weight(.bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .foregroundStyle(selected ? GRColor.accent : GRColor.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 74)
+                    .background {
+                        if selected {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(GRColor.accentSoft)
+                        } else {
+                            Color.clear.grGlassEffect(.interactive, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
                     }
-                    .buttonStyle(.plain)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(selected ? GRColor.accentLine : GRColor.stroke, lineWidth: 1)
+                    )
+                    .overlay(alignment: .topTrailing) {
+                        if mode.isNew {
+                            Text("NEW")
+                                .font(GRType.micro.weight(.heavy))
+                                .foregroundStyle(GRColor.canvas)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(GRColor.accent, in: Capsule())
+                                .padding(5)
+                        }
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(mode.title)
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
     }
@@ -404,25 +544,46 @@ struct CreateView: View {
         case .chat:
             textForm(kind: .chat)
         case .file:
-            fileStub
+            fileForm
+        case .scan:
+            scanForm
+        case .voice:
+            voiceForm
         }
     }
 
+    // MARK: - Forms
+
     private var conceptsForm: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        @Bindable var bindable = model
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Concept dump")
                 .font(GRType.headline)
                 .foregroundStyle(GRColor.textPrimary)
-            Text("One per line (or commas). We'll pull Wikipedia/articles and build cards.")
+            Text("One per line (or commas). We research each concept, link it into your graph and build cards.")
                 .font(GRType.caption)
                 .foregroundStyle(GRColor.textSecondary)
 
-            editor(text: $model.conceptsText, minHeight: 140)
+            editor(text: $bindable.conceptsText, minHeight: 130)
+
+            HStack {
+                dictateButton {
+                    Task { await toggleDictation(into: \.conceptsText, separator: "\n") }
+                }
+                Spacer()
+                if !model.parsedConcepts.isEmpty {
+                    Text("\(model.parsedConcepts.count) ready")
+                        .font(GRType.caption.weight(.bold))
+                        .foregroundStyle(GRColor.accent)
+                }
+            }
 
             if !model.parsedConcepts.isEmpty {
-                Text("\(model.parsedConcepts.count) concepts ready")
-                    .font(GRType.caption)
-                    .foregroundStyle(GRColor.accent)
+                GRFlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(Array(model.parsedConcepts.prefix(24).enumerated()), id: \.offset) { _, concept in
+                        GRChip(title: concept, systemImage: "checkmark", style: .tinted(.accent), compact: true)
+                    }
+                }
             }
 
             submitButton
@@ -432,7 +593,8 @@ struct CreateView: View {
     private enum TextFormKind { case text, chat }
 
     private func textForm(kind: TextFormKind) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        @Bindable var bindable = model
+        return VStack(alignment: .leading, spacing: 12) {
             Text(kind == .text ? "Text / notes" : "Chat transcript")
                 .font(GRType.headline)
                 .foregroundStyle(GRColor.textPrimary)
@@ -445,13 +607,14 @@ struct CreateView: View {
             .foregroundStyle(GRColor.textSecondary)
 
             titleField
-            editor(text: $model.bodyText, minHeight: kind == .chat ? 180 : 160)
+            editor(text: $bindable.bodyText, minHeight: kind == .chat ? 180 : 160)
             submitButton
         }
     }
 
     private func urlForm(youtube: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        @Bindable var bindable = model
+        return VStack(alignment: .leading, spacing: 12) {
             Text(youtube ? "YouTube link" : "Article URL")
                 .font(GRType.headline)
                 .foregroundStyle(GRColor.textPrimary)
@@ -465,28 +628,41 @@ struct CreateView: View {
 
             if youtube { titleField }
 
-            TextField(youtube ? "https://youtube.com/watch?v=…" : "https://…", text: $model.urlField)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
-                .autocorrectionDisabled()
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(GRColor.fillSubtle)
-                )
-                .foregroundStyle(GRColor.textPrimary)
-                .font(GRType.body)
+            HStack(spacing: 8) {
+                TextField(youtube ? "https://youtube.com/watch?v=…" : "https://…", text: $bindable.urlField)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    .foregroundStyle(GRColor.textPrimary)
+                    .font(GRType.body)
+                if let pasted = UIPasteboard.general.hasURLs ? "Paste" : nil {
+                    Button(pasted) {
+                        if let url = UIPasteboard.general.url {
+                            model.urlField = url.absoluteString
+                        } else if let string = UIPasteboard.general.string {
+                            model.urlField = string
+                        }
+                    }
+                    .font(GRType.caption.weight(.bold))
+                    .foregroundStyle(GRColor.accent)
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(GRColor.fillSubtle)
+            )
 
             submitButton
         }
     }
 
-    private var fileStub: some View {
+    private var fileForm: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("File / ZIP")
                 .font(GRType.headline)
                 .foregroundStyle(GRColor.textPrimary)
-            Text("Documents (PDF, .md, .txt) extract text and POST /api/v2/ingest. Processed ZIPs upload multipart to /api/v2/ingest/processed-zip.")
+            Text("PDF, Markdown and text files are read on-device and ingested. Processed-book ZIPs upload to your Library.")
                 .font(GRType.caption)
                 .foregroundStyle(GRColor.textSecondary)
 
@@ -510,12 +686,7 @@ struct CreateView: View {
                     }
                     Spacer(minLength: 0)
                     if model.selectedFileIsZip {
-                        Text("ZIP")
-                            .font(GRType.micro)
-                            .foregroundStyle(GRColor.accentCyan)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(GRColor.accentCyan.opacity(0.15)))
+                        GRChip(title: "ZIP", style: .tinted(.cyan), compact: true)
                     }
                 }
                 .padding(12)
@@ -541,26 +712,105 @@ struct CreateView: View {
                 Button {
                     NotificationCenter.default.post(name: .grNavigateLibrary, object: nil)
                 } label: {
-                    HStack {
-                        Image(systemName: "books.vertical.fill")
-                        Text("Open Library")
-                            .font(GRType.headline)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .foregroundStyle(GRColor.accent)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(GRColor.accent.opacity(0.4), lineWidth: 1)
-                    )
+                    Label("Open Library", systemImage: "books.vertical.fill")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.grGhost)
             }
         }
     }
 
+    private var scanForm: some View {
+        @Bindable var bindable = model
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Scan pages")
+                .font(GRType.headline)
+                .foregroundStyle(GRColor.textPrimary)
+            Text("Photograph book pages, slides or whiteboards. Text is recognised on-device, then turned into concepts and cards.")
+                .font(GRType.caption)
+                .foregroundStyle(GRColor.textSecondary)
+
+            HStack(spacing: 10) {
+                Button {
+                    showScanner = true
+                } label: {
+                    Label(DocumentScannerView.isSupported ? "Scan" : "No camera", systemImage: "camera.fill")
+                }
+                .buttonStyle(GRButtonStyle(kind: .secondary, compact: true))
+                .disabled(!DocumentScannerView.isSupported)
+
+                PhotosPicker(selection: $photoItems, maxSelectionCount: 6, matching: .images) {
+                    Label("From Photos", systemImage: "photo.on.rectangle")
+                }
+                .buttonStyle(GRButtonStyle(kind: .secondary, compact: true))
+            }
+
+            if model.isRecognizing {
+                HStack(spacing: 8) {
+                    ProgressView().tint(GRColor.accent)
+                    Text("Reading text…")
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.textSecondary)
+                }
+            }
+
+            if !model.bodyText.isEmpty {
+                titleField
+                editor(text: $bindable.bodyText, minHeight: 160)
+                submitButton
+            }
+        }
+    }
+
+    private var voiceForm: some View {
+        @Bindable var bindable = model
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("Voice note")
+                .font(GRType.headline)
+                .foregroundStyle(GRColor.textPrimary)
+            Text("Explain what you learned out loud. We transcribe on-device, extract concepts and build cards.")
+                .font(GRType.caption)
+                .foregroundStyle(GRColor.textSecondary)
+
+            HStack {
+                Spacer()
+                Button {
+                    Task { await toggleDictation(into: \.bodyText, separator: " ") }
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(dictation.isRecording ? GRColor.danger.opacity(0.18) : GRColor.accentSoft)
+                        Circle()
+                            .stroke(dictation.isRecording ? GRColor.danger : GRColor.accentLine, lineWidth: 2)
+                        Image(systemName: dictation.isRecording ? "stop.fill" : "mic.fill")
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundStyle(dictation.isRecording ? GRColor.danger : GRColor.accent)
+                            .symbolEffect(.pulse, isActive: dictation.isRecording)
+                    }
+                    .frame(width: 96, height: 96)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Start dictation")
+                Spacer()
+            }
+
+            Text(dictation.isRecording ? "Listening… tap to stop" : (model.bodyText.isEmpty ? "Tap to start dictating" : "Tap to add more"))
+                .font(GRType.caption)
+                .foregroundStyle(GRColor.textTertiary)
+                .frame(maxWidth: .infinity)
+
+            if !model.bodyText.isEmpty {
+                titleField
+                editor(text: $bindable.bodyText, minHeight: 130)
+                submitButton
+            }
+        }
+    }
+
+    // MARK: - Shared form pieces
+
     private var titleField: some View {
-        TextField("Title (optional)", text: $model.titleField)
+        @Bindable var bindable = model
+        return TextField("Title (optional)", text: $bindable.titleField)
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -583,37 +833,150 @@ struct CreateView: View {
             .font(GRType.body)
     }
 
+    private func dictateButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(dictation.isRecording ? "Stop" : "Dictate", systemImage: dictation.isRecording ? "stop.circle.fill" : "mic.fill")
+                .font(GRType.caption.weight(.bold))
+                .foregroundStyle(dictation.isRecording ? GRColor.danger : GRColor.accent)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(dictation.isRecording ? GRColor.danger.opacity(0.15) : GRColor.accentSoft, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     private var submitButton: some View {
-        Button {
-            Task { await model.submit() }
+        let review = model.usesReview(reviewImports)
+        return Button {
+            dictation.stop()
+            Task { await model.submit(review: reviewImports) }
         } label: {
-            HStack {
-                if model.isSubmitting { ProgressView().tint(.black) }
-                Text(model.primaryButtonTitle)
-                    .font(GRType.headline)
+            HStack(spacing: 8) {
+                if model.isSubmitting { ProgressView().tint(GRColor.canvas) }
+                Text(model.primaryButtonTitle(review: review))
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .foregroundStyle(model.canSubmit ? GRColor.canvas : GRColor.textTertiary)
-            .background {
-                Group {
-                    if model.canSubmit {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [GRColor.accent, GRColor.accentCyan],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                    } else {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(GRColor.fillSubtle)
+        }
+        .buttonStyle(.grPrimary)
+        .disabled(!model.canSubmit)
+    }
+
+    @ViewBuilder
+    private var feedback: some View {
+        if let err = model.errorMessage {
+            GRBanner(systemImage: "exclamationmark.triangle.fill", title: "Something went wrong", subtitle: err, tone: .warning)
+        }
+        if let ok = model.successMessage {
+            GRBanner(systemImage: "checkmark.circle.fill", title: "Done", subtitle: ok, tone: .accent)
+        }
+    }
+
+    private var optionsCard: some View {
+        GlassCard {
+            Toggle(isOn: $reviewImports) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Review before adding")
+                        .font(GRType.headline)
+                        .foregroundStyle(GRColor.textPrimary)
+                    Text("Approve extracted concepts and skip duplicates first")
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.textSecondary)
+                }
+            }
+            .tint(GRColor.accent)
+        }
+    }
+
+    @ViewBuilder
+    private var pendingSection: some View {
+        if !model.pendingSessions.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                GRSectionHeader(title: "Needs your review")
+                ForEach(model.pendingSessions) { session in
+                    Button {
+                        model.reviewLaunch = ReviewLaunch(id: session.sessionId, title: "Review import")
+                    } label: {
+                        GRListRow(
+                            title: "\(session.conceptsCount) concepts waiting",
+                            subtitle: "Extracted \(ProfileDateFormat.short(session.createdAt))",
+                            meta: "Review",
+                            metaColor: GRColor.amber,
+                            systemImage: "sparkles",
+                            tone: .amber
+                        )
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
-        .disabled(!model.canSubmit)
+    }
+
+    @ViewBuilder
+    private var recentSection: some View {
+        let recents = RecentImportsStore.shared.items
+        if !recents.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                GRSectionHeader(title: "Recent imports", actionTitle: "Clear") {
+                    RecentImportsStore.shared.clear()
+                }
+                ForEach(recents.prefix(5)) { item in
+                    let style = recentStyle(item)
+                    Button {
+                        if item.status == "review", let sessionId = item.sessionId {
+                            model.reviewLaunch = ReviewLaunch(id: sessionId, title: item.title)
+                        }
+                    } label: {
+                        GRListRow(
+                            title: item.title,
+                            subtitle: "\(item.kind) · \(item.detail)",
+                            meta: style.meta,
+                            metaColor: style.tone.color,
+                            systemImage: style.icon,
+                            tone: style.tone,
+                            showsChevron: item.status == "review"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func recentStyle(_ item: RecentImport) -> (meta: String, tone: GRTone, icon: String) {
+        let kindIcon = CreateIngestMode.allCases.first { $0.title == item.kind }?.systemImage ?? "tray.full.fill"
+        switch item.status {
+        case "review": return ("Review", .amber, "sparkles")
+        case "error": return ("Failed", .danger, "exclamationmark.triangle.fill")
+        case "discarded": return ("Discarded", .neutral, kindIcon)
+        default: return ("Done", .accent, kindIcon)
+        }
+    }
+
+    private func toggleDictation(into keyPath: ReferenceWritableKeyPath<CreateViewModel, String>, separator: String) async {
+        if dictation.isRecording {
+            dictation.stop()
+            return
+        }
+        let current = model[keyPath: keyPath]
+        let base = current.isEmpty ? "" : current + separator
+        let target = model
+        await dictation.start { text in
+            target[keyPath: keyPath] = base + text
+        }
+        if let err = dictation.errorMessage {
+            model.errorMessage = err
+        }
+    }
+
+    private func loadPhotos(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        var images: [UIImage] = []
+        for item in items {
+            if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                images.append(image)
+            }
+        }
+        photoItems = []
+        await model.recognize(images: images)
     }
 
     private var backgroundGlow: some View {
@@ -631,6 +994,8 @@ struct CreateView: View {
         }
         .allowsHitTesting(false)
     }
+
+    // MARK: - Results
 
     @ViewBuilder
     private func dumpResultsSection(_ response: ConceptDumpResponse) -> some View {
@@ -688,21 +1053,7 @@ struct CreateView: View {
                     Spacer()
                     Text(response.status)
                         .font(GRType.caption)
-                        .foregroundStyle(
-                            response.status == "error" ? GRColor.warning : GRColor.accent
-                        )
-                }
-                if !response.threadId.isEmpty {
-                    Text("thread_id: \(response.threadId)")
-                        .font(GRType.micro)
-                        .foregroundStyle(GRColor.textTertiary)
-                        .textSelection(.enabled)
-                }
-                if let noteId = response.noteId {
-                    Text("note_id: \(noteId)")
-                        .font(GRType.micro)
-                        .foregroundStyle(GRColor.textTertiary)
-                        .textSelection(.enabled)
+                        .foregroundStyle(response.status == "error" ? GRColor.warning : GRColor.accent)
                 }
                 if !response.conceptIds.isEmpty || !response.flashcardIds.isEmpty {
                     Text("\(response.conceptIds.count) concepts · \(response.flashcardIds.count) flashcards")
@@ -728,15 +1079,7 @@ struct CreateView: View {
                     Spacer()
                     Text(response.status)
                         .font(GRType.caption)
-                        .foregroundStyle(
-                            response.status == "error" ? GRColor.warning : GRColor.accent
-                        )
-                }
-                if !response.threadId.isEmpty {
-                    Text("thread_id: \(response.threadId)")
-                        .font(GRType.micro)
-                        .foregroundStyle(GRColor.textTertiary)
-                        .textSelection(.enabled)
+                        .foregroundStyle(response.status == "error" ? GRColor.warning : GRColor.accent)
                 }
                 if !response.message.isEmpty {
                     Text(response.message)
@@ -800,7 +1143,7 @@ enum CreateFileReader {
             throw NSError(
                 domain: "CreateFileReader",
                 code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "PDF has no extractable text (scanned image?)."]
+                userInfo: [NSLocalizedDescriptionKey: "PDF has no extractable text (scanned image?) — try Scan instead."]
             )
         }
         let name = url.deletingPathExtension().lastPathComponent

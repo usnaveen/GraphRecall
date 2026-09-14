@@ -1,98 +1,137 @@
 import SwiftUI
+import UIKit
 
 struct ChatView: View {
     @State private var model = ChatViewModel()
+    @State private var dictation = GRDictation()
+    @State private var openSource: ChatSourceRef?
     @FocusState private var inputFocused: Bool
-
-    private let quizAccent = Color(red: 0.608, green: 0.349, blue: 0.714) // web #9B59B6
+    @Environment(AppRouter.self) private var router
 
     var body: some View {
+        @Bindable var bindable = model
+
         ZStack(alignment: .top) {
             GRColor.canvas.ignoresSafeArea()
+            GRBackdropGlow(tint: GRColor.accentCyan, offset: CGSize(width: -150, height: -240))
+
             VStack(spacing: 0) {
                 header
+                scopeRow
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 6)
                 messagesScroll
-                if !model.suggestions.isEmpty && model.messages.count <= 2 {
+                if !model.suggestions.isEmpty && model.messages.count <= 2 && !model.isStreaming {
                     suggestionsRow
                 }
-                composer
+                composer(input: $bindable.input)
             }
             .padding(.bottom, GRLayout.dockClearance)
 
             if let banner = model.bannerMessage {
-                Text(banner)
-                    .font(GRType.caption)
-                    .foregroundStyle(GRColor.textPrimary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .grGlassEffect(.regular, in: Capsule())
+                GRToast(message: banner)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .zIndex(2)
             }
         }
         .animation(.easeOut(duration: 0.22), value: model.bannerMessage)
-        .task { await model.onAppear() }
-        .sheet(isPresented: $model.showHistory) {
+        .task {
+            await model.onAppear()
+            consumeRouter()
+        }
+        .onChange(of: router.pendingAssistantPrompt) { _, _ in consumeRouter() }
+        .onChange(of: router.pendingConversationId) { _, _ in consumeRouter() }
+        .onDisappear { dictation.stop() }
+        .sheet(isPresented: $bindable.showHistory) {
             ConversationHistorySheet(model: model)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $openSource) { source in
+            SourceDetailSheet(source: source)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
     }
 
+    private func consumeRouter() {
+        if let id = router.pendingConversationId {
+            router.pendingConversationId = nil
+            Task { await model.selectConversation(id) }
+        }
+        if let prompt = router.pendingAssistantPrompt {
+            router.pendingAssistantPrompt = nil
+            if let topic = router.assistantFocusTopic {
+                model.focusTopic = topic
+                router.assistantFocusTopic = nil
+            }
+            model.input = prompt
+            guard !model.isStreaming else { return }
+            Task { await model.send() }
+        }
+    }
+
+    // MARK: - Header
+
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
-            GRScreenHeader(
-                title: "Assistant",
-                subtitle: headerSubtitle
-            )
+            GRScreenHeader(title: "Assistant", subtitle: headerSubtitle)
             HStack(spacing: 8) {
                 if model.isStreaming {
-                    Button {
+                    GRIconButton(systemImage: "stop.fill", accessibilityLabel: "Stop streaming") {
                         model.cancelStream()
-                    } label: {
-                        Image(systemName: "stop.circle.fill")
-                            .foregroundStyle(GRColor.accent)
-                            .padding(10)
-                            .grGlassEffect(.interactive, in: Circle())
                     }
-                    .accessibilityLabel("Stop streaming")
                 }
-                Button {
+                GRIconButton(systemImage: "plus", accessibilityLabel: "New chat") {
+                    model.startNewChat()
+                }
+                .disabled(model.isStreaming)
+                GRIconButton(systemImage: "clock.arrow.circlepath", tint: GRColor.textPrimary, accessibilityLabel: "Chat history") {
                     model.openHistory()
-                } label: {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(GRColor.textSecondary)
-                        .padding(10)
-                        .grGlassEffect(.interactive, in: Circle())
                 }
-                .accessibilityLabel("Chat history")
                 .disabled(model.isStreaming)
             }
             .padding(.trailing, 20)
-            .padding(.top, 12)
+            .padding(.top, 14)
         }
     }
 
     private var headerSubtitle: String {
-        if model.usingStub { return "Offline demo" }
-        if let cid = model.conversationId, !cid.isEmpty {
-            return "Thread active"
-        }
-        return "Connected"
+        if model.usingStub { return "Offline demo · answers are local" }
+        if let cid = model.conversationId, !cid.isEmpty { return "Thread active · grounded in your graph" }
+        return "Grounded in your graph and notes"
     }
+
+    private var scopeRow: some View {
+        HStack(spacing: 6) {
+            Text("Scope")
+                .font(GRType.micro)
+                .foregroundStyle(GRColor.textTertiary)
+            if let topic = model.focusTopic {
+                GRChip(title: topic, systemImage: "scope", style: .selected, compact: true)
+                Button {
+                    model.focusTopic = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(GRColor.textTertiary)
+                }
+                .accessibilityLabel("Clear scope")
+            } else {
+                GRChip(title: "Whole graph", systemImage: "point.3.connected.trianglepath.dotted", style: .selected, compact: true)
+            }
+            Spacer()
+        }
+    }
+
+    // MARK: - Messages
 
     private var messagesScroll: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     if let error = model.errorMessage {
-                        GlassCard(cornerRadius: 14) {
-                            Text(error)
-                                .font(GRType.caption)
-                                .foregroundStyle(GRColor.warning)
-                        }
+                        GRBanner(systemImage: "exclamationmark.triangle.fill", title: "Chat issue", subtitle: error, tone: .warning)
                     }
                     ForEach(model.messages) { message in
                         messageBubble(message)
@@ -100,8 +139,9 @@ struct ChatView: View {
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 12)
+                .padding(.vertical, 8)
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: model.messages.last?.content) { _, _ in
                 if let id = model.messages.last?.id {
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -114,151 +154,171 @@ struct ChatView: View {
 
     @ViewBuilder
     private func messageBubble(_ message: ChatMessageUI) -> some View {
-        let isUser = message.role == .user
-        HStack {
-            if isUser { Spacer(minLength: 40) }
-            VStack(alignment: .leading, spacing: 8) {
-                Text(message.content.isEmpty && message.isStreaming ? "…" : message.content)
+        if message.role == .user {
+            HStack {
+                Spacer(minLength: 48)
+                Text(message.content)
                     .font(GRType.body)
                     .foregroundStyle(GRColor.textPrimary)
                     .textSelection(.enabled)
-                if let status = message.status, message.isStreaming {
-                    Text(status)
-                        .font(GRType.caption)
-                        .foregroundStyle(GRColor.accent)
-                }
-                if !message.relatedConcepts.isEmpty {
-                    FlowChips(items: message.relatedConcepts)
-                }
-                if !message.sources.isEmpty {
-                    Text("Sources: " + message.sources.map(\.title).joined(separator: " · "))
-                        .font(GRType.micro)
-                        .foregroundStyle(GRColor.textTertiary)
-                }
-                if showsFeedActions(message) {
-                    feedActions(for: message)
-                }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(GRColor.accentSoft, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(GRColor.accentLine, lineWidth: 1))
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .grGlassEffect(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            if !isUser { Spacer(minLength: 24) }
+        } else {
+            assistantBubble(message)
         }
     }
 
-    private func showsFeedActions(_ message: ChatMessageUI) -> Bool {
+    private func assistantBubble(_ message: ChatMessageUI) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if message.isStreaming {
+                HStack(spacing: 8) {
+                    TypingDots()
+                    Text(message.status ?? "Thinking…")
+                        .font(GRType.micro)
+                        .foregroundStyle(GRColor.accent)
+                }
+            } else if !message.sources.isEmpty || !message.relatedConcepts.isEmpty {
+                Label(
+                    "Grounded in \(message.relatedConcepts.count) concept\(message.relatedConcepts.count == 1 ? "" : "s") · \(message.sources.count) source\(message.sources.count == 1 ? "" : "s")",
+                    systemImage: "sparkles"
+                )
+                .font(GRType.micro)
+                .foregroundStyle(GRColor.textTertiary)
+            }
+
+            if !message.content.isEmpty {
+                Text(Self.markdown(message.content))
+                    .font(GRType.body)
+                    .foregroundStyle(GRColor.textPrimary)
+                    .tint(GRColor.accentCyan)
+                    .textSelection(.enabled)
+            }
+
+            if !message.relatedConcepts.isEmpty {
+                GRFlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(message.relatedConcepts, id: \.self) { concept in
+                        GRChip(title: concept, style: .tinted(.accent), compact: true) {
+                            router.focusInGraph(concept)
+                        }
+                    }
+                }
+            }
+
+            if !message.sources.isEmpty {
+                VStack(spacing: 6) {
+                    ForEach(message.sources.prefix(4)) { source in
+                        Button {
+                            openSource = source
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "doc.text.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(GRColor.accentCyan)
+                                Text(source.title)
+                                    .font(GRType.caption)
+                                    .foregroundStyle(GRColor.textSecondary)
+                                    .lineLimit(1)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(GRColor.textTertiary)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(GRColor.fillSubtle, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if showsActions(message) {
+                Divider().overlay(GRColor.stroke)
+                actionRow(message)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .grGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.trailing, 20)
+    }
+
+    private func showsActions(_ message: ChatMessageUI) -> Bool {
         message.role == .assistant
             && !message.isStreaming
             && !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && message.status == nil
+            && message.id != model.messages.first?.id
     }
 
-    @ViewBuilder
-    private func feedActions(for message: ChatMessageUI) -> some View {
-        let busy = model.actionBusyMessageId == message.id
-        VStack(alignment: .leading, spacing: 8) {
-            Divider().overlay(GRColor.stroke)
-
-            if model.addToFeedMessageId == message.id {
-                HStack(spacing: 8) {
-                    Button {
-                        Task { await model.createCard(from: message, outputType: .quiz) }
-                    } label: {
-                        Label("Quiz", systemImage: "questionmark.circle")
-                            .font(GRType.caption)
-                            .foregroundStyle(quizAccent)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Capsule().fill(quizAccent.opacity(0.15)))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
-
-                    Button {
-                        Task { await model.createCard(from: message, outputType: .conceptCard) }
-                    } label: {
-                        Label("Flashcard", systemImage: "rectangle.on.rectangle")
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.accentCyan)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Capsule().fill(GRColor.accentCyan.opacity(0.15)))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
-
-                    Button {
-                        model.toggleAddToFeed(for: message.id)
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.textTertiary)
-                            .padding(8)
-                            .background(Circle().fill(GRColor.fillSubtle))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
+    private func actionRow(_ message: ChatMessageUI) -> some View {
+        let busy = model.actionBusyMessageId != nil
+        let saved = model.savedMessageIds.contains(message.id)
+        let topic = message.relatedConcepts.first ?? model.focusTopic
+        return HStack(spacing: 6) {
+            Menu {
+                Button {
+                    Task { await model.createCard(from: message, outputType: .quiz) }
+                } label: {
+                    Label("Quiz card", systemImage: "questionmark.circle")
                 }
-            } else {
-                HStack(spacing: 12) {
-                    Button {
-                        model.toggleAddToFeed(for: message.id)
-                    } label: {
-                        Label("Create card", systemImage: "plus")
-                            .font(GRType.micro)
-                            .foregroundStyle(GRColor.textTertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
-
-                    Button {
-                        Task { await model.saveMessage(message) }
-                    } label: {
-                        Label(
-                            model.savedMessageIds.contains(message.id) ? "Saved" : "Save",
-                            systemImage: model.savedMessageIds.contains(message.id)
-                                ? "bookmark.fill"
-                                : "bookmark"
-                        )
-                        .font(GRType.micro)
-                        .foregroundStyle(
-                            model.savedMessageIds.contains(message.id)
-                                ? GRColor.accent
-                                : GRColor.textTertiary
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy || model.savedMessageIds.contains(message.id))
-
-                    if busy {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .tint(GRColor.accent)
-                    }
+                Button {
+                    Task { await model.createCard(from: message, outputType: .conceptCard) }
+                } label: {
+                    Label("Flashcard", systemImage: "rectangle.on.rectangle")
                 }
+            } label: {
+                GRChip(title: "Make cards", systemImage: "plus", style: .outline, compact: true)
             }
+            .disabled(busy)
+
+            if let topic {
+                GRChip(title: "Quiz me", systemImage: "target", style: .outline, compact: true) {
+                    Task { await model.quizMe(on: topic) }
+                }
+                .disabled(busy)
+            }
+
+            GRChip(
+                title: saved ? "Saved" : "Save",
+                systemImage: saved ? "bookmark.fill" : "bookmark",
+                style: saved ? .tinted(.accent) : .outline,
+                compact: true
+            ) {
+                Task { await model.saveMessage(message) }
+            }
+            .disabled(busy || saved)
+
+            Spacer(minLength: 0)
+
+            if busy {
+                ProgressView().controlSize(.mini).tint(GRColor.accent)
+            }
+
+            Button {
+                UIPasteboard.general.string = message.content
+                model.showBanner("Copied answer")
+                GRHaptics.tap()
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 13))
+                    .foregroundStyle(GRColor.textTertiary)
+                    .frame(width: 28, height: 28)
+            }
+            .accessibilityLabel("Copy answer")
         }
-        .padding(.top, 4)
     }
 
     private var suggestionsRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(model.suggestions, id: \.self) { tip in
-                    Button {
+                    GRChip(title: tip, style: .outline) {
                         model.sendSuggestion(tip)
-                    } label: {
-                        Text(tip)
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.textPrimary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: 220, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .grGlassEffect(.interactive, in: Capsule())
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 20)
@@ -266,48 +326,123 @@ struct ChatView: View {
         }
     }
 
-    private var composer: some View {
-        HStack(spacing: 10) {
-            TextField("Ask your graph…", text: $model.input, axis: .vertical)
+    // MARK: - Composer
+
+    private func composer(input: Binding<String>) -> some View {
+        HStack(alignment: .bottom, spacing: 6) {
+            TextField(model.focusTopic.map { "Ask about \($0)…" } ?? "Ask your graph…", text: input, axis: .vertical)
                 .lineLimit(1...5)
                 .focused($inputFocused)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .grGlassEffect(.interactive, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .font(GRType.body)
+                .foregroundStyle(GRColor.textPrimary)
+                .padding(.leading, 14)
+                .padding(.vertical, 11)
 
             Button {
+                Task { await toggleDictation() }
+            } label: {
+                Image(systemName: dictation.isRecording ? "waveform" : "mic.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(dictation.isRecording ? GRColor.accent : GRColor.textTertiary)
+                    .symbolEffect(.variableColor.iterative, isActive: dictation.isRecording)
+                    .frame(width: 36, height: 36)
+            }
+            .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate question")
+
+            Button {
+                dictation.stop()
                 Task { await model.send() }
             } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(model.canSend ? GRColor.accent : GRColor.textTertiary)
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(model.canSend ? GRColor.canvas : GRColor.textTertiary)
+                    .frame(width: 36, height: 36)
+                    .background {
+                        if model.canSend {
+                            Circle().fill(LinearGradient(colors: [GRColor.accent, GRColor.accentCyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        } else {
+                            Circle().fill(GRColor.fillSubtle)
+                        }
+                    }
             }
             .disabled(!model.canSend)
+            .accessibilityLabel("Send")
         }
+        .padding(5)
+        .grGlassEffect(.interactive, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
     }
-}
 
-/// Simple horizontal wrapping chip row without a layout dependency.
-private struct FlowChips: View {
-    let items: [String]
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(items, id: \.self) { item in
-                    Text(item)
-                        .font(GRType.micro)
-                        .foregroundStyle(GRColor.accent)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(GRColor.accent.opacity(0.12)))
-                }
-            }
+    private func toggleDictation() async {
+        if dictation.isRecording {
+            dictation.stop()
+            return
         }
+        let base = model.input.isEmpty ? "" : model.input + " "
+        let target = model
+        await dictation.start { text in
+            target.input = base + text
+        }
+        if let err = dictation.errorMessage {
+            model.showBanner(err)
+        }
+    }
+
+    private static func markdown(_ text: String) -> AttributedString {
+        (try? AttributedString(
+            markdown: text,
+            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )) ?? AttributedString(text)
     }
 }
 
+private struct TypingDots: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 4) {
+                ForEach(0..<3, id: \.self) { i in
+                    Circle()
+                        .fill(GRColor.accent)
+                        .frame(width: 6, height: 6)
+                        .opacity(0.3 + 0.7 * max(0, sin(t * 5 - Double(i) * 0.8)))
+                }
+            }
+        }
+        .accessibilityLabel("Assistant is typing")
+    }
+}
+
+private struct SourceDetailSheet: View {
+    let source: ChatSourceRef
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                GRColor.canvas.ignoresSafeArea()
+                ScrollView {
+                    Text(source.content?.isEmpty == false ? (source.content ?? "") : "No excerpt was returned for this source.")
+                        .font(GRType.body)
+                        .foregroundStyle(GRColor.textPrimary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(20)
+                }
+            }
+            .navigationTitle(source.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(GRColor.accent)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
 
 // MARK: - Conversation history sheet (L6)
 
@@ -391,13 +526,8 @@ private struct ConversationHistorySheet: View {
                 Task { await model.loadHistory() }
             } label: {
                 Text("Retry")
-                    .font(GRType.caption)
-                    .foregroundStyle(GRColor.accent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .grGlassEffect(.interactive, in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GRButtonStyle(kind: .ghost, fullWidth: false, compact: true))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -406,51 +536,23 @@ private struct ConversationHistorySheet: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
                 if let err = model.historyError {
-                    GlassCard(cornerRadius: 14) {
-                        Text(err)
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.warning)
-                    }
+                    GRBanner(systemImage: "exclamationmark.triangle.fill", title: "History issue", subtitle: err, tone: .warning)
                 }
                 ForEach(model.conversationSummaries) { conv in
                     Button {
                         Task { await model.selectConversation(conv.id) }
                     } label: {
-                        GlassCard(cornerRadius: 16) {
-                            HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: "bubble.left.and.bubble.right.fill")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(GRColor.accent)
-                                    .padding(10)
-                                    .background(Circle().fill(GRColor.accent.opacity(0.14)))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(conv.displayTitle)
-                                        .font(GRType.headline)
-                                        .foregroundStyle(GRColor.textPrimary)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.leading)
-                                    Text(conv.displaySubtitle)
-                                        .font(GRType.caption)
-                                        .foregroundStyle(GRColor.textSecondary)
-                                    if let preview = conv.lastMessage, !preview.isEmpty {
-                                        Text(preview)
-                                            .font(GRType.micro)
-                                            .foregroundStyle(GRColor.textTertiary)
-                                            .lineLimit(2)
-                                            .multilineTextAlignment(.leading)
-                                    }
-                                }
-                                Spacer(minLength: 0)
-                                if model.conversationId == conv.id {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(GRColor.accent)
-                                }
-                            }
-                        }
+                        GRListRow(
+                            title: conv.displayTitle,
+                            subtitle: conv.lastMessage ?? conv.displaySubtitle,
+                            meta: model.conversationId == conv.id ? "Open" : nil,
+                            metaColor: GRColor.accent,
+                            systemImage: "bubble.left.and.bubble.right.fill",
+                            tone: .accent
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isLoadingConversation || model.isStreaming)
-                    .opacity(model.conversationId == conv.id ? 1 : 0.96)
                 }
             }
             .padding(.horizontal, 20)
@@ -466,5 +568,6 @@ private struct ConversationHistorySheet: View {
         GRColor.canvas.ignoresSafeArea()
         ChatView()
     }
+    .environment(AppRouter())
     .preferredColorScheme(.dark)
 }

@@ -12,6 +12,8 @@ final class ChatViewModel {
     var statusLine: String?
     var errorMessage: String?
     var usingStub = false
+    /// Concept the conversation is scoped to — questions are sent as "About <topic>: …".
+    var focusTopic: String?
 
     /// Soft success banner after create-card / save (clears itself).
     var bannerMessage: String?
@@ -98,8 +100,9 @@ final class ChatViewModel {
         isStreaming = true
         statusLine = "Thinking…"
 
+        let outbound = focusTopic.map { "About \($0): \(text)" } ?? text
         streamTask?.cancel()
-        streamTask = Task { await runStream(assistantId: assistantId, text: text) }
+        streamTask = Task { await runStream(assistantId: assistantId, text: outbound) }
         await streamTask?.value
     }
 
@@ -185,6 +188,21 @@ final class ChatViewModel {
         showBanner("Saved locally for quiz — check Feed")
     }
 
+    /// Generates topic quiz cards into Feed (`POST /api/feed/quiz/topic/{name}`).
+    func quizMe(on topic: String) async {
+        guard actionBusyMessageId == nil else { return }
+        actionBusyMessageId = "quiz"
+        defer { actionBusyMessageId = nil }
+        do {
+            let result = try await APIClient.shared.generateTopicQuiz(topic: topic, targetPoolSize: 5)
+            let count = result.generated ?? result.total ?? result.questions?.count ?? 0
+            NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+            showBanner(count > 0 ? "\(count) quiz card\(count == 1 ? "" : "s") on \(topic) added to Today" : "Quiz queued for \(topic)")
+        } catch {
+            showBanner(APIError.userFacing(error, resource: "quiz"))
+        }
+    }
+
 
     // MARK: - Conversation history (L6)
 
@@ -252,6 +270,7 @@ final class ChatViewModel {
     func startNewChat() {
         cancelStream()
         conversationId = nil
+        focusTopic = nil
         messages = [
             ChatMessageUI(
                 role: .assistant,
@@ -266,7 +285,7 @@ final class ChatViewModel {
         Task { await loadSuggestions() }
     }
 
-    private func showBanner(_ text: String) {
+    func showBanner(_ text: String) {
         bannerMessage = text
         bannerTask?.cancel()
         bannerTask = Task {

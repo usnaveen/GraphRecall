@@ -81,3 +81,10 @@ html, body {
   border: 1px solid rgba(182,255,46,0.28); display: none;
 }
 #badge.show { display: block; }
+
+/* Collapsible controls — native chips handle everyday filtering. */
+#controls .hdr { cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+#controls .hdr .chev { transition: transform 0.2s ease; opacity: 0.7; }
+#controls:not(.collapsed) .hdr .chev { transform: rotate(180deg); }
+#controls.collapsed > :not(.hdr) { display: none; }
+#controls.collapsed .hdr { margin-bottom: 0; }
