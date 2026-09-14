@@ -23,6 +23,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>GraphRecall scans pages and whiteboards so their text can become review cards.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>GraphRecall listens while you dictate concepts or questions.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>GraphRecall turns your dictation into text for concept dumps and questions.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

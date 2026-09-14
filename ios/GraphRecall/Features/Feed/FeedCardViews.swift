@@ -127,7 +127,7 @@ struct FeedTypedCard: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .disabled(revealed)
+                .allowsHitTesting(!revealed)
             }
 
             if revealed {

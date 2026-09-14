@@ -3,73 +3,33 @@ import SwiftUI
 struct FeedView: View {
     @State private var model = FeedViewModel()
     @State private var contentReady = false
+    @State private var activeSession: SessionLaunch?
+    @Environment(AppRouter.self) private var router
 
     var body: some View {
         ZStack {
             GRColor.canvas.ignoresSafeArea()
+            GRBackdropGlow()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 12) {
-                        GRScreenHeader(
-                            title: "Today",
-                            subtitle: model.isDemoMode ? "Demo teach cards" : "Cards due for review"
-                        )
-                        Button {
-                            Task { await model.load() }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundStyle(GRColor.accent)
-                                .padding(10)
-                                .grGlassEffect(.interactive, in: Circle())
-                        }
-                        .padding(.trailing, 20)
-                        .padding(.top, 12)
-                    }
-
-                    statsRow
-                        .padding(.horizontal, 20)
-
-                    if model.isDemoMode {
-                        demoBanner
-                            .padding(.horizontal, 20)
-                    }
-
-                    if model.dumpBannerCount > 0 {
-                        GlassCard(cornerRadius: 14) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "tray.and.arrow.down.fill")
-                                    .foregroundStyle(GRColor.accent)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("New teach cards")
-                                        .font(GRType.headline)
-                                        .foregroundStyle(GRColor.textPrimary)
-                                    Text("\(model.dumpBannerCount) new cards ready to review")
-                                        .font(GRType.caption)
-                                        .foregroundStyle(GRColor.textSecondary)
-                                }
-                                Spacer()
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                    }
-
-                    if (model.isOffline || model.pendingFlushCount > 0) && !model.isDemoMode {
-                        offlineBanner
-                            .padding(.horizontal, 20)
-                    }
+                    header
 
                     Group {
                         if model.isLoading && model.items.isEmpty {
                             ProgressView()
                                 .tint(GRColor.accent)
                                 .frame(maxWidth: .infinity, minHeight: 160)
-                        } else if let item = model.currentItem {
-                            reviewSession(item)
-                        } else if model.items.isEmpty {
-                            emptyState
                         } else {
-                            doneState
+                            goalCard
+                            statsRow
+                            banners
+                            if !model.items.isEmpty {
+                                focusSessions
+                                upNextSection
+                            } else {
+                                emptyState
+                            }
                         }
                     }
                     .padding(.horizontal, 20)
@@ -78,17 +38,17 @@ struct FeedView: View {
             }
             .opacity(contentReady ? 1 : 0)
             .animation(.easeOut(duration: 0.18), value: contentReady)
+            .refreshable { await model.load() }
 
             if let banner = model.softBanner {
                 VStack {
                     Spacer()
-                    softBannerChip(banner)
+                    GRToast(message: banner, isError: Self.isErrorCopy(banner))
                         .padding(.horizontal, 24)
                         .padding(.bottom, GRLayout.dockClearance + 8)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.softBanner)
-                .allowsHitTesting(true)
                 .onTapGesture { model.dismissSoftBanner() }
             }
         }
@@ -96,7 +56,15 @@ struct FeedView: View {
             await model.load()
             contentReady = true
         }
-        .refreshable { await model.load() }
+        .fullScreenCover(item: $activeSession) { launch in
+            ReviewSessionView(
+                feed: model,
+                items: launch.items,
+                focusLabel: model.focusDomain.map(Self.domainTitle),
+                onFinish: { Task { await model.load() } }
+            )
+            .environment(router)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .grDumpCompleted)) { _ in
             Task { await model.load() }
         }
@@ -105,168 +73,245 @@ struct FeedView: View {
         }
     }
 
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 12) {
+            GRScreenHeader(title: "Today", subtitle: headerSubtitle)
+            HStack(spacing: 8) {
+                GRIconButton(systemImage: "magnifyingglass", tint: GRColor.textPrimary, accessibilityLabel: "Search") {
+                    router.showSearch = true
+                }
+                GRIconButton(systemImage: "arrow.clockwise", accessibilityLabel: "Refresh") {
+                    Task { await model.load() }
+                }
+            }
+            .padding(.trailing, 20)
+            .padding(.top, 14)
+        }
+    }
+
+    private var headerSubtitle: String {
+        let date = Date().formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+        if model.isDemoMode { return "\(date) · demo cards" }
+        return "\(date) · \(model.dueTotal) due"
+    }
+
+    // MARK: - Goal
+
+    private var goalCard: some View {
+        GlassCard(cornerRadius: 22) {
+            HStack(spacing: 18) {
+                GRProgressRing(progress: model.goalProgress, lineWidth: 9) {
+                    VStack(spacing: 0) {
+                        Text(model.progressLabel)
+                            .font(GRType.title)
+                            .foregroundStyle(GRColor.textPrimary)
+                            .minimumScaleFactor(0.7)
+                        Text("today")
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.textTertiary)
+                    }
+                }
+                .frame(width: 96, height: 96)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    if model.streak > 0 {
+                        Label("\(model.streak)-day streak", systemImage: "flame.fill")
+                            .font(GRType.caption.weight(.bold))
+                            .foregroundStyle(GRColor.amber)
+                    }
+                    Text(goalTitle)
+                        .font(GRType.headline)
+                        .foregroundStyle(GRColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(goalSubtitle)
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.textSecondary)
+                    Button {
+                        startSession(with: model.sessionQueue)
+                    } label: {
+                        Label(model.sessionQueue.isEmpty ? "Queue empty" : "Start review", systemImage: "play.fill")
+                    }
+                    .buttonStyle(GRButtonStyle(kind: .primary, compact: true))
+                    .disabled(model.sessionQueue.isEmpty)
+                    .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    private var goalTitle: String {
+        if model.sessionQueue.isEmpty { return model.completedToday > 0 ? "All clear for now" : "Nothing due yet" }
+        if model.remainingToGoal == 0 { return "Goal reached — keep the streak warm" }
+        return "\(model.remainingToGoal) more to hit your goal"
+    }
+
+    private var goalSubtitle: String {
+        let count = model.sessionQueue.count
+        guard count > 0 else { return "Dump concepts in Create to fill your queue." }
+        let minutes = max(1, Int((Double(count) * 20 / 60).rounded()))
+        return "≈ \(minutes) min · \(count) card\(count == 1 ? "" : "s") queued"
+    }
+
     private var statsRow: some View {
         HStack(spacing: 10) {
-            statChip(title: "Due", value: "\(model.dueTotal)")
-            statChip(title: "Done", value: model.progressLabel)
-            statChip(title: "Streak", value: "\(model.streak)d")
+            GRStatChip(title: "Due", value: "\(model.dueTotal)", systemImage: "tray.full.fill")
+            GRStatChip(title: "Done", value: "\(model.completedToday)", systemImage: "checkmark.circle.fill")
+            GRStatChip(title: "Retention", value: model.retentionLabel, systemImage: "target")
         }
     }
 
-    private func statChip(title: String, value: String) -> some View {
-        GlassCard(cornerRadius: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(GRType.caption)
-                    .foregroundStyle(GRColor.textTertiary)
-                Text(value)
-                    .font(GRType.headline)
-                    .foregroundStyle(GRColor.accent)
-            }
-        }
-    }
+    // MARK: - Banners
 
-    private var demoBanner: some View {
-        GlassCard(cornerRadius: 14) {
-            HStack(spacing: 10) {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(GRColor.warning)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Demo mode")
-                        .font(GRType.headline)
-                        .foregroundStyle(GRColor.textPrimary)
-                    Text(model.errorMessage ?? "Sample teach cards for Simulator / offline demos. Grades stay local.")
-                        .font(GRType.caption)
-                        .foregroundStyle(GRColor.textSecondary)
-                }
-                Spacer()
-            }
-        }
-    }
-
-    private var offlineBanner: some View {
-        GlassCard(cornerRadius: 14) {
-            HStack(spacing: 10) {
-                Image(systemName: model.isOffline ? "wifi.slash" : "arrow.triangle.2.circlepath")
-                    .foregroundStyle(GRColor.accent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.isOffline ? "Offline mode" : "Syncing reviews")
-                        .font(GRType.headline)
-                        .foregroundStyle(GRColor.textPrimary)
-                    Text(model.pendingFlushCount > 0
-                         ? "\(model.pendingFlushCount) review(s) waiting to sync"
-                         : "Showing cached cards — stats may be stale")
-                        .font(GRType.caption)
-                        .foregroundStyle(GRColor.textSecondary)
-                }
-                Spacer()
-            }
-        }
-    }
-
-    private func reviewSession(_ item: FeedItem) -> some View {
-        let revealed = model.revealedIds.contains(item.id)
-        return VStack(spacing: 14) {
-            FeedTypedCard(
-                item: item,
-                revealed: revealed,
-                selectedOptionId: model.selectedOptionIds[item.id],
-                fillAnswer: model.fillAnswers[item.id] ?? "",
-                showHint: model.hintIds.contains(item.id),
-                onReveal: { model.reveal(item.id) },
-                onSelectOption: { model.selectOption(itemId: item.id, optionId: $0) },
-                onFillAnswerChange: { model.setFillAnswer(itemId: item.id, text: $0) },
-                onToggleHint: { model.toggleHint(item.id) }
+    @ViewBuilder
+    private var banners: some View {
+        if model.isDemoMode {
+            GRBanner(
+                systemImage: "sparkles",
+                title: "Demo mode",
+                subtitle: model.errorMessage ?? "Sample teach cards for Simulator / offline demos. Grades stay local.",
+                tone: .warning
             )
-
-            FeedCardActionBar(
-                item: item,
-                isLiked: model.likedIds.contains(item.id),
-                isSaved: model.savedIds.contains(item.id),
-                onLike: { Task { await model.toggleLike(for: item) } },
-                onSave: { Task { await model.toggleSave(for: item) } }
+        }
+        if model.dumpBannerCount > 0 {
+            Button {
+                startSession(with: model.items)
+            } label: {
+                GRBanner(
+                    systemImage: "tray.and.arrow.down.fill",
+                    title: "\(model.dumpBannerCount) new teach card\(model.dumpBannerCount == 1 ? "" : "s")",
+                    subtitle: "Fresh from your concept dump — tap to review them first",
+                    tone: .accent
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        if (model.isOffline || model.pendingFlushCount > 0) && !model.isDemoMode {
+            GRBanner(
+                systemImage: model.isOffline ? "wifi.slash" : "arrow.triangle.2.circlepath",
+                title: model.isOffline ? "Offline mode" : "Syncing reviews",
+                subtitle: model.pendingFlushCount > 0
+                    ? "\(model.pendingFlushCount) review(s) waiting to sync"
+                    : "Showing cached cards — stats may be stale",
+                tone: .accent
             )
+        }
+    }
 
-            if revealed {
+    // MARK: - Focus sessions
+
+    private var focusSessions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GRSectionHeader(title: "Focus sessions")
+            ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(ReviewDifficulty.allCases) { grade in
-                        Button {
-                            Task { await model.grade(grade) }
-                        } label: {
-                            Text(grade.label)
-                                .font(GRType.caption.weight(.semibold))
-                                .foregroundStyle(grade == .good || grade == .easy ? GRColor.canvas : GRColor.textPrimary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(
-                                    (grade == .good || grade == .easy ? GRColor.accent : Color.white.opacity(0.08)),
-                                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .stroke(GRColor.stroke, lineWidth: 1)
-                                )
+                    GRChip(
+                        title: "All due · \(model.items.count)",
+                        systemImage: "square.stack.3d.up.fill",
+                        style: model.focusDomain == nil ? .selected : .plain
+                    ) {
+                        withAnimation(.easeOut(duration: 0.2)) { model.focusDomain = nil }
+                        GRHaptics.tap()
+                    }
+                    ForEach(model.focusDomains, id: \.name) { entry in
+                        GRChip(
+                            title: "\(Self.domainTitle(entry.name)) · \(entry.count)",
+                            style: model.focusDomain == entry.name ? .selected : .plain
+                        ) {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                model.focusDomain = model.focusDomain == entry.name ? nil : entry.name
+                            }
+                            GRHaptics.tap()
                         }
                     }
                 }
+                .padding(.horizontal, 20)
+            }
+            .padding(.horizontal, -20)
+        }
+    }
+
+    // MARK: - Up next
+
+    private var upNextSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GRSectionHeader(
+                title: "Up next",
+                actionTitle: model.sessionQueue.count > model.upNext.count ? "Review all \(model.sessionQueue.count)" : nil,
+                action: { startSession(with: model.sessionQueue) }
+            )
+            if model.upNext.isEmpty {
+                GRBanner(systemImage: "checkmark.seal.fill", title: "Nothing in this focus", subtitle: "Pick another domain or review everything due.", tone: .accent)
+            }
+            ForEach(model.upNext) { item in
+                Button {
+                    var queue = model.sessionQueue
+                    if let idx = queue.firstIndex(where: { $0.id == item.id }) {
+                        queue.remove(at: idx)
+                        queue.insert(item, at: 0)
+                    }
+                    startSession(with: queue)
+                } label: {
+                    GRListRow(
+                        title: item.prompt,
+                        subtitle: rowSubtitle(item),
+                        meta: item.isOverdue ? "Overdue" : "Due",
+                        metaColor: item.isOverdue ? GRColor.warning : GRColor.accent,
+                        systemImage: item.itemType.systemImage,
+                        tone: item.itemType.tone
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
+    }
+
+    private func rowSubtitle(_ item: FeedItem) -> String {
+        let context = item.conceptName ?? item.domain.map(Self.domainTitle) ?? ""
+        return context.isEmpty ? item.itemType.displayLabel : "\(item.itemType.displayLabel) · \(context)"
     }
 
     private var emptyState: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Nothing due")
+            VStack(alignment: .leading, spacing: 10) {
+                Text(model.completedToday > 0 ? "Session clear" : "Nothing due")
                     .font(GRType.headline)
                     .foregroundStyle(GRColor.accent)
                 Text(model.errorMessage ?? "Dump concepts in Create, or check back when cards are due.")
                     .font(GRType.body)
                     .foregroundStyle(GRColor.textSecondary)
+                Button {
+                    router.select(.create)
+                } label: {
+                    Label("Add concepts", systemImage: "plus")
+                }
+                .buttonStyle(GRButtonStyle(kind: .ghost, fullWidth: false, compact: true))
             }
         }
     }
 
-    private var doneState: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(model.isDemoMode ? "Demo pack complete" : "Session clear")
-                    .font(GRType.headline)
-                    .foregroundStyle(GRColor.accent)
-                Text(model.isDemoMode
-                     ? "You walked through the sample teach cards. Pull to refresh when the API is up."
-                     : "You graded this batch. Pull to refresh for more due cards.")
-                    .font(GRType.body)
-                    .foregroundStyle(GRColor.textSecondary)
-            }
-        }
+    // MARK: - Helpers
+
+    private func startSession(with items: [FeedItem]) {
+        guard !items.isEmpty else { return }
+        GRHaptics.tap()
+        activeSession = SessionLaunch(items: items)
     }
 
-    private func softBannerChip(_ message: String) -> some View {
-        let isError = message.localizedCaseInsensitiveContains("can\u{2019}t")
-            || message.localizedCaseInsensitiveContains("couldn\u{2019}t")
-            || message.localizedCaseInsensitiveContains("sign in")
-            || message.localizedCaseInsensitiveContains("failed")
-            || message.localizedCaseInsensitiveContains("not found")
-        return HStack(spacing: 8) {
-            Image(systemName: isError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
-                .foregroundStyle(isError ? GRColor.textPrimary : GRColor.canvas)
-            Text(message)
-                .font(GRType.caption.weight(.semibold))
-                .foregroundStyle(isError ? GRColor.textPrimary : GRColor.canvas)
-                .lineLimit(2)
+    static func domainTitle(_ raw: String) -> String {
+        raw == "concept_dump" ? "Concept dump" : raw
+    }
+
+    private static func isErrorCopy(_ message: String) -> Bool {
+        ["can\u{2019}t", "couldn\u{2019}t", "sign in", "failed", "not found"].contains {
+            message.localizedCaseInsensitiveContains($0)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(
-            (isError ? Color.white.opacity(0.14) : GRColor.accent.opacity(0.92)),
-            in: Capsule()
-        )
-        .overlay(Capsule().stroke(GRColor.stroke, lineWidth: isError ? 1 : 0))
-        .shadow(color: (isError ? Color.black.opacity(0.35) : GRColor.accent.opacity(0.25)), radius: 12, y: 4)
     }
 }
 
 #Preview {
     FeedView()
+        .environment(AppRouter())
         .preferredColorScheme(.dark)
 }

@@ -13,8 +13,9 @@
   <div id="vignette"></div>
   <div id="graph"></div>
   <div id="badge">Demo graph</div>
-  <aside id="controls" aria-label="Graph Controls">
-    <div class="hdr">Graph Controls</div>
+  <!-- Native SwiftUI filter chips cover domain/community basics, so advanced controls start collapsed. -->
+  <aside id="controls" class="collapsed" aria-label="Graph Controls">
+    <div class="hdr" role="button" aria-expanded="false">Graph Controls <span class="chev">▾</span></div>
     <div class="row">
       <label for="domainSelect">Domain</label>
       <select id="domainSelect"><option value="">All Domains</option></select>
@@ -41,6 +42,16 @@
       </div>
     </div>
   </aside>
+  <script>
+    (function () {
+      var panel = document.getElementById('controls');
+      var hdr = panel.querySelector('.hdr');
+      hdr.addEventListener('click', function () {
+        var collapsed = panel.classList.toggle('collapsed');
+        hdr.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      });
+    })();
+  </script>
 
   <script src="graph_force_boot.js"></script>
 </body>
