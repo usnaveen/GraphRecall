@@ -1,8 +1,16 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var tab: GRTab = ContentView.initialTab()
-    @State private var openLibraryToken: Int = 0
+    @State private var router = AppRouter(initialTab: ContentView.initialTab())
+    @AppStorage(GRSettingsKey.hasOnboarded) private var hasOnboarded = false
+
+    /// UI-QA launches with `GR_TAB` set; skip the welcome screen there.
+    private var showsWelcome: Binding<Bool> {
+        Binding(
+            get: { !hasOnboarded && ProcessInfo.processInfo.environment["GR_TAB"] == nil },
+            set: { if !$0 { hasOnboarded = true } }
+        )
+    }
 
     private static func initialTab() -> GRTab {
         guard let raw = ProcessInfo.processInfo.environment["GR_TAB"]?.lowercased() else { return .feed }
@@ -12,29 +20,40 @@ struct ContentView: View {
     }
 
     var body: some View {
+        @Bindable var bindableRouter = router
+
         ZStack(alignment: .bottom) {
             GRColor.canvas.ignoresSafeArea()
 
             Group {
-                switch tab {
+                switch router.tab {
                 case .feed: FeedView()
                 case .graph: GraphView()
                 case .create: CreateView()
                 case .assistant: ChatView()
-                case .profile: ProfileView(openLibraryToken: openLibraryToken)
+                case .profile: ProfileView(openLibraryToken: router.openLibraryToken)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            LiquidDock(selection: $tab)
+            LiquidDock(selection: $bindableRouter.tab)
         }
+        .environment(router)
         .preferredColorScheme(.dark)
+        .fullScreenCover(isPresented: showsWelcome) {
+            WelcomeView { hasOnboarded = true }
+        }
+        .sheet(isPresented: $bindableRouter.showSearch) {
+            GlobalSearchView()
+                .environment(router)
+                .presentationDragIndicator(.visible)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .grNavigateLibrary)) { _ in
-            tab = .profile
-            openLibraryToken += 1
+            router.tab = .profile
+            router.openLibraryToken += 1
         }
         .onReceive(NotificationCenter.default.publisher(for: .grNavigateFeed)) { _ in
-            tab = .feed
+            router.tab = .feed
         }
     }
 }

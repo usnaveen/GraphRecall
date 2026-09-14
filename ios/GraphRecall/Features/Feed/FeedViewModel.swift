@@ -25,6 +25,10 @@ final class FeedViewModel {
     var likedIds: Set<String> = []
     var savedIds: Set<String> = []
     var softBanner: String?
+    /// Domains reported by `/api/feed` — drive the Today focus-session chips.
+    var domains: [String] = []
+    /// When set, review sessions and Up Next only include this domain.
+    var focusDomain: String?
     @ObservationIgnored private var softBannerTask: Task<Void, Never>?
 
     var currentItem: FeedItem? {
@@ -34,6 +38,36 @@ final class FeedViewModel {
 
     var progressLabel: String {
         "\(completedToday)/\(dailyGoal)"
+    }
+
+    var sessionQueue: [FeedItem] {
+        guard let focusDomain else { return items }
+        return items.filter { $0.domain == focusDomain }
+    }
+
+    var upNext: [FeedItem] { Array(sessionQueue.prefix(4)) }
+
+    var remainingToGoal: Int { max(dailyGoal - completedToday, 0) }
+
+    var goalProgress: Double {
+        guard dailyGoal > 0 else { return 0 }
+        return min(Double(completedToday) / Double(dailyGoal), 1)
+    }
+
+    var retentionLabel: String {
+        guard let rate = stats?.accuracyRate, rate > 0 else { return "—" }
+        let pct = rate <= 1 ? rate * 100 : rate
+        return "\(Int(pct.rounded()))%"
+    }
+
+    var focusDomains: [(name: String, count: Int)] {
+        let names = domains.isEmpty ? Array(Set(items.compactMap(\.domain))) : domains
+        return names
+            .compactMap { name -> (name: String, count: Int)? in
+                let count = items.filter { $0.domain == name }.count
+                return count > 0 ? (name, count) : nil
+            }
+            .sorted { $0.count > $1.count }
     }
 
     func load() async {
@@ -63,6 +97,7 @@ final class FeedViewModel {
                 completedToday = feed.completedToday
                 dailyGoal = feed.dailyGoal
                 streak = feed.streakDays
+                domains = feed.domains
                 dueTotal = max(due?.total ?? feed.totalDueToday, items.count)
                 stats = userStats
                 isOffline = false
@@ -83,6 +118,7 @@ final class FeedViewModel {
                 completedToday = cached.completedToday
                 dailyGoal = cached.dailyGoal
                 streak = cached.streakDays
+                domains = cached.domains
                 dueTotal = max(cached.totalDueToday, items.count)
                 isDemoMode = items.contains(where: \.isDemo)
             } else if !dumpItems.isEmpty {
@@ -148,29 +184,36 @@ final class FeedViewModel {
 
     func grade(_ difficulty: ReviewDifficulty) async {
         guard let item = currentItem else { return }
+        await submitGrade(for: item, difficulty: difficulty)
+        advance()
+    }
+
+    /// Records a grade (API, falling back to the offline queue). Returns the server's
+    /// SM-2 result when the review reached the backend.
+    @discardableResult
+    func submitGrade(for item: FeedItem, difficulty: ReviewDifficulty, responseTimeMs: Int? = nil) async -> ReviewSubmitResult? {
         let itemType = item.itemType.rawValue
-        let gradedId = item.id
 
         // Demo cards are local-only — never hit the API / offline queue.
         if item.isDemo || isDemoMode {
             completedToday += 1
-            advance()
-            return
+            return nil
         }
 
         do {
             if isOffline {
                 throw APIError.transport(URLError(.notConnectedToInternet))
             }
-            _ = try await APIClient.shared.submitReview(
+            let result = try await APIClient.shared.submitReview(
                 itemId: item.id,
                 itemType: itemType,
-                difficulty: difficulty
+                difficulty: difficulty,
+                responseTimeMs: responseTimeMs
             )
             completedToday += 1
-            await OfflineReviewStore.shared.clearDumpItems(ids: [gradedId])
+            await OfflineReviewStore.shared.clearDumpItems(ids: [item.id])
             dumpBannerCount = await OfflineReviewStore.shared.loadDumpItems().count
-            advance()
+            return result
         } catch {
             let pending = PendingOfflineReview(
                 itemId: item.id,
@@ -179,12 +222,12 @@ final class FeedViewModel {
                 queuedAt: Date()
             )
             await OfflineReviewStore.shared.enqueue(pending)
-            await OfflineReviewStore.shared.clearDumpItems(ids: [gradedId])
+            await OfflineReviewStore.shared.clearDumpItems(ids: [item.id])
             pendingFlushCount = await OfflineReviewStore.shared.load().count
             dumpBannerCount = await OfflineReviewStore.shared.loadDumpItems().count
             isOffline = true
             completedToday += 1
-            advance()
+            return nil
         }
     }
 

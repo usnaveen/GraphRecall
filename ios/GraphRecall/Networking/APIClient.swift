@@ -346,7 +346,7 @@ actor APIClient {
 
     // MARK: - Core
 
-    private func get<T: Decodable>(_ path: String, query: [URLQueryItem]) async throws -> T {
+    func get<T: Decodable>(_ path: String, query: [URLQueryItem]) async throws -> T {
         guard let base = URL(string: path, relativeTo: APIConfig.baseURL)?.absoluteURL else {
             throw APIError.invalidURL
         }
@@ -455,11 +455,11 @@ actor APIClient {
         return d
     }
 
-    private func get<T: Decodable>(_ path: String) async throws -> T {
+    func get<T: Decodable>(_ path: String) async throws -> T {
         try await send(path, method: "GET", body: Data?.none)
     }
 
-    private func post<T: Decodable, B: Encodable>(
+    func post<T: Decodable, B: Encodable>(
         _ path: String,
         body: B,
         auth: Bool = true,
@@ -470,7 +470,7 @@ actor APIClient {
     }
 
 
-    private func postQuery<T: Decodable>(_ path: String, query: [URLQueryItem], auth: Bool = true) async throws -> T {
+    func postQuery<T: Decodable>(_ path: String, query: [URLQueryItem], auth: Bool = true) async throws -> T {
         guard let base = URL(string: path, relativeTo: APIConfig.baseURL)?.absoluteURL else {
             throw APIError.invalidURL
         }
@@ -506,7 +506,7 @@ actor APIClient {
         }
     }
 
-    private func send<T: Decodable>(
+    func send<T: Decodable>(
         _ path: String,
         method: String,
         body: Data?,

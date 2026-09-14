@@ -37,6 +37,9 @@ targets:
       path: GraphRecall/Resources/Info.plist
       properties:
         UILaunchScreen: {}
+        NSCameraUsageDescription: GraphRecall scans pages and whiteboards so their text can become review cards.
+        NSMicrophoneUsageDescription: GraphRecall listens while you dictate concepts or questions.
+        NSSpeechRecognitionUsageDescription: GraphRecall turns your dictation into text for concept dumps and questions.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         UISupportedInterfaceOrientations:
