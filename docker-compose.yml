@@ -32,9 +32,9 @@ services:
     environment:
       NEO4J_AUTH: neo4j/graphrecall-dev
       # Docker Desktop gets ~4 GB here; keep Neo4j modest.
-      NEO4J_server_memory_heap_initial__size: 256m
-      NEO4J_server_memory_heap_max__size: 512m
-      NEO4J_server_memory_pagecache_size: 256m
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1g
+      NEO4J_server_memory_pagecache_size: 512m
     ports:
       - "7474:7474"            # Neo4j Browser: http://localhost:7474
       - "7687:7687"            # Bolt protocol (what the API uses)

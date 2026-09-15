@@ -1,5 +1,6 @@
 """FastAPI application for GraphRecall."""
 
+import asyncio
 import time
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -130,15 +131,19 @@ async def lifespan(app: FastAPI):
             logger.warning("Schema fixes skipped", error=str(e))
         
         await pg_client.initialize_schema()
-        await get_neo4j_client()
+        neo4j_client = await get_neo4j_client()
+        await neo4j_client.warm_up()
         logger.info("Database connections established")
     except Exception as e:
         logger.error("Failed to initialize databases", error=str(e))
         # Continue anyway - databases might come up later
 
+    lag_monitor = asyncio.create_task(telemetry.monitor_event_loop())
+
     yield
 
     # Shutdown
+    lag_monitor.cancel()
     logger.info("Shutting down GraphRecall API")
     await close_postgres_client()
     await close_neo4j_client()

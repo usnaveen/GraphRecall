@@ -1,6 +1,8 @@
 """Neo4j database client with connection management."""
 
 import asyncio
+import re
+import time
 from typing import Any, Optional
 
 import structlog
@@ -8,6 +10,67 @@ from neo4j import AsyncGraphDatabase, AsyncDriver
 from pydantic_settings import BaseSettings
 
 logger = structlog.get_logger()
+
+
+DEFAULT_REL_TYPES = ["PREREQUISITE_OF", "RELATED_TO", "SUBTOPIC_OF", "BUILDS_ON", "PART_OF"]
+
+# One round trip for every search term (chat used to send one query per extracted entity).
+SEED_CONCEPTS_QUERY = """
+UNWIND $terms AS term
+MATCH (c:Concept)
+WHERE c.user_id = $user_id
+  AND (NOT $scoped OR c.id IN $allowed_ids)
+  AND (toLower(c.name) CONTAINS toLower(term)
+       OR ($scoped AND toLower(coalesce(c.definition, '')) CONTAINS toLower(term)))
+  AND coalesce(c.confidence, 0.8) >= 0.4
+WITH term, c ORDER BY c.confidence DESC
+WITH term, collect(c)[..$per_term] AS matches
+UNWIND matches AS c
+WITH DISTINCT c
+RETURN c.id AS id, c.name AS name, c.definition AS definition,
+       c.domain AS domain, c.confidence AS confidence
+"""
+
+
+def _rel_pattern(rel_types: list[str]) -> str:
+    """Relationship types can't be query parameters, so only plain UPPER_SNAKE names are allowed."""
+    safe = [t for t in rel_types if re.fullmatch(r"[A-Z][A-Z0-9_]*", t or "")]
+    return "|".join(safe or DEFAULT_REL_TYPES)
+
+
+def _neighbor_query(rel_pattern: str, max_hops: int, scoped: bool) -> str:
+    # Typed, bounded expansion: Neo4j walks only the wanted relationship types instead of every
+    # path followed by a type filter. Neither types nor the hop bound can be parameters, so both
+    # are validated before they reach the query text (max_hops is clamped by the caller).
+    allowed_clause = "AND neighbor.id IN $allowed_ids" if scoped else ""
+    return f"""
+    MATCH (seed:Concept {{user_id: $user_id}})
+    WHERE seed.id IN $concept_ids
+    MATCH path = (seed)-[rels:{rel_pattern}*1..{max_hops}]-(neighbor:Concept {{user_id: $user_id}})
+    WHERE neighbor.id <> seed.id
+    {allowed_clause}
+    WITH neighbor,
+         length(path) AS hops,
+         reduce(s = 1.0, rel IN rels | s * coalesce(rel.strength, 0.5)) AS strength_score
+    WITH neighbor, min(hops) AS hops, max(strength_score) AS strength_score
+    RETURN neighbor.id AS id, neighbor.name AS name, neighbor.definition AS definition,
+           neighbor.domain AS domain, neighbor.complexity_score AS complexity,
+           neighbor.confidence AS confidence, hops AS hops
+    ORDER BY strength_score DESC, hops ASC
+    LIMIT $neighbor_limit
+    """
+
+
+def _edges_query(rel_pattern: str) -> str:
+    return f"""
+    MATCH (c1:Concept)-[r:{rel_pattern}]->(c2:Concept)
+    WHERE c1.id IN $node_ids AND c2.id IN $node_ids
+      AND c1.user_id = $user_id AND c2.user_id = $user_id
+    RETURN c1.id AS src, c1.name AS src_name,
+           c2.id AS tgt, c2.name AS tgt_name,
+           type(r) AS type,
+           coalesce(r.strength, 1.0) AS strength
+    """
 
 
 class Neo4jSettings(BaseSettings):
@@ -78,6 +141,52 @@ class Neo4jClient:
                     logger.debug("Schema query result", query=query[:50], info=str(e))
 
         logger.info("Neo4j schema initialized")
+
+    async def find_seed_concepts(
+        self,
+        user_id: str,
+        terms: list[str],
+        per_term: int = 3,
+        allowed_concept_ids: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
+        """Concepts matching any of ``terms`` (top ``per_term`` each by confidence), in one query."""
+        clean = [t for t in dict.fromkeys((t or "").strip() for t in terms) if t][:5]
+        if not clean:
+            return []
+        return await self.execute_query(
+            SEED_CONCEPTS_QUERY,
+            {
+                "terms": clean,
+                "user_id": user_id,
+                "per_term": per_term,
+                "scoped": bool(allowed_concept_ids),
+                "allowed_ids": allowed_concept_ids or [],
+            },
+        )
+
+    async def warm_up(self) -> None:
+        """Run the chat retrieval queries once at startup so Neo4j caches their plans.
+
+        Measured: the first execution of each query shape was 0.3-1.5 s slower than the next.
+        """
+        start = time.perf_counter()
+        params = {
+            "concept_ids": [],
+            "node_ids": [],
+            "allowed_ids": [],
+            "user_id": "__warmup__",
+            "neighbor_limit": 1,
+        }
+        try:
+            await self.find_seed_concepts("__warmup__", ["warmup"])
+            await self.find_seed_concepts("__warmup__", ["warmup"], allowed_concept_ids=["__warmup__"])
+            default_pattern = _rel_pattern(DEFAULT_REL_TYPES)
+            for pattern, hops in ((default_pattern, 1), (default_pattern, 2), (_rel_pattern(["PREREQUISITE_OF"]), 3)):
+                await self.execute_query(_neighbor_query(pattern, hops, scoped=False), params)
+                await self.execute_query(_edges_query(pattern), params)
+            logger.info("Neo4j warm-up complete", duration_ms=round((time.perf_counter() - start) * 1000, 1))
+        except Exception as e:
+            logger.warning("Neo4j warm-up failed", error=str(e))
 
     async def close(self) -> None:
         """Close the Neo4j driver."""
@@ -268,13 +377,8 @@ class Neo4jClient:
         if not concept_ids:
             return {"nodes": [], "edges": []}
 
-        rel_types = relationship_types or [
-            "PREREQUISITE_OF",
-            "RELATED_TO",
-            "SUBTOPIC_OF",
-            "BUILDS_ON",
-            "PART_OF",
-        ]
+        rel_types = relationship_types or DEFAULT_REL_TYPES
+        rel_pattern = _rel_pattern(rel_types)
         max_hops = max(1, min(int(max_hops), 4))
         max_nodes = max(1, min(int(max_nodes), 100))
 
@@ -294,28 +398,7 @@ class Neo4jClient:
         neighbor_limit = max(max_nodes - len(seeds), 0)
         neighbors: list[dict[str, Any]] = []
         if neighbor_limit > 0 and max_hops > 0:
-            allowed_clause = "AND neighbor.id IN $allowed_ids" if allowed_concept_ids else ""
-            # NOTE: Neo4j does NOT support parameters for variable-length path
-            # bounds (e.g. *1..$max_hops).  The bound must be a literal integer
-            # embedded in the query string.  max_hops is already clamped to [1,4]
-            # above so this is safe from injection.
-            neighbor_query = f"""
-            MATCH (seed:Concept {{user_id: $user_id}})
-            WHERE seed.id IN $concept_ids
-            MATCH path = (seed)-[rels*1..{max_hops}]-(neighbor:Concept {{user_id: $user_id}})
-            WHERE ALL(rel IN rels WHERE type(rel) IN $rel_types)
-              AND neighbor.id <> seed.id
-            {allowed_clause}
-            WITH neighbor,
-                 length(path) AS hops,
-                 reduce(s = 1.0, rel IN rels | s * coalesce(rel.strength, 0.5)) AS strength_score
-            WITH neighbor, min(hops) AS hops, max(strength_score) AS strength_score
-            RETURN neighbor.id AS id, neighbor.name AS name, neighbor.definition AS definition,
-                   neighbor.domain AS domain, neighbor.complexity_score AS complexity,
-                   neighbor.confidence AS confidence, hops AS hops
-            ORDER BY strength_score DESC, hops ASC
-            LIMIT $neighbor_limit
-            """
+            neighbor_query = _neighbor_query(rel_pattern, max_hops, scoped=bool(allowed_concept_ids))
             neighbor_params: dict[str, Any] = {
                 "concept_ids": concept_ids,
                 "user_id": user_id,
@@ -363,16 +446,7 @@ class Neo4jClient:
 
         edges: list[dict[str, Any]] = []
         if node_ids:
-            edges_query = """
-            MATCH (c1:Concept)-[r]->(c2:Concept)
-            WHERE c1.id IN $node_ids AND c2.id IN $node_ids
-              AND c1.user_id = $user_id AND c2.user_id = $user_id
-              AND type(r) IN $rel_types
-            RETURN c1.id AS src, c1.name AS src_name,
-                   c2.id AS tgt, c2.name AS tgt_name,
-                   type(r) AS type,
-                   coalesce(r.strength, 1.0) AS strength
-            """
+            edges_query = _edges_query(rel_pattern)
             edge_results = await self.execute_query(
                 edges_query,
                 {"node_ids": node_ids, "user_id": user_id, "rel_types": rel_types},
