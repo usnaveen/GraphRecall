@@ -86,6 +86,46 @@ struct MergeConceptsBody: Encodable, Sendable {
     }
 }
 
+// MARK: - Create concept
+
+struct CreateNodeBody: Encodable, Sendable {
+    struct Position: Encodable, Sendable {
+        let x: Double
+        let y: Double
+        let z: Double
+    }
+
+    let name: String
+    let description: String?
+    let domain: String?
+    let parentConceptId: String?
+    let position: Position?
+
+    enum CodingKeys: String, CodingKey {
+        case name, description, domain, position
+        case parentConceptId = "parent_concept_id"
+    }
+}
+
+/// `POST /api/nodes` returns the raw Neo4j record, so the id may sit under `properties`.
+struct CreateNodeResponse: Decodable, Sendable {
+    let nodeId: String?
+
+    private enum CodingKeys: String, CodingKey { case node }
+
+    private struct NodeRecord: Decodable {
+        struct Properties: Decodable { let id: String? }
+        let id: String?
+        let properties: Properties?
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let node = try c.decodeIfPresent(NodeRecord.self, forKey: .node)
+        nodeId = node?.id ?? node?.properties?.id
+    }
+}
+
 // MARK: - Human-in-the-loop import review
 
 struct ReviewIngestBody: Encodable, Sendable {

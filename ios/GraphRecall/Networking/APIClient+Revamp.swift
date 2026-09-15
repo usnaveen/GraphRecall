@@ -54,6 +54,29 @@ extension APIClient {
         )
     }
 
+    /// POST `/api/nodes` — create a concept, optionally under a parent and at a 3D position.
+    /// Returns the new concept's id when the backend reports it.
+    func createNode(
+        name: String,
+        description: String?,
+        domain: String?,
+        parentConceptId: String?,
+        position: GraphPoint3D?
+    ) async throws -> String? {
+        let response: CreateNodeResponse = try await post(
+            "/api/nodes",
+            body: CreateNodeBody(
+                name: name,
+                description: description,
+                domain: domain,
+                parentConceptId: parentConceptId,
+                position: position.map { CreateNodeBody.Position(x: $0.x, y: $0.y, z: $0.z) }
+            ),
+            timeout: 120
+        )
+        return response.nodeId
+    }
+
     // MARK: Import review (HITL)
 
     /// POST `/api/review/ingest` with `skip_review: false` — returns a session to approve.
