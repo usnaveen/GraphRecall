@@ -220,7 +220,7 @@ Ensure all strings are properly escaped, especially double quotes inside the con
                     prompt += "\n\nIMPORTANT: The previous response was truncated or invalid JSON. Ensure the JSON is valid and strictly closed."
                 
                 response = await self.synthesizer.ainvoke(prompt)
-                content = response.content.strip()
+                content = response.text.strip()
                 
                 # Use JsonOutputParser for robust parsing
                 try:

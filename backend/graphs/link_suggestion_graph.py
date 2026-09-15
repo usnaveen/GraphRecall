@@ -99,7 +99,7 @@ async def generate_links_node(state: LinkSuggestionState) -> dict:
 
     try:
         response = await llm.ainvoke(f"{system}\n\nData:\n{json.dumps(prompt)[:6000]}")
-        raw = response.content.strip()
+        raw = response.text.strip()
         if raw.startswith("```json"):
             raw = raw.split("```json")[1].split("```")[0].strip()
         elif raw.startswith("```"):

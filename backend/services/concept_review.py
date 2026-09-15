@@ -318,6 +318,9 @@ class ConceptReviewService:
             concepts=final_concepts,
             conflicts=[],  # Already resolved by user
             note_id=session.note_id,
+            # Without this every approved concept lands under "default_user" and is
+            # invisible to search, the graph view and the feed.
+            user_id=user_id or session.user_id,
         )
         
         # Update session status

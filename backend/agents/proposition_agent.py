@@ -47,7 +47,7 @@ class PropositionExtractionAgent:
         
         try:
             response = await self.llm.ainvoke(prompt)
-            content = response.content.replace("```json", "").replace("```", "").strip()
+            content = response.text.replace("```json", "").replace("```", "").strip()
             data = json.loads(content)
             
             output = []

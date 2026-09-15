@@ -361,7 +361,7 @@ Output JSON:
     
     try:
         response = await llm.ainvoke(prompt.format_messages())
-        parsed = json.loads(response.content)
+        parsed = json.loads(response.text)
         questions = parsed.get("questions", [])
         
         logger.info("generate_quiz_node: Complete", count=len(questions))
