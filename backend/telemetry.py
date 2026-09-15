@@ -11,6 +11,7 @@ deployed and a real tracing backend is worth running.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from collections import defaultdict, deque
@@ -93,6 +94,21 @@ def snapshot() -> dict:
 def reset() -> None:
     _samples.clear()
     _llm_totals.clear()
+
+
+async def monitor_event_loop(interval: float = 0.25) -> None:
+    """Record how late the event loop wakes up.
+
+    Every request shares one loop, so blocking code anywhere (sync I/O, CPU-heavy work) delays
+    all of them. Lag above a few milliseconds is recorded as ``event_loop.lag``.
+    """
+    loop = asyncio.get_running_loop()
+    while True:
+        started = loop.time()
+        await asyncio.sleep(interval)
+        lag_ms = (loop.time() - started - interval) * 1000
+        if lag_ms > 5:
+            record("event_loop.lag", lag_ms, log=lag_ms > 250)
 
 
 # ---------------------------------------------------------------------------
