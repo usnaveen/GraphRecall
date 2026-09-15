@@ -83,6 +83,44 @@ final class CreateViewModel {
     var reviewLaunch: ReviewLaunch?
     var pendingSessions: [PendingReviewSession] = []
 
+    /// `resource_type` sent with direct (non-review) text and file ingests.
+    var resourceType = "notes"
+    static let resourceTypes: [(id: String, title: String, systemImage: String)] = [
+        ("notes", "Notes", "note.text"),
+        ("article", "Article", "newspaper"),
+        ("lecture", "Lecture", "graduationcap"),
+        ("paper", "Paper", "doc.richtext"),
+        ("book", "Book", "book"),
+    ]
+
+    /// Links and text saved from the share sheet (App Group inbox).
+    var sharedInbox: [GRSharedImport] = []
+
+    func loadSharedInbox() {
+        sharedInbox = GRShareInbox.load()
+    }
+
+    func useShared(_ item: GRSharedImport) {
+        clearResults()
+        switch item.kind {
+        case .url:
+            let lower = item.content.lowercased()
+            mode = lower.contains("youtube.com") || lower.contains("youtu.be") ? .youtube : .url
+            urlField = item.content
+        case .text:
+            mode = .text
+            bodyText = item.content
+        }
+        titleField = item.title ?? ""
+        GRShareInbox.remove(id: item.id)
+        loadSharedInbox()
+    }
+
+    func dismissShared(_ item: GRSharedImport) {
+        GRShareInbox.remove(id: item.id)
+        loadSharedInbox()
+    }
+
     var parsedConcepts: [String] {
         conceptsText
             .split(whereSeparator: { $0 == "\n" || $0 == "," || $0 == ";" })
@@ -226,7 +264,7 @@ final class CreateViewModel {
                 if review {
                     try await submitForReview(content: content, title: title)
                 } else {
-                    let response = try await APIClient.shared.ingestText(content: content, title: title)
+                    let response = try await APIClient.shared.ingestText(content: content, title: title, resourceType: resourceType)
                     lastIngest = response
                     applyIngestSuccess(response, verb: mode.title, title: title)
                 }
@@ -322,7 +360,7 @@ final class CreateViewModel {
             let response = try await APIClient.shared.ingestText(
                 content: content,
                 title: title,
-                resourceType: "notes"
+                resourceType: resourceType
             )
             lastIngest = response
             applyIngestSuccess(response, verb: "File", title: title)
@@ -377,6 +415,7 @@ struct CreateView: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showScanner = false
     @AppStorage(GRSettingsKey.reviewImports) private var reviewImports = true
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         @Bindable var bindable = model
@@ -386,6 +425,11 @@ struct CreateView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     GRScreenHeader(title: "Create", subtitle: subtitleForMode)
+
+                    if !model.sharedInbox.isEmpty {
+                        sharedInboxSection
+                            .padding(.horizontal, 20)
+                    }
 
                     sourceGrid
                         .padding(.horizontal, 20)
@@ -461,7 +505,13 @@ struct CreateView: View {
                 Task { await model.loadPendingSessions() }
             }
         }
-        .task { await model.loadPendingSessions() }
+        .task {
+            model.loadSharedInbox()
+            await model.loadPendingSessions()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { model.loadSharedInbox() }
+        }
         .onDisappear { dictation.stop() }
     }
 
@@ -872,17 +922,76 @@ struct CreateView: View {
 
     private var optionsCard: some View {
         GlassCard {
-            Toggle(isOn: $reviewImports) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Review before adding")
-                        .font(GRType.headline)
-                        .foregroundStyle(GRColor.textPrimary)
-                    Text("Approve extracted concepts and skip duplicates first")
-                        .font(GRType.caption)
-                        .foregroundStyle(GRColor.textSecondary)
+            VStack(alignment: .leading, spacing: 14) {
+                Toggle(isOn: $reviewImports) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Review before adding")
+                            .font(GRType.headline)
+                            .foregroundStyle(GRColor.textPrimary)
+                        Text("Approve extracted concepts and skip duplicates first")
+                            .font(GRType.caption)
+                            .foregroundStyle(GRColor.textSecondary)
+                    }
+                }
+                .tint(GRColor.accent)
+
+                if !model.usesReview(reviewImports) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Save as")
+                            .font(GRType.caption)
+                            .foregroundStyle(GRColor.textTertiary)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(CreateViewModel.resourceTypes, id: \.id) { type in
+                                    GRChip(
+                                        title: type.title,
+                                        systemImage: type.systemImage,
+                                        style: model.resourceType == type.id ? .selected : .plain,
+                                        compact: true
+                                    ) {
+                                        model.resourceType = type.id
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            .tint(GRColor.accent)
+        }
+    }
+
+    private var sharedInboxSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GRSectionHeader(title: "Shared to GraphRecall")
+            ForEach(model.sharedInbox) { item in
+                GlassCard(cornerRadius: 18) {
+                    HStack(spacing: 12) {
+                        GRIconTile(
+                            systemImage: item.kind == .url ? "globe" : "doc.text.fill",
+                            tone: item.kind == .url ? .cyan : .accent,
+                            size: 36
+                        )
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.displayTitle)
+                                .font(GRType.headline)
+                                .foregroundStyle(GRColor.textPrimary)
+                                .lineLimit(1)
+                            Text(item.content)
+                                .font(GRType.caption)
+                                .foregroundStyle(GRColor.textSecondary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 8)
+                        GRChip(title: "Use", systemImage: "arrow.down.to.line", style: .selected, compact: true) {
+                            model.useShared(item)
+                            GRHaptics.tap()
+                        }
+                        GRIconButton(systemImage: "xmark", style: .plain, tint: GRColor.textTertiary, size: 30, accessibilityLabel: "Dismiss shared item") {
+                            model.dismissShared(item)
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -474,6 +474,9 @@ enum GRSettingsKey {
     static let reminderMinutes = "graphrecall.reminders.minutes"
     static let hasOnboarded = "graphrecall.hasOnboarded"
     static let displayName = "graphrecall.displayName"
+    /// 0 = use the server's goal.
+    static let dailyGoal = "graphrecall.study.dailyGoal"
+    static let newCardsPerDay = "graphrecall.study.newCardsPerDay"
 }
 
 // MARK: - Layout

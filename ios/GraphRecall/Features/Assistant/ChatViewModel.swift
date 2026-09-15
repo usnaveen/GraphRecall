@@ -14,6 +14,9 @@ final class ChatViewModel {
     var usingStub = false
     /// Concept the conversation is scoped to — questions are sent as "About <topic>: …".
     var focusTopic: String?
+    /// "Notes only" scope — retrieval is restricted to these notes (`source_ids`).
+    var scopedNotes: [LibraryNote] = []
+    var showNotePicker = false
 
     /// Soft success banner after create-card / save (clears itself).
     var bannerMessage: String?
@@ -271,6 +274,7 @@ final class ChatViewModel {
         cancelStream()
         conversationId = nil
         focusTopic = nil
+        scopedNotes = []
         messages = [
             ChatMessageUI(
                 role: .assistant,
@@ -303,7 +307,8 @@ final class ChatViewModel {
             events = await ChatSSEClient.shared.stream(
                 message: text,
                 conversationId: conversationId,
-                accessToken: await APIClient.shared.getAccessToken()
+                accessToken: await APIClient.shared.getAccessToken(),
+                sourceIds: scopedNotes.isEmpty ? nil : scopedNotes.map(\.id)
             )
         } else {
             events = await ChatSSEClient.shared.stubStream(message: text)

@@ -17,6 +17,8 @@ final class AppRouter {
     var assistantFocusTopic: String?
     /// Past conversation the Assistant should restore when it next appears.
     var pendingConversationId: String?
+    /// Set by the widget / `graphrecall://review` — Today starts a session when it next appears.
+    var pendingStartReview = false
 
     init(initialTab: GRTab = .feed) {
         tab = initialTab
@@ -42,5 +44,21 @@ final class AppRouter {
     func openConversation(_ id: String) {
         pendingConversationId = id
         select(.assistant)
+    }
+
+    /// `graphrecall://review` starts a review, `graphrecall://create` opens Create (share inbox).
+    func handleDeepLink(_ url: URL) {
+        guard url.scheme == GRShared.urlScheme else { return }
+        switch url.host() {
+        case "review":
+            pendingStartReview = true
+            select(.feed)
+        case "create":
+            select(.create)
+        case "today":
+            select(.feed)
+        default:
+            break
+        }
     }
 }

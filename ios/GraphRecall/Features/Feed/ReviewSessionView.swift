@@ -279,6 +279,7 @@ struct ReviewSessionView: View {
                     Text(model.positionLabel)
                         .font(GRType.caption.weight(.bold))
                         .foregroundStyle(GRColor.textPrimary)
+                        .accessibilityIdentifier("review.position")
                     Spacer()
                     if let focusLabel {
                         Text(focusLabel)
@@ -338,6 +339,7 @@ struct ReviewSessionView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(model.isGrading)
+                    .accessibilityIdentifier("review.grade.\(grade.label)")
                 }
             }
         }
@@ -458,6 +460,7 @@ struct SessionSummaryView: View {
                     Label("Back to Today", systemImage: "house")
                 }
                 .buttonStyle(model.weakCards.isEmpty ? GRButtonStyle(kind: .primary) : GRButtonStyle(kind: .secondary))
+                .accessibilityIdentifier("review.summary.done")
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 32)
