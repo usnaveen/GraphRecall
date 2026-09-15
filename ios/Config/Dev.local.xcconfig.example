@@ -1,0 +1,8 @@
+// Copy to Dev.local.xcconfig (git-ignored) to run GraphRecall on your own iPhone.
+
+// Your Apple developer team ID (Xcode → Settings → Accounts → team). Required to sign for a device.
+DEVELOPMENT_TEAM = ABCDE12345
+
+// The Mac's address as the phone sees it, for Settings → Developer → "Use local Docker backend".
+// On an iPhone hotspot this is usually 172.20.10.x — check with `ipconfig getifaddr en0`.
+GR_DEV_SERVER_HOST = 172.20.10.2
