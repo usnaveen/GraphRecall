@@ -7,18 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B11B11B11B11B11B11B11B01 /* graph_force.html in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A01 /* graph_force.html */; };
-		B11B11B11B11B11B11B11B02 /* graph_force_boot.js in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A02 /* graph_force_boot.js */; };
-		B11B11B11B11B11B11B11B03 /* graph_force.css in Resources */ = {isa = PBXBuildFile; fileRef = A11A11A11A11A11A11A11A03 /* graph_force.css */; };
 		1116A0092E36E9753B34208D /* ProfileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D8C868A86CEFC305B83E90E /* ProfileModels.swift */; };
 		12D4BFAF0592D4677EDD85B3 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C34BB272A47BB3FFCC05E3C /* AppRouter.swift */; };
 		17EF10D95152450277DAFDC0 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE2F576A29F1A4101ADB03AE /* AuthModels.swift */; };
 		1CC0BDE712010385C102706D /* OfflineReviewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */; };
 		1F44B6FC7FD4A5BF4513781B /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0DF464E1FE4615C662F789E /* ProfileView.swift */; };
 		28AC435D7C8F1137FFECA51E /* ReviewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC24D0DCBD4999EB897FAA2B /* ReviewSessionView.swift */; };
+		28EAA0F298BEB06D9DA6C063 /* graph_force_boot.js in Resources */ = {isa = PBXBuildFile; fileRef = ABC9001670DE30B3C00995EE /* graph_force_boot.js */; };
 		2BA3500E6211B32EF2FC0EC9 /* RecentImportsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B33E9ABCA54B442F6214404 /* RecentImportsStore.swift */; };
 		343759C438F9E31769B6A82A /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 354389AA6E635E3758568334 /* ChatView.swift */; };
 		3547DFDCB16A23B79DC931F6 /* FeedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6149E4976D7EDB8AFEB78E /* FeedModels.swift */; };
+		377AEDA89660AB97BD8AED27 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 0CE16AD160E40056109138ED /* GoogleSignIn */; };
+		3853D7A1FEE2358A8E0C44CE /* graph_force.css in Resources */ = {isa = PBXBuildFile; fileRef = 4756FEEFD9542E3682C7874E /* graph_force.css */; };
 		3E02F3AF69D407BE9DF907F3 /* GraphInspectorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBE13CB88D5744985FFF987 /* GraphInspectorPanel.swift */; };
 		5112E312DEEFF11F487E1FE4 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEB0867569B5D9A228B3E7C /* ChatModels.swift */; };
 		56EAEACF6E68918C9A446A00 /* GraphNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */; };
@@ -26,8 +26,11 @@
 		60863DCC9DEB830A14505BA3 /* GraphForceWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26ED0F962F6EDE15C8A91B2D /* GraphForceWebView.swift */; };
 		60FF4F0896591B3C7A8F0EF7 /* ChatSSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0A25E9DDEB6FA4EA9F3A30 /* ChatSSEClient.swift */; };
 		6101AF7D0815012D1D0AFC96 /* APIConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D60F0755297C074FCE2F88D /* APIConfig.swift */; };
+		61B337021FBEEFEBC12CCD2E /* GraphRecallWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 354919E7BDFE313704962EDC /* GraphRecallWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		677AC8792FA0E88D851F90AD /* DemoFeedSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */; };
+		6ABFB64B8EABE5B7233E9384 /* APIClient+Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938F31619C9D22F04EF0EE69 /* APIClient+Profile.swift */; };
 		6CAA41BF9F94661E27E5128A /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25717B008D78F115654FA98B /* FeedView.swift */; };
+		6F5D6F4DC2D13F0374C3FD45 /* GRSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */; };
 		704A0F8042B14BCB99B5B5B0 /* GraphModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681EB7E42D12061208FB2034 /* GraphModels.swift */; };
 		7125C8D2C47981BAA7021609 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7FF515475618D8C73AE527 /* LibraryView.swift */; };
 		74487DC936815D7E43050870 /* GRScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F78211E1B8741510C9AA24D /* GRScreenHeader.swift */; };
@@ -35,42 +38,88 @@
 		8014C3E9EE7B41AD300C9DF2 /* IngestModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54D8E856C0FE63DA3A324D85 /* IngestModels.swift */; };
 		81F71FDA03D069B4197F7F46 /* FeedViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE14E2BBC801DE9BC6A5BA7 /* FeedViewModel.swift */; };
 		8331C9754ADC84B45D8377D7 /* ProfileListViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D86AD75648AE1A7BBFA84F /* ProfileListViews.swift */; };
+		84BCCA81355E0D3B3C897424 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 875510C0D234FE41ADC3D372 /* ShareViewController.swift */; };
 		8D91C62AA931A09C9BF1B2E6 /* Glass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31B4155BF84146B9C4C8466B /* Glass.swift */; };
 		8ECDA2E26F74AF0B3BE83CA8 /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3872EBE43ED39B904A7D19A0 /* LibraryModels.swift */; };
 		95CC6AFBFECBA2ABF3CBC41F /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B0EF21DCB77A720FA6139F /* GlassCard.swift */; };
 		97AA1DDDAD8041F38E38BD43 /* GlobalSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDF0F45D419F05B1663F080 /* GlobalSearchView.swift */; };
+		9B6EE52772CAB0FBA3DA7934 /* AuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBBF1E0AE919AF0E9556C29C /* AuthSession.swift */; };
 		9D0082A37375C67E27A2039D /* FeedCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D53E4786769C667032C743FF /* FeedCardViews.swift */; };
 		A27746BD47767F1F38F5A4F9 /* GRComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 918AF04DEE0A56DF92A9342A /* GRComponents.swift */; };
+		A6214F6E93BFDF2729EC8702 /* GraphRecallWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A4B731FA97D99242886CC71 /* GraphRecallWidget.swift */; };
 		A8F18905C4D92EF2B9D45F48 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5D56B9E352FA1D5C34665C /* WelcomeView.swift */; };
 		AE9BFC5241E0BE8BF3F942A9 /* GraphLinksSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAC19540B0FC26CF2901971 /* GraphLinksSheet.swift */; };
 		B283C8D35E3713761D2D4156 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63297E6164BBF835B5F2FCDD /* Typography.swift */; };
 		B30FD14AD974FE565F3E24DC /* LiquidDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AB33FAE9682E59CBE334E53 /* LiquidDock.swift */; };
 		B59A12713BA21EE4FF1F7436 /* ConceptDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2843D7F6A870BAFAC6EEF06D /* ConceptDetailView.swift */; };
 		B9F72CD6D433BE39DA5BB103 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 08EF6500A115E505F0EB5B7A /* Assets.xcassets */; };
+		BDFFBD0A950EE918FCCD25CA /* graph_force.html in Resources */ = {isa = PBXBuildFile; fileRef = C8ECC7DB3516F14838C2A2E5 /* graph_force.html */; };
+		C10AC60200AD71AD6029EAE5 /* GRSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */; };
 		C25E93AFF53FB438B794FDA5 /* GraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6B4BB4C9768BAB47A1235D /* GraphView.swift */; };
 		C5F0D1B3DEC5DFE60289B31A /* GraphQuizSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECBEB72ED744FC19DA09627 /* GraphQuizSheet.swift */; };
 		C9F3339D099034D8B7AD155D /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A445A661372B6B67E29ADF /* ChatViewModel.swift */; };
 		CD0F69AA837E4ECEEE281D46 /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15AEBE53BAF79659722715F /* Colors.swift */; };
 		CDA03F95E4C9FADB6C409478 /* GraphRecallApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1D08115F01D059725E1075 /* GraphRecallApp.swift */; };
+		D04DB3E2BD0A6BC68AE7FD66 /* GraphRecallShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5C70EAAF05F4CDA100854C26 /* GraphRecallShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D2A05657AAACF954D3E49D31 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30114AD9B85E20BDC976757 /* ContentView.swift */; };
 		D6C1E3C34FF1FB23F0940C77 /* CreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D5550930146E10280F9D9BE /* CreateView.swift */; };
+		E04164430170B0C25D25C35E /* GRSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */; };
 		E11AA42201F79DF141DBA3E3 /* APIClient+Revamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68CC963AAC899E05A3CBEE45 /* APIClient+Revamp.swift */; };
 		EA5FC5039AD04B880380A280 /* RevampModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE98EE67ED9EA987C8C7BF9B /* RevampModels.swift */; };
 		EA91840184ADA49500E76AD3 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4AB921E260606FD5618584 /* APIClient.swift */; };
 		EF31F821B5D52CD61798BDB9 /* GraphViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12ACAFF6FE6A4E2FC61274B /* GraphViewModel.swift */; };
 		F0A41B925A7BC81D64C59230 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07010B2398942B883315389E /* SettingsView.swift */; };
+		F1FBC2793C54513177F326C9 /* ReviewFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FF54DECE7F455EA0BB8D0F0 /* ReviewFlowUITests.swift */; };
 		F4022251C43C1FFD563C0E9C /* ImportReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B41DFEE6E9CC527A799EF02 /* ImportReviewView.swift */; };
+		FA6DF024AC57CC1013CFBD71 /* NoteScopePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CFDF20FCD17237DD59571A4 /* NoteScopePicker.swift */; };
 		FE7A11C962F00CC8ECC0E618 /* ConceptDumpModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877AC1570FFB645C19F03AF7 /* ConceptDumpModels.swift */; };
 		FE88C8AD22B9E8AF04B3BF7B /* ScanCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D2096EF6D52D11205391033 /* ScanCapture.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		2E56221D771B05B6A4150EB7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 58A326263FD3FBD5204F1BD0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9D90AA2BDD16CF933F3EF6E1;
+			remoteInfo = GraphRecallShare;
+		};
+		305191BBA4A46B84D47867C1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 58A326263FD3FBD5204F1BD0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C338EA26631F479BC85F9B40;
+			remoteInfo = GraphRecallWidget;
+		};
+		4311D4F73CAB688AAB74B2E9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 58A326263FD3FBD5204F1BD0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 236E2681596A4802F2FE3773;
+			remoteInfo = GraphRecall;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		ECCABE3C4544971F352EE254 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				61B337021FBEEFEBC12CCD2E /* GraphRecallWidget.appex in Embed Foundation Extensions */,
+				D04DB3E2BD0A6BC68AE7FD66 /* GraphRecallShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-		A11A11A11A11A11A11A11A01 /* graph_force.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = graph_force.html; sourceTree = "<group>"; };
-		A11A11A11A11A11A11A11A02 /* graph_force_boot.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = graph_force_boot.js; sourceTree = "<group>"; };
-		A11A11A11A11A11A11A11A03 /* graph_force.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = graph_force.css; sourceTree = "<group>"; };
 		07010B2398942B883315389E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		08EF6500A115E505F0EB5B7A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0B6149E4976D7EDB8AFEB78E /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
+		0F488B9751BD5542CD868BEE /* GraphRecallShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GraphRecallShare.entitlements; sourceTree = "<group>"; };
 		1EAC19540B0FC26CF2901971 /* GraphLinksSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphLinksSheet.swift; sourceTree = "<group>"; };
 		20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphNotePanel.swift; sourceTree = "<group>"; };
 		25717B008D78F115654FA98B /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
@@ -81,31 +130,48 @@
 		2B41DFEE6E9CC527A799EF02 /* ImportReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportReviewView.swift; sourceTree = "<group>"; };
 		31B4155BF84146B9C4C8466B /* Glass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Glass.swift; sourceTree = "<group>"; };
 		354389AA6E635E3758568334 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		354919E7BDFE313704962EDC /* GraphRecallWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = GraphRecallWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3872EBE43ED39B904A7D19A0 /* LibraryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryModels.swift; sourceTree = "<group>"; };
 		3B33E9ABCA54B442F6214404 /* RecentImportsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentImportsStore.swift; sourceTree = "<group>"; };
 		3F78211E1B8741510C9AA24D /* GRScreenHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRScreenHeader.swift; sourceTree = "<group>"; };
+		45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRSharedStore.swift; sourceTree = "<group>"; };
+		4756FEEFD9542E3682C7874E /* graph_force.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = graph_force.css; sourceTree = "<group>"; };
+		4A4B731FA97D99242886CC71 /* GraphRecallWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphRecallWidget.swift; sourceTree = "<group>"; };
 		4D60F0755297C074FCE2F88D /* APIConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfig.swift; sourceTree = "<group>"; };
+		4F2A42135005D5FC3959526A /* GraphRecallUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GraphRecallUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F4AB921E260606FD5618584 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		54D8E856C0FE63DA3A324D85 /* IngestModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestModels.swift; sourceTree = "<group>"; };
+		5C70EAAF05F4CDA100854C26 /* GraphRecallShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = GraphRecallShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D7FF515475618D8C73AE527 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		5D8C868A86CEFC305B83E90E /* ProfileModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileModels.swift; sourceTree = "<group>"; };
 		63297E6164BBF835B5F2FCDD /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		681EB7E42D12061208FB2034 /* GraphModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphModels.swift; sourceTree = "<group>"; };
 		68CC963AAC899E05A3CBEE45 /* APIClient+Revamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Revamp.swift"; sourceTree = "<group>"; };
+		6AB1FEFDA7280421A2E67BB9 /* GraphRecallWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GraphRecallWidget.entitlements; sourceTree = "<group>"; };
+		6ABA8D43A79514DBA872A8E5 /* GraphRecall.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GraphRecall.entitlements; sourceTree = "<group>"; };
+		6B9B834FC12B6871E444FE8B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6C34BB272A47BB3FFCC05E3C /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
 		6D5550930146E10280F9D9BE /* CreateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateView.swift; sourceTree = "<group>"; };
 		6FE14E2BBC801DE9BC6A5BA7 /* FeedViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedViewModel.swift; sourceTree = "<group>"; };
+		7CFDF20FCD17237DD59571A4 /* NoteScopePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteScopePicker.swift; sourceTree = "<group>"; };
 		7F6B4BB4C9768BAB47A1235D /* GraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphView.swift; sourceTree = "<group>"; };
 		84B0EF21DCB77A720FA6139F /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
+		875510C0D234FE41ADC3D372 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		877AC1570FFB645C19F03AF7 /* ConceptDumpModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptDumpModels.swift; sourceTree = "<group>"; };
+		8FF54DECE7F455EA0BB8D0F0 /* ReviewFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewFlowUITests.swift; sourceTree = "<group>"; };
 		918AF04DEE0A56DF92A9342A /* GRComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRComponents.swift; sourceTree = "<group>"; };
+		936B3B76850E86829C95B881 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		938F31619C9D22F04EF0EE69 /* APIClient+Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Profile.swift"; sourceTree = "<group>"; };
 		95D3BF4391B44E6E2469BCD9 /* GraphToolsSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphToolsSheets.swift; sourceTree = "<group>"; };
 		96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineReviewStore.swift; sourceTree = "<group>"; };
 		9D2096EF6D52D11205391033 /* ScanCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanCapture.swift; sourceTree = "<group>"; };
 		A30114AD9B85E20BDC976757 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFeedSeed.swift; sourceTree = "<group>"; };
+		ABC9001670DE30B3C00995EE /* graph_force_boot.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = graph_force_boot.js; sourceTree = "<group>"; };
+		BB5A4D68618C46B7F6C7AD0D /* App.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = App.xcconfig; sourceTree = "<group>"; };
 		BECBEB72ED744FC19DA09627 /* GraphQuizSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphQuizSheet.swift; sourceTree = "<group>"; };
 		BF5D56B9E352FA1D5C34665C /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
+		C8ECC7DB3516F14838C2A2E5 /* graph_force.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = graph_force.html; sourceTree = "<group>"; };
 		C9A445A661372B6B67E29ADF /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		CCBE13CB88D5744985FFF987 /* GraphInspectorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphInspectorPanel.swift; sourceTree = "<group>"; };
 		CCDF0F45D419F05B1663F080 /* GlobalSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchView.swift; sourceTree = "<group>"; };
@@ -119,26 +185,43 @@
 		DE2F576A29F1A4101ADB03AE /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
 		E12ACAFF6FE6A4E2FC61274B /* GraphViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphViewModel.swift; sourceTree = "<group>"; };
 		E5D86AD75648AE1A7BBFA84F /* ProfileListViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileListViews.swift; sourceTree = "<group>"; };
+		EBBF1E0AE919AF0E9556C29C /* AuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthSession.swift; sourceTree = "<group>"; };
 		FC24D0DCBD4999EB897FAA2B /* ReviewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewSessionView.swift; sourceTree = "<group>"; };
 		FFEB0867569B5D9A228B3E7C /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFrameworksBuildPhase section */
+		A130A2EDC62B34C051BE9FDD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				377AEDA89660AB97BD8AED27 /* GoogleSignIn in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
 /* Begin PBXGroup section */
-		C11C11C11C11C11C11C11C01 /* WebAssets */ = {
+		0E8CCFB68761D24D8C412B7E /* GraphRecallShare */ = {
 			isa = PBXGroup;
 			children = (
-				A11A11A11A11A11A11A11A01 /* graph_force.html */,
-				A11A11A11A11A11A11A11A02 /* graph_force_boot.js */,
-				A11A11A11A11A11A11A11A03 /* graph_force.css */,
+				0F488B9751BD5542CD868BEE /* GraphRecallShare.entitlements */,
+				936B3B76850E86829C95B881 /* Info.plist */,
+				875510C0D234FE41ADC3D372 /* ShareViewController.swift */,
 			);
-			path = WebAssets;
+			path = GraphRecallShare;
 			sourceTree = "<group>";
 		};
 		11FD262BE73BA684DA00327A = {
 			isa = PBXGroup;
 			children = (
-								C11C11C11C11C11C11C11C01 /* WebAssets */,
-1256D2A7828AB87225F5AC2B /* GraphRecall */,
+				EE6AC80C0DC53441CB9FA0CD /* Config */,
+				1256D2A7828AB87225F5AC2B /* GraphRecall */,
+				0E8CCFB68761D24D8C412B7E /* GraphRecallShare */,
+				B02E2EA3134B54920D43E7BE /* GraphRecallUITests */,
+				F7A39F48C36F1079343435C7 /* GraphRecallWidget */,
+				AEB272C9F0BFDAB567D742BD /* Shared */,
+				D11D5BF8B7B8BF8B53CA2BE8 /* WebAssets */,
 				BE8E45FC4436261A75D15B00 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -178,6 +261,7 @@
 			isa = PBXGroup;
 			children = (
 				08EF6500A115E505F0EB5B7A /* Assets.xcassets */,
+				6ABA8D43A79514DBA872A8E5 /* GraphRecall.entitlements */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -187,8 +271,10 @@
 			children = (
 				403EE59686F0C30E886F83B0 /* Models */,
 				4F4AB921E260606FD5618584 /* APIClient.swift */,
+				938F31619C9D22F04EF0EE69 /* APIClient+Profile.swift */,
 				68CC963AAC899E05A3CBEE45 /* APIClient+Revamp.swift */,
 				4D60F0755297C074FCE2F88D /* APIConfig.swift */,
+				EBBF1E0AE919AF0E9556C29C /* AuthSession.swift */,
 				DB0A25E9DDEB6FA4EA9F3A30 /* ChatSSEClient.swift */,
 			);
 			path = Networking;
@@ -297,6 +383,22 @@
 			path = Features;
 			sourceTree = "<group>";
 		};
+		AEB272C9F0BFDAB567D742BD /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		B02E2EA3134B54920D43E7BE /* GraphRecallUITests */ = {
+			isa = PBXGroup;
+			children = (
+				8FF54DECE7F455EA0BB8D0F0 /* ReviewFlowUITests.swift */,
+			);
+			path = GraphRecallUITests;
+			sourceTree = "<group>";
+		};
 		B59DA96CDEA34B7D73527E69 /* Onboarding */ = {
 			isa = PBXGroup;
 			children = (
@@ -309,6 +411,9 @@
 			isa = PBXGroup;
 			children = (
 				DDDDE8140031142096BC86BF /* GraphRecall.app */,
+				5C70EAAF05F4CDA100854C26 /* GraphRecallShare.appex */,
+				4F2A42135005D5FC3959526A /* GraphRecallUITests.xctest */,
+				354919E7BDFE313704962EDC /* GraphRecallWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -321,13 +426,42 @@
 			path = Library;
 			sourceTree = "<group>";
 		};
+		D11D5BF8B7B8BF8B53CA2BE8 /* WebAssets */ = {
+			isa = PBXGroup;
+			children = (
+				ABC9001670DE30B3C00995EE /* graph_force_boot.js */,
+				4756FEEFD9542E3682C7874E /* graph_force.css */,
+				C8ECC7DB3516F14838C2A2E5 /* graph_force.html */,
+			);
+			path = WebAssets;
+			sourceTree = "<group>";
+		};
 		E0D4846F57DB15EB6DC055CB /* Assistant */ = {
 			isa = PBXGroup;
 			children = (
 				354389AA6E635E3758568334 /* ChatView.swift */,
 				C9A445A661372B6B67E29ADF /* ChatViewModel.swift */,
+				7CFDF20FCD17237DD59571A4 /* NoteScopePicker.swift */,
 			);
 			path = Assistant;
+			sourceTree = "<group>";
+		};
+		EE6AC80C0DC53441CB9FA0CD /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				BB5A4D68618C46B7F6C7AD0D /* App.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		F7A39F48C36F1079343435C7 /* GraphRecallWidget */ = {
+			isa = PBXGroup;
+			children = (
+				6AB1FEFDA7280421A2E67BB9 /* GraphRecallWidget.entitlements */,
+				4A4B731FA97D99242886CC71 /* GraphRecallWidget.swift */,
+				6B9B834FC12B6871E444FE8B /* Info.plist */,
+			);
+			path = GraphRecallWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -339,17 +473,74 @@
 			buildPhases = (
 				8DF100CE032377761A0278F8 /* Sources */,
 				37D4CED5E9F14E6DF01C0413 /* Resources */,
+				A130A2EDC62B34C051BE9FDD /* Frameworks */,
+				ECCABE3C4544971F352EE254 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F624840DA6999D0053483A09 /* PBXTargetDependency */,
+				92E545CF63D4DC916E7EDF07 /* PBXTargetDependency */,
+			);
+			name = GraphRecall;
+			packageProductDependencies = (
+				0CE16AD160E40056109138ED /* GoogleSignIn */,
+			);
+			productName = GraphRecall;
+			productReference = DDDDE8140031142096BC86BF /* GraphRecall.app */;
+			productType = "com.apple.product-type.application";
+		};
+		77E3CCCF05E42DD0B05424F0 /* GraphRecallUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BA2EB7C83C99FEE7FAF57570 /* Build configuration list for PBXNativeTarget "GraphRecallUITests" */;
+			buildPhases = (
+				280756D31A8E480059B87D42 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				24AE6CE090E512AAECF25BDB /* PBXTargetDependency */,
+			);
+			name = GraphRecallUITests;
+			packageProductDependencies = (
+			);
+			productName = GraphRecallUITests;
+			productReference = 4F2A42135005D5FC3959526A /* GraphRecallUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		9D90AA2BDD16CF933F3EF6E1 /* GraphRecallShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BD18743FA85B5E224F10662E /* Build configuration list for PBXNativeTarget "GraphRecallShare" */;
+			buildPhases = (
+				69C3864F9E6DEA78D8486DE8 /* Sources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = GraphRecall;
+			name = GraphRecallShare;
 			packageProductDependencies = (
 			);
-			productName = GraphRecall;
-			productReference = DDDDE8140031142096BC86BF /* GraphRecall.app */;
-			productType = "com.apple.product-type.application";
+			productName = GraphRecallShare;
+			productReference = 5C70EAAF05F4CDA100854C26 /* GraphRecallShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		C338EA26631F479BC85F9B40 /* GraphRecallWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FB03C9FFA6A364E237AB689A /* Build configuration list for PBXNativeTarget "GraphRecallWidget" */;
+			buildPhases = (
+				63DDBA139FA0EDD28CB93C89 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GraphRecallWidget;
+			packageProductDependencies = (
+			);
+			productName = GraphRecallWidget;
+			productReference = 354919E7BDFE313704962EDC /* GraphRecallWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -363,6 +554,16 @@
 					236E2681596A4802F2FE3773 = {
 						DevelopmentTeam = "";
 					};
+					77E3CCCF05E42DD0B05424F0 = {
+						DevelopmentTeam = "";
+						TestTargetID = 236E2681596A4802F2FE3773;
+					};
+					9D90AA2BDD16CF933F3EF6E1 = {
+						DevelopmentTeam = "";
+					};
+					C338EA26631F479BC85F9B40 = {
+						DevelopmentTeam = "";
+					};
 				};
 			};
 			buildConfigurationList = 20A0CDE6EC3E797C62C3F5E3 /* Build configuration list for PBXProject "GraphRecall" */;
@@ -374,12 +575,18 @@
 			);
 			mainGroup = 11FD262BE73BA684DA00327A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1CDBCC8AFCDC5F299537397B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BE8E45FC4436261A75D15B00 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				236E2681596A4802F2FE3773 /* GraphRecall */,
+				C338EA26631F479BC85F9B40 /* GraphRecallWidget */,
+				9D90AA2BDD16CF933F3EF6E1 /* GraphRecallShare */,
+				77E3CCCF05E42DD0B05424F0 /* GraphRecallUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -389,25 +596,53 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B11B11B11B11B11B11B11B01 /* graph_force.html in Resources */,
-				B11B11B11B11B11B11B11B02 /* graph_force_boot.js in Resources */,
-				B11B11B11B11B11B11B11B03 /* graph_force.css in Resources */,
 				B9F72CD6D433BE39DA5BB103 /* Assets.xcassets in Resources */,
+				3853D7A1FEE2358A8E0C44CE /* graph_force.css in Resources */,
+				BDFFBD0A950EE918FCCD25CA /* graph_force.html in Resources */,
+				28EAA0F298BEB06D9DA6C063 /* graph_force_boot.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		280756D31A8E480059B87D42 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F1FBC2793C54513177F326C9 /* ReviewFlowUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		63DDBA139FA0EDD28CB93C89 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6F5D6F4DC2D13F0374C3FD45 /* GRSharedStore.swift in Sources */,
+				A6214F6E93BFDF2729EC8702 /* GraphRecallWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		69C3864F9E6DEA78D8486DE8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C10AC60200AD71AD6029EAE5 /* GRSharedStore.swift in Sources */,
+				84BCCA81355E0D3B3C897424 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		8DF100CE032377761A0278F8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6ABFB64B8EABE5B7233E9384 /* APIClient+Profile.swift in Sources */,
 				E11AA42201F79DF141DBA3E3 /* APIClient+Revamp.swift in Sources */,
 				EA91840184ADA49500E76AD3 /* APIClient.swift in Sources */,
 				6101AF7D0815012D1D0AFC96 /* APIConfig.swift in Sources */,
 				12D4BFAF0592D4677EDD85B3 /* AppRouter.swift in Sources */,
 				17EF10D95152450277DAFDC0 /* AuthModels.swift in Sources */,
+				9B6EE52772CAB0FBA3DA7934 /* AuthSession.swift in Sources */,
 				5112E312DEEFF11F487E1FE4 /* ChatModels.swift in Sources */,
 				60FF4F0896591B3C7A8F0EF7 /* ChatSSEClient.swift in Sources */,
 				343759C438F9E31769B6A82A /* ChatView.swift in Sources */,
@@ -425,6 +660,7 @@
 				A27746BD47767F1F38F5A4F9 /* GRComponents.swift in Sources */,
 				7A2B978B52F0F7F688B9FB06 /* GRDictation.swift in Sources */,
 				74487DC936815D7E43050870 /* GRScreenHeader.swift in Sources */,
+				E04164430170B0C25D25C35E /* GRSharedStore.swift in Sources */,
 				8D91C62AA931A09C9BF1B2E6 /* Glass.swift in Sources */,
 				95CC6AFBFECBA2ABF3CBC41F /* GlassCard.swift in Sources */,
 				97AA1DDDAD8041F38E38BD43 /* GlobalSearchView.swift in Sources */,
@@ -443,6 +679,7 @@
 				8ECDA2E26F74AF0B3BE83CA8 /* LibraryModels.swift in Sources */,
 				7125C8D2C47981BAA7021609 /* LibraryView.swift in Sources */,
 				B30FD14AD974FE565F3E24DC /* LiquidDock.swift in Sources */,
+				FA6DF024AC57CC1013CFBD71 /* NoteScopePicker.swift in Sources */,
 				1CC0BDE712010385C102706D /* OfflineReviewStore.swift in Sources */,
 				8331C9754ADC84B45D8377D7 /* ProfileListViews.swift in Sources */,
 				1116A0092E36E9753B34208D /* ProfileModels.swift in Sources */,
@@ -459,45 +696,139 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		24AE6CE090E512AAECF25BDB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 236E2681596A4802F2FE3773 /* GraphRecall */;
+			targetProxy = 4311D4F73CAB688AAB74B2E9 /* PBXContainerItemProxy */;
+		};
+		92E545CF63D4DC916E7EDF07 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9D90AA2BDD16CF933F3EF6E1 /* GraphRecallShare */;
+			targetProxy = 2E56221D771B05B6A4150EB7 /* PBXContainerItemProxy */;
+		};
+		F624840DA6999D0053483A09 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C338EA26631F479BC85F9B40 /* GraphRecallWidget */;
+			targetProxy = 305191BBA4A46B84D47867C1 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		132C12B2BDF0780C65781365 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = GraphRecallWidget/GraphRecallWidget.entitlements;
+				INFOPLIST_FILE = GraphRecallWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.usnaveen.graphrecall.widget;
+				PRODUCT_NAME = GraphRecallWidget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		27A4D0596D11BBE2F0C7200B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.usnaveen.graphrecall.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = GraphRecall;
+			};
+			name = Debug;
+		};
 		2A4674E39F8DFC938CE13917 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = GraphRecall/Resources/GraphRecall.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = GraphRecall/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.usnaveen.graphrecall;
 				PRODUCT_NAME = GraphRecall;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
+		3952D531BAEDDF65AA38525B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = GraphRecallShare/GraphRecallShare.entitlements;
+				INFOPLIST_FILE = GraphRecallShare/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.usnaveen.graphrecall.share;
+				PRODUCT_NAME = GraphRecallShare;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		40658C7A1355F5EE77B2DD8A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = GraphRecall/Resources/GraphRecall.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = GraphRecall/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.usnaveen.graphrecall;
 				PRODUCT_NAME = GraphRecall;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		7B3969CAE7683FC792DAC2A5 /* Debug */ = {
+		4C914FBF76803DB9CAEB89E5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.usnaveen.graphrecall.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = GraphRecall;
+			};
+			name = Release;
+		};
+		7B3969CAE7683FC792DAC2A5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = BB5A4D68618C46B7F6C7AD0D /* App.xcconfig */;
+			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -548,13 +879,11 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = GraphRecall/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.usnaveen.graphrecall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -564,12 +893,30 @@
 			};
 			name = Debug;
 		};
-		BA17B3907F99559C1A0058EB /* Release */ = {
+		B59FC8442363C33395BDD6AE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = GraphRecallShare/GraphRecallShare.entitlements;
+				INFOPLIST_FILE = GraphRecallShare/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.usnaveen.graphrecall.share;
+				PRODUCT_NAME = GraphRecallShare;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		BA17B3907F99559C1A0058EB /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = BB5A4D68618C46B7F6C7AD0D /* App.xcconfig */;
+			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -614,18 +961,34 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = GraphRecall/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.usnaveen.graphrecall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		CD9951ECF0692EC4817007E6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = GraphRecallWidget/GraphRecallWidget.entitlements;
+				INFOPLIST_FILE = GraphRecallWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.usnaveen.graphrecall.widget;
+				PRODUCT_NAME = GraphRecallWidget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -650,7 +1013,53 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		BA2EB7C83C99FEE7FAF57570 /* Build configuration list for PBXNativeTarget "GraphRecallUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				27A4D0596D11BBE2F0C7200B /* Debug */,
+				4C914FBF76803DB9CAEB89E5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BD18743FA85B5E224F10662E /* Build configuration list for PBXNativeTarget "GraphRecallShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3952D531BAEDDF65AA38525B /* Debug */,
+				B59FC8442363C33395BDD6AE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FB03C9FFA6A364E237AB689A /* Build configuration list for PBXNativeTarget "GraphRecallWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				132C12B2BDF0780C65781365 /* Debug */,
+				CD9951ECF0692EC4817007E6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1CDBCC8AFCDC5F299537397B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0CE16AD160E40056109138ED /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1CDBCC8AFCDC5F299537397B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 58A326263FD3FBD5204F1BD0 /* Project object */;
 }

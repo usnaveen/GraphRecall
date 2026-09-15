@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import WidgetKit
 
 @MainActor
 @Observable
@@ -29,7 +30,15 @@ final class FeedViewModel {
     var domains: [String] = []
     /// When set, review sessions and Up Next only include this domain.
     var focusDomain: String?
+    /// Cards graded since the last load — keeps the widget's due count honest between reloads.
+    private var gradedSinceLoad = 0
     @ObservationIgnored private var softBannerTask: Task<Void, Never>?
+
+    /// Settings → Daily goal. 0 means "use the server's goal".
+    static var dailyGoalOverride: Int? {
+        let value = UserDefaults.standard.integer(forKey: GRSettingsKey.dailyGoal)
+        return value > 0 ? value : nil
+    }
 
     var currentItem: FeedItem? {
         guard items.indices.contains(currentIndex) else { return nil }
@@ -73,7 +82,12 @@ final class FeedViewModel {
     func load() async {
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        gradedSinceLoad = 0
+        defer {
+            isLoading = false
+            if let override = Self.dailyGoalOverride { dailyGoal = override }
+            publishWidgetSnapshot()
+        }
 
         await flushOfflineQueue()
 
@@ -193,6 +207,8 @@ final class FeedViewModel {
     @discardableResult
     func submitGrade(for item: FeedItem, difficulty: ReviewDifficulty, responseTimeMs: Int? = nil) async -> ReviewSubmitResult? {
         let itemType = item.itemType.rawValue
+        gradedSinceLoad += 1
+        defer { publishWidgetSnapshot() }
 
         // Demo cards are local-only — never hit the API / offline queue.
         if item.isDemo || isDemoMode {
@@ -229,6 +245,29 @@ final class FeedViewModel {
             completedToday += 1
             return nil
         }
+    }
+
+    /// Mirrors Today into the App Group so the home-screen widget stays current.
+    private func publishWidgetSnapshot() {
+        let upNext = items
+            .dropFirst(gradedSinceLoad)
+            .prefix(3)
+            .map { item in
+                let name = item.conceptName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return name.isEmpty ? String(item.prompt.prefix(40)) : name
+            }
+        let snapshot = GRReviewSnapshot(
+            dueCount: max(dueTotal - gradedSinceLoad, 0),
+            completedToday: completedToday,
+            dailyGoal: dailyGoal,
+            streak: streak,
+            upNext: Array(upNext),
+            isDemo: isDemoMode,
+            updatedAt: .now
+        )
+        guard snapshot != GRReviewSnapshot.load().map({ var s = $0; s.updatedAt = snapshot.updatedAt; return s }) else { return }
+        snapshot.save()
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     private func advance() {

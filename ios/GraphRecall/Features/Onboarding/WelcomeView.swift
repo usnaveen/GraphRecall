@@ -4,6 +4,7 @@ import SwiftUI
 struct WelcomeView: View {
     var onFinish: () -> Void
     @State private var appeared = false
+    private let auth = AuthSession.shared
 
     var body: some View {
         ZStack {
@@ -47,22 +48,42 @@ struct WelcomeView: View {
                 }
                 .padding(.vertical, 8)
 
-                Button(action: onFinish) {
-                    Label("Get started", systemImage: "arrow.right")
+                if auth.isGoogleConfigured {
+                    Button {
+                        Task {
+                            await auth.signInWithGoogle()
+                            if auth.isSignedIn { onFinish() }
+                        }
+                    } label: {
+                        Label(auth.isWorking ? "Signing in…" : "Continue with Google", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                    .buttonStyle(.grPrimary)
+                    .disabled(auth.isWorking)
+
+                    if let error = auth.lastError {
+                        Text(error)
+                            .font(GRType.caption)
+                            .foregroundStyle(GRColor.amber)
+                            .multilineTextAlignment(.center)
+                    }
+                } else {
+                    Button(action: onFinish) {
+                        Label("Get started", systemImage: "arrow.right")
+                    }
+                    .buttonStyle(.grPrimary)
                 }
-                .buttonStyle(.grPrimary)
 
                 Button {
                     Task {
-                        await APIClient.shared.setAccessToken("demo-local-token")
+                        await auth.useDemoSession()
                         onFinish()
                     }
                 } label: {
                     Label("Use demo session", systemImage: "play.fill")
                 }
-                .buttonStyle(.grSecondary)
+                .buttonStyle(GRButtonStyle(kind: auth.isGoogleConfigured ? .ghost : .secondary))
 
-                Text("You can sign in later from Profile → Settings.")
+                Text(auth.isGoogleConfigured ? "Your graph syncs to your Google account." : "You can sign in later from Profile → Settings.")
                     .font(GRType.micro)
                     .foregroundStyle(GRColor.textTertiary)
             }

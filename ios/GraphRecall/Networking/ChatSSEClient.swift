@@ -15,6 +15,7 @@ actor ChatSSEClient {
         message: String,
         conversationId: String?,
         accessToken: String?,
+        sourceIds: [String]? = nil,
         userId: String = ChatIdentity.stubUserId
     ) -> AsyncThrowingStream<ChatSSEEvent, Error> {
         AsyncThrowingStream { continuation in
@@ -23,6 +24,7 @@ actor ChatSSEClient {
                     let request = try await APIClient.shared.chatStreamURLRequest(
                         message: message,
                         conversationId: conversationId,
+                        sourceIds: sourceIds,
                         userId: userId
                     )
                     let (bytes, response) = try await session.bytes(for: request)

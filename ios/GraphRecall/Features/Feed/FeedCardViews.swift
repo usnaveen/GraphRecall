@@ -128,6 +128,7 @@ struct FeedTypedCard: View {
                 }
                 .buttonStyle(.plain)
                 .allowsHitTesting(!revealed)
+                .accessibilityIdentifier("review.option")
             }
 
             if revealed {
@@ -219,6 +220,7 @@ struct FeedTypedCard: View {
                             .padding(.vertical, 12)
                             .background(GRColor.accentCyan, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
+                    .accessibilityIdentifier("review.reveal")
                 }
             } else if let ans = item.firstAnswerFromList() {
                 Text("Answer: \(ans)")
@@ -443,6 +445,7 @@ struct FeedTypedCard: View {
                 .padding(.vertical, 14)
                 .background(typeColor, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
+        .accessibilityIdentifier("review.reveal")
         .padding(.top, 4)
     }
 

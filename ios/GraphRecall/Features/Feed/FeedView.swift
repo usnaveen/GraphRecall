@@ -55,7 +55,9 @@ struct FeedView: View {
         .task {
             await model.load()
             contentReady = true
+            consumePendingReview()
         }
+        .onChange(of: router.pendingStartReview) { _, _ in consumePendingReview() }
         .fullScreenCover(item: $activeSession) { launch in
             ReviewSessionView(
                 feed: model,
@@ -71,6 +73,14 @@ struct FeedView: View {
         .onReceive(NotificationCenter.default.publisher(for: .grFeedShouldReload)) { _ in
             Task { await model.load() }
         }
+    }
+
+    /// Widget / `graphrecall://review` asked for a session.
+    private func consumePendingReview() {
+        guard router.pendingStartReview, contentReady, !model.isLoading else { return }
+        router.pendingStartReview = false
+        guard activeSession == nil, !model.sessionQueue.isEmpty else { return }
+        startSession(with: model.sessionQueue)
     }
 
     // MARK: - Header
@@ -135,6 +145,7 @@ struct FeedView: View {
                     }
                     .buttonStyle(GRButtonStyle(kind: .primary, compact: true))
                     .disabled(model.sessionQueue.isEmpty)
+                    .accessibilityIdentifier("today.startReview")
                     .padding(.top, 2)
                 }
             }

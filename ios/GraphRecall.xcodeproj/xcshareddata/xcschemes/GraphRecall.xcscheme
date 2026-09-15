@@ -39,6 +39,17 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "77E3CCCF05E42DD0B05424F0"
+               BuildableName = "GraphRecallUITests.xctest"
+               BlueprintName = "GraphRecallUITests"
+               ReferencedContainer = "container:GraphRecall.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

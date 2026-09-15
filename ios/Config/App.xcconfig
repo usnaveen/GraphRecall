@@ -1,0 +1,8 @@
+// Shared build settings for every target.
+// Google Sign-In IDs live in the untracked Google.local.xcconfig — see Google.local.xcconfig.example.
+
+GOOGLE_IOS_CLIENT_ID =
+GOOGLE_SERVER_CLIENT_ID =
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.unconfigured
+
+#include? "Google.local.xcconfig"

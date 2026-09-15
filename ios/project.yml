@@ -5,17 +5,20 @@ options:
     iOS: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
+configFiles:
+  Debug: Config/App.xcconfig
+  Release: Config/App.xcconfig
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 9.0.0
 settings:
   base:
     SWIFT_VERSION: "6.0"
     TARGETED_DEVICE_FAMILY: "1"
-    INFOPLIST_FILE: GraphRecall/Resources/Info.plist
-    PRODUCT_BUNDLE_IDENTIFIER: com.usnaveen.graphrecall
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: false
-    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     DEVELOPMENT_TEAM: ""
 targets:
   GraphRecall:
@@ -28,11 +31,25 @@ targets:
           - Resources/graph_force.html
           - Resources/graph_force_boot.js
           - Resources/graph_force.css
-    resources:
+      - path: Shared
       - path: WebAssets
+        buildPhase: resources
+    dependencies:
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - target: GraphRecallWidget
+      - target: GraphRecallShare
+    entitlements:
+      path: GraphRecall/Resources/GraphRecall.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.usnaveen.graphrecall
     settings:
       base:
         PRODUCT_NAME: GraphRecall
+        PRODUCT_BUNDLE_IDENTIFIER: com.usnaveen.graphrecall
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     info:
       path: GraphRecall/Resources/Info.plist
       properties:
@@ -44,5 +61,82 @@ targets:
           NSAllowsLocalNetworking: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        GIDClientID: $(GOOGLE_IOS_CLIENT_ID)
+        GIDServerClientID: $(GOOGLE_SERVER_CLIENT_ID)
+        CFBundleURLTypes:
+          - CFBundleURLName: com.usnaveen.graphrecall
+            CFBundleURLSchemes:
+              - graphrecall
+          - CFBundleURLName: com.usnaveen.graphrecall.google
+            CFBundleURLSchemes:
+              - $(GOOGLE_REVERSED_CLIENT_ID)
     scheme:
-      testTargets: []
+      testTargets:
+        - GraphRecallUITests
+
+  GraphRecallWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: GraphRecallWidget
+      - path: Shared
+    entitlements:
+      path: GraphRecallWidget/GraphRecallWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.usnaveen.graphrecall
+    settings:
+      base:
+        PRODUCT_NAME: GraphRecallWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.usnaveen.graphrecall.widget
+        SKIP_INSTALL: true
+    info:
+      path: GraphRecallWidget/Info.plist
+      properties:
+        CFBundleDisplayName: GraphRecall
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  GraphRecallShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: GraphRecallShare
+      - path: Shared
+    entitlements:
+      path: GraphRecallShare/GraphRecallShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.usnaveen.graphrecall
+    settings:
+      base:
+        PRODUCT_NAME: GraphRecallShare
+        PRODUCT_BUNDLE_IDENTIFIER: com.usnaveen.graphrecall.share
+        SKIP_INSTALL: true
+        # NSItemProvider callbacks are not Sendable-annotated; Swift 5 mode keeps the extension simple.
+        SWIFT_VERSION: "5.0"
+    info:
+      path: GraphRecallShare/Info.plist
+      properties:
+        CFBundleDisplayName: GraphRecall
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsWebPageWithMaxCount: 1
+
+  GraphRecallUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: GraphRecallUITests
+    dependencies:
+      - target: GraphRecall
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.usnaveen.graphrecall.uitests
+        GENERATE_INFOPLIST_FILE: true
+        TEST_TARGET_NAME: GraphRecall
