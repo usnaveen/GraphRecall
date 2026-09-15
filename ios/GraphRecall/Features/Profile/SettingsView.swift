@@ -13,6 +13,7 @@ struct SettingsView: View {
 
     @AppStorage(GRSettingsKey.dailyGoal) private var dailyGoal = 0
     @AppStorage(GRSettingsKey.newCardsPerDay) private var newCardsPerDay = 10
+    @AppStorage(GRSettingsKey.feedStyle) private var feedStyle = FeedView.FeedStyle.reels.rawValue
 
     private let auth = AuthSession.shared
     @State private var studySyncTask: Task<Void, Never>?
@@ -60,6 +61,23 @@ struct SettingsView: View {
                                 .labelsHidden()
                                 .pickerStyle(.menu)
                                 .tint(GRColor.accent)
+                            }
+                            SettingsDivider()
+                            SettingsRow(
+                                title: "Feed style",
+                                subtitle: feedStyle == FeedView.FeedStyle.reels.rawValue
+                                    ? "One card at a time, swipe up for the next"
+                                    : "Scrolling timeline of cards",
+                                systemImage: "rectangle.stack.fill",
+                                tone: .purple
+                            ) {
+                                Picker("Feed style", selection: $feedStyle) {
+                                    Text("Reels").tag(FeedView.FeedStyle.reels.rawValue)
+                                    Text("Posts").tag(FeedView.FeedStyle.posts.rawValue)
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.segmented)
+                                .frame(width: 148)
                             }
                             SettingsDivider()
                             SettingsRow(title: "Review reminders", subtitle: "A daily nudge when cards are due", systemImage: "bell.fill", tone: .accent) {

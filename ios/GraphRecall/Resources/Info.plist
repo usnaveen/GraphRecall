@@ -41,6 +41,8 @@
 	<string>$(GOOGLE_IOS_CLIENT_ID)</string>
 	<key>GIDServerClientID</key>
 	<string>$(GOOGLE_SERVER_CLIENT_ID)</string>
+	<key>GRDevServerHost</key>
+	<string>$(GR_DEV_SERVER_HOST)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
@@ -48,6 +50,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>GraphRecall scans pages and whiteboards so their text can become review cards.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>GraphRecall connects to a GraphRecall server running on your local network during development.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>GraphRecall listens while you dictate concepts or questions.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

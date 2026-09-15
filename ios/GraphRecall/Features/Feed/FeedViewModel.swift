@@ -22,6 +22,15 @@ final class FeedViewModel {
     var hintIds: Set<String> = []
     var currentIndex: Int = 0
     var dumpBannerCount: Int = 0
+    /// What the feed actually shows: everything due, then concepts worth revisiting, extended as
+    /// you scroll so the feed never dead-ends.
+    var queue: [FeedItem] = []
+    /// Grade recorded per card in this session (the difficulty slider's result).
+    var grades: [String: ReviewDifficulty] = [:]
+    var gradedIds: Set<String> = []
+    /// Concepts from the graph, coldest first, used to pad the feed past the due cards.
+    @ObservationIgnored private var revisitPool: [FeedItem] = []
+    @ObservationIgnored private var revisitCursor = 0
     /// NAV-34 — optimistic like / save chrome (web likedItems / savedItems parity).
     var likedIds: Set<String> = []
     var savedIds: Set<String> = []
@@ -123,6 +132,7 @@ final class FeedViewModel {
             dumpBannerCount = await OfflineReviewStore.shared.loadDumpItems().count
             pendingFlushCount = await OfflineReviewStore.shared.load().count
             currentIndex = 0
+            rebuildQueue()
             resetCardState()
         } catch {
             isOffline = true
@@ -145,8 +155,17 @@ final class FeedViewModel {
             }
             pendingFlushCount = await OfflineReviewStore.shared.load().count
             currentIndex = 0
+            rebuildQueue()
             resetCardState()
         }
+    }
+
+    /// Due cards first, then whatever revisit cards were already prepared.
+    private func rebuildQueue() {
+        revisitCursor = 0
+        queue = items
+        grades = [:]
+        gradedIds = []
     }
 
     private func applyDemoSeed(reason: String) {
@@ -200,6 +219,80 @@ final class FeedViewModel {
         guard let item = currentItem else { return }
         await submitGrade(for: item, difficulty: difficulty)
         advance()
+    }
+
+    // MARK: - Feed queue
+
+    func isRevisit(_ item: FeedItem) -> Bool {
+        item.id.hasPrefix("revisit-")
+    }
+
+    /// Records the difficulty-slider grade for a specific card without moving the feed.
+    func grade(_ item: FeedItem, difficulty: ReviewDifficulty) async {
+        grades[item.id] = difficulty
+        gradedIds.insert(item.id)
+        // Revisit cards are local reminders, not scheduled reviews.
+        guard !isRevisit(item) else { return }
+        await submitGrade(for: item, difficulty: difficulty)
+    }
+
+    /// Concepts that aren't due but have gone cold — the "more for you" part of the feed.
+    func loadRevisitPool() async {
+        guard revisitPool.isEmpty else { return }
+        do {
+            let graph = try await APIClient.shared.fetchGraph(limit: 300)
+            let dueConcepts = Set(items.compactMap(\.conceptId))
+            revisitPool = graph.nodes
+                .filter { !dueConcepts.contains($0.id) }
+                .sorted { ($0.masteryLevel ?? 0) < ($1.masteryLevel ?? 0) }
+                .prefix(60)
+                .map { node in
+                    var content: [String: AnyCodable] = ["title": AnyCodable(node.name)]
+                    if let definition = node.definition, !definition.isEmpty {
+                        content["definition"] = AnyCodable(definition)
+                    }
+                    if let domain = node.domain, !domain.isEmpty {
+                        content["tagline"] = AnyCodable(domain)
+                    }
+                    return FeedItem(
+                        id: "revisit-\(node.id)",
+                        itemType: .showcase,
+                        content: content,
+                        conceptId: node.id,
+                        conceptName: node.name,
+                        domain: node.domain
+                    )
+                }
+            if queue.isEmpty { await extendQueueIfNeeded(currentIndex: 0) }
+        } catch {
+            // No graph yet: the feed just ends after the due cards.
+            revisitPool = []
+        }
+    }
+
+    /// Appends more cards as the reader approaches the end; cycles the revisit pool after that.
+    func extendQueueIfNeeded(currentIndex index: Int) async {
+        guard index >= queue.count - 3 else { return }
+        if revisitPool.isEmpty {
+            await loadRevisitPool()
+            guard !revisitPool.isEmpty else { return }
+        }
+        let cycle = revisitCursor / revisitPool.count
+        let batch = (0..<min(8, revisitPool.count)).map { offset -> FeedItem in
+            let base = revisitPool[(revisitCursor + offset) % revisitPool.count]
+            guard cycle > 0 else { return base }
+            // Same concept, fresh identity, so a second pass can appear further down.
+            return FeedItem(
+                id: "\(base.id)-\(cycle)",
+                itemType: base.itemType,
+                content: base.content,
+                conceptId: base.conceptId,
+                conceptName: base.conceptName,
+                domain: base.domain
+            )
+        }
+        revisitCursor += batch.count
+        queue.append(contentsOf: batch)
     }
 
     /// Records a grade (API, falling back to the offline queue). Returns the server's

@@ -23,6 +23,6 @@ struct GRScreenHeader: View {
 }
 
 enum GRLayout {
-    /// Standard scroll bottom inset so content clears LiquidDock.
-    static let dockClearance: CGFloat = 110
+    /// Standard scroll bottom inset so content clears LiquidDock (measured from the bottom safe area).
+    static let dockClearance: CGFloat = 64
 }

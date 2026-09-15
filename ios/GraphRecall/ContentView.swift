@@ -37,7 +37,21 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            LiquidDock(selection: $bindableRouter.tab)
+            // The dock steps aside while typing instead of riding up on top of the keyboard.
+            if !router.isKeyboardVisible {
+                LiquidDock(selection: $bindableRouter.tab)
+                    // Equal to the dock's own side inset: the capsule sits as low as it can while
+                    // staying concentric with the display's rounded corners.
+                    .padding(.bottom, 14)
+                    .ignoresSafeArea(edges: .bottom)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.2)) { router.isKeyboardVisible = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.2)) { router.isKeyboardVisible = false }
         }
         .environment(router)
         .preferredColorScheme(.dark)

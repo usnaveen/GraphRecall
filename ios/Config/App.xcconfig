@@ -5,4 +5,10 @@ GOOGLE_IOS_CLIENT_ID =
 GOOGLE_SERVER_CLIENT_ID =
 GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.unconfigured
 
+// Signing team and the Mac's address for on-device runs live in the untracked Dev.local.xcconfig —
+// see Dev.local.xcconfig.example.
+DEVELOPMENT_TEAM =
+GR_DEV_SERVER_HOST =
+
 #include? "Google.local.xcconfig"
+#include? "Dev.local.xcconfig"

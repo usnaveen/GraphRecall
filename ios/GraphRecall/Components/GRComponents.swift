@@ -59,7 +59,7 @@ private struct GRButtonBody: View {
             .padding(.vertical, compact ? 10 : 14)
             .padding(.horizontal, compact ? 12 : 18)
             .foregroundStyle(foreground)
-            .background(background, in: shape)
+            .background { backgroundView }
             .overlay(shape.stroke(stroke, lineWidth: 1))
             .opacity(configuration.isPressed ? 0.85 : 1)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
@@ -69,21 +69,28 @@ private struct GRButtonBody: View {
     private var foreground: Color {
         guard isEnabled else { return GRColor.textTertiary }
         switch kind {
-        case .primary: return GRColor.canvas
+        case .primary: return .white
         case .secondary: return GRColor.textPrimary
         case .ghost: return GRColor.accent
         case .destructive: return GRColor.danger
         }
     }
 
-    private var background: AnyShapeStyle {
-        guard isEnabled else { return AnyShapeStyle(GRColor.fillSubtle) }
-        switch kind {
-        case .primary:
-            return AnyShapeStyle(LinearGradient(colors: [GRColor.accent, GRColor.accentCyan], startPoint: .leading, endPoint: .trailing))
-        case .secondary: return AnyShapeStyle(GRColor.fillSubtle)
-        case .ghost: return AnyShapeStyle(Color.clear)
-        case .destructive: return AnyShapeStyle(GRColor.danger.opacity(0.15))
+    @ViewBuilder
+    private var backgroundView: some View {
+        if !isEnabled {
+            shape.fill(GRColor.fillSubtle)
+        } else {
+            switch kind {
+            case .primary:
+                GRAccentGlass(shape: shape, strength: 0.46)
+            case .secondary:
+                shape.fill(GRColor.fillSubtle)
+            case .ghost:
+                shape.fill(Color.clear)
+            case .destructive:
+                shape.fill(GRColor.danger.opacity(0.15))
+            }
         }
     }
 
@@ -131,7 +138,7 @@ struct GRIconButton: View {
         if let tint { return tint }
         switch style {
         case .glass: return GRColor.accent
-        case .accent: return GRColor.canvas
+        case .accent: return .white
         case .plain: return GRColor.textSecondary
         }
     }
@@ -142,9 +149,7 @@ struct GRIconButton: View {
         case .glass:
             Color.clear.grGlassEffect(.interactive, in: Circle())
         case .accent:
-            Circle()
-                .fill(LinearGradient(colors: [GRColor.accent, GRColor.accentCyan], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .shadow(color: GRColor.accent.opacity(0.35), radius: 8, y: 2)
+            GRAccentGlass(shape: Circle(), strength: 0.42)
         case .plain:
             Circle().fill(GRColor.fillSubtle)
         }
@@ -465,6 +470,14 @@ enum GRHaptics {
         guard enabled else { return }
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
     }
+
+    /// A single crisp tick — used while scrubbing the feed's difficulty slider.
+    @MainActor static func tick(intensity: Double = 0.6) {
+        guard enabled else { return }
+        let generator = UIImpactFeedbackGenerator(style: .rigid)
+        generator.prepare()
+        generator.impactOccurred(intensity: max(0.15, min(1, intensity)))
+    }
 }
 
 enum GRSettingsKey {
@@ -477,6 +490,8 @@ enum GRSettingsKey {
     /// 0 = use the server's goal.
     static let dailyGoal = "graphrecall.study.dailyGoal"
     static let newCardsPerDay = "graphrecall.study.newCardsPerDay"
+    /// "reels" (one card at a time) or "posts" (scrolling timeline).
+    static let feedStyle = "graphrecall.feed.style"
 }
 
 // MARK: - Layout

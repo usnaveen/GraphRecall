@@ -13,6 +13,7 @@ struct ProfileView: View {
     var openLibraryToken: Int = 0
 
     @AppStorage(GRSettingsKey.displayName) private var displayName = ""
+    @Environment(AppRouter.self) private var router
     @State private var showSettings = false
     @State private var tokenPresent = false
     @State private var stats: UserStats?
@@ -57,6 +58,7 @@ struct ProfileView: View {
 
                         Group {
                             identityCard
+                            todayCard
                             dueChips
                             weeklyInsights
                             if !domainMastery.isEmpty { masteryCard }
@@ -157,6 +159,77 @@ struct ProfileView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Today (moved off the feed, which is now content-only)
+
+    private var goalTarget: Int {
+        FeedViewModel.dailyGoalOverride ?? stats?.dailyGoal ?? 20
+    }
+
+    private var completedToday: Int { stats?.completedToday ?? 0 }
+
+    private var goalProgress: Double {
+        guard goalTarget > 0 else { return 0 }
+        return min(Double(completedToday) / Double(goalTarget), 1)
+    }
+
+    private var todayCard: some View {
+        GlassCard(cornerRadius: 22) {
+            HStack(spacing: 18) {
+                GRProgressRing(progress: goalProgress, lineWidth: 9) {
+                    VStack(spacing: 0) {
+                        Text("\(completedToday)/\(goalTarget)")
+                            .font(GRType.title)
+                            .foregroundStyle(GRColor.textPrimary)
+                            .minimumScaleFactor(0.7)
+                        Text("today")
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.textTertiary)
+                    }
+                }
+                .frame(width: 96, height: 96)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    if let streak = stats?.streakDays, streak > 0 {
+                        Label("\(streak)-day streak", systemImage: "flame.fill")
+                            .font(GRType.caption.weight(.bold))
+                            .foregroundStyle(GRColor.amber)
+                    }
+                    Text(todayTitle)
+                        .font(GRType.headline)
+                        .foregroundStyle(GRColor.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(todaySubtitle)
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.textSecondary)
+                    Button {
+                        router.pendingStartReview = true
+                        router.select(.feed)
+                    } label: {
+                        Label("Start review", systemImage: "play.fill")
+                    }
+                    .buttonStyle(GRButtonStyle(kind: .primary, compact: true))
+                    .disabled((stats?.dueToday ?? 0) == 0)
+                    .accessibilityIdentifier("today.startReview")
+                    .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    private var todayTitle: String {
+        let due = stats?.dueToday ?? 0
+        if due == 0 { return completedToday > 0 ? "All clear for now" : "Nothing due yet" }
+        let remaining = max(goalTarget - completedToday, 0)
+        return remaining == 0 ? "Goal reached — keep the streak warm" : "\(remaining) more to hit your goal"
+    }
+
+    private var todaySubtitle: String {
+        let due = stats?.dueToday ?? 0
+        guard due > 0 else { return "Your feed still has plenty to browse." }
+        let minutes = max(1, Int((Double(due) * 20 / 60).rounded()))
+        return "≈ \(minutes) min · \(due) card\(due == 1 ? "" : "s") due"
     }
 
     // MARK: - Due chips

@@ -23,15 +23,13 @@ struct WelcomeView: View {
             VStack(spacing: 14) {
                 Spacer()
 
-                Image(systemName: "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 36, weight: .bold))
-                    .foregroundStyle(GRColor.canvas)
+                Image("BrandLogo")
+                    .resizable()
+                    .interpolation(.high)
                     .frame(width: 76, height: 76)
-                    .background(
-                        LinearGradient(colors: [GRColor.accent, GRColor.accentCyan], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .shadow(color: GRColor.accent.opacity(0.35), radius: 12, y: 4)
+                    .accessibilityHidden(true)
 
                 Text("GraphRecall")
                     .font(GRType.largeTitle)

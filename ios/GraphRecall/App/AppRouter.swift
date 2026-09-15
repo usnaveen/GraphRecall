@@ -19,6 +19,8 @@ final class AppRouter {
     var pendingConversationId: String?
     /// Set by the widget / `graphrecall://review` — Today starts a session when it next appears.
     var pendingStartReview = false
+    /// True while the software keyboard is on screen — the dock hides and screens drop its clearance.
+    var isKeyboardVisible = false
 
     init(initialTab: GRTab = .feed) {
         tab = initialTab
