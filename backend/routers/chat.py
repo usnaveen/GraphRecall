@@ -15,6 +15,7 @@ from backend.db.postgres_client import get_postgres_client
 from backend.models.feed_schemas import ChatMessage, ChatRequest, ChatResponse
 # Refactor: Use new LangGraph workflow instead of legacy agent
 from backend.graphs.chat_graph import chat_graph, run_chat, ChatState
+from backend.telemetry import elapsed_ms, now, record
 from langchain_core.messages import HumanMessage
 
 logger = structlog.get_logger()
@@ -827,6 +828,10 @@ async def stream_chat(
     providing a more responsive user experience.
     """
     async def generate():
+        # Timings start after auth (auth.* stages are recorded by the dependency).
+        stream_start = now()
+        first_token_logged = False
+        node_starts: dict[str, float] = {}
         try:
             pg_client = await get_postgres_client()
             user_id = str(current_user["id"])
@@ -866,6 +871,7 @@ async def stream_chat(
                 """,
                 {"conversation_id": conversation_id, "content": request.message},
             )
+            record("chat.setup_db", elapsed_ms(stream_start))
 
             initial_state: ChatState = {
                 "messages": [HumanMessage(content=request.message)],
@@ -892,6 +898,9 @@ async def stream_chat(
                         
                     # Only append to main message content if it's the final response
                     if "final_response" in tags:
+                        if not first_token_logged:
+                            first_token_logged = True
+                            record("chat.first_token_after_auth", elapsed_ms(stream_start))
                         full_content += content
                         yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
                     else:
@@ -905,7 +914,11 @@ async def stream_chat(
                     
                 # Monitor node transitions (for debug/UI)
                 elif kind == "on_chain_start" and event["name"] in ["analyze_query", "get_context", "generate_response"]:
+                    node_starts[event["name"]] = now()
                     yield f"data: {json.dumps({'type': 'status', 'content': f'Step: {event['name']}...'})}\n\n"
+
+                elif kind == "on_chain_end" and event["name"] in node_starts:
+                    record(f"chat.node.{event['name']}", elapsed_ms(node_starts.pop(event["name"])))
 
             # Get final state for metadata
             final_state = await chat_graph.aget_state(config)
@@ -934,6 +947,7 @@ async def stream_chat(
                     return str(obj)
                 return obj
 
+            persist_start = now()
             # Persist assistant message
             assistant_message_id = await pg_client.execute_insert(
                 """
@@ -957,6 +971,8 @@ async def stream_chat(
                 """,
                 {"conversation_id": conversation_id},
             )
+            record("chat.persist", elapsed_ms(persist_start))
+            record("chat.stream_total_after_auth", elapsed_ms(stream_start))
 
             # Send final event with metadata
             metadata = values.get("metadata", {})
