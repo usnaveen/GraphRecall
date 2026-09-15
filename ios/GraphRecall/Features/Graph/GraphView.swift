@@ -419,27 +419,36 @@ struct GraphView: View {
         .fixedSize()
     }
 
+    /// Two columns of swatches, like the legend this screen used to carry — it names the link
+    /// colours so the edges themselves stay clean.
     @ViewBuilder
     private var relationshipLegend: some View {
         let types = model.relationshipTypesInView
         if !types.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(types, id: \.self) { type in
-                    HStack(spacing: 6) {
-                        Capsule()
-                            .fill(GraphRelationshipStyle.color(type))
-                            .frame(width: 14, height: 3)
-                        Text(GraphRelationshipStyle.label(type))
-                            .font(GRType.micro)
-                            .foregroundStyle(GRColor.textSecondary)
-                            .lineLimit(1)
+            let rows = stride(from: 0, to: types.count, by: 2).map { start in
+                Array(types[start..<min(start + 2, types.count)])
+            }
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 5) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(row, id: \.self) { type in
+                            HStack(spacing: 5) {
+                                Capsule()
+                                    .fill(GraphRelationshipStyle.color(type))
+                                    .frame(width: 12, height: 3)
+                                Text(GraphRelationshipStyle.label(type))
+                                    .font(GRType.micro)
+                                    .foregroundStyle(GRColor.textSecondary)
+                                    .lineLimit(1)
+                            }
+                        }
                     }
                 }
             }
-            .padding(.horizontal, 10)
+            .fixedSize()
+            .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .grGlassEffect(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .fixedSize()
             .accessibilityLabel("Connection colours")
         }
     }

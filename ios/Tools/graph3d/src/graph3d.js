@@ -6,8 +6,9 @@
  *   Overview — the 3D force layout (d3-force-3d), orbit camera, links tinted by relationship type.
  *   Focus    — tap a concept and the scene flattens to 2D: that concept centres, its connections
  *              fan out on one plane facing the camera (what it needs above, what it unlocks below,
- *              everything else to the sides), each edge arrowed and named. Rotation locks; pan and
- *              zoom stay. Deselecting animates back to the 3D overview.
+ *              everything else to the sides), each edge arrowed for direction and coloured by type;
+ *              the native legend names the colours. Rotation locks; pan and zoom stay. Deselecting
+ *              animates back to the 3D overview.
  *
  * Bridge (native → page):
  *   window.setGraphData(raw)      /api/graph3d shape: { nodes, edges, communities }
@@ -45,7 +46,6 @@ const REL_META = {
   SUPPORTS: { color: '#34D399', label: 'supports' },
 };
 const relColor = (type) => (REL_META[type] || REL_META.RELATED_TO).color;
-const relLabel = (type) => (REL_META[type] || {}).label || String(type).replace(/_/g, ' ').toLowerCase();
 
 // Matches GraphViewModel.weakThreshold (0.4) and the native mastery legend.
 const MASTERY_COLORS = { unseen: '#6B7280', weak: '#F87171', learning: '#F59E0B', strong: '#34D399' };
@@ -229,10 +229,8 @@ let graph = null;            // { nodes, links }
 let objects = new Map();     // id -> { node, mesh, origin, target, radius, visible, dimmed, emphasis, pxRadius, label, ring }
 let linkBatches = [];        // { mesh, links }
 let arrows = [];             // { mesh, link }
-let edgeLabels = new Map();  // link id -> div
 let neighborIds = new Set();
 let shownLabels = new Set();
-let shownEdgeLabels = new Set();
 let dataGeneration = 0;
 let cameraFlight = null;     // { target, position, onArrive }
 let viewShift = 0;
@@ -306,12 +304,6 @@ function disposeArrows() {
   arrows = [];
 }
 
-function disposeEdgeLabels() {
-  for (const el of edgeLabels.values()) el.remove();
-  edgeLabels = new Map();
-  shownEdgeLabels = new Set();
-}
-
 function disposeScene() {
   for (const obj of objects.values()) {
     obj.mesh.material.dispose();
@@ -321,7 +313,6 @@ function disposeScene() {
   nodeLayer.clear();
   disposeLinks();
   disposeArrows();
-  disposeEdgeLabels();
   objects = new Map();
   shownLabels = new Set();
 }
@@ -543,7 +534,8 @@ function rebuildLinks(selectedId, searching) {
   if (!graph) return;
 
   if (focusView) {
-    // Focus: only this neighbourhood, each edge in its relationship colour, arrowed and named.
+    // Focus: only this neighbourhood, each edge in its relationship colour with an arrow for
+    // direction. The colours are named by the native legend, not by text on the lines.
     addLinkBatch(focusView.links, 2.4, 0.95, (link) => relColor(link.type));
     for (const link of focusView.links) {
       const mesh = new THREE.Mesh(
@@ -554,11 +546,9 @@ function rebuildLinks(selectedId, searching) {
       arrowLayer.add(mesh);
       arrows.push({ mesh, link });
     }
-    syncEdgeLabels(focusView.links);
     return;
   }
 
-  syncEdgeLabels([]);
   const hot = [];
   const idle = [];
   const faint = [];
@@ -634,22 +624,6 @@ function updateArrows() {
   }
 }
 
-function syncEdgeLabels(links) {
-  const keep = new Set(links.map((l) => l.id));
-  for (const [id, el] of edgeLabels) {
-    if (!keep.has(id)) { el.remove(); edgeLabels.delete(id); }
-  }
-  for (const link of links) {
-    if (edgeLabels.has(link.id)) continue;
-    const el = document.createElement('div');
-    el.className = 'edge-label';
-    el.textContent = relLabel(link.type);
-    el.style.color = relColor(link.type);
-    labelsEl.appendChild(el);
-    edgeLabels.set(link.id, el);
-  }
-}
-
 /* ---------------------------------------------------------------- labels */
 
 const measureContext = document.createElement('canvas').getContext('2d');
@@ -671,7 +645,6 @@ function labelFor(obj) {
 }
 
 const projected = new THREE.Vector3();
-const midpoint = new THREE.Vector3();
 
 function placeLabels() {
   const selected = selectedObject();
@@ -722,35 +695,6 @@ function placeLabels() {
   }
   for (const obj of shownLabels) if (!shown.has(obj) && obj.label) obj.label.style.display = 'none';
   shownLabels = shown;
-
-  placeEdgeLabels(placed);
-}
-
-/** Relationship names along each edge — focus view only, and only where they fit. */
-function placeEdgeLabels(placed) {
-  const shown = new Set();
-  if (focusView) {
-    for (const link of focusView.links) {
-      const el = edgeLabels.get(link.id);
-      const source = objects.get(link.source.id);
-      const target = objects.get(link.target.id);
-      if (!el || !source || !target) continue;
-      midpoint.copy(source.mesh.position).add(target.mesh.position).multiplyScalar(0.5);
-      projected.copy(midpoint).project(camera);
-      if (projected.z > 1) continue;
-      const x = ((projected.x + 1) / 2) * width;
-      const y = ((1 - projected.y) / 2) * height;
-      const halfWidth = (el.__width || 60) / 2;
-      const rect = [x - halfWidth, y - 7, x + halfWidth, y + 7];
-      if (placed.some((p) => rect[0] < p[2] && rect[2] > p[0] && rect[1] < p[3] && rect[3] > p[1])) continue;
-      placed.push(rect);
-      shown.add(el);
-      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%)`;
-      el.style.display = 'block';
-    }
-  }
-  for (const el of shownEdgeLabels) if (!shown.has(el)) el.style.display = 'none';
-  shownEdgeLabels = shown;
 }
 
 /* ---------------------------------------------------------------- rendering */
