@@ -102,6 +102,10 @@
   let minWeight = 0;
   let isDemo = false;
   let neighborIds = new Set();
+  // True after new data arrives until the view has been framed to fit it.
+  let fitPending = false;
+  // Sorted node ids of the last dataset — re-fit only when the node set changes, not on selection.
+  let lastNodeSignature = '';
 
   const root = document.getElementById('graph');
   const domainSelect = document.getElementById('domainSelect');
@@ -127,6 +131,11 @@
     .cooldownTicks(90)
     .d3AlphaDecay(0.022)
     .d3VelocityDecay(0.35)
+    // Real graphs arrive with backend layout coordinates (hundreds of px from the origin) and
+    // disconnected clusters drift apart, so frame everything once the simulation settles.
+    .onEngineStop(() => {
+      if (fitPending && fitGraph(450)) fitPending = false;
+    })
     .onNodeClick((n) => {
       selectedId = n.id;
       recomputeNeighbors();
@@ -331,15 +340,42 @@
       const id = [...highlightIds][0];
       const node = data.nodes.find((n) => n.id === id);
       if (node) {
+        fitPending = false;
         Graph.centerAt(node.x || 0, node.y || 0, 650);
         Graph.zoom(2.2, 650);
+        return;
       }
     }
+    if (fitPending) {
+      // A first frame once the simulation has placed nodes; onEngineStop refines it.
+      setTimeout(() => { if (fitPending) fitGraph(0); }, 700);
+    }
+  }
+
+  /**
+   * Frames all nodes. Returns false (and does nothing) until the canvas has a size and every
+   * node has a position — fitting earlier yields a NaN zoom and a permanently blank canvas.
+   */
+  function fitGraph(ms) {
+    const nodes = Graph.graphData().nodes;
+    if (!nodes.length || window.innerWidth < 10 || window.innerHeight < 10) return false;
+    if (!nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y))) return false;
+    Graph.zoomToFit(ms, 64);
+    setTimeout(() => {
+      // zoomToFit uses node centres only; keep big glowing nodes from being cropped or lost.
+      const k = Graph.zoom();
+      if (!Number.isFinite(k)) Graph.zoom(1, 0);
+      else if (k > 2.4) Graph.zoom(2.4, 250);
+      else if (k < 0.25) Graph.zoom(0.25, 250);
+    }, ms + 40);
+    return true;
   }
 
   function resize() {
     Graph.width(window.innerWidth).height(window.innerHeight);
     resizeStars();
+    // WKWebView can report a zero size when data first arrives; frame again once it has one.
+    if (Graph.graphData().nodes.length) setTimeout(() => fitGraph(0), 50);
   }
 
   domainSelect.addEventListener('change', () => {
@@ -363,6 +399,10 @@
     Graph.d3ReheatSimulation();
     post({ type: 'communities.recompute' });
   });
+
+  // Unconnected clusters repel forever by default and end up in opposite corners of a
+  // phone-sized canvas; cap the reach of the repulsion so they stay near each other.
+  Graph.d3Force('charge').strength(-55).distanceMax(220);
 
   window.addEventListener('resize', resize);
   resize();
@@ -410,7 +450,21 @@
     const links = incoming.links || incoming.edges || [];
     isDemo = !!opts.demo || nodes.length === 0;
     const payload = isDemo ? demoGraph() : incoming;
-    rawNodes = (payload.nodes || []).map((n) => Object.assign({}, n));
+    const previous = {};
+    for (const n of Graph.graphData().nodes) previous[n.id] = n;
+    rawNodes = (payload.nodes || []).map((n) => {
+      const copy = Object.assign({}, n);
+      const prev = previous[copy.id];
+      if (prev && typeof prev.x === 'number') {
+        // Keep settled positions so selection/highlight pushes don't reshuffle the layout.
+        copy.x = prev.x; copy.y = prev.y; copy.vx = prev.vx; copy.vy = prev.vy;
+      } else {
+        // Backend x/y come from a much larger 3D layout; start near the centre instead.
+        delete copy.x; delete copy.y;
+      }
+      return copy;
+    });
+    const nodeSignature = rawNodes.map((n) => n.id).sort().join('|');
     rawLinks = (payload.links || payload.edges || []).map((l) => Object.assign({}, l));
     communities = payload.communities || [];
     highlightIds = new Set(hlIds || []);
@@ -425,6 +479,8 @@
     }
     refreshDomainOptions();
     recomputeNeighbors();
+    fitPending = nodeSignature !== lastNodeSignature;
+    lastNodeSignature = nodeSignature;
     applyGraph(true);
   };
 
