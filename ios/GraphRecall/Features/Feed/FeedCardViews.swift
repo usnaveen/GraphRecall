@@ -7,31 +7,40 @@ struct FeedTypedCard: View {
     var selectedOptionId: String? = nil
     var fillAnswer: String = ""
     var showHint: Bool = false
+    /// False when the feed already provides the card container around this content.
+    var showsContainer: Bool = true
     var onReveal: () -> Void = {}
     var onSelectOption: (String) -> Void = { _ in }
     var onFillAnswerChange: (String) -> Void = { _ in }
     var onToggleHint: () -> Void = {}
 
+    @ViewBuilder
     var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                headerRow
-                switch item.itemType {
-                case .flashcard:
-                    flashcardBody
-                case .mcq:
-                    mcqBody
-                case .fillBlank:
-                    fillBlankBody
-                case .showcase:
-                    showcaseBody
-                case .codeChallenge:
-                    codeBody
-                case .diagram:
-                    diagramBody
-                case .screenshot, .infographic:
-                    mediaBody
-                }
+        if showsContainer {
+            GlassCard { content }
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            headerRow
+            switch item.itemType {
+            case .flashcard:
+                flashcardBody
+            case .mcq:
+                mcqBody
+            case .fillBlank:
+                fillBlankBody
+            case .showcase:
+                showcaseBody
+            case .codeChallenge:
+                codeBody
+            case .diagram:
+                diagramBody
+            case .screenshot, .infographic:
+                mediaBody
             }
         }
     }
@@ -73,14 +82,14 @@ struct FeedTypedCard: View {
     private var flashcardBody: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(item.prompt)
-                .font(GRType.title)
+                .font(GRType.headline)
                 .foregroundStyle(GRColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
             if revealed, let answer = item.answer {
                 Divider().overlay(GRColor.stroke)
                 Text(answer)
-                    .font(GRType.body)
+                    .font(.subheadline)
                     .foregroundStyle(GRColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !revealed {
@@ -97,7 +106,7 @@ struct FeedTypedCard: View {
         let options = item.mcqOptions
         VStack(alignment: .leading, spacing: 12) {
             Text(item.prompt)
-                .font(GRType.title)
+                .font(GRType.headline)
                 .foregroundStyle(GRColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -111,7 +120,7 @@ struct FeedTypedCard: View {
                             .background(Circle().fill(optionFill(opt)))
                             .frame(width: 22, height: 22)
                         Text(opt.text)
-                            .font(GRType.body)
+                            .font(.subheadline)
                             .foregroundStyle(GRColor.textPrimary)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 0)
@@ -134,7 +143,7 @@ struct FeedTypedCard: View {
             if revealed {
                 if let explanation = item.stringContent("explanation") {
                     Text(explanation)
-                        .font(GRType.body)
+                        .font(.subheadline)
                         .foregroundStyle(GRColor.textSecondary)
                         .padding(.top, 4)
                 }
@@ -183,7 +192,7 @@ struct FeedTypedCard: View {
                 + Text(blank).foregroundColor(GRColor.accentCyan).underline()
                 + Text(parts.count > 1 ? parts[1] : "")
             )
-            .font(GRType.title)
+            .font(GRType.headline)
             .foregroundStyle(GRColor.textPrimary)
             .fixedSize(horizontal: false, vertical: true)
 
@@ -215,16 +224,18 @@ struct FeedTypedCard: View {
                     Button(action: onReveal) {
                         Text("Show answer")
                             .font(GRType.caption.weight(.semibold))
-                            .foregroundStyle(GRColor.canvas)
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(GRColor.accentCyan, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background {
+                                GRAccentGlass(shape: RoundedRectangle(cornerRadius: 14, style: .continuous), tint: GRColor.accentCyan, strength: 0.45)
+                            }
                     }
                     .accessibilityIdentifier("review.reveal")
                 }
             } else if let ans = item.firstAnswerFromList() {
                 Text("Answer: \(ans)")
-                    .font(GRType.body)
+                    .font(.subheadline)
                     .foregroundStyle(Color.green.opacity(0.9))
             }
         }
@@ -240,7 +251,7 @@ struct FeedTypedCard: View {
                     Text(emoji).font(.title2)
                 }
                 Text(item.conceptName ?? item.stringContent("title") ?? item.title)
-                    .font(GRType.title)
+                    .font(GRType.headline)
                     .foregroundStyle(GRColor.textPrimary)
             }
             if let tagline = item.stringContent("tagline") {
@@ -252,7 +263,7 @@ struct FeedTypedCard: View {
             Text(item.stringContent("definition")
                  ?? item.stringContent("description")
                  ?? item.prompt)
-                .font(GRType.body)
+                .font(.subheadline)
                 .foregroundStyle(GRColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -263,7 +274,7 @@ struct FeedTypedCard: View {
                         .foregroundStyle(GRColor.accentCyan)
                         .padding(.top, 2)
                     Text(point)
-                        .font(GRType.body)
+                        .font(.subheadline)
                         .foregroundStyle(GRColor.textSecondary)
                 }
             }
@@ -327,7 +338,7 @@ struct FeedTypedCard: View {
                 }
                 if let explanation = item.stringContent("explanation") {
                     Text(explanation)
-                        .font(GRType.body)
+                        .font(.subheadline)
                         .foregroundStyle(GRColor.textSecondary)
                 }
             } else {
@@ -387,7 +398,7 @@ struct FeedTypedCard: View {
             }
             if let desc = item.stringContent("description") {
                 Text(desc)
-                    .font(GRType.body)
+                    .font(.subheadline)
                     .foregroundStyle(GRColor.textSecondary)
             }
 
@@ -439,11 +450,13 @@ struct FeedTypedCard: View {
     private func revealButton(title: String) -> some View {
         Button(action: onReveal) {
             Text(title)
-                .font(GRType.headline)
-                .foregroundStyle(GRColor.canvas)
+                .font(GRType.caption.weight(.bold))
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(typeColor, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.vertical, 12)
+                .background {
+                    GRAccentGlass(shape: RoundedRectangle(cornerRadius: 14, style: .continuous), tint: typeColor, strength: 0.45)
+                }
         }
         .accessibilityIdentifier("review.reveal")
         .padding(.top, 4)

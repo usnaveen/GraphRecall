@@ -25,6 +25,7 @@ enum GRTab: String, CaseIterable, Identifiable {
     }
 }
 
+/// Icon-only floating tab bar. Tab names stay available to VoiceOver and UI tests.
 struct LiquidDock: View {
     @Binding var selection: GRTab
     @Namespace private var glassNS
@@ -36,12 +37,11 @@ struct LiquidDock: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.vertical, 6)
         .background { dockBackground }
-        .padding(.horizontal, 20)
-        // Sit on the home-indicator safe area — not floating mid-air.
-        .padding(.bottom, 2)
+        // Side inset matches the bottom inset in ContentView, so the dock's corners echo the
+        // display's own rounded corners.
+        .padding(.horizontal, 14)
     }
 
     @ViewBuilder
@@ -54,65 +54,59 @@ struct LiquidDock: View {
                 selection = tab
             }
         } label: {
-            VStack(spacing: 3) {
-                ZStack {
-                    if isCenter {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [GRColor.accent, GRColor.accentCyan],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 40, height: 40)
-                            .shadow(color: GRColor.accent.opacity(0.35), radius: 8, y: 2)
-                    } else if isActive {
-                        if #available(iOS 26.0, *) {
-                            Capsule()
-                                .fill(GRColor.accent.opacity(0.22))
-                                .glassEffectID(tab.rawValue, in: glassNS)
-                                .frame(width: 44, height: 36)
-                        } else {
-                            Capsule()
-                                .fill(GRColor.accent.opacity(0.22))
-                                .frame(width: 44, height: 36)
-                        }
-                    }
-
-                    Image(systemName: tab.systemImage)
-                        .font(.system(size: isCenter ? 17 : 16, weight: isActive || isCenter ? .semibold : .regular))
-                        .foregroundStyle(isCenter ? GRColor.canvas : (isActive ? GRColor.accent : GRColor.textSecondary))
-                        .frame(width: 44, height: 36)
+            ZStack {
+                if isCenter {
+                    CreateDrop(isActive: isActive)
+                } else if isActive {
+                    Capsule()
+                        .fill(GRColor.accent.opacity(0.12))
+                        .overlay(Capsule().strokeBorder(GRColor.accent.opacity(0.28), lineWidth: 1))
+                        .frame(width: 46, height: 34)
+                        .matchedGeometryEffect(id: "dock.active", in: glassNS)
                 }
 
-                Text(tab.title)
-                    .font(GRType.micro)
-                    .foregroundStyle(isActive || isCenter ? GRColor.accent : GRColor.textTertiary)
+                Image(systemName: tab.systemImage)
+                    .font(.system(size: isCenter ? 19 : 18, weight: isActive || isCenter ? .semibold : .regular))
+                    .foregroundStyle(isCenter ? Color.white : (isActive ? GRColor.accent : GRColor.textSecondary))
+                    .shadow(color: isCenter ? .black.opacity(0.35) : .clear, radius: 1, y: 0.5)
             }
             .frame(maxWidth: .infinity)
+            .frame(height: 46)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     @ViewBuilder
     private var dockBackground: some View {
         let shape = Capsule(style: .continuous)
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: 12) {
-                shape
-                    .fill(Color.clear)
-                    .frame(height: 62)
-                    .glassEffect(.regular.interactive(), in: shape)
+        ZStack {
+            // A scrim under the glass: content scrolling past stays readable as texture, not text.
+            shape.fill(GRColor.canvas.opacity(0.9))
+            if #available(iOS 26.0, *) {
+                GlassEffectContainer(spacing: 12) {
+                    shape
+                        .fill(Color.clear)
+                        .glassEffect(.regular.interactive(), in: shape)
+                }
+            } else {
+                shape.fill(.ultraThinMaterial)
             }
-        } else {
-            shape
-                .fill(.ultraThinMaterial)
-                .overlay(shape.stroke(GRColor.stroke, lineWidth: 1))
-                .shadow(color: .black.opacity(0.35), radius: 20, y: 8)
-                .frame(height: 62)
+            shape.strokeBorder(GRColor.stroke, lineWidth: 1)
         }
+        .compositingGroup()
+        .shadow(color: .black.opacity(0.45), radius: 18, y: 6)
+    }
+}
+
+/// The Create button — the same accent-glass droplet every primary action in the app uses.
+private struct CreateDrop: View {
+    var isActive: Bool
+
+    var body: some View {
+        GRAccentGlass(shape: Circle(), strength: isActive ? 0.5 : 0.42)
+            .frame(width: 44, height: 44)
     }
 }

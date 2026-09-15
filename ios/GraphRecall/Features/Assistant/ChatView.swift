@@ -5,8 +5,13 @@ struct ChatView: View {
     @State private var model = ChatViewModel()
     @State private var dictation = GRDictation()
     @State private var openSource: ChatSourceRef?
+    /// Whether the conversation is scrolled to (or near) the latest message.
+    @State private var isNearBottom = true
     @FocusState private var inputFocused: Bool
     @Environment(AppRouter.self) private var router
+
+    private static let bottomAnchor = "chat.bottom"
+    private static let citationScheme = "grsource"
 
     var body: some View {
         @Bindable var bindable = model
@@ -16,17 +21,26 @@ struct ChatView: View {
             GRBackdropGlow(tint: GRColor.accentCyan, offset: CGSize(width: -150, height: -240))
 
             VStack(spacing: 0) {
-                header
+                // While typing, the large title gives its room to the conversation.
+                if inputFocused {
+                    compactHeader
+                        .transition(.opacity)
+                } else {
+                    header
+                        .transition(.opacity)
+                }
                 scopeRow
                     .padding(.horizontal, 20)
                     .padding(.bottom, 6)
                 messagesScroll
-                if !model.suggestions.isEmpty && model.messages.count <= 2 && !model.isStreaming {
+                if showsSuggestions {
                     suggestionsRow
                 }
                 composer(input: $bindable.input)
             }
-            .padding(.bottom, GRLayout.dockClearance)
+            // The dock hides with the keyboard, so the composer can sit directly on the keys.
+            .padding(.bottom, router.isKeyboardVisible ? 0 : GRLayout.dockClearance)
+            .animation(.easeOut(duration: 0.22), value: inputFocused)
 
             if let banner = model.bannerMessage {
                 GRToast(message: banner)
@@ -60,6 +74,13 @@ struct ChatView: View {
         }
     }
 
+    private var showsSuggestions: Bool {
+        !model.suggestions.isEmpty
+            && model.messages.count <= 2
+            && !model.isStreaming
+            && model.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func consumeRouter() {
         if let id = router.pendingConversationId {
             router.pendingConversationId = nil
@@ -83,23 +104,41 @@ struct ChatView: View {
         HStack(alignment: .top, spacing: 12) {
             GRScreenHeader(title: "Assistant", subtitle: headerSubtitle)
             HStack(spacing: 8) {
-                if model.isStreaming {
-                    GRIconButton(systemImage: "stop.fill", accessibilityLabel: "Stop streaming") {
-                        model.cancelStream()
-                    }
-                }
-                GRIconButton(systemImage: "plus", accessibilityLabel: "New chat") {
-                    model.startNewChat()
-                }
-                .disabled(model.isStreaming)
-                GRIconButton(systemImage: "clock.arrow.circlepath", tint: GRColor.textPrimary, accessibilityLabel: "Chat history") {
-                    model.openHistory()
-                }
-                .disabled(model.isStreaming)
+                headerButtons(size: 44)
             }
             .padding(.trailing, 20)
             .padding(.top, 14)
         }
+    }
+
+    private var compactHeader: some View {
+        HStack(spacing: 8) {
+            Text("Assistant")
+                .font(GRType.headline)
+                .foregroundStyle(GRColor.textPrimary)
+            if model.isStreaming {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(GRColor.accent)
+            }
+            Spacer()
+            headerButtons(size: 34)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func headerButtons(size: CGFloat) -> some View {
+        GRIconButton(systemImage: "plus", size: size, accessibilityLabel: "New chat") {
+            model.startNewChat()
+        }
+        .disabled(model.isStreaming)
+        GRIconButton(systemImage: "clock.arrow.circlepath", tint: GRColor.textPrimary, size: size, accessibilityLabel: "Chat history") {
+            inputFocused = false
+            model.openHistory()
+        }
+        .disabled(model.isStreaming)
     }
 
     private var headerSubtitle: String {
@@ -162,18 +201,79 @@ struct ChatView: View {
                         messageBubble(message)
                             .id(message.id)
                     }
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.bottomAnchor)
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 8)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
             }
             .scrollDismissesKeyboard(.interactively)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 120
+            } action: { _, nearBottom in
+                isNearBottom = nearBottom
+            }
+            // Tapping the conversation is a natural way out of typing.
+            .simultaneousGesture(TapGesture().onEnded { inputFocused = false })
+            .mask(topFade)
+            .overlay(alignment: .bottomTrailing) {
+                if !isNearBottom {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+                        }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(GRColor.textPrimary)
+                            .frame(width: 38, height: 38)
+                            .grGlassEffect(.interactive, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Jump to latest message")
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 10)
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: isNearBottom)
+            .onChange(of: model.messages.count) { _, _ in
+                // A new question or answer always brings the latest message into view.
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+                }
+            }
             .onChange(of: model.messages.last?.content) { _, _ in
-                if let id = model.messages.last?.id {
+                // Follow a streaming answer only if the reader hasn't scrolled up; no animation per token.
+                guard isNearBottom else { return }
+                proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+            }
+            .onChange(of: model.messages.first?.id) { _, _ in
+                // A conversation opened from history starts at its latest message.
+                Task { @MainActor in
+                    proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+                }
+            }
+            .onChange(of: router.isKeyboardVisible) { wasVisible, visible in
+                guard visible, !wasVisible, isNearBottom else { return }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(280))
                     withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo(id, anchor: .bottom)
+                        proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
                     }
                 }
             }
+        }
+    }
+
+    /// Messages fade out under the scope row instead of being cut off by a hard edge.
+    private var topFade: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                .frame(height: 18)
+            Rectangle().fill(.black)
         }
     }
 
@@ -185,11 +285,25 @@ struct ChatView: View {
                 Text(message.content)
                     .font(GRType.body)
                     .foregroundStyle(GRColor.textPrimary)
-                    .textSelection(.enabled)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)
                     .background(GRColor.accentSoft, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(GRColor.accentLine, lineWidth: 1))
+                    .contextMenu {
+                        Button {
+                            UIPasteboard.general.string = message.content
+                            GRHaptics.tap()
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                        Button {
+                            model.input = message.content
+                            inputFocused = true
+                        } label: {
+                            Label("Edit and resend", systemImage: "pencil")
+                        }
+                        .disabled(model.isStreaming)
+                    }
             }
         } else {
             assistantBubble(message)
@@ -197,7 +311,9 @@ struct ChatView: View {
     }
 
     private func assistantBubble(_ message: ChatMessageUI) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let sourceGroups = Self.sourceGroups(message.sources)
+
+        return VStack(alignment: .leading, spacing: 10) {
             if message.isStreaming {
                 HStack(spacing: 8) {
                     TypingDots()
@@ -205,9 +321,9 @@ struct ChatView: View {
                         .font(GRType.micro)
                         .foregroundStyle(GRColor.accent)
                 }
-            } else if !message.sources.isEmpty || !message.relatedConcepts.isEmpty {
+            } else if !sourceGroups.isEmpty || !message.relatedConcepts.isEmpty {
                 Label(
-                    "Grounded in \(message.relatedConcepts.count) concept\(message.relatedConcepts.count == 1 ? "" : "s") · \(message.sources.count) source\(message.sources.count == 1 ? "" : "s")",
+                    "Grounded in \(message.relatedConcepts.count) concept\(message.relatedConcepts.count == 1 ? "" : "s") · \(sourceGroups.count) source\(sourceGroups.count == 1 ? "" : "s")",
                     systemImage: "sparkles"
                 )
                 .font(GRType.micro)
@@ -215,11 +331,19 @@ struct ChatView: View {
             }
 
             if !message.content.isEmpty {
-                Text(Self.markdown(message.content))
+                Text(Self.markdown(message.content, linkCitations: !message.sources.isEmpty))
                     .font(GRType.body)
                     .foregroundStyle(GRColor.textPrimary)
                     .tint(GRColor.accentCyan)
                     .textSelection(.enabled)
+                    .environment(\.openURL, OpenURLAction { url in
+                        guard url.scheme == Self.citationScheme else { return .systemAction }
+                        // "[n]" cites the n-th source the backend returned.
+                        if let index = Int(url.host() ?? ""), message.sources.indices.contains(index - 1) {
+                            openSource = Self.mergedSource(for: message.sources[index - 1], in: message.sources)
+                        }
+                        return .handled
+                    })
             }
 
             if !message.relatedConcepts.isEmpty {
@@ -232,21 +356,26 @@ struct ChatView: View {
                 }
             }
 
-            if !message.sources.isEmpty {
+            if !sourceGroups.isEmpty {
                 VStack(spacing: 6) {
-                    ForEach(message.sources.prefix(4)) { source in
+                    ForEach(sourceGroups.prefix(4)) { group in
                         Button {
-                            openSource = source
+                            openSource = group.source
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "doc.text.fill")
                                     .font(.system(size: 12))
                                     .foregroundStyle(GRColor.accentCyan)
-                                Text(source.title)
+                                Text(group.source.title)
                                     .font(GRType.caption)
                                     .foregroundStyle(GRColor.textSecondary)
                                     .lineLimit(1)
                                 Spacer()
+                                if group.excerptCount > 1 {
+                                    Text("\(group.excerptCount) excerpts")
+                                        .font(GRType.micro)
+                                        .foregroundStyle(GRColor.textTertiary)
+                                }
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(GRColor.textTertiary)
@@ -351,16 +480,64 @@ struct ChatView: View {
         }
     }
 
+    // MARK: - Sources
+
+    private struct SourceGroup: Identifiable {
+        let source: ChatSourceRef
+        let excerptCount: Int
+        var id: String { source.id }
+    }
+
+    /// Excerpts from the same note arrive as separate sources; show one row per note.
+    private static func sourceGroups(_ sources: [ChatSourceRef]) -> [SourceGroup] {
+        var order: [String] = []
+        var byTitle: [String: [ChatSourceRef]] = [:]
+        for source in sources {
+            let key = source.title.lowercased()
+            if byTitle[key] == nil { order.append(key) }
+            byTitle[key, default: []].append(source)
+        }
+        return order.compactMap { key in
+            guard let group = byTitle[key], let first = group.first else { return nil }
+            let excerpts = group
+                .compactMap { $0.content?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            let merged = ChatSourceRef(
+                stableId: first.stableId,
+                title: first.title,
+                content: excerpts.isEmpty ? nil : excerpts.joined(separator: "\n\n· · ·\n\n")
+            )
+            return SourceGroup(source: merged, excerptCount: group.count)
+        }
+    }
+
+    private static func mergedSource(for source: ChatSourceRef, in sources: [ChatSourceRef]) -> ChatSourceRef {
+        sourceGroups(sources).first { $0.source.title.lowercased() == source.title.lowercased() }?.source ?? source
+    }
+
     // MARK: - Composer
 
     private func composer(input: Binding<String>) -> some View {
         HStack(alignment: .bottom, spacing: 6) {
+            if inputFocused {
+                Button {
+                    inputFocused = false
+                } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(GRColor.textSecondary)
+                        .frame(width: 36, height: 36)
+                }
+                .accessibilityLabel("Hide keyboard")
+                .transition(.scale.combined(with: .opacity))
+            }
+
             TextField(model.focusTopic.map { "Ask about \($0)…" } ?? "Ask your graph…", text: input, axis: .vertical)
                 .lineLimit(1...5)
                 .focused($inputFocused)
                 .font(GRType.body)
                 .foregroundStyle(GRColor.textPrimary)
-                .padding(.leading, 14)
+                .padding(.leading, inputFocused ? 2 : 14)
                 .padding(.vertical, 11)
 
             Button {
@@ -374,29 +551,48 @@ struct ChatView: View {
             }
             .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate question")
 
-            Button {
-                dictation.stop()
-                Task { await model.send() }
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(model.canSend ? GRColor.canvas : GRColor.textTertiary)
-                    .frame(width: 36, height: 36)
-                    .background {
-                        if model.canSend {
-                            Circle().fill(LinearGradient(colors: [GRColor.accent, GRColor.accentCyan], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        } else {
-                            Circle().fill(GRColor.fillSubtle)
+            if model.isStreaming {
+                // Stop lives where the thumb already is, in place of Send.
+                Button {
+                    model.cancelStream()
+                    GRHaptics.tap()
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(GRColor.textPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(GRColor.fillMuted))
+                }
+                .accessibilityLabel("Stop answer")
+            } else {
+                Button {
+                    dictation.stop()
+                    GRHaptics.tap()
+                    Task { await model.send() }
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(model.canSend ? .white : GRColor.textTertiary)
+                        .frame(width: 36, height: 36)
+                        .background {
+                            if model.canSend {
+                                GRAccentGlass(shape: Circle(), strength: 0.46)
+                            } else {
+                                Circle().fill(GRColor.fillSubtle)
+                            }
                         }
-                    }
+                }
+                .disabled(!model.canSend)
+                .accessibilityLabel("Send")
             }
-            .disabled(!model.canSend)
-            .accessibilityLabel("Send")
         }
         .padding(5)
         .grGlassEffect(.interactive, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+        .padding(.horizontal, router.isKeyboardVisible ? 12 : 20)
+        .padding(.top, 8)
+        .padding(.bottom, router.isKeyboardVisible ? 8 : 10)
+        .animation(.easeOut(duration: 0.18), value: inputFocused)
+        .animation(.easeOut(duration: 0.18), value: model.isStreaming)
     }
 
     private func toggleDictation() async {
@@ -414,9 +610,16 @@ struct ChatView: View {
         }
     }
 
-    private static func markdown(_ text: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: text,
+    /// Inline markdown; with sources, "[n]" citation markers become links that open the source.
+    private static func markdown(_ text: String, linkCitations: Bool) -> AttributedString {
+        var source = text
+        if linkCitations {
+            source = text.replacing(/\[(\d{1,2})\](?!\()/) { match in
+                "[\\[\(match.1)\\]](\(citationScheme)://\(match.1))"
+            }
+        }
+        return (try? AttributedString(
+            markdown: source,
             options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         )) ?? AttributedString(text)
     }
@@ -582,7 +785,6 @@ private struct ConversationHistorySheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
-            .padding(.bottom, GRLayout.dockClearance)
         }
         .refreshable { await model.loadHistory() }
     }
