@@ -23,8 +23,9 @@ from langchain_core.messages import (
 )
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
-from backend.config.llm import get_chat_model, get_embeddings, get_embedding_dims
+from backend.config.llm import get_fast_model, get_chat_model, get_embeddings, get_embedding_dims
 from backend.telemetry import elapsed_ms, now, record
+import asyncio
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -287,8 +288,8 @@ async def analyze_query_node(state: ChatState) -> dict:
     logger.info("analyze_query_node: Analyzing", query=query[:100])
     
     # LLM for query analysis with structured output (Gemini)
-    # Using default model (gemini-2.5-flash) which supports function calling
-    llm = get_chat_model(temperature=0)
+    # Classifying intent and pulling out entities is a small task: use the fast (Flash-Lite) model.
+    llm = get_fast_model(temperature=0)
     
     system_prompt = """Analyze the user's query to determine their intent and extract relevant entities.
 
@@ -359,46 +360,27 @@ async def get_context_node(state: ChatState) -> dict:
     graph_context = {"concepts": [], "relationships": []}
     rag_context = []
     
+    # Embed the question while the graph lookup runs; the vector search below awaits it.
+    async def _embed_question() -> list[float]:
+        started = now()
+        vector = await get_embeddings().aembed_query(query, output_dimensionality=get_embedding_dims())
+        record("chat.embed_query", elapsed_ms(started))
+        return vector
+
+    embed_task = asyncio.create_task(_embed_question()) if query else None
+
     # Get graph context
     graph_start = now()
     if entities:
         try:
             neo4j = await get_neo4j_client()
 
-            seed_concepts: list[dict] = []
-            for entity in entities[:5]:
-                # If source-scoped, filter concepts to only those in focused IDs
-                if focused_source_ids:
-                    result = await neo4j.execute_query(
-                        """
-                        MATCH (c:Concept)
-                        WHERE c.id IN $source_ids
-                          AND c.user_id = $user_id
-                          AND (toLower(c.name) CONTAINS toLower($name) 
-                               OR toLower(c.definition) CONTAINS toLower($name))
-                          AND coalesce(c.confidence, 0.8) >= 0.4
-                        RETURN c.id as id, c.name as name, c.definition as definition,
-                               c.domain as domain, c.confidence as confidence
-                        ORDER BY c.confidence DESC
-                        LIMIT 3
-                        """,
-                        {"name": entity, "source_ids": focused_source_ids, "user_id": user_id}
-                    )
-                else:
-                    result = await neo4j.execute_query(
-                        """
-                        MATCH (c:Concept)
-                        WHERE c.user_id = $user_id
-                          AND toLower(c.name) CONTAINS toLower($name)
-                          AND coalesce(c.confidence, 0.8) >= 0.4
-                        RETURN c.id as id, c.name as name, c.definition as definition,
-                               c.domain as domain, c.confidence as confidence
-                        ORDER BY c.confidence DESC
-                        LIMIT 3
-                        """,
-                        {"name": entity, "user_id": user_id}
-                    )
-                seed_concepts.extend(result)
+            # One query for all extracted entities (previously one round trip per entity).
+            seed_concepts: list[dict] = await neo4j.find_seed_concepts(
+                user_id=user_id,
+                terms=entities,
+                allowed_concept_ids=focused_source_ids or None,
+            )
 
             concept_ids = list({c["id"] for c in seed_concepts if c.get("id")})
             if concept_ids:
@@ -443,8 +425,8 @@ async def get_context_node(state: ChatState) -> dict:
 
             if summaries and len(summaries) >= 2:
                 # MAP PHASE: Score each community's relevance in PARALLEL
-                import asyncio
-                map_llm = get_chat_model(temperature=0)
+                # Relevance scoring runs once per community; the fast model keeps cost and latency down.
+                map_llm = get_fast_model(temperature=0)
 
                 async def _score_community(s: dict) -> dict | None:
                     map_prompt = (
@@ -516,11 +498,8 @@ async def get_context_node(state: ChatState) -> dict:
         try:
             pg_client = await get_postgres_client()
 
-            # Generate query embedding for vector similarity search
-            embeddings_model = get_embeddings()
-            embed_start = now()
-            query_embedding = await embeddings_model.aembed_query(query, output_dimensionality=get_embedding_dims())
-            record("chat.embed_query", elapsed_ms(embed_start))
+            # Started before the graph lookup so both run at the same time.
+            query_embedding = await embed_task
             embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
             # For show_images intent, retrieve more chunks and also fetch image-bearing chunks
