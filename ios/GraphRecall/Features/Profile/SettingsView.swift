@@ -130,6 +130,20 @@ struct SettingsView: View {
                                     .foregroundStyle(GRColor.textPrimary)
                                     .padding(12)
                                     .background(GRColor.fillSubtle, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                Button {
+                                    Task {
+                                        await auth.useLocalDevSession()
+                                        apiBase = AuthSession.localDevBaseURL
+                                        message = "Connected to the local Docker backend as the test user"
+                                        NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+                                    }
+                                } label: {
+                                    Label("Use local Docker backend", systemImage: "shippingbox.fill")
+                                }
+                                .buttonStyle(GRButtonStyle(kind: .secondary, compact: true))
+                                Text("Runs against `docker compose up` on this Mac (port 8001) with the backend’s test user.")
+                                    .font(GRType.micro)
+                                    .foregroundStyle(GRColor.textTertiary)
                             }
                             .padding(14)
                         }
@@ -169,8 +183,10 @@ struct SettingsView: View {
 
     /// Server-backed actions need a real Google session; the demo token is local-only.
     private var canUseAccount: Bool {
-        if case .google = auth.state { return true }
-        return false
+        switch auth.state {
+        case .google, .localDev: return true
+        case .signedOut, .demo: return false
+        }
     }
 
     private var accountCard: some View {
