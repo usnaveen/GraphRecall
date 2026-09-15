@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var router = AppRouter(initialTab: ContentView.initialTab())
     @AppStorage(GRSettingsKey.hasOnboarded) private var hasOnboarded = false
+    @Environment(\.scenePhase) private var scenePhase
 
     /// UI-QA launches with `GR_TAB` set; skip the welcome screen there.
     private var showsWelcome: Binding<Bool> {
@@ -54,6 +55,21 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .grNavigateFeed)) { _ in
             router.tab = .feed
+        }
+        .task {
+            await AuthSession.shared.restore()
+            // Tabs may have loaded before the token was restored.
+            if AuthSession.shared.isSignedIn {
+                NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+            }
+        }
+        .onOpenURL { url in
+            if AuthSession.shared.handle(url) { return }
+            router.handleDeepLink(url)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await AuthSession.shared.refreshIfNeeded() }
         }
     }
 }

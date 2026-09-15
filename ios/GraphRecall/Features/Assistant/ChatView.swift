@@ -48,6 +48,11 @@ struct ChatView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $bindable.showNotePicker) {
+            NoteScopePicker(initial: model.scopedNotes) { model.scopedNotes = $0 }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(item: $openSource) { source in
             SourceDetailSheet(source: source)
                 .presentationDetents([.medium, .large])
@@ -110,18 +115,38 @@ struct ChatView: View {
                 .foregroundStyle(GRColor.textTertiary)
             if let topic = model.focusTopic {
                 GRChip(title: topic, systemImage: "scope", style: .selected, compact: true)
-                Button {
-                    model.focusTopic = nil
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(GRColor.textTertiary)
-                }
-                .accessibilityLabel("Clear scope")
-            } else {
-                GRChip(title: "Whole graph", systemImage: "point.3.connected.trianglepath.dotted", style: .selected, compact: true)
+                clearScopeButton("Clear concept scope") { model.focusTopic = nil }
             }
-            Spacer()
+            if !model.scopedNotes.isEmpty {
+                GRChip(title: notesScopeTitle, systemImage: "doc.text.fill", style: .selected, compact: true) {
+                    model.showNotePicker = true
+                }
+                clearScopeButton("Clear notes scope") { model.scopedNotes = [] }
+            } else {
+                if model.focusTopic == nil {
+                    GRChip(title: "Whole graph", systemImage: "point.3.connected.trianglepath.dotted", style: .selected, compact: true)
+                }
+                GRChip(title: "Notes only…", systemImage: "doc.text", style: .outline, compact: true) {
+                    model.showNotePicker = true
+                }
+            }
+            Spacer(minLength: 0)
         }
+    }
+
+    private var notesScopeTitle: String {
+        if model.scopedNotes.count == 1, let title = model.scopedNotes[0].title, !title.isEmpty {
+            return title
+        }
+        return "\(model.scopedNotes.count) notes"
+    }
+
+    private func clearScopeButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark.circle.fill")
+                .foregroundStyle(GRColor.textTertiary)
+        }
+        .accessibilityLabel(label)
     }
 
     // MARK: - Messages

@@ -1,0 +1,11 @@
+// Copy to Google.local.xcconfig (git-ignored) and fill in from Google Cloud Console → APIs & Services → Credentials.
+
+// OAuth client of type "iOS" with bundle ID com.usnaveen.graphrecall
+GOOGLE_IOS_CLIENT_ID = 1234567890-abcdef.apps.googleusercontent.com
+
+// The same iOS client ID reversed — used as the sign-in callback URL scheme
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.1234567890-abcdef
+
+// The *web* client ID the backend verifies against (backend env GOOGLE_CLIENT_ID).
+// iOS asks Google for an ID token with this audience so /auth/google accepts it.
+GOOGLE_SERVER_CLIENT_ID = 1234567890-webclient.apps.googleusercontent.com

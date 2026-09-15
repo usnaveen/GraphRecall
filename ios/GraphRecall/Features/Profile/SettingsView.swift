@@ -11,7 +11,11 @@ struct SettingsView: View {
     @AppStorage(GRSettingsKey.remindersEnabled) private var remindersEnabled = false
     @AppStorage(GRSettingsKey.reminderMinutes) private var reminderMinutes = 20 * 60 + 30
 
-    @State private var tokenPresent = false
+    @AppStorage(GRSettingsKey.dailyGoal) private var dailyGoal = 0
+    @AppStorage(GRSettingsKey.newCardsPerDay) private var newCardsPerDay = 10
+
+    private let auth = AuthSession.shared
+    @State private var studySyncTask: Task<Void, Never>?
     @State private var message: String?
     @State private var confirmPurge = false
     @State private var isPurging = false
@@ -29,6 +33,35 @@ struct SettingsView: View {
                         }
 
                         SettingsGroup(title: "Study") {
+                            SettingsRow(
+                                title: "Daily goal",
+                                subtitle: dailyGoal == 0 ? "Auto — matches what’s due" : "Cards to finish each day",
+                                systemImage: "target",
+                                tone: .accent
+                            ) {
+                                Picker("Daily goal", selection: $dailyGoal) {
+                                    Text("Auto").tag(0)
+                                    ForEach([10, 20, 30, 50, 75, 100], id: \.self) { Text("\($0)").tag($0) }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.menu)
+                                .tint(GRColor.accent)
+                            }
+                            SettingsDivider()
+                            SettingsRow(
+                                title: "New cards per day",
+                                subtitle: "Cap on fresh cards generated for you",
+                                systemImage: "sparkles",
+                                tone: .cyan
+                            ) {
+                                Picker("New cards per day", selection: $newCardsPerDay) {
+                                    ForEach([0, 5, 10, 15, 20, 30, 50], id: \.self) { Text("\($0)").tag($0) }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.menu)
+                                .tint(GRColor.accent)
+                            }
+                            SettingsDivider()
                             SettingsRow(title: "Review reminders", subtitle: "A daily nudge when cards are due", systemImage: "bell.fill", tone: .accent) {
                                 Toggle("", isOn: $remindersEnabled)
                                     .labelsHidden()
@@ -76,12 +109,12 @@ struct SettingsView: View {
                             Button {
                                 confirmPurge = true
                             } label: {
-                                SettingsRow(title: "Delete all my data", subtitle: tokenPresent ? "Notes, concepts, cards and chats" : "Sign in first", systemImage: "trash.fill", tone: .danger, titleColor: GRColor.danger) {
+                                SettingsRow(title: "Delete all my data", subtitle: canUseAccount ? "Notes, concepts, cards and chats" : "Sign in with Google first", systemImage: "trash.fill", tone: .danger, titleColor: GRColor.danger) {
                                     if isPurging { ProgressView().tint(GRColor.danger) }
                                 }
                             }
                             .buttonStyle(.plain)
-                            .disabled(!tokenPresent || isPurging)
+                            .disabled(!canUseAccount || isPurging)
                         }
 
                         SettingsGroup(title: "Developer") {
@@ -127,10 +160,17 @@ struct SettingsView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .task { tokenPresent = await APIClient.shared.getAccessToken() != nil }
         .onChange(of: remindersEnabled) { _, enabled in
             Task { await updateReminders(enabled: enabled) }
         }
+        .onChange(of: dailyGoal) { _, _ in scheduleStudySync() }
+        .onChange(of: newCardsPerDay) { _, _ in scheduleStudySync() }
+    }
+
+    /// Server-backed actions need a real Google session; the demo token is local-only.
+    private var canUseAccount: Bool {
+        if case .google = auth.state { return true }
+        return false
     }
 
     private var accountCard: some View {
@@ -146,22 +186,73 @@ struct SettingsView: View {
                         TextField("Your name", text: $displayName)
                             .font(GRType.headline)
                             .foregroundStyle(GRColor.textPrimary)
-                        Text(tokenPresent ? "Signed in (demo token)" : "Not signed in")
+                        Text(auth.statusLabel)
                             .font(GRType.caption)
                             .foregroundStyle(GRColor.textSecondary)
                     }
                     Spacer()
                 }
-                Button {
-                    Task {
-                        await APIClient.shared.setAccessToken(tokenPresent ? nil : "demo-local-token")
-                        tokenPresent = await APIClient.shared.getAccessToken() != nil
-                        message = tokenPresent ? "Signed in with the demo session" : "Signed out"
-                    }
-                } label: {
-                    Text(tokenPresent ? "Sign out" : "Sign in (demo token)")
+
+                if let error = auth.lastError {
+                    Text(error)
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.amber)
                 }
-                .buttonStyle(GRButtonStyle(kind: tokenPresent ? .secondary : .primary, compact: true))
+
+                if auth.isSignedIn {
+                    Button {
+                        Task {
+                            await auth.signOut()
+                            message = "Signed out"
+                        }
+                    } label: {
+                        Text("Sign out")
+                    }
+                    .buttonStyle(GRButtonStyle(kind: .secondary, compact: true))
+                } else {
+                    Button {
+                        Task { await auth.signInWithGoogle() }
+                    } label: {
+                        Label(auth.isWorking ? "Signing in…" : "Continue with Google", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                    .buttonStyle(GRButtonStyle(kind: .primary, compact: true))
+                    .disabled(auth.isWorking)
+
+                    Button {
+                        Task {
+                            await auth.useDemoSession()
+                            message = "Using the demo session"
+                        }
+                    } label: {
+                        Text("Use demo session")
+                    }
+                    .buttonStyle(GRButtonStyle(kind: .ghost, compact: true))
+
+                    if !auth.isGoogleConfigured {
+                        Text("Google Sign-In needs your client IDs — see ios/Config/Google.local.xcconfig.example.")
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.textTertiary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func scheduleStudySync() {
+        studySyncTask?.cancel()
+        studySyncTask = Task {
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            guard !Task.isCancelled else { return }
+            NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+            guard canUseAccount else {
+                message = "Saved on this device — sign in with Google to sync it to your account."
+                return
+            }
+            do {
+                try await APIClient.shared.updateStudyPreferences(dailyGoal: dailyGoal, newCardsPerDay: newCardsPerDay)
+                message = "Study preferences synced"
+            } catch {
+                message = "Saved on this device. " + APIError.userFacing(error, resource: "profile")
             }
         }
     }
