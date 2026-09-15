@@ -33,6 +33,7 @@
 		6CAA41BF9F94661E27E5128A /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25717B008D78F115654FA98B /* FeedView.swift */; };
 		6F5D6F4DC2D13F0374C3FD45 /* GRSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */; };
 		704A0F8042B14BCB99B5B5B0 /* GraphModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681EB7E42D12061208FB2034 /* GraphModels.swift */; };
+		7109596E01B88C46F9421C88 /* GraphRelationshipStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E69D02370EC735BC79BB292 /* GraphRelationshipStyle.swift */; };
 		7125C8D2C47981BAA7021609 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7FF515475618D8C73AE527 /* LibraryView.swift */; };
 		74487DC936815D7E43050870 /* GRScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F78211E1B8741510C9AA24D /* GRScreenHeader.swift */; };
 		7A2B978B52F0F7F688B9FB06 /* GRDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25FEC977B2A9130C876E1D4F /* GRDictation.swift */; };
@@ -159,6 +160,7 @@
 		6FE14E2BBC801DE9BC6A5BA7 /* FeedViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedViewModel.swift; sourceTree = "<group>"; };
 		7CFDF20FCD17237DD59571A4 /* NoteScopePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteScopePicker.swift; sourceTree = "<group>"; };
 		7E402B1CDCA1B88C1C47A976 /* Graph3DWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Graph3DWebView.swift; sourceTree = "<group>"; };
+		7E69D02370EC735BC79BB292 /* GraphRelationshipStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphRelationshipStyle.swift; sourceTree = "<group>"; };
 		7ED7D72726B5CAC396F17BB9 /* FeedReelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedReelView.swift; sourceTree = "<group>"; };
 		7F6B4BB4C9768BAB47A1235D /* GraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphView.swift; sourceTree = "<group>"; };
 		84B0EF21DCB77A720FA6139F /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
@@ -258,6 +260,7 @@
 				1EAC19540B0FC26CF2901971 /* GraphLinksSheet.swift */,
 				20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */,
 				BECBEB72ED744FC19DA09627 /* GraphQuizSheet.swift */,
+				7E69D02370EC735BC79BB292 /* GraphRelationshipStyle.swift */,
 				46B2AA9997F6ACBF0A93366B /* GraphSceneChrome.swift */,
 				95D3BF4391B44E6E2469BCD9 /* GraphToolsSheets.swift */,
 				7F6B4BB4C9768BAB47A1235D /* GraphView.swift */,
@@ -686,6 +689,7 @@
 				56EAEACF6E68918C9A446A00 /* GraphNotePanel.swift in Sources */,
 				C5F0D1B3DEC5DFE60289B31A /* GraphQuizSheet.swift in Sources */,
 				CDA03F95E4C9FADB6C409478 /* GraphRecallApp.swift in Sources */,
+				7109596E01B88C46F9421C88 /* GraphRelationshipStyle.swift in Sources */,
 				CA26B6E22995CF9FDF5DF236 /* GraphSceneChrome.swift in Sources */,
 				5D8A719D00E8E4E5BCCEE8F1 /* GraphToolsSheets.swift in Sources */,
 				C25E93AFF53FB438B794FDA5 /* GraphView.swift in Sources */,

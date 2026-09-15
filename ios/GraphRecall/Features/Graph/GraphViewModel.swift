@@ -182,6 +182,32 @@ final class GraphViewModel {
         Set(graph.communities.compactMap(\.level)).count
     }
 
+    /// Relationship types the legend should explain: the ones around the selected concept while
+    /// focused, otherwise the most common ones in the whole graph.
+    var relationshipTypesInView: [String] {
+        let edges: [GraphEdge]
+        if let selectedNodeId {
+            edges = graph.edges.filter { $0.source == selectedNodeId || $0.target == selectedNodeId }
+        } else {
+            edges = graph.edges
+        }
+        var counts: [String: Int] = [:]
+        for edge in edges {
+            guard isVisible(edgeEndpoint: edge.source), isVisible(edgeEndpoint: edge.target) else { continue }
+            if minRelationshipWeight > 0, (edge.strength ?? 0.6) < minRelationshipWeight { continue }
+            counts[GraphRelationshipStyle.normalized(edge.relationshipType), default: 0] += 1
+        }
+        return counts
+            .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .prefix(6)
+            .map(\.key)
+    }
+
+    private func isVisible(edgeEndpoint id: String) -> Bool {
+        guard let node = nodesById[id] else { return false }
+        return isVisible(node)
+    }
+
     // MARK: - Loading
 
     func load() async {
