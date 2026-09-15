@@ -9,17 +9,6 @@ struct GraphInspectorPanel: View {
     var maxExpandedHeight: CGFloat
     var onAsk: () -> Void
 
-    /// Link colours, matching the 3D scene.
-    static let relColors: [String: Color] = [
-        "PREREQUISITE_OF": Color(hex: "#2EFFE6") ?? .cyan,
-        "SUBTOPIC_OF": Color(hex: "#B07CD8") ?? .purple,
-        "BUILDS_ON": Color(hex: "#F59E0B") ?? .orange,
-        "RELATED_TO": Color(hex: "#E5E7EB") ?? .white,
-        "PART_OF": Color(hex: "#EC4899") ?? .pink,
-        "USES": Color(hex: "#60A5FA") ?? .blue,
-        "ORCHESTRATED_BY": Color(hex: "#A78BFA") ?? .purple,
-        "SUPPORTS": Color(hex: "#34D399") ?? .green,
-    ]
     static let parentTint = Color(hex: "#3B82F6") ?? .blue
     static let childTint = Color(hex: "#10B981") ?? .green
 
@@ -258,7 +247,7 @@ struct GraphInspectorPanel: View {
                         } label: {
                             HStack(spacing: 5) {
                                 Circle()
-                                    .fill(Self.relColors[item.relationship] ?? .white)
+                                    .fill(GraphRelationshipStyle.color(item.relationship))
                                     .frame(width: 6, height: 6)
                                 Text(item.node.name)
                                     .font(GRType.micro)
@@ -322,7 +311,7 @@ struct GraphInspectorPanel: View {
 
     private func strongestRow(edge: GraphEdge, other: GraphNode) -> some View {
         let relationship = (edge.relationshipType ?? "RELATED_TO").uppercased()
-        let tint = Self.relColors[relationship] ?? .white
+        let tint = GraphRelationshipStyle.color(relationship)
         return Button {
             model.select(nodeId: other.id)
         } label: {

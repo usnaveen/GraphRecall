@@ -1,12 +1,13 @@
 /*
- * GraphRecall iOS 3D graph — a calm, touch-first take on the web GraphVisualizer.
+ * GraphRecall iOS graph scene — a calm, touch-first take on the web GraphVisualizer.
  * Build: `npm run build` in ios/Tools/graph3d → ios/WebAssets/graph3d.bundle.js
  *
- * Kept from the web scene (frontend/src/components/graph/GraphVisualizer.tsx, lib/forceSimulation3d.ts):
- * 3D force layout, orbit camera, fly-to-focus, relationship colours, merge targets, filters.
- * Dropped for legibility on a phone: bloom, galaxy background, community boxes and glows, springing
- * neighbours. Added: constant on-screen node and label sizes, focus dimming, colour modes,
- * collision-free labels and render-on-demand.
+ * Two states:
+ *   Overview — the 3D force layout (d3-force-3d), orbit camera, links tinted by relationship type.
+ *   Focus    — tap a concept and the scene flattens to 2D: that concept centres, its connections
+ *              fan out on one plane facing the camera (what it needs above, what it unlocks below,
+ *              everything else to the sides), each edge arrowed and named. Rotation locks; pan and
+ *              zoom stay. Deselecting animates back to the 3D overview.
  *
  * Bridge (native → page):
  *   window.setGraphData(raw)      /api/graph3d shape: { nodes, edges, communities }
@@ -30,18 +31,22 @@ import * as d3 from 'd3-force-3d';
 const BACKGROUND = '#0a0a0f';
 const ACCENT = '#B6FF2E';
 const MERGE_TARGET_COLOR = '#F97316';
-const LINK_IDLE_COLOR = '#8A8F98';
 const FALLBACK_COLOR = '#7DE1FF';
-const REL_COLORS = {
-  PREREQUISITE_OF: '#2EFFE6',
-  SUBTOPIC_OF: '#B07CD8',
-  BUILDS_ON: '#F59E0B',
-  RELATED_TO: '#E5E7EB',
-  PART_OF: '#EC4899',
-  USES: '#60A5FA',
-  ORCHESTRATED_BY: '#A78BFA',
-  SUPPORTS: '#34D399',
+
+/// Relationship colours and wording — kept in step with GraphRelationshipStyle.swift.
+const REL_META = {
+  PREREQUISITE_OF: { color: '#2EFFE6', label: 'prerequisite of' },
+  SUBTOPIC_OF: { color: '#B07CD8', label: 'subtopic of' },
+  BUILDS_ON: { color: '#F59E0B', label: 'builds on' },
+  RELATED_TO: { color: '#E5E7EB', label: 'related to' },
+  PART_OF: { color: '#EC4899', label: 'part of' },
+  USES: { color: '#60A5FA', label: 'uses' },
+  ORCHESTRATED_BY: { color: '#A78BFA', label: 'orchestrated by' },
+  SUPPORTS: { color: '#34D399', label: 'supports' },
 };
+const relColor = (type) => (REL_META[type] || REL_META.RELATED_TO).color;
+const relLabel = (type) => (REL_META[type] || {}).label || String(type).replace(/_/g, ' ').toLowerCase();
+
 // Matches GraphViewModel.weakThreshold (0.4) and the native mastery legend.
 const MASTERY_COLORS = { unseen: '#6B7280', weak: '#F87171', learning: '#F59E0B', strong: '#34D399' };
 const COMMUNITY_PALETTE = [
@@ -53,6 +58,8 @@ const NODE_MIN_PX = 5;   // on-screen radius floor, so distant concepts stay vis
 const NODE_MAX_PX = 20;  // ceiling, so zooming in never fills the screen with one sphere
 const LABEL_LIMIT = 36;
 const DIM_OPACITY = 0.14;
+/// 2D focus layout: ring radius, extra ring spacing when crowded, and how fast things settle.
+const FOCUS = { radius: 48, ringGap: 30, lerp: 0.16, perRing: 7 };
 
 function post(message) {
   try { window.webkit.messageHandlers.graphBridge.postMessage(message); } catch (e) { /* not in WKWebView */ }
@@ -143,8 +150,6 @@ async function layoutGraph(graph, previous, isStale) {
     }
   });
 
-  // True 3D simulation with bounded repulsion and a gentle pull to the centre, so disconnected
-  // clusters sit near each other instead of drifting to the edges of the scene.
   const simulation = d3.forceSimulation(nodes, 3)
     .stop()
     .alphaDecay(0.03)
@@ -157,7 +162,6 @@ async function layoutGraph(graph, previous, isStale) {
     .force('x', d3.forceX(0).strength(0.035))
     .force('y', d3.forceY(0).strength(0.035))
     .force('z', d3.forceZ(0).strength(0.035));
-  // A reload of the same concepts only needs to settle, not rearrange.
   if (nodes.length && reused === nodes.length) simulation.alpha(0.2);
 
   for (let i = 0; i < 500;) {
@@ -205,11 +209,13 @@ controls.maxDistance = 3000;
 
 const nodeLayer = new THREE.Group();
 const linkLayer = new THREE.Group();
+const arrowLayer = new THREE.Group();
 const ringLayer = new THREE.Group();
-scene.add(linkLayer, nodeLayer, ringLayer);
+scene.add(linkLayer, arrowLayer, nodeLayer, ringLayer);
 
 const sphereGeometry = new THREE.SphereGeometry(1, 20, 14);
 const ringGeometry = new THREE.RingGeometry(1.3, 1.6, 48);
+const arrowGeometry = new THREE.ConeGeometry(0.42, 1.25, 10);
 
 let width = 1;
 let height = 1;
@@ -220,14 +226,22 @@ controls.addEventListener('change', invalidate);
 /* ---------------------------------------------------------------- state */
 
 let graph = null;            // { nodes, links }
-let objects = new Map();     // id -> { node, mesh, radius, visible, dimmed, emphasis, pxRadius, label, ring }
-let linkBatches = [];
+let objects = new Map();     // id -> { node, mesh, origin, target, radius, visible, dimmed, emphasis, pxRadius, label, ring }
+let linkBatches = [];        // { mesh, links }
+let arrows = [];             // { mesh, link }
+let edgeLabels = new Map();  // link id -> div
 let neighborIds = new Set();
 let shownLabels = new Set();
+let shownEdgeLabels = new Set();
 let dataGeneration = 0;
-let focus = null;            // { target, position }
+let cameraFlight = null;     // { target, position, onArrive }
 let viewShift = 0;
 let insetBottom = 0;
+let settling = false;        // node positions are animating
+
+/// 2D focus: { id, targets: Map<id, Vector3>, members: Set<id>, links: [], radius }
+let focusView = null;
+let preFocusCamera = null;   // { position, target } to restore when leaving focus
 
 const state = {
   selectedId: null,
@@ -258,6 +272,13 @@ function isVisibleNode(node) {
   return true;
 }
 
+function linkPasses(link) {
+  if (state.minWeight > 0 && link.weight < state.minWeight) return false;
+  const source = objects.get(link.source.id);
+  const target = objects.get(link.target.id);
+  return !!source && !!target && isVisibleNode(link.source) && isVisibleNode(link.target);
+}
+
 function baseColor(node) {
   if (state.colorMode === 'mastery') return masteryColor(node.mastery);
   if (state.colorMode === 'community') {
@@ -270,11 +291,25 @@ function baseColor(node) {
 
 function disposeLinks() {
   for (const batch of linkBatches) {
-    linkLayer.remove(batch);
-    batch.geometry.dispose();
-    batch.material.dispose();
+    linkLayer.remove(batch.mesh);
+    batch.mesh.geometry.dispose();
+    batch.mesh.material.dispose();
   }
   linkBatches = [];
+}
+
+function disposeArrows() {
+  for (const arrow of arrows) {
+    arrowLayer.remove(arrow.mesh);
+    arrow.mesh.material.dispose();
+  }
+  arrows = [];
+}
+
+function disposeEdgeLabels() {
+  for (const el of edgeLabels.values()) el.remove();
+  edgeLabels = new Map();
+  shownEdgeLabels = new Set();
 }
 
 function disposeScene() {
@@ -285,6 +320,8 @@ function disposeScene() {
   }
   nodeLayer.clear();
   disposeLinks();
+  disposeArrows();
+  disposeEdgeLabels();
   objects = new Map();
   shownLabels = new Set();
 }
@@ -298,7 +335,17 @@ function buildScene(newGraph) {
     mesh.userData.nodeId = node.id;
     nodeLayer.add(mesh);
     objects.set(node.id, {
-      node, mesh, radius: nodeRadius(node), visible: true, dimmed: false, emphasis: 1, pxRadius: NODE_MIN_PX, label: null, ring: null,
+      node,
+      mesh,
+      origin: new THREE.Vector3(node.x, node.y, node.z),
+      target: new THREE.Vector3(node.x, node.y, node.z),
+      radius: nodeRadius(node),
+      visible: true,
+      dimmed: false,
+      emphasis: 1,
+      pxRadius: NODE_MIN_PX,
+      label: null,
+      ring: null,
     });
   }
   applyState();
@@ -319,10 +366,131 @@ function setTargetRing(obj, on) {
   }
 }
 
+/* ---------------------------------------------------------------- 2D focus view */
+
+/** 0 = this concept comes first (a prerequisite / parent), 1 = it follows, 2 = related. */
+function focusGroup(link, id) {
+  const outgoing = link.source.id === id;
+  switch (link.type) {
+    case 'PREREQUISITE_OF':
+    case 'USES':
+      return outgoing ? 1 : 0;
+    case 'BUILDS_ON':
+    case 'SUBTOPIC_OF':
+    case 'PART_OF':
+      return outgoing ? 0 : 1;
+    default:
+      return 2;
+  }
+}
+
+function placeArc(members, origin, arcCentre, spread, targets) {
+  const perRing = FOCUS.perRing;
+  const rings = Math.ceil(members.length / perRing) || 1;
+  for (let ring = 0; ring < rings; ring++) {
+    const slice = members.slice(ring * perRing, (ring + 1) * perRing);
+    const radius = FOCUS.radius + ring * FOCUS.ringGap;
+    slice.forEach((member, i) => {
+      const t = slice.length === 1 ? 0.5 : i / (slice.length - 1);
+      const angle = arcCentre - spread / 2 + t * spread;
+      targets.set(member.other.id, new THREE.Vector3(
+        origin.x + Math.cos(angle) * radius,
+        origin.y + Math.sin(angle) * radius,
+        origin.z,
+      ));
+    });
+  }
+}
+
+/** Lays the selected concept's neighbourhood out on one plane: needs above, unlocks below, related to the sides. */
+function buildFocusView(id) {
+  const centre = objects.get(id);
+  if (!centre || !graph) return null;
+  const origin = centre.mesh.position.clone();
+
+  // One entry per neighbour, keeping its strongest link.
+  const byOther = new Map();
+  for (const link of graph.links) {
+    if (link.source.id !== id && link.target.id !== id) continue;
+    if (!linkPasses(link)) continue;
+    const other = link.source.id === id ? link.target : link.source;
+    const existing = byOther.get(other.id);
+    if (!existing || link.weight > existing.link.weight) {
+      byOther.set(other.id, { link, other, group: focusGroup(link, id) });
+    }
+  }
+  const members = [...byOther.values()].sort((a, b) => b.link.weight - a.link.weight);
+  const targets = new Map([[id, origin.clone()]]);
+
+  const needs = members.filter((m) => m.group === 0);
+  const unlocks = members.filter((m) => m.group === 1);
+  const related = members.filter((m) => m.group === 2);
+  const right = related.filter((_, i) => i % 2 === 0);
+  const left = related.filter((_, i) => i % 2 === 1);
+
+  placeArc(needs, origin, Math.PI / 2, Math.PI * 0.62, targets);        // top
+  placeArc(unlocks, origin, -Math.PI / 2, Math.PI * 0.62, targets);     // bottom
+  placeArc(right, origin, 0, Math.PI * 0.42, targets);                  // right
+  placeArc(left, origin, Math.PI, Math.PI * 0.42, targets);             // left
+
+  const rings = Math.max(
+    Math.ceil(needs.length / FOCUS.perRing),
+    Math.ceil(unlocks.length / FOCUS.perRing),
+    Math.ceil(right.length / FOCUS.perRing),
+    Math.ceil(left.length / FOCUS.perRing),
+    1,
+  );
+  return {
+    id,
+    origin,
+    targets,
+    members: new Set([id, ...byOther.keys()]),
+    links: members.map((m) => m.link),
+    radius: FOCUS.radius + (rings - 1) * FOCUS.ringGap,
+  };
+}
+
+function enterFocus(id) {
+  const view = buildFocusView(id);
+  if (!view) return;
+  if (!focusView) {
+    preFocusCamera = { position: camera.position.clone(), target: controls.target.clone() };
+  }
+  focusView = view;
+  // A flat view has nothing to orbit; keep pan and zoom.
+  controls.enableRotate = false;
+  settling = true;
+
+  const vFov = THREE.MathUtils.degToRad(camera.fov);
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  const span = view.radius + 26;
+  const distance = Math.max(70, span / Math.tan(Math.min(vFov, hFov) / 2));
+  cameraFlight = {
+    target: view.origin.clone(),
+    position: view.origin.clone().add(new THREE.Vector3(0, 0, distance)),
+  };
+  invalidate();
+}
+
+function exitFocus() {
+  if (!focusView) return;
+  focusView = null;
+  controls.enableRotate = true;
+  settling = true;
+  if (preFocusCamera) {
+    cameraFlight = { target: preFocusCamera.target.clone(), position: preFocusCamera.position.clone() };
+    preFocusCamera = null;
+  }
+  invalidate();
+}
+
+/* ---------------------------------------------------------------- state application */
+
 function applyState() {
   if (!graph) return;
   const selected = selectedObject();
   const selectedId = selected ? selected.node.id : null;
+
   neighborIds = new Set();
   if (selectedId) {
     for (const link of graph.links) {
@@ -330,18 +498,27 @@ function applyState() {
       else if (link.target.id === selectedId) neighborIds.add(link.source.id);
     }
   }
-  const focusing = !!selectedId && !state.mergeMode;
+
+  // Selection flattens the scene; deselection returns to the 3D overview.
+  if (selectedId && !state.mergeMode) {
+    if (!focusView || focusView.id !== selectedId) enterFocus(selectedId);
+  } else if (focusView) {
+    exitFocus();
+  }
+
+  const focusing = !!focusView;
   const searching = !selectedId && state.highlightIds.size > 0;
 
   for (const obj of objects.values()) {
     const { node, mesh } = obj;
-    obj.visible = isVisibleNode(node);
+    const passesFilters = isVisibleNode(node);
+    // In focus the neighbourhood is the whole story — everything else steps out of the way.
+    obj.visible = passesFilters && (!focusing || focusView.members.has(node.id));
     mesh.visible = obj.visible;
+    obj.target.copy(focusing && focusView.targets.has(node.id) ? focusView.targets.get(node.id) : obj.origin);
+
     const isTarget = state.mergeTargetIds.has(node.id);
-    obj.dimmed = obj.visible && (
-      (focusing && node.id !== selectedId && !neighborIds.has(node.id))
-      || (searching && !state.highlightIds.has(node.id))
-    );
+    obj.dimmed = obj.visible && !focusing && searching && !state.highlightIds.has(node.id);
     mesh.material.color.set(isTarget ? MERGE_TARGET_COLOR : baseColor(node));
     mesh.material.opacity = obj.dimmed ? DIM_OPACITY : 1;
     mesh.material.depthWrite = !obj.dimmed;
@@ -351,63 +528,129 @@ function applyState() {
   }
   selectionRing.visible = !!selected && selected.visible;
 
-  rebuildLinks(selectedId, focusing, searching);
+  settling = true;
+  rebuildLinks(selectedId, searching);
   invalidate();
 }
 
-/* ---------------------------------------------------------------- links */
+/* ---------------------------------------------------------------- links, arrows, edge labels */
 
 const resolution = new THREE.Vector2(1, 1);
 
-function rebuildLinks(selectedId, focusing, searching) {
+function rebuildLinks(selectedId, searching) {
   disposeLinks();
+  disposeArrows();
   if (!graph) return;
+
+  if (focusView) {
+    // Focus: only this neighbourhood, each edge in its relationship colour, arrowed and named.
+    addLinkBatch(focusView.links, 2.4, 0.95, (link) => relColor(link.type));
+    for (const link of focusView.links) {
+      const mesh = new THREE.Mesh(
+        arrowGeometry,
+        new THREE.MeshBasicMaterial({ color: relColor(link.type), transparent: true, opacity: 0.95 }),
+      );
+      mesh.raycast = () => {};
+      arrowLayer.add(mesh);
+      arrows.push({ mesh, link });
+    }
+    syncEdgeLabels(focusView.links);
+    return;
+  }
+
+  syncEdgeLabels([]);
   const hot = [];
   const idle = [];
   const faint = [];
   for (const link of graph.links) {
-    const source = objects.get(link.source.id);
-    const target = objects.get(link.target.id);
-    if (!source.visible || !target.visible) continue;
-    if (state.minWeight > 0 && link.weight < state.minWeight) continue;
+    if (!linkPasses(link)) continue;
     if (selectedId && (link.source.id === selectedId || link.target.id === selectedId)) {
       hot.push(link);
-    } else if (focusing || (searching && !(state.highlightIds.has(link.source.id) && state.highlightIds.has(link.target.id)))) {
+    } else if (searching && !(state.highlightIds.has(link.source.id) && state.highlightIds.has(link.target.id))) {
       faint.push(link);
     } else {
       idle.push(link);
     }
   }
-  addLinkBatch(faint, 1, 0.05, () => LINK_IDLE_COLOR);
-  addLinkBatch(idle, 1, 0.3, () => LINK_IDLE_COLOR);
-  addLinkBatch(hot, 2.2, 0.95, (link) => REL_COLORS[link.type] || REL_COLORS.RELATED_TO);
+  // Tinted by type even in the overview, so the variety of connections is visible at a glance.
+  addLinkBatch(faint, 1, 0.06, (link) => relColor(link.type));
+  addLinkBatch(idle, 1.2, 0.42, (link) => relColor(link.type));
+  addLinkBatch(hot, 2.4, 0.95, (link) => relColor(link.type));
 }
 
 function addLinkBatch(links, linewidth, opacity, colorOf) {
   if (!links.length) return;
-  const positions = new Float32Array(links.length * 6);
+  const geometry = new LineSegmentsGeometry();
+  geometry.setPositions(new Float32Array(links.length * 6));
   const colors = new Float32Array(links.length * 6);
   const color = new THREE.Color();
   links.forEach((link, i) => {
-    const s = objects.get(link.source.id).mesh.position;
-    const t = objects.get(link.target.id).mesh.position;
-    positions.set([s.x, s.y, s.z, t.x, t.y, t.z], i * 6);
     color.set(colorOf(link));
     colors.set([color.r, color.g, color.b, color.r, color.g, color.b], i * 6);
   });
-  const geometry = new LineSegmentsGeometry();
-  geometry.setPositions(positions);
   geometry.setColors(colors);
   const material = new LineMaterial({ color: 0xffffff, vertexColors: true, linewidth, transparent: true, opacity, depthWrite: false });
   material.resolution.copy(resolution);
-  const batch = new LineSegments2(geometry, material);
-  batch.frustumCulled = false;
-  batch.raycast = () => {};
-  linkLayer.add(batch);
+  const mesh = new LineSegments2(geometry, material);
+  mesh.frustumCulled = false;
+  mesh.raycast = () => {};
+  linkLayer.add(mesh);
+  const batch = { mesh, links };
   linkBatches.push(batch);
+  writeLinkPositions(batch);
 }
 
-/* ---------------------------------------------------------------- labels (DOM, collision-free) */
+function writeLinkPositions(batch) {
+  const buffer = batch.mesh.geometry.attributes.instanceStart.data;
+  const array = buffer.array;
+  batch.links.forEach((link, i) => {
+    const s = objects.get(link.source.id).mesh.position;
+    const t = objects.get(link.target.id).mesh.position;
+    const o = i * 6;
+    array[o] = s.x; array[o + 1] = s.y; array[o + 2] = s.z;
+    array[o + 3] = t.x; array[o + 4] = t.y; array[o + 5] = t.z;
+  });
+  buffer.needsUpdate = true;
+}
+
+const arrowDirection = new THREE.Vector3();
+const arrowUp = new THREE.Vector3(0, 1, 0);
+
+function updateArrows() {
+  for (const { mesh, link } of arrows) {
+    const source = objects.get(link.source.id);
+    const target = objects.get(link.target.id);
+    if (!source || !target) continue;
+    arrowDirection.copy(target.mesh.position).sub(source.mesh.position);
+    const length = arrowDirection.length();
+    if (length < 0.001) continue;
+    arrowDirection.divideScalar(length);
+    // Sit just off the target node so the head stays visible.
+    const back = target.mesh.scale.x + 2.4;
+    mesh.position.copy(target.mesh.position).addScaledVector(arrowDirection, -back);
+    mesh.quaternion.setFromUnitVectors(arrowUp, arrowDirection);
+    const scale = Math.max(1, target.pxRadius / 6);
+    mesh.scale.setScalar(scale);
+  }
+}
+
+function syncEdgeLabels(links) {
+  const keep = new Set(links.map((l) => l.id));
+  for (const [id, el] of edgeLabels) {
+    if (!keep.has(id)) { el.remove(); edgeLabels.delete(id); }
+  }
+  for (const link of links) {
+    if (edgeLabels.has(link.id)) continue;
+    const el = document.createElement('div');
+    el.className = 'edge-label';
+    el.textContent = relLabel(link.type);
+    el.style.color = relColor(link.type);
+    labelsEl.appendChild(el);
+    edgeLabels.set(link.id, el);
+  }
+}
+
+/* ---------------------------------------------------------------- labels */
 
 const measureContext = document.createElement('canvas').getContext('2d');
 
@@ -428,11 +671,11 @@ function labelFor(obj) {
 }
 
 const projected = new THREE.Vector3();
+const midpoint = new THREE.Vector3();
 
 function placeLabels() {
   const selected = selectedObject();
   const selectedId = selected ? selected.node.id : null;
-  const focusing = !!selectedId && !state.mergeMode;
   const candidates = [];
   for (const obj of objects.values()) {
     if (!obj.visible || obj.dimmed) continue;
@@ -441,7 +684,7 @@ function placeLabels() {
     if (id === selectedId) priority = 1e6;
     else if (selectedId && neighborIds.has(id)) priority = 1e5 + obj.node.degree;
     else if (state.highlightIds.has(id) || state.mergeTargetIds.has(id)) priority = 5e4 + obj.node.degree;
-    else if (focusing) continue;
+    else if (selectedId && !focusView) continue;
     else priority = obj.node.degree * 10 + obj.radius;
     candidates.push([priority, obj]);
   }
@@ -457,6 +700,7 @@ function placeLabels() {
     const r = selected.pxRadius + 4;
     placed.push([sx - r, sy - r, sx + r, sy + r]);
   }
+
   for (const [, obj] of candidates) {
     if (shown.size >= LABEL_LIMIT) break;
     projected.copy(obj.mesh.position).project(camera);
@@ -478,12 +722,58 @@ function placeLabels() {
   }
   for (const obj of shownLabels) if (!shown.has(obj) && obj.label) obj.label.style.display = 'none';
   shownLabels = shown;
+
+  placeEdgeLabels(placed);
+}
+
+/** Relationship names along each edge — focus view only, and only where they fit. */
+function placeEdgeLabels(placed) {
+  const shown = new Set();
+  if (focusView) {
+    for (const link of focusView.links) {
+      const el = edgeLabels.get(link.id);
+      const source = objects.get(link.source.id);
+      const target = objects.get(link.target.id);
+      if (!el || !source || !target) continue;
+      midpoint.copy(source.mesh.position).add(target.mesh.position).multiplyScalar(0.5);
+      projected.copy(midpoint).project(camera);
+      if (projected.z > 1) continue;
+      const x = ((projected.x + 1) / 2) * width;
+      const y = ((1 - projected.y) / 2) * height;
+      const halfWidth = (el.__width || 60) / 2;
+      const rect = [x - halfWidth, y - 7, x + halfWidth, y + 7];
+      if (placed.some((p) => rect[0] < p[2] && rect[2] > p[0] && rect[1] < p[3] && rect[3] > p[1])) continue;
+      placed.push(rect);
+      shown.add(el);
+      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%)`;
+      el.style.display = 'block';
+    }
+  }
+  for (const el of shownEdgeLabels) if (!shown.has(el)) el.style.display = 'none';
+  shownEdgeLabels = shown;
 }
 
 /* ---------------------------------------------------------------- rendering */
 
 const forward = new THREE.Vector3();
 const offset = new THREE.Vector3();
+
+/** Eases nodes toward their targets — the flatten into 2D and the return to 3D. */
+function animatePositions() {
+  if (!settling) return false;
+  let moving = false;
+  for (const obj of objects.values()) {
+    const distance = obj.mesh.position.distanceTo(obj.target);
+    if (distance < 0.05) {
+      obj.mesh.position.copy(obj.target);
+      continue;
+    }
+    obj.mesh.position.lerp(obj.target, FOCUS.lerp);
+    moving = true;
+  }
+  if (!moving) settling = false;
+  return true;
+}
 
 function render() {
   const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
@@ -507,6 +797,8 @@ function render() {
     selectionRing.quaternion.copy(camera.quaternion);
     selectionRing.scale.setScalar(selected.mesh.scale.x);
   }
+  for (const batch of linkBatches) writeLinkPositions(batch);
+  updateArrows();
   renderer.render(scene, camera);
   placeLabels();
 }
@@ -531,14 +823,14 @@ function updateViewShift() {
 
 function tick() {
   requestAnimationFrame(tick);
-  let animating = false;
-  if (focus) {
-    camera.position.lerp(focus.position, 0.14);
-    controls.target.lerp(focus.target, 0.14);
-    if (camera.position.distanceTo(focus.position) < 0.3) {
-      camera.position.copy(focus.position);
-      controls.target.copy(focus.target);
-      focus = null;
+  let animating = animatePositions();
+  if (cameraFlight) {
+    camera.position.lerp(cameraFlight.position, 0.14);
+    controls.target.lerp(cameraFlight.target, 0.14);
+    if (camera.position.distanceTo(cameraFlight.position) < 0.3) {
+      camera.position.copy(cameraFlight.position);
+      controls.target.copy(cameraFlight.target);
+      cameraFlight = null;
     }
     animating = true;
   }
@@ -553,13 +845,14 @@ function tick() {
 
 /* ---------------------------------------------------------------- camera helpers */
 
-function startFocus(nodeId) {
+function flyToNode(nodeId) {
   const obj = objects.get(nodeId);
   if (!obj) return;
   const target = obj.mesh.position.clone();
   const direction = camera.position.clone().sub(controls.target);
   const distance = THREE.MathUtils.clamp(direction.length(), 45, 150);
-  focus = { target, position: target.clone().add(direction.normalize().multiplyScalar(distance)) };
+  cameraFlight = { target, position: target.clone().add(direction.normalize().multiplyScalar(distance)) };
+  invalidate();
 }
 
 /** Frames every visible concept. */
@@ -577,9 +870,9 @@ function frameAll(animated) {
   camera.updateProjectionMatrix();
   const position = center.clone().add(new THREE.Vector3(0, 0, distance));
   if (animated) {
-    focus = { target: center, position };
+    cameraFlight = { target: center, position };
   } else {
-    focus = null;
+    cameraFlight = null;
     camera.position.copy(position);
     controls.target.copy(center);
     controls.update();
@@ -639,7 +932,6 @@ function worldPointAt(clientX, clientY) {
 function selectNode(id) {
   if (id === state.selectedId) return;
   state.selectedId = id;
-  if (id) startFocus(id);
   applyState();
   post({ type: 'select', id });
 }
@@ -663,7 +955,7 @@ function handleTap(x, y) {
       const d = obj.mesh.position.distanceTo(point);
       if (d < min) { min = d; nearest = obj.node.id; }
     }
-    if (nearest) startFocus(nearest);
+    if (nearest) flyToNode(nearest);
     return;
   }
   lastEmptyTap = { x, y, time: now };
@@ -679,7 +971,7 @@ function cancelGesture() {
 renderer.domElement.addEventListener('pointerdown', (e) => {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size > 1) { cancelGesture(); return; }
-  focus = null; // touching the graph hands the camera back to the user
+  cameraFlight = null; // touching the graph hands the camera back to the user
   const g = { x: e.clientX, y: e.clientY, time: performance.now(), cancelled: false, longPressed: false };
   g.longPressTimer = setTimeout(() => {
     if (g.cancelled || pointers.size !== 1) return;
@@ -720,7 +1012,7 @@ function resize() {
   camera.updateProjectionMatrix();
   applyViewOffset();
   resolution.set(width, height);
-  for (const batch of linkBatches) batch.material.resolution.copy(resolution);
+  for (const batch of linkBatches) batch.mesh.material.resolution.copy(resolution);
   invalidate();
 }
 new ResizeObserver(resize).observe(container);
@@ -739,30 +1031,29 @@ window.setGraphData = async function setGraphData(raw) {
   if (!adapted.nodes.length) {
     disposeScene();
     graph = null;
+    focusView = null;
     setStatus('');
     invalidate();
     post({ type: 'layout', running: false, nodes: 0 });
     return;
   }
   const previous = new Map();
-  for (const obj of objects.values()) previous.set(obj.node.id, obj.mesh.position.clone());
+  for (const obj of objects.values()) previous.set(obj.node.id, obj.origin.clone());
   if (!graph) setStatus('Laying out your graph…');
   post({ type: 'layout', running: true, nodes: adapted.nodes.length });
   const result = await layoutGraph(adapted, previous, () => generation !== dataGeneration);
   if (!result || generation !== dataGeneration) return;
   const isFirstLayout = !graph;
+  focusView = null;
+  preFocusCamera = null;
   buildScene(result);
   setStatus('');
-  if (isFirstLayout) {
-    frameAll(false);
-    if (state.selectedId) startFocus(state.selectedId);
-  }
+  if (isFirstLayout && !state.selectedId) frameAll(false);
   post({ type: 'layout', running: false, nodes: result.nodes.length });
 };
 
 window.setGraphState = function setGraphState(next) {
   next = next || {};
-  const previousSelection = state.selectedId;
   state.selectedId = next.selectedId || null;
   state.highlightIds = new Set(next.highlightIds || []);
   state.visibleIds = Array.isArray(next.visibleIds) ? new Set(next.visibleIds) : null;
@@ -771,7 +1062,6 @@ window.setGraphState = function setGraphState(next) {
   state.colorMode = next.colorMode || 'domain';
   state.mergeMode = !!next.mergeMode;
   state.mergeTargetIds = new Set(next.mergeTargetIds || []);
-  if (state.selectedId && state.selectedId !== previousSelection) startFocus(state.selectedId);
   applyState();
 };
 
@@ -781,6 +1071,12 @@ window.setGraphInsets = function setGraphInsets(bottom) {
 };
 
 window.resetCamera = function resetCamera() {
+  if (focusView) {
+    // Reset means "show me everything again".
+    state.selectedId = null;
+    applyState();
+    post({ type: 'select', id: null });
+  }
   frameAll(true);
 };
 

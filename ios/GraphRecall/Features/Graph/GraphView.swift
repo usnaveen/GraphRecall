@@ -388,7 +388,59 @@ struct GraphView: View {
             if model.showControls {
                 GraphControlsPanel(model: model)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
+            } else {
+                // The key to the graph: which colour means which kind of connection.
+                if model.selectedNodeId != nil { focusPill }
+                relationshipLegend
             }
+        }
+    }
+
+    /// Shown while a concept is selected — the scene is flat then, and this is the way back out.
+    private var focusPill: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "square.on.square.dashed")
+                .font(.system(size: 11, weight: .bold))
+            Text("2D focus")
+                .font(GRType.micro.weight(.bold))
+            Button {
+                withAnimation(.easeInOut(duration: 0.22)) { model.select(nodeId: nil) }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back to the 3D overview")
+        }
+        .foregroundStyle(GRColor.accent)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .grGlassEffect(in: Capsule())
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private var relationshipLegend: some View {
+        let types = model.relationshipTypesInView
+        if !types.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(types, id: \.self) { type in
+                    HStack(spacing: 6) {
+                        Capsule()
+                            .fill(GraphRelationshipStyle.color(type))
+                            .frame(width: 14, height: 3)
+                        Text(GraphRelationshipStyle.label(type))
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .grGlassEffect(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .fixedSize()
+            .accessibilityLabel("Connection colours")
         }
     }
 
