@@ -267,7 +267,7 @@ Output JSON:
         try:
             response = await self.llm.ainvoke(prompt)
             # Clean markdown code blocks and handle escaped characters
-            raw_response = response.content.strip()
+            raw_response = response.text.strip()
             if not raw_response:
                  raise ValueError("Empty LLM response")
                  

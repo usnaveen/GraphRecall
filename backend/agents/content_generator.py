@@ -59,7 +59,10 @@ PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 def _parse_llm_json(response) -> dict:
     """Safely parse JSON from LLM response, handling empty/malformed content."""
-    content = getattr(response, "content", None)
+    # Gemini 3 returns content as a list of parts; `.text` joins them into a string.
+    content = getattr(response, "text", None) if hasattr(response, "text") else getattr(response, "content", None)
+    if not isinstance(content, str):
+        content = str(content or "")
     if not content or not content.strip():
         raise ValueError("LLM returned empty response")
 

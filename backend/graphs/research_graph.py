@@ -307,7 +307,7 @@ Be thorough but concise. Always cite sources."""
         final_response = ""
         for msg in reversed(messages):
             if hasattr(msg, "content") and not hasattr(msg, "tool_calls"):
-                final_response = msg.content
+                final_response = msg.text
                 break
         
         logger.info("run_research: Complete", thread_id=thread_id)

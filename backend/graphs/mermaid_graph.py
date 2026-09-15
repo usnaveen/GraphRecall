@@ -57,7 +57,7 @@ Style guidelines:
     ]
     
     response = await llm.ainvoke(messages)
-    code = response.content.replace("```mermaid", "").replace("```", "").strip()
+    code = response.text.replace("```mermaid", "").replace("```", "").strip()
     
     return {
         "current_code": code,
@@ -137,7 +137,7 @@ Please fix the syntax errors and return only the corrected code.
 """
 
     response = await llm.ainvoke([HumanMessage(content=prompt)])
-    fixed_code = response.content.replace("```mermaid", "").replace("```", "").strip()
+    fixed_code = response.text.replace("```mermaid", "").replace("```", "").strip()
     
     return {
         "current_code": fixed_code,

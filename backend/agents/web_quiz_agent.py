@@ -202,7 +202,7 @@ OUTPUT JSON FORMAT:
 }}"""
 
             response = await self.llm.ainvoke(prompt)
-            content = response.content
+            content = response.text
             
             # Parse JSON with robustness
             clean_content = content

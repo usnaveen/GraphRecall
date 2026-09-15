@@ -219,13 +219,16 @@ async def get_review_session(
     - Session status and expiration
     """
     try:
+        pg_client = await get_postgres_client()
+        neo4j_client = await get_neo4j_client()
+
         user_id = str(current_user["id"])
         review_service = ConceptReviewService(pg_client, neo4j_client)
         session = await review_service.get_session(session_id, user_id=user_id)
-        
+
         if not session:
             raise HTTPException(status_code=404, detail="Session not found or expired")
-        
+
         return session
         
     except HTTPException:
@@ -252,6 +255,9 @@ async def update_review_session(
     Changes are saved but not committed until /approve is called.
     """
     try:
+        pg_client = await get_postgres_client()
+        neo4j_client = await get_neo4j_client()
+
         user_id = str(current_user["id"])
         review_service = ConceptReviewService(pg_client, neo4j_client)
         session = await review_service.update_session(
@@ -338,6 +344,9 @@ async def cancel_review_session(
     to the knowledge graph.
     """
     try:
+        pg_client = await get_postgres_client()
+        neo4j_client = await get_neo4j_client()
+
         user_id = str(current_user["id"])
         review_service = ConceptReviewService(pg_client, neo4j_client)
         success = await review_service.cancel_session(session_id, user_id=user_id)
@@ -371,13 +380,16 @@ async def add_concept_to_session(
     that wasn't extracted by the AI.
     """
     try:
+        pg_client = await get_postgres_client()
+        neo4j_client = await get_neo4j_client()
+
         user_id = str(current_user["id"])
         review_service = ConceptReviewService(pg_client, neo4j_client)
         session = await review_service.get_session(session_id, user_id=user_id)
-        
+
         if not session:
             raise HTTPException(status_code=404, detail="Session not found or expired")
-        
+
         # Add the new concept
         concept.user_modified = True
         session.concepts.append(concept)

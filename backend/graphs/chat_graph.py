@@ -455,7 +455,7 @@ async def get_context_node(state: ChatState) -> dict:
                     )
                     try:
                         map_resp = await map_llm.ainvoke(map_prompt)
-                        text = map_resp.content.strip()
+                        text = map_resp.text.strip()
                         score = 0
                         answer = text
                         for line in text.split("\n"):
@@ -879,7 +879,7 @@ async def generate_response_node(state: ChatState) -> dict:
         # Add tag for streaming filter in chat router
         response = await llm.with_config({"tags": ["final_response"]}).ainvoke(formatted)
 
-        response_content = response.content
+        response_content = response.text
 
         # Post-processing: For show_images intent, ensure ALL images are in the response
         # For other intents, append any images the LLM missed
@@ -1060,7 +1060,7 @@ async def run_chat(
         response_text = ""
         for msg in reversed(messages):
             if isinstance(msg, AIMessage):
-                response_text = msg.content
+                response_text = msg.text
                 break
         
         logger.info("run_chat: Complete", thread_id=thread_id)

@@ -874,7 +874,7 @@ Instructions:
 Return the consolidated note as clean markdown."""
 
         response = await llm.ainvoke(consolidation_prompt)
-        consolidated = response.content.strip()
+        consolidated = response.text.strip()
 
         # Now run through standard ingestion with consolidated content
         result = await asyncio.shield(run_ingestion(

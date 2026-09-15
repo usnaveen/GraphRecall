@@ -74,7 +74,7 @@ Output JSON: {{ "questions": [{{ "q": "...", "options": ["..."], "answer": "..."
 
     try:
         response = await llm.ainvoke([HumanMessage(content=prompt)])
-        data = json.loads(response.content)
+        data = json.loads(response.text)
         return {"mcqs": data.get("questions", [])}
     except Exception as e:
         logger.error("generate_mcq: Failed", error=str(e))
@@ -102,7 +102,7 @@ Output JSON: {{ "cards": [{{ "front": "...", "back": "..." }}] }}"""
 
     try:
         response = await llm.ainvoke([HumanMessage(content=prompt)])
-        data = json.loads(response.content)
+        data = json.loads(response.text)
         return {"term_cards": data.get("cards", [])}
     except:
         return {"term_cards": []}

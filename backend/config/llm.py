@@ -21,10 +21,12 @@ from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmb
 
 logger = structlog.get_logger()
 
-# Default models — optimal cost/performance balance
-DEFAULT_CHAT_MODEL = "gemini-2.5-flash"  # Primary: fast, smart, cheap
-DEFAULT_REASONING_MODEL = "gemini-2.5-flash"  # Same model — 2.5 flash has built-in thinking
-DEFAULT_EMBEDDING_MODEL = "models/gemini-embedding-001"  # #1 on MTEB multilingual
+# Default models — overridable per environment. Google retired gemini-2.5-flash for new
+# API keys (Sep 2026), so defaults track the current Flash / Flash-Lite generation.
+DEFAULT_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-3.6-flash")  # Assistant answers, synthesis
+DEFAULT_REASONING_MODEL = os.getenv("GEMINI_REASONING_MODEL", DEFAULT_CHAT_MODEL)
+DEFAULT_FAST_MODEL = os.getenv("GEMINI_FAST_MODEL", "gemini-3.1-flash-lite")  # Cheap classification / extraction
+DEFAULT_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001")  # #1 on MTEB multilingual
 DEFAULT_EMBEDDING_DIMS = 768  # MRL: 768 dims = 99.74% quality of 3072, 75% less storage
 
 
@@ -62,7 +64,9 @@ def get_chat_model(
         google_api_key=os.getenv("GOOGLE_API_KEY"),
         temperature=temperature,
         convert_system_message_to_human=True,
-        max_retries=6,  # Retry up to 6 times (exponential backoff built-in)
+        # Callers wrap these in their own tenacity retries; 6 retries here multiplied
+        # every failure into a burst that tripped Gemini's per-minute quota.
+        max_retries=2,
         **kwargs,
     )
 
@@ -88,7 +92,7 @@ def get_fast_model(
 ) -> ChatGoogleGenerativeAI:
     """Get the fastest/cheapest model for simple tasks."""
     return get_chat_model(
-        model=DEFAULT_CHAT_MODEL,
+        model=DEFAULT_FAST_MODEL,
         temperature=temperature,
         json_mode=json_mode,
     )

@@ -886,7 +886,7 @@ async def stream_chat(
                 # Stream partial tokens from the LLM
                 if kind == "on_chat_model_stream":
                     tags = event.get("tags", [])
-                    content = event["data"]["chunk"].content
+                    content = event["data"]["chunk"].text
                     if not content:
                         continue
                         

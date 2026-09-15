@@ -161,6 +161,7 @@ class GraphBuilderAgent:
                 await neo4j.link_note_to_concepts(
                     note_id=note_id,
                     concept_ids=concept_ids,
+                    user_id=user_id or "default_user",
                     summary=summary,
                 )
                 logger.info(
