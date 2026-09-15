@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
 from backend.auth.middleware import get_current_user
+from backend import telemetry
 
 from backend.db.neo4j_client import (
     Neo4jClient,
@@ -170,6 +171,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Per-request timing (total, time to first byte, Server-Timing header). Added last = outermost.
+app.add_middleware(telemetry.TimingMiddleware)
+
 # Register new routers
 app.include_router(feed_router)      # /api/feed - Active recall feed
 app.include_router(review_router)    # /api/review - Human-in-the-loop concept review
@@ -189,6 +193,23 @@ app.include_router(users_router)     # /api/users - User management (purge, etc)
 # ============================================================================
 # Health Check Endpoints
 # ============================================================================
+
+
+@app.get("/api/debug/latency", tags=["Debug"])
+async def latency_stats():
+    """Rolling p50/p95 per stage (auth, chat nodes, retrieval, ingestion, LLM calls). DEBUG only."""
+    if os.getenv("DEBUG") != "true":
+        raise HTTPException(status_code=404, detail="Not Found")
+    return telemetry.snapshot()
+
+
+@app.delete("/api/debug/latency", tags=["Debug"])
+async def reset_latency_stats():
+    """Clear collected timings so the next benchmark starts fresh. DEBUG only."""
+    if os.getenv("DEBUG") != "true":
+        raise HTTPException(status_code=404, detail="Not Found")
+    telemetry.reset()
+    return {"status": "reset"}
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])

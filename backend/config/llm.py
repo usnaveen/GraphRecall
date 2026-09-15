@@ -19,6 +19,8 @@ from typing import Optional
 import structlog
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
+from backend.telemetry import LLM_TIMING_CALLBACK
+
 logger = structlog.get_logger()
 
 # Default models — overridable per environment. Google retired gemini-2.5-flash for new
@@ -67,6 +69,8 @@ def get_chat_model(
         # Callers wrap these in their own tenacity retries; 6 retries here multiplied
         # every failure into a burst that tripped Gemini's per-minute quota.
         max_retries=2,
+        # Latency, time-to-first-token and token usage for every call (GET /api/debug/latency).
+        callbacks=[LLM_TIMING_CALLBACK],
         **kwargs,
     )
 

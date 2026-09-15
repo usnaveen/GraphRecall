@@ -24,6 +24,7 @@ from langchain_core.messages import (
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from backend.config.llm import get_chat_model, get_embeddings, get_embedding_dims
+from backend.telemetry import elapsed_ms, now, record
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -359,6 +360,7 @@ async def get_context_node(state: ChatState) -> dict:
     rag_context = []
     
     # Get graph context
+    graph_start = now()
     if entities:
         try:
             neo4j = await get_neo4j_client()
@@ -425,6 +427,7 @@ async def get_context_node(state: ChatState) -> dict:
 
         except Exception as e:
             logger.warning("get_context_node: Graph query failed", error=str(e))
+        record("chat.graph_lookup", elapsed_ms(graph_start), entities=len(entities))
 
     # Global Search: Map-Reduce over community summaries (Microsoft GraphRAG pattern)
     # Trigger when: intent is summarize/general, or no graph concepts found
@@ -479,11 +482,14 @@ async def get_context_node(state: ChatState) -> dict:
                     return None
 
                 # Run all community scoring in parallel
+                map_start = now()
                 scored = await asyncio.gather(
                     *[_score_community(s) for s in summaries[:12]],
                     return_exceptions=True,
                 )
                 map_results = [r for r in scored if isinstance(r, dict)]
+                # One LLM call per community — the most expensive part of a general question.
+                record("chat.global_map_reduce", elapsed_ms(map_start), llm_calls=len(summaries[:12]))
 
                 # REDUCE PHASE: Combine top results into global context
                 map_results.sort(key=lambda x: x["score"], reverse=True)
@@ -512,11 +518,14 @@ async def get_context_node(state: ChatState) -> dict:
 
             # Generate query embedding for vector similarity search
             embeddings_model = get_embeddings()
+            embed_start = now()
             query_embedding = await embeddings_model.aembed_query(query, output_dimensionality=get_embedding_dims())
+            record("chat.embed_query", elapsed_ms(embed_start))
             embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
             # For show_images intent, retrieve more chunks and also fetch image-bearing chunks
             rag_limit = 10 if intent == "show_images" else 5
+            vector_start = now()
 
             if focused_source_ids:
                 result = await pg_client.execute_query(
@@ -557,6 +566,7 @@ async def get_context_node(state: ChatState) -> dict:
                     """,
                     {"user_id": user_id, "embedding": embedding_literal, "lim": rag_limit},
                 )
+            record("chat.vector_search", elapsed_ms(vector_start), rows=len(result))
 
             # For show_images, also fetch parent chunks that have images (even if not top similarity)
             image_chunks_result = []
