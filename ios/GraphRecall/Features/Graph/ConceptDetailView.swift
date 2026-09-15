@@ -209,7 +209,7 @@ struct ConceptDetailView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(GraphInspectorPanel.relColors[item.relationship] ?? .white)
+                                .fill(GraphRelationshipStyle.color(item.relationship))
                                 .frame(width: 7, height: 7)
                             Text(item.node.name)
                                 .font(GRType.caption)
