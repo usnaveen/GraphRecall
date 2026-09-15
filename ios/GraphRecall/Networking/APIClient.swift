@@ -227,8 +227,15 @@ actor APIClient {
     }
 
     // MARK: - Graph
-    func fetchGraph() async throws -> Graph3DResponse {
-        try await get("/api/graph3d")
+    /// GET `/api/graph3d?limit=&offset=` — the backend defaults to 200 concepts per page.
+    func fetchGraph(limit: Int = 200, offset: Int = 0) async throws -> Graph3DResponse {
+        try await get(
+            "/api/graph3d",
+            query: [
+                URLQueryItem(name: "limit", value: String(min(max(limit, 1), 5000))),
+                URLQueryItem(name: "offset", value: String(max(offset, 0)))
+            ]
+        )
     }
 
     /// Louvain recompute — returns status/count; caller should reload `/api/graph3d`.

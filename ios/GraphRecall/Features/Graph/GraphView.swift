@@ -4,11 +4,15 @@ struct GraphView: View {
     @State private var model = GraphViewModel()
     @Environment(AppRouter.self) private var router
     @FocusState private var searchFocused: Bool
+    @State private var canvasHeight: CGFloat = 0
+    @State private var panelHeight: CGFloat = 0
 
-    static let legend: [(String, Color)] = [
-        ("Prerequisite", GRColor.accentCyan),
-        ("Builds on", GRColor.amber),
-        ("Part of", Color(hex: "#EC4899") ?? GRColor.coral),
+    /// Mastery colour mode legend — matches `MASTERY_COLORS` in the 3D scene.
+    static let masteryLegend: [(String, Color)] = [
+        ("Not reviewed", Color(hex: "#6B7280") ?? .gray),
+        ("Weak", Color(hex: "#F87171") ?? .red),
+        ("Learning", Color(hex: "#F59E0B") ?? .orange),
+        ("Strong", Color(hex: "#34D399") ?? .green),
     ]
 
     var body: some View {
@@ -16,18 +20,21 @@ struct GraphView: View {
 
         VStack(spacing: 10) {
             header
-            searchBar(query: $bindable.searchQuery)
-            if showsResults {
-                searchResultsCard
-                    .padding(.horizontal, 20)
-            } else {
-                filterChips
+            if !isFocusLayout {
+                searchBar(query: $bindable.searchQuery)
+                if showsResults {
+                    searchResultsCard
+                        .padding(.horizontal, 20)
+                } else {
+                    filterChips
+                }
             }
             canvasArea
         }
         .padding(.bottom, GRLayout.dockClearance)
         .background(GRColor.canvas.ignoresSafeArea())
         .animation(.easeInOut(duration: 0.2), value: showsResults)
+        .animation(.snappy(duration: 0.3), value: isFocusLayout)
         .task {
             await model.load()
             applyPendingFocus()
@@ -43,17 +50,43 @@ struct GraphView: View {
                 if let node = model.selectedNode {
                     switch sheet {
                     case .suggestLinks: LinkSuggestionsSheet(node: node, model: model)
-                    case .merge: MergeConceptSheet(node: node, model: model)
+                    case .mergePicker: MergeTargetsSheet(node: node, model: model)
                     }
                 }
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .sheet(item: $bindable.createDraft, onDismiss: { model.createSheetDismissed() }) { draft in
+            CreateConceptSheet(draft: draft, model: model)
+                .presentationDetents([.large])
+        }
+        .sheet(item: $bindable.quizTopic) { quiz in
+            ScrollView {
+                GraphQuizSheet(topic: quiz.topic, isDemo: model.usingStub) {
+                    model.quizTopic = nil
+                }
+                .padding(16)
+            }
+            .background(GRColor.canvas.ignoresSafeArea())
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .preferredColorScheme(.dark)
+        }
     }
 
     private var showsResults: Bool {
-        searchFocused && !model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        searchFocused && !trimmedQuery.isEmpty
+    }
+
+    private var trimmedQuery: String {
+        model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// While the full card (or notes / sources / quiz) is open, search and filters step aside so the
+    /// graph keeps as much room as possible above the card.
+    private var isFocusLayout: Bool {
+        model.selectedNodeId != nil && !model.mergeMode && (model.cardExpanded || model.activeSheet != nil)
     }
 
     private func applyPendingFocus() {
@@ -84,7 +117,7 @@ struct GraphView: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(GRColor.textTertiary)
-            TextField("Search concepts…", text: query)
+            TextField("Search concepts to quiz…", text: query)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .foregroundStyle(GRColor.textPrimary)
@@ -115,11 +148,37 @@ struct GraphView: View {
     private var searchResultsCard: some View {
         GlassCard(cornerRadius: 18) {
             VStack(alignment: .leading, spacing: 4) {
+                Button {
+                    searchFocused = false
+                    model.quizTopic = GraphViewModel.QuizTopic(topic: trimmedQuery)
+                    GRHaptics.tap()
+                } label: {
+                    Label("Quiz me on “\(trimmedQuery)”", systemImage: "target")
+                        .font(GRType.headline)
+                        .foregroundStyle(GRColor.accent)
+                        .lineLimit(1)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
                 if model.searchResults.isEmpty {
-                    Text(model.isSearching ? "Searching…" : "No concepts match")
-                        .font(GRType.caption)
-                        .foregroundStyle(GRColor.textTertiary)
-                        .padding(.vertical, 6)
+                    HStack {
+                        Text(model.isSearching ? "Searching…" : "No exact match found.")
+                            .font(GRType.caption)
+                            .foregroundStyle(GRColor.textTertiary)
+                        Spacer()
+                        if !model.isSearching {
+                            Button("Create this node") {
+                                searchFocused = false
+                                model.openCreate(name: trimmedQuery)
+                            }
+                            .font(GRType.caption.weight(.semibold))
+                            .foregroundStyle(GRColor.accent)
+                        }
+                    }
+                    .padding(.vertical, 6)
                 }
                 ForEach(model.searchResults.prefix(6)) { result in
                     Button {
@@ -134,7 +193,12 @@ struct GraphView: View {
                                 .foregroundStyle(GRColor.textPrimary)
                                 .lineLimit(1)
                             Spacer()
-                            if let domain = result.domain {
+                            if let community = model.community(containing: result.id), let title = community.title ?? community.label {
+                                Text(title)
+                                    .font(GRType.caption)
+                                    .foregroundStyle(GRColor.textTertiary)
+                                    .lineLimit(1)
+                            } else if let domain = result.domain {
                                 Text(domain)
                                     .font(GRType.caption)
                                     .foregroundStyle(GRColor.textTertiary)
@@ -186,29 +250,43 @@ struct GraphView: View {
 
     // MARK: - Canvas
 
+    private var showsCanvasChrome: Bool {
+        model.selectedNodeId == nil && model.activeSheet == nil && !model.mergeMode
+    }
+
+    private var hasBottomPanel: Bool {
+        model.mergeMode || model.selectedNode != nil
+    }
+
+    /// Share of the canvas the bottom card covers, so the scene centres the focus above it.
+    private var bottomInset: Double {
+        guard hasBottomPanel, canvasHeight > 1 else { return 0 }
+        return Double(min(0.9, (panelHeight + 10) / canvasHeight))
+    }
+
     private var canvasArea: some View {
         ZStack(alignment: .bottom) {
-            GraphForceWebView(
+            Graph3DWebView(
                 graph: model.graph,
-                highlightIds: model.highlightSet,
-                isDemo: model.usingStub,
-                focusIds: model.focusCommunityIds,
-                selectedId: model.selectedNodeId,
-                onSelect: { id in
-                    withAnimation(.easeInOut(duration: 0.22)) { model.select(nodeId: id) }
-                },
-                onCommunitiesRecompute: {
-                    Task { await model.recomputeCommunities() }
-                }
+                graphVersion: model.graphVersion,
+                state: model.sceneState,
+                insetBottom: bottomInset,
+                resetCameraToken: model.resetCameraToken,
+                onEvent: handle
             )
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(GRColor.stroke, lineWidth: 1))
-            // Top of the canvas belongs to the WebView's own controls + demo badge.
+            .overlay(alignment: .topLeading) {
+                controlsOverlay.padding(10)
+            }
+            .overlay(alignment: .topTrailing) {
+                if model.usingStub { demoBadge.padding(10) }
+            }
             .overlay(alignment: .bottomTrailing) {
-                if model.selectedNodeId == nil && model.activeSheet == nil { canvasTools.padding(10) }
+                if showsCanvasChrome { canvasTools.padding(10) }
             }
             .overlay(alignment: .bottomLeading) {
-                if model.selectedNodeId == nil && model.activeSheet == nil { legend.padding(10) }
+                if showsCanvasChrome && model.colorMode == .mastery { masteryLegendView.padding(10) }
             }
 
             if model.isLoading {
@@ -224,40 +302,108 @@ struct GraphView: View {
                     GRToast(message: toast)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                if let sheet = model.activeSheet, let node = model.selectedNode {
-                    sheetContent(sheet, node: node)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if let node = model.selectedNode {
-                    GraphInspectorPanel(node: node, model: model) {
-                        router.ask("Explain \(node.name) and how it connects to what I already know.", topic: node.name)
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+                bottomPanel
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeight = $0 }
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
             .animation(.easeInOut(duration: 0.22), value: model.selectedNodeId)
             .animation(.easeInOut(duration: 0.22), value: model.toast)
             .animation(.easeInOut(duration: 0.22), value: model.activeSheet?.id)
+            .animation(.easeInOut(duration: 0.22), value: model.mergeMode)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { canvasHeight = $0 }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    @ViewBuilder
+    private var bottomPanel: some View {
+        if model.mergeMode {
+            GraphMergeBar(model: model)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if let sheet = model.activeSheet, let node = model.selectedNode {
+            ViewThatFits(in: .vertical) {
+                sheetContent(sheet, node: node)
+                ScrollView { sheetContent(sheet, node: node) }
+                    .scrollIndicators(.hidden)
+            }
+            .frame(maxHeight: max(200, canvasHeight * 0.62))
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if let node = model.selectedNode {
+            GraphInspectorPanel(node: node, model: model, maxExpandedHeight: max(220, canvasHeight * 0.58)) {
+                router.ask("Explain \(node.name) and how it connects to what I already know.", topic: node.name)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    private func handle(_ event: Graph3DEvent) {
+        switch event {
+        case .select(let id):
+            withAnimation(.easeInOut(duration: 0.22)) { model.select(nodeId: id) }
+            if id != nil { GRHaptics.tap() }
+        case .mergeToggle(let id):
+            model.toggleMergeTarget(id)
+            GRHaptics.tap()
+        case .createAt(let point):
+            GRHaptics.tap()
+            model.openCreate(position: point)
+        case .layout(let running):
+            model.isLayingOut = running
+        }
+    }
+
+    private var controlsOverlay: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                GRIconButton(
+                    systemImage: "slider.horizontal.3",
+                    tint: model.showControls ? GRColor.accent : GRColor.textSecondary,
+                    size: 36,
+                    accessibilityLabel: model.showControls ? "Hide graph controls" : "Show graph controls"
+                ) {
+                    withAnimation(.easeInOut(duration: 0.2)) { model.showControls.toggle() }
+                }
+                GRIconButton(
+                    systemImage: "scope",
+                    tint: GRColor.textSecondary,
+                    size: 36,
+                    accessibilityLabel: "Fit graph to screen"
+                ) {
+                    model.resetCamera()
+                }
+                if model.isLayingOut && !model.isLoading {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini).tint(GRColor.accent)
+                        Text("Laying out…")
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.textSecondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .grGlassEffect(in: Capsule())
+                }
+            }
+            if model.showControls {
+                GraphControlsPanel(model: model)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
+            }
+        }
+    }
+
+    private var demoBadge: some View {
+        Text("Demo graph")
+            .font(GRType.micro)
+            .foregroundStyle(GRColor.accent)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(GRColor.accentSoft, in: Capsule())
+            .overlay(Capsule().stroke(GRColor.accentLine, lineWidth: 1))
+    }
+
     private var canvasTools: some View {
         VStack(spacing: 4) {
-            GRIconButton(
-                systemImage: "square.3.layers.3d",
-                style: .plain,
-                tint: model.isolateCommunity ? GRColor.accent : GRColor.textSecondary,
-                size: 36,
-                accessibilityLabel: model.isolateCommunity ? "Show all communities" : "Isolate community"
-            ) {
-                model.toggleCommunityFocus()
-            }
-            .disabled(model.selectedNodeId == nil)
-            .opacity(model.selectedNodeId == nil ? 0.45 : 1)
-
             GRIconButton(
                 systemImage: "target",
                 style: .plain,
@@ -268,34 +414,34 @@ struct GraphView: View {
                 model.filter = model.filter == .weak ? .all : .weak
             }
 
-            GRIconButton(
-                systemImage: "arrow.triangle.2.circlepath",
-                style: .plain,
-                tint: model.isRecomputingCommunities ? GRColor.accent : GRColor.textSecondary,
-                size: 36,
-                accessibilityLabel: "Recompute communities"
-            ) {
-                Task { await model.recomputeCommunities() }
+            GRIconButton(systemImage: "plus", style: .accent, size: 36, accessibilityLabel: "Create concept") {
+                model.openCreate()
             }
         }
         .padding(4)
         .grGlassEffect(in: Capsule())
     }
 
-    private var legend: some View {
-        HStack(spacing: 10) {
-            ForEach(Self.legend, id: \.0) { label, color in
-                HStack(spacing: 5) {
-                    Circle().fill(color).frame(width: 7, height: 7)
-                    Text(label)
-                        .font(GRType.micro)
-                        .foregroundStyle(GRColor.textSecondary)
+    private var masteryLegendView: some View {
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 5) {
+            ForEach(0..<2, id: \.self) { row in
+                GridRow {
+                    ForEach(Self.masteryLegend[(row * 2)..<(row * 2 + 2)], id: \.0) { label, color in
+                        HStack(spacing: 5) {
+                            Circle().fill(color).frame(width: 7, height: 7)
+                            Text(label)
+                                .font(GRType.micro)
+                                .foregroundStyle(GRColor.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
                 }
             }
         }
+        .fixedSize()
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .grGlassEffect(in: Capsule())
+        .padding(.vertical, 8)
+        .grGlassEffect(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     @ViewBuilder

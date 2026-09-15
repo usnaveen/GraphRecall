@@ -220,6 +220,13 @@ struct GraphCommunity: Decodable, Hashable, Identifiable {
     }
 }
 
+/// A position in the 3D graph scene's world space.
+struct GraphPoint3D: Equatable, Sendable {
+    var x: Double
+    var y: Double
+    var z: Double
+}
+
 struct CommunitiesRecomputeResponse: Decodable {
     let status: String?
     let count: Int?

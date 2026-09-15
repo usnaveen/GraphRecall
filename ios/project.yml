@@ -19,7 +19,6 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: false
-    DEVELOPMENT_TEAM: ""
 targets:
   GraphRecall:
     type: application
@@ -28,9 +27,6 @@ targets:
       - path: GraphRecall
         excludes:
           - Resources/Info.plist
-          - Resources/graph_force.html
-          - Resources/graph_force_boot.js
-          - Resources/graph_force.css
       - path: Shared
       - path: WebAssets
         buildPhase: resources
@@ -57,10 +53,12 @@ targets:
         NSCameraUsageDescription: GraphRecall scans pages and whiteboards so their text can become review cards.
         NSMicrophoneUsageDescription: GraphRecall listens while you dictate concepts or questions.
         NSSpeechRecognitionUsageDescription: GraphRecall turns your dictation into text for concept dumps and questions.
+        NSLocalNetworkUsageDescription: GraphRecall connects to a GraphRecall server running on your local network during development.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        GRDevServerHost: $(GR_DEV_SERVER_HOST)
         GIDClientID: $(GOOGLE_IOS_CLIENT_ID)
         GIDServerClientID: $(GOOGLE_SERVER_CLIENT_ID)
         CFBundleURLTypes:
