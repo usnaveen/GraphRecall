@@ -1,0 +1,15 @@
+{
+  "name": "graphrecall-graph3d",
+  "private": true,
+  "description": "Builds ios/WebAssets/graph3d.bundle.js — the Three.js port of the web GraphVisualizer.",
+  "scripts": {
+    "build": "esbuild src/graph3d.js --bundle --minify --format=iife --target=safari17 --outfile=../../WebAssets/graph3d.bundle.js"
+  },
+  "dependencies": {
+    "d3-force-3d": "3.0.6",
+    "three": "0.182.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

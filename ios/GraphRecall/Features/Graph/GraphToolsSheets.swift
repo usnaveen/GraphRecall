@@ -159,19 +159,16 @@ struct LinkSuggestionsSheet: View {
     }
 }
 
-// MARK: - Merge
+// MARK: - Merge targets
 
-/// Folds the selected concept into another one (`POST /api/concepts/merge`).
-struct MergeConceptSheet: View {
+/// List picker for merge mode — an alternative to tapping concepts in the 3D graph.
+/// Selections are shared with the graph; the merge itself runs from the merge bar.
+struct MergeTargetsSheet: View {
     let node: GraphNode
-    let model: GraphViewModel
+    @Bindable var model: GraphViewModel
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @State private var target: GraphNode?
-    @State private var confirming = false
-    @State private var isMerging = false
-    @State private var errorMessage: String?
 
     private var candidates: [GraphNode] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -181,7 +178,7 @@ struct MergeConceptSheet: View {
                 let l = lhs.domain == node.domain, r = rhs.domain == node.domain
                 return l == r ? lhs.name < rhs.name : l
             }
-            .prefix(40)
+            .prefix(60)
             .map { $0 }
     }
 
@@ -190,13 +187,13 @@ struct MergeConceptSheet: View {
             ZStack {
                 GRColor.canvas.ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Merge “\(node.name)” into another concept. Its links move to the target and “\(node.name)” is removed.")
+                    Text("Pick concepts to fold into “\(node.name)”. Their links move to “\(node.name)” and they are removed when you merge.")
                         .font(GRType.caption)
                         .foregroundStyle(GRColor.textSecondary)
 
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(GRColor.textTertiary)
-                        TextField("Find target concept…", text: $query)
+                        TextField("Find concepts…", text: $query)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .foregroundStyle(GRColor.textPrimary)
@@ -204,19 +201,15 @@ struct MergeConceptSheet: View {
                     .padding(12)
                     .background(GRColor.fillSubtle, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                    if let errorMessage {
-                        GRBanner(systemImage: "exclamationmark.triangle.fill", title: "Merge failed", subtitle: errorMessage, tone: .warning)
-                    }
-
                     ScrollView {
                         LazyVStack(spacing: 8) {
                             ForEach(candidates) { candidate in
                                 Button {
-                                    target = candidate
+                                    model.toggleMergeTarget(candidate.id)
                                     GRHaptics.tap()
                                 } label: {
                                     HStack(spacing: 12) {
-                                        GRCheckbox(isOn: target?.id == candidate.id)
+                                        GRCheckbox(isOn: model.mergeTargetIds.contains(candidate.id))
                                         Circle()
                                             .fill(Color(hex: candidate.color ?? "") ?? GRColor.accent)
                                             .frame(width: 8, height: 8)
@@ -242,62 +235,20 @@ struct MergeConceptSheet: View {
                 }
                 .padding(20)
             }
-            .navigationTitle("Merge concept")
+            .navigationTitle("Merge into \(node.name)")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundStyle(GRColor.textSecondary)
-                }
-            }
             .safeAreaInset(edge: .bottom) {
                 Button {
-                    confirming = true
+                    dismiss()
                 } label: {
-                    if isMerging {
-                        ProgressView().tint(GRColor.danger)
-                    } else {
-                        Label(target.map { "Merge into \($0.name)" } ?? "Pick a target", systemImage: "arrow.triangle.merge")
-                    }
+                    Label("Done · \(model.mergeTargetIds.count) selected", systemImage: "checkmark")
                 }
-                .buttonStyle(.grDestructive)
-                .disabled(target == nil || isMerging)
+                .buttonStyle(.grPrimary)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .background(GRColor.canvas.opacity(0.92))
             }
-            .confirmationDialog(
-                "Merge “\(node.name)” into “\(target?.name ?? "")”?",
-                isPresented: $confirming,
-                titleVisibility: .visible
-            ) {
-                Button("Merge", role: .destructive) {
-                    Task { await merge() }
-                }
-            } message: {
-                Text("“\(node.name)” will be removed. This can’t be undone.")
-            }
         }
         .preferredColorScheme(.dark)
-    }
-
-    private func merge() async {
-        guard let target else { return }
-        if model.usingStub {
-            model.showToast("Demo graph — merge skipped")
-            dismiss()
-            return
-        }
-        isMerging = true
-        defer { isMerging = false }
-        do {
-            try await APIClient.shared.mergeConcepts(sourceIds: [node.id], into: target.id)
-            GRHaptics.success()
-            await model.reload(selecting: target.id)
-            model.showToast("Merged into \(target.name)")
-            dismiss()
-        } catch {
-            errorMessage = APIError.userFacing(error, resource: "merge")
-        }
     }
 }

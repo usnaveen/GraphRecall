@@ -25,7 +25,17 @@ final class AuthSession {
     private static let demoKey = "graphrecall.auth.demo"
     /// Matches `backend/auth/google_oauth.py`'s DEBUG bypass.
     static let localDevToken = "test-token"
-    static let localDevBaseURL = "http://127.0.0.1:8001"
+    /// The simulator shares the Mac's network stack; a phone has to reach the Mac by its LAN or
+    /// hotspot address, set as `GR_DEV_SERVER_HOST` in ios/Config/Dev.local.xcconfig.
+    static var localDevBaseURL: String {
+        #if targetEnvironment(simulator)
+        return "http://127.0.0.1:8001"
+        #else
+        let host = (Bundle.main.object(forInfoDictionaryKey: "GRDevServerHost") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return "http://\(host.isEmpty ? "127.0.0.1" : host):8001"
+        #endif
+    }
     private static let localDevKey = "graphrecall.auth.localDev"
 
     /// True once `GIDClientID` in Info.plist holds a real client ID (see ios/Config/Google.local.xcconfig.example).

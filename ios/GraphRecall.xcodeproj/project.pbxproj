@@ -7,27 +7,28 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0751015FEFF346534B7CCB57 /* FeedDifficultySlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92A9D922C8E72D898E3EEBEC /* FeedDifficultySlider.swift */; };
 		1116A0092E36E9753B34208D /* ProfileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D8C868A86CEFC305B83E90E /* ProfileModels.swift */; };
 		12D4BFAF0592D4677EDD85B3 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C34BB272A47BB3FFCC05E3C /* AppRouter.swift */; };
 		17EF10D95152450277DAFDC0 /* AuthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE2F576A29F1A4101ADB03AE /* AuthModels.swift */; };
 		1CC0BDE712010385C102706D /* OfflineReviewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */; };
 		1F44B6FC7FD4A5BF4513781B /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0DF464E1FE4615C662F789E /* ProfileView.swift */; };
 		28AC435D7C8F1137FFECA51E /* ReviewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC24D0DCBD4999EB897FAA2B /* ReviewSessionView.swift */; };
-		28EAA0F298BEB06D9DA6C063 /* graph_force_boot.js in Resources */ = {isa = PBXBuildFile; fileRef = ABC9001670DE30B3C00995EE /* graph_force_boot.js */; };
 		2BA3500E6211B32EF2FC0EC9 /* RecentImportsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B33E9ABCA54B442F6214404 /* RecentImportsStore.swift */; };
 		343759C438F9E31769B6A82A /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 354389AA6E635E3758568334 /* ChatView.swift */; };
 		3547DFDCB16A23B79DC931F6 /* FeedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B6149E4976D7EDB8AFEB78E /* FeedModels.swift */; };
 		377AEDA89660AB97BD8AED27 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 0CE16AD160E40056109138ED /* GoogleSignIn */; };
-		3853D7A1FEE2358A8E0C44CE /* graph_force.css in Resources */ = {isa = PBXBuildFile; fileRef = 4756FEEFD9542E3682C7874E /* graph_force.css */; };
 		3E02F3AF69D407BE9DF907F3 /* GraphInspectorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBE13CB88D5744985FFF987 /* GraphInspectorPanel.swift */; };
 		5112E312DEEFF11F487E1FE4 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEB0867569B5D9A228B3E7C /* ChatModels.swift */; };
+		548CAE724C27CF0C9595C8B5 /* FeedPostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571574011BF854B11FF5626D /* FeedPostsView.swift */; };
 		56EAEACF6E68918C9A446A00 /* GraphNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */; };
 		5D8A719D00E8E4E5BCCEE8F1 /* GraphToolsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D3BF4391B44E6E2469BCD9 /* GraphToolsSheets.swift */; };
-		60863DCC9DEB830A14505BA3 /* GraphForceWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26ED0F962F6EDE15C8A91B2D /* GraphForceWebView.swift */; };
 		60FF4F0896591B3C7A8F0EF7 /* ChatSSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0A25E9DDEB6FA4EA9F3A30 /* ChatSSEClient.swift */; };
 		6101AF7D0815012D1D0AFC96 /* APIConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D60F0755297C074FCE2F88D /* APIConfig.swift */; };
 		61B337021FBEEFEBC12CCD2E /* GraphRecallWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 354919E7BDFE313704962EDC /* GraphRecallWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		66B3F9863520E9EF2083B633 /* FeedContentCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C25355E86F96487699425E9E /* FeedContentCard.swift */; };
 		677AC8792FA0E88D851F90AD /* DemoFeedSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */; };
+		699532DBB9BBE0DB0E0F30A4 /* Graph3DWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E402B1CDCA1B88C1C47A976 /* Graph3DWebView.swift */; };
 		6ABFB64B8EABE5B7233E9384 /* APIClient+Profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938F31619C9D22F04EF0EE69 /* APIClient+Profile.swift */; };
 		6CAA41BF9F94661E27E5128A /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25717B008D78F115654FA98B /* FeedView.swift */; };
 		6F5D6F4DC2D13F0374C3FD45 /* GRSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */; };
@@ -45,6 +46,7 @@
 		97AA1DDDAD8041F38E38BD43 /* GlobalSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDF0F45D419F05B1663F080 /* GlobalSearchView.swift */; };
 		9B6EE52772CAB0FBA3DA7934 /* AuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBBF1E0AE919AF0E9556C29C /* AuthSession.swift */; };
 		9D0082A37375C67E27A2039D /* FeedCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D53E4786769C667032C743FF /* FeedCardViews.swift */; };
+		9EDB3E8858D7AFF0235DF3DB /* FeedReelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED7D72726B5CAC396F17BB9 /* FeedReelView.swift */; };
 		A27746BD47767F1F38F5A4F9 /* GRComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 918AF04DEE0A56DF92A9342A /* GRComponents.swift */; };
 		A6214F6E93BFDF2729EC8702 /* GraphRecallWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A4B731FA97D99242886CC71 /* GraphRecallWidget.swift */; };
 		A8F18905C4D92EF2B9D45F48 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5D56B9E352FA1D5C34665C /* WelcomeView.swift */; };
@@ -53,11 +55,13 @@
 		B30FD14AD974FE565F3E24DC /* LiquidDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AB33FAE9682E59CBE334E53 /* LiquidDock.swift */; };
 		B59A12713BA21EE4FF1F7436 /* ConceptDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2843D7F6A870BAFAC6EEF06D /* ConceptDetailView.swift */; };
 		B9F72CD6D433BE39DA5BB103 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 08EF6500A115E505F0EB5B7A /* Assets.xcassets */; };
-		BDFFBD0A950EE918FCCD25CA /* graph_force.html in Resources */ = {isa = PBXBuildFile; fileRef = C8ECC7DB3516F14838C2A2E5 /* graph_force.html */; };
 		C10AC60200AD71AD6029EAE5 /* GRSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */; };
 		C25E93AFF53FB438B794FDA5 /* GraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6B4BB4C9768BAB47A1235D /* GraphView.swift */; };
+		C4B385FAC417B230BA949476 /* graph3d.html in Resources */ = {isa = PBXBuildFile; fileRef = AB2B223947F7FA737F47CF8A /* graph3d.html */; };
 		C5F0D1B3DEC5DFE60289B31A /* GraphQuizSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECBEB72ED744FC19DA09627 /* GraphQuizSheet.swift */; };
+		C9003B32FDF8C0501E09980C /* graph3d.bundle.js in Resources */ = {isa = PBXBuildFile; fileRef = 8D48E55D5893DADFCFF6D6D3 /* graph3d.bundle.js */; };
 		C9F3339D099034D8B7AD155D /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A445A661372B6B67E29ADF /* ChatViewModel.swift */; };
+		CA26B6E22995CF9FDF5DF236 /* GraphSceneChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B2AA9997F6ACBF0A93366B /* GraphSceneChrome.swift */; };
 		CD0F69AA837E4ECEEE281D46 /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15AEBE53BAF79659722715F /* Colors.swift */; };
 		CDA03F95E4C9FADB6C409478 /* GraphRecallApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1D08115F01D059725E1075 /* GraphRecallApp.swift */; };
 		D04DB3E2BD0A6BC68AE7FD66 /* GraphRecallShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5C70EAAF05F4CDA100854C26 /* GraphRecallShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -124,7 +128,6 @@
 		20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphNotePanel.swift; sourceTree = "<group>"; };
 		25717B008D78F115654FA98B /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
 		25FEC977B2A9130C876E1D4F /* GRDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRDictation.swift; sourceTree = "<group>"; };
-		26ED0F962F6EDE15C8A91B2D /* GraphForceWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphForceWebView.swift; sourceTree = "<group>"; };
 		2843D7F6A870BAFAC6EEF06D /* ConceptDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptDetailView.swift; sourceTree = "<group>"; };
 		2AB33FAE9682E59CBE334E53 /* LiquidDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidDock.swift; sourceTree = "<group>"; };
 		2B41DFEE6E9CC527A799EF02 /* ImportReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportReviewView.swift; sourceTree = "<group>"; };
@@ -135,12 +138,13 @@
 		3B33E9ABCA54B442F6214404 /* RecentImportsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentImportsStore.swift; sourceTree = "<group>"; };
 		3F78211E1B8741510C9AA24D /* GRScreenHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRScreenHeader.swift; sourceTree = "<group>"; };
 		45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRSharedStore.swift; sourceTree = "<group>"; };
-		4756FEEFD9542E3682C7874E /* graph_force.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = graph_force.css; sourceTree = "<group>"; };
+		46B2AA9997F6ACBF0A93366B /* GraphSceneChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphSceneChrome.swift; sourceTree = "<group>"; };
 		4A4B731FA97D99242886CC71 /* GraphRecallWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphRecallWidget.swift; sourceTree = "<group>"; };
 		4D60F0755297C074FCE2F88D /* APIConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfig.swift; sourceTree = "<group>"; };
 		4F2A42135005D5FC3959526A /* GraphRecallUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GraphRecallUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F4AB921E260606FD5618584 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		54D8E856C0FE63DA3A324D85 /* IngestModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestModels.swift; sourceTree = "<group>"; };
+		571574011BF854B11FF5626D /* FeedPostsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedPostsView.swift; sourceTree = "<group>"; };
 		5C70EAAF05F4CDA100854C26 /* GraphRecallShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = GraphRecallShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5D7FF515475618D8C73AE527 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		5D8C868A86CEFC305B83E90E /* ProfileModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileModels.swift; sourceTree = "<group>"; };
@@ -154,12 +158,16 @@
 		6D5550930146E10280F9D9BE /* CreateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateView.swift; sourceTree = "<group>"; };
 		6FE14E2BBC801DE9BC6A5BA7 /* FeedViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedViewModel.swift; sourceTree = "<group>"; };
 		7CFDF20FCD17237DD59571A4 /* NoteScopePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteScopePicker.swift; sourceTree = "<group>"; };
+		7E402B1CDCA1B88C1C47A976 /* Graph3DWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Graph3DWebView.swift; sourceTree = "<group>"; };
+		7ED7D72726B5CAC396F17BB9 /* FeedReelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedReelView.swift; sourceTree = "<group>"; };
 		7F6B4BB4C9768BAB47A1235D /* GraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphView.swift; sourceTree = "<group>"; };
 		84B0EF21DCB77A720FA6139F /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
 		875510C0D234FE41ADC3D372 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		877AC1570FFB645C19F03AF7 /* ConceptDumpModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptDumpModels.swift; sourceTree = "<group>"; };
+		8D48E55D5893DADFCFF6D6D3 /* graph3d.bundle.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = graph3d.bundle.js; sourceTree = "<group>"; };
 		8FF54DECE7F455EA0BB8D0F0 /* ReviewFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewFlowUITests.swift; sourceTree = "<group>"; };
 		918AF04DEE0A56DF92A9342A /* GRComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRComponents.swift; sourceTree = "<group>"; };
+		92A9D922C8E72D898E3EEBEC /* FeedDifficultySlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedDifficultySlider.swift; sourceTree = "<group>"; };
 		936B3B76850E86829C95B881 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		938F31619C9D22F04EF0EE69 /* APIClient+Profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Profile.swift"; sourceTree = "<group>"; };
 		95D3BF4391B44E6E2469BCD9 /* GraphToolsSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphToolsSheets.swift; sourceTree = "<group>"; };
@@ -167,11 +175,11 @@
 		9D2096EF6D52D11205391033 /* ScanCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanCapture.swift; sourceTree = "<group>"; };
 		A30114AD9B85E20BDC976757 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFeedSeed.swift; sourceTree = "<group>"; };
-		ABC9001670DE30B3C00995EE /* graph_force_boot.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = graph_force_boot.js; sourceTree = "<group>"; };
+		AB2B223947F7FA737F47CF8A /* graph3d.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = graph3d.html; sourceTree = "<group>"; };
 		BB5A4D68618C46B7F6C7AD0D /* App.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = App.xcconfig; sourceTree = "<group>"; };
 		BECBEB72ED744FC19DA09627 /* GraphQuizSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphQuizSheet.swift; sourceTree = "<group>"; };
 		BF5D56B9E352FA1D5C34665C /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
-		C8ECC7DB3516F14838C2A2E5 /* graph_force.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = graph_force.html; sourceTree = "<group>"; };
+		C25355E86F96487699425E9E /* FeedContentCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedContentCard.swift; sourceTree = "<group>"; };
 		C9A445A661372B6B67E29ADF /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		CCBE13CB88D5744985FFF987 /* GraphInspectorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphInspectorPanel.swift; sourceTree = "<group>"; };
 		CCDF0F45D419F05B1663F080 /* GlobalSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchView.swift; sourceTree = "<group>"; };
@@ -245,11 +253,12 @@
 			isa = PBXGroup;
 			children = (
 				2843D7F6A870BAFAC6EEF06D /* ConceptDetailView.swift */,
-				26ED0F962F6EDE15C8A91B2D /* GraphForceWebView.swift */,
+				7E402B1CDCA1B88C1C47A976 /* Graph3DWebView.swift */,
 				CCBE13CB88D5744985FFF987 /* GraphInspectorPanel.swift */,
 				1EAC19540B0FC26CF2901971 /* GraphLinksSheet.swift */,
 				20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */,
 				BECBEB72ED744FC19DA09627 /* GraphQuizSheet.swift */,
+				46B2AA9997F6ACBF0A93366B /* GraphSceneChrome.swift */,
 				95D3BF4391B44E6E2469BCD9 /* GraphToolsSheets.swift */,
 				7F6B4BB4C9768BAB47A1235D /* GraphView.swift */,
 				E12ACAFF6FE6A4E2FC61274B /* GraphViewModel.swift */,
@@ -360,6 +369,10 @@
 			children = (
 				A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */,
 				D53E4786769C667032C743FF /* FeedCardViews.swift */,
+				C25355E86F96487699425E9E /* FeedContentCard.swift */,
+				92A9D922C8E72D898E3EEBEC /* FeedDifficultySlider.swift */,
+				571574011BF854B11FF5626D /* FeedPostsView.swift */,
+				7ED7D72726B5CAC396F17BB9 /* FeedReelView.swift */,
 				25717B008D78F115654FA98B /* FeedView.swift */,
 				6FE14E2BBC801DE9BC6A5BA7 /* FeedViewModel.swift */,
 				96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */,
@@ -429,9 +442,8 @@
 		D11D5BF8B7B8BF8B53CA2BE8 /* WebAssets */ = {
 			isa = PBXGroup;
 			children = (
-				ABC9001670DE30B3C00995EE /* graph_force_boot.js */,
-				4756FEEFD9542E3682C7874E /* graph_force.css */,
-				C8ECC7DB3516F14838C2A2E5 /* graph_force.html */,
+				8D48E55D5893DADFCFF6D6D3 /* graph3d.bundle.js */,
+				AB2B223947F7FA737F47CF8A /* graph3d.html */,
 			);
 			path = WebAssets;
 			sourceTree = "<group>";
@@ -597,9 +609,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B9F72CD6D433BE39DA5BB103 /* Assets.xcassets in Resources */,
-				3853D7A1FEE2358A8E0C44CE /* graph_force.css in Resources */,
-				BDFFBD0A950EE918FCCD25CA /* graph_force.html in Resources */,
-				28EAA0F298BEB06D9DA6C063 /* graph_force_boot.js in Resources */,
+				C9003B32FDF8C0501E09980C /* graph3d.bundle.js in Resources */,
+				C4B385FAC417B230BA949476 /* graph3d.html in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -654,7 +665,11 @@
 				D6C1E3C34FF1FB23F0940C77 /* CreateView.swift in Sources */,
 				677AC8792FA0E88D851F90AD /* DemoFeedSeed.swift in Sources */,
 				9D0082A37375C67E27A2039D /* FeedCardViews.swift in Sources */,
+				66B3F9863520E9EF2083B633 /* FeedContentCard.swift in Sources */,
+				0751015FEFF346534B7CCB57 /* FeedDifficultySlider.swift in Sources */,
 				3547DFDCB16A23B79DC931F6 /* FeedModels.swift in Sources */,
+				548CAE724C27CF0C9595C8B5 /* FeedPostsView.swift in Sources */,
+				9EDB3E8858D7AFF0235DF3DB /* FeedReelView.swift in Sources */,
 				6CAA41BF9F94661E27E5128A /* FeedView.swift in Sources */,
 				81F71FDA03D069B4197F7F46 /* FeedViewModel.swift in Sources */,
 				A27746BD47767F1F38F5A4F9 /* GRComponents.swift in Sources */,
@@ -664,13 +679,14 @@
 				8D91C62AA931A09C9BF1B2E6 /* Glass.swift in Sources */,
 				95CC6AFBFECBA2ABF3CBC41F /* GlassCard.swift in Sources */,
 				97AA1DDDAD8041F38E38BD43 /* GlobalSearchView.swift in Sources */,
-				60863DCC9DEB830A14505BA3 /* GraphForceWebView.swift in Sources */,
+				699532DBB9BBE0DB0E0F30A4 /* Graph3DWebView.swift in Sources */,
 				3E02F3AF69D407BE9DF907F3 /* GraphInspectorPanel.swift in Sources */,
 				AE9BFC5241E0BE8BF3F942A9 /* GraphLinksSheet.swift in Sources */,
 				704A0F8042B14BCB99B5B5B0 /* GraphModels.swift in Sources */,
 				56EAEACF6E68918C9A446A00 /* GraphNotePanel.swift in Sources */,
 				C5F0D1B3DEC5DFE60289B31A /* GraphQuizSheet.swift in Sources */,
 				CDA03F95E4C9FADB6C409478 /* GraphRecallApp.swift in Sources */,
+				CA26B6E22995CF9FDF5DF236 /* GraphSceneChrome.swift in Sources */,
 				5D8A719D00E8E4E5BCCEE8F1 /* GraphToolsSheets.swift in Sources */,
 				C25E93AFF53FB438B794FDA5 /* GraphView.swift in Sources */,
 				EF31F821B5D52CD61798BDB9 /* GraphViewModel.swift in Sources */,
@@ -861,7 +877,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -949,7 +964,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
