@@ -4,6 +4,7 @@ import structlog
 from datetime import datetime, timedelta, timezone
 from backend.auth.google_oauth import verify_google_token
 from backend.db.postgres_client import get_postgres_client
+from backend.telemetry import stage
 
 logger = structlog.get_logger()
 security = HTTPBearer()
@@ -29,16 +30,18 @@ async def get_current_user(
     token = credentials.credentials
     
     # 1. Verify Google Token
-    user_info = await verify_google_token(token)
+    with stage("auth.verify_token"):
+        user_info = await verify_google_token(token)
     
     # 2. Get or Create User in Postgres
     pg_client = await get_postgres_client()
     try:
         # Try to find existing user
-        result = await pg_client.execute_query(
-            "SELECT * FROM users WHERE google_id = :google_id",
-            {"google_id": user_info["google_id"]}
-        )
+        with stage("auth.load_user"):
+            result = await pg_client.execute_query(
+                "SELECT * FROM users WHERE google_id = :google_id",
+                {"google_id": user_info["google_id"]}
+            )
         
         if result:
             user = result[0]

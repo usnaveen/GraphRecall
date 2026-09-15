@@ -22,6 +22,7 @@ from typing import Optional, Literal
 
 import structlog
 from backend.config.llm import get_chat_model
+from backend.telemetry import record as record_timing
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import interrupt, Command
 from sqlalchemy import text
@@ -146,6 +147,7 @@ def _instrument_async_node(node_name: str, fn):
         )
         try:
             result = await fn(state)
+            record_timing(f"ingest.{node_name}", (time.perf_counter() - start) * 1000, log=False)
             if not isinstance(result, dict):
                 return result
 
@@ -172,6 +174,7 @@ def _instrument_async_node(node_name: str, fn):
             )
             return result
         except Exception as e:
+            record_timing(f"ingest.{node_name}.error", (time.perf_counter() - start) * 1000, log=False)
             logger.error(
                 f"{node_name}: Exception",
                 thread_id=state.get("thread_id"),
