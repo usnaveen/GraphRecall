@@ -335,7 +335,7 @@ Summary:"""
 
             try:
                 response = await llm.ainvoke(prompt)
-                summary = response.content.strip()
+                summary = response.text.strip()
                 if not summary:
                     return
 

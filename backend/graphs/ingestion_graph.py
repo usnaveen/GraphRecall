@@ -1439,7 +1439,7 @@ Return ONLY valid JSON:
 """
         try:
             response = await llm_flashcard.ainvoke(prompt)
-            content = response.content.strip()
+            content = response.text.strip()
             
             if content.startswith("```json"):
                 content = content.split("```json")[1].split("```")[0].strip()

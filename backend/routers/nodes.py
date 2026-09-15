@@ -106,7 +106,7 @@ async def create_node(
                     f"Be concise and factual."
                 )
                 ai_response = await llm.ainvoke(ai_prompt)
-                node_definition = ai_response.content.strip()
+                node_definition = ai_response.text.strip()
                 if node_definition:
                     await neo4j.execute_query(
                         """

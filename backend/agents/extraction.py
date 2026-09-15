@@ -190,7 +190,7 @@ Content:
             # Call the LLM
             response = await self.llm.ainvoke(prompt)
             # Clean markdown code blocks from response
-            raw_response = response.content.strip()
+            raw_response = response.text.strip()
             if raw_response.startswith("```json"):
                 raw_response = raw_response.split("```json")[1].split("```")[0].strip()
             elif raw_response.startswith("```"):
@@ -360,7 +360,7 @@ Return a JSON object:
 
         try:
             response = await self.llm.ainvoke(prompt)
-            raw_response = response.content.strip()
+            raw_response = response.text.strip()
             if raw_response.startswith("```json"):
                 raw_response = raw_response.split("```json")[1].split("```")[0].strip()
             elif raw_response.startswith("```"):

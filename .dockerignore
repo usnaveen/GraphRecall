@@ -1,0 +1,16 @@
+# Keep the build context small: only requirements.txt and backend/ are needed.
+.git
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+frontend
+ios
+docs
+node_modules
+*.png
+*.jpg
+*.zip
+backend/tests

@@ -131,7 +131,7 @@ async def parse_mcp_result_node(state: MCPState) -> dict:
     
     try:
         result = await llm.ainvoke(prompt)
-        parsed = json.loads(result.content)
+        parsed = json.loads(result.text)
         
         return {
             "verdict": parsed.get("verdict", "ambiguous"),

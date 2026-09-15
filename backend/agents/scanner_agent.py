@@ -60,7 +60,7 @@ OUTPUT JSON:
         
         try:
             response = await self.llm.ainvoke(prompt)
-            content = response.content
+            content = response.text
             
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()

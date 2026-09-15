@@ -83,7 +83,7 @@ Return VALID JSON:
         ])
         
         # Clean JSON
-        content = response.content.strip()
+        content = response.text.strip()
         if content.startswith("```json"):
             content = content.split("```json")[1].split("```")[0].strip()
         elif content.startswith("```"):

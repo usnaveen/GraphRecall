@@ -40,6 +40,8 @@ class Neo4jClient:
             max_connection_pool_size=50,
             connection_acquisition_timeout=30,
             keep_alive=True,
+            # Query "notifications" (e.g. "property does not exist" on an empty graph) flood the logs.
+            notifications_min_severity="OFF",
         )
 
         # Verify connectivity
