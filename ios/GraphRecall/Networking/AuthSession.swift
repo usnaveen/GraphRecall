@@ -12,6 +12,8 @@ final class AuthSession {
     enum State: Equatable {
         case signedOut
         case demo
+        /// Docker backend with DEBUG=true, which accepts `test-token` as a test user.
+        case localDev
         case google(name: String?, email: String?)
     }
 
@@ -21,6 +23,10 @@ final class AuthSession {
 
     static let demoToken = "demo-local-token"
     private static let demoKey = "graphrecall.auth.demo"
+    /// Matches `backend/auth/google_oauth.py`'s DEBUG bypass.
+    static let localDevToken = "test-token"
+    static let localDevBaseURL = "http://127.0.0.1:8001"
+    private static let localDevKey = "graphrecall.auth.localDev"
 
     /// True once `GIDClientID` in Info.plist holds a real client ID (see ios/Config/Google.local.xcconfig.example).
     var isGoogleConfigured: Bool {
@@ -34,6 +40,7 @@ final class AuthSession {
         switch state {
         case .signedOut: return "Not signed in"
         case .demo: return "Demo session"
+        case .localDev: return "Local Docker backend · test user"
         case .google(_, let email): return email.map { "Signed in as \($0)" } ?? "Signed in with Google"
         }
     }
@@ -50,10 +57,25 @@ final class AuthSession {
                 lastError = "Your Google session expired — sign in again."
             }
         }
+        if UserDefaults.standard.bool(forKey: Self.localDevKey) {
+            await APIClient.shared.setAccessToken(Self.localDevToken)
+            state = .localDev
+            return
+        }
         if UserDefaults.standard.bool(forKey: Self.demoKey) {
             await APIClient.shared.setAccessToken(Self.demoToken)
             state = .demo
         }
+    }
+
+    /// Points the app at `docker compose up` on this Mac and signs in as the backend's test user.
+    func useLocalDevSession() async {
+        lastError = nil
+        UserDefaults.standard.set(Self.localDevBaseURL, forKey: APIConfig.apiBaseDefaultsKey)
+        UserDefaults.standard.set(true, forKey: Self.localDevKey)
+        UserDefaults.standard.set(false, forKey: Self.demoKey)
+        await APIClient.shared.setAccessToken(Self.localDevToken)
+        state = .localDev
     }
 
     /// Google ID tokens last an hour; call when the app returns to the foreground.
@@ -94,6 +116,7 @@ final class AuthSession {
             GIDSignIn.sharedInstance.signOut()
         }
         UserDefaults.standard.set(false, forKey: Self.demoKey)
+        UserDefaults.standard.set(false, forKey: Self.localDevKey)
         await APIClient.shared.setAccessToken(nil)
         state = .signedOut
     }
