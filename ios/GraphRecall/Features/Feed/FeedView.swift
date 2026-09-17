@@ -49,7 +49,7 @@ struct FeedView: View {
                     Spacer()
                     GRToast(message: banner, isError: Self.isErrorCopy(banner))
                         .padding(.horizontal, 24)
-                        .padding(.bottom, GRLayout.dockClearance + 8)
+                        .padding(.bottom, 8)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.softBanner)

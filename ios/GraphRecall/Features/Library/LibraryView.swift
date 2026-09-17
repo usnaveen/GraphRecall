@@ -76,7 +76,6 @@ struct LibraryView: View {
                         .padding(.horizontal, 20)
                     }
                 }
-                .padding(.bottom, GRLayout.dockClearance)
             }
         }
         .navigationDestination(for: LibraryNote.self) { book in
@@ -207,7 +206,6 @@ struct BookDetailView: View {
                 }
                 .padding(.horizontal, 20)
             }
-            .padding(.bottom, GRLayout.dockClearance)
         }
         .background(GRColor.canvas.ignoresSafeArea())
         .navigationTitle(book.displayTitle)

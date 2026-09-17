@@ -20,33 +20,35 @@ struct ContentView: View {
         return alias[raw] ?? .feed
     }
 
+    @ViewBuilder
+    private func screen(for tab: GRTab) -> some View {
+        switch tab {
+        case .feed: FeedView()
+        case .graph: GraphView()
+        case .create: CreateView()
+        case .assistant: ChatView()
+        case .profile: ProfileView(openLibraryToken: router.openLibraryToken)
+        }
+    }
+
     var body: some View {
         @Bindable var bindableRouter = router
 
-        ZStack(alignment: .bottom) {
-            GRColor.canvas.ignoresSafeArea()
-
-            Group {
-                switch router.tab {
-                case .feed: FeedView()
-                case .graph: GraphView()
-                case .create: CreateView()
-                case .assistant: ChatView()
-                case .profile: ProfileView(openLibraryToken: router.openLibraryToken)
+        // The system tab bar: real Liquid Glass, minimises on scroll, gets out of the keyboard's way.
+        // Create uses the search role so the system draws it as its own glass circle beside the bar.
+        TabView(selection: $bindableRouter.tab) {
+            ForEach(GRTab.allCases) { tab in
+                Tab(value: tab, role: tab == .create ? .search : nil) {
+                    screen(for: tab)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(GRColor.canvas.ignoresSafeArea())
+                } label: {
+                    Label(tab.title, systemImage: tab.systemImage)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // The dock steps aside while typing instead of riding up on top of the keyboard.
-            if !router.isKeyboardVisible {
-                LiquidDock(selection: $bindableRouter.tab)
-                    // Equal to the dock's own side inset: the capsule sits as low as it can while
-                    // staying concentric with the display's rounded corners.
-                    .padding(.bottom, 14)
-                    .ignoresSafeArea(edges: .bottom)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
         }
+        .tint(GRColor.accent)
+        .tabBarMinimizeBehavior(.onScrollDown)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             withAnimation(.easeOut(duration: 0.2)) { router.isKeyboardVisible = true }
         }

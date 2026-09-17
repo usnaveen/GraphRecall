@@ -468,7 +468,6 @@ struct CreateView: View {
                     recentSection
                         .padding(.horizontal, 20)
                 }
-                .padding(.bottom, GRLayout.dockClearance)
             }
             .scrollDismissesKeyboard(.interactively)
         }

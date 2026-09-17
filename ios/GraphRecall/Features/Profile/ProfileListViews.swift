@@ -152,7 +152,6 @@ struct ProfileNotesListView: View {
                         .padding(.horizontal, 20)
                     }
                 }
-                .padding(.bottom, GRLayout.dockClearance)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -389,7 +388,6 @@ struct ProfileConceptsListView: View {
                         .padding(.horizontal, 20)
                     }
                 }
-                .padding(.bottom, GRLayout.dockClearance)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -530,7 +528,6 @@ struct ProfileUploadsListView: View {
                         .padding(.horizontal, 20)
                     }
                 }
-                .padding(.bottom, GRLayout.dockClearance)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -613,7 +610,6 @@ struct ProfileQuizzesListView: View {
                         .padding(.horizontal, 20)
                     }
                 }
-                .padding(.bottom, GRLayout.dockClearance)
             }
         }
         .navigationBarTitleDisplayMode(.inline)

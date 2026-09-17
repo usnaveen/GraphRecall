@@ -31,7 +31,6 @@ struct GraphView: View {
             }
             canvasArea
         }
-        .padding(.bottom, GRLayout.dockClearance)
         .background(GRColor.canvas.ignoresSafeArea())
         .animation(.easeInOut(duration: 0.2), value: showsResults)
         .animation(.snappy(duration: 0.3), value: isFocusLayout)

@@ -39,7 +39,6 @@ struct ChatView: View {
                 composer(input: $bindable.input)
             }
             // The dock hides with the keyboard, so the composer can sit directly on the keys.
-            .padding(.bottom, router.isKeyboardVisible ? 0 : GRLayout.dockClearance)
             .animation(.easeOut(duration: 0.22), value: inputFocused)
 
             if let banner = model.bannerMessage {

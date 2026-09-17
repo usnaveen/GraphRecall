@@ -56,7 +56,7 @@ struct FeedReelView: View {
         }
         .padding(.horizontal, 14)
         .padding(.top, 50) // clears the floating style / search buttons
-        .padding(.bottom, GRLayout.dockClearance + 6)
+        .padding(.bottom, 6)
     }
 
     /// After a grade, glide to the next card so the thumb never has to.
