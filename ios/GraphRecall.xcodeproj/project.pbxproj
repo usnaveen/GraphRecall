@@ -43,6 +43,7 @@
 		84BCCA81355E0D3B3C897424 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 875510C0D234FE41ADC3D372 /* ShareViewController.swift */; };
 		8D91C62AA931A09C9BF1B2E6 /* Glass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31B4155BF84146B9C4C8466B /* Glass.swift */; };
 		8ECDA2E26F74AF0B3BE83CA8 /* LibraryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3872EBE43ED39B904A7D19A0 /* LibraryModels.swift */; };
+		8F610F43400CA330F3141FA3 /* GRTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E36CA9F421CD5D86DBD874E /* GRTab.swift */; };
 		95CC6AFBFECBA2ABF3CBC41F /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B0EF21DCB77A720FA6139F /* GlassCard.swift */; };
 		97AA1DDDAD8041F38E38BD43 /* GlobalSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDF0F45D419F05B1663F080 /* GlobalSearchView.swift */; };
 		9B6EE52772CAB0FBA3DA7934 /* AuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBBF1E0AE919AF0E9556C29C /* AuthSession.swift */; };
@@ -53,7 +54,6 @@
 		A8F18905C4D92EF2B9D45F48 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5D56B9E352FA1D5C34665C /* WelcomeView.swift */; };
 		AE9BFC5241E0BE8BF3F942A9 /* GraphLinksSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAC19540B0FC26CF2901971 /* GraphLinksSheet.swift */; };
 		B283C8D35E3713761D2D4156 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63297E6164BBF835B5F2FCDD /* Typography.swift */; };
-		B30FD14AD974FE565F3E24DC /* LiquidDock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AB33FAE9682E59CBE334E53 /* LiquidDock.swift */; };
 		B59A12713BA21EE4FF1F7436 /* ConceptDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2843D7F6A870BAFAC6EEF06D /* ConceptDetailView.swift */; };
 		B9F72CD6D433BE39DA5BB103 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 08EF6500A115E505F0EB5B7A /* Assets.xcassets */; };
 		C10AC60200AD71AD6029EAE5 /* GRSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */; };
@@ -130,7 +130,6 @@
 		25717B008D78F115654FA98B /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
 		25FEC977B2A9130C876E1D4F /* GRDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRDictation.swift; sourceTree = "<group>"; };
 		2843D7F6A870BAFAC6EEF06D /* ConceptDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptDetailView.swift; sourceTree = "<group>"; };
-		2AB33FAE9682E59CBE334E53 /* LiquidDock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidDock.swift; sourceTree = "<group>"; };
 		2B41DFEE6E9CC527A799EF02 /* ImportReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportReviewView.swift; sourceTree = "<group>"; };
 		31B4155BF84146B9C4C8466B /* Glass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Glass.swift; sourceTree = "<group>"; };
 		354389AA6E635E3758568334 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
@@ -175,6 +174,7 @@
 		95D3BF4391B44E6E2469BCD9 /* GraphToolsSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphToolsSheets.swift; sourceTree = "<group>"; };
 		96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineReviewStore.swift; sourceTree = "<group>"; };
 		9D2096EF6D52D11205391033 /* ScanCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanCapture.swift; sourceTree = "<group>"; };
+		9E36CA9F421CD5D86DBD874E /* GRTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRTab.swift; sourceTree = "<group>"; };
 		A30114AD9B85E20BDC976757 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFeedSeed.swift; sourceTree = "<group>"; };
 		AB2B223947F7FA737F47CF8A /* graph3d.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = graph3d.html; sourceTree = "<group>"; };
@@ -304,6 +304,7 @@
 			isa = PBXGroup;
 			children = (
 				6C34BB272A47BB3FFCC05E3C /* AppRouter.swift */,
+				9E36CA9F421CD5D86DBD874E /* GRTab.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -341,7 +342,6 @@
 				918AF04DEE0A56DF92A9342A /* GRComponents.swift */,
 				25FEC977B2A9130C876E1D4F /* GRDictation.swift */,
 				3F78211E1B8741510C9AA24D /* GRScreenHeader.swift */,
-				2AB33FAE9682E59CBE334E53 /* LiquidDock.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -679,6 +679,7 @@
 				7A2B978B52F0F7F688B9FB06 /* GRDictation.swift in Sources */,
 				74487DC936815D7E43050870 /* GRScreenHeader.swift in Sources */,
 				E04164430170B0C25D25C35E /* GRSharedStore.swift in Sources */,
+				8F610F43400CA330F3141FA3 /* GRTab.swift in Sources */,
 				8D91C62AA931A09C9BF1B2E6 /* Glass.swift in Sources */,
 				95CC6AFBFECBA2ABF3CBC41F /* GlassCard.swift in Sources */,
 				97AA1DDDAD8041F38E38BD43 /* GlobalSearchView.swift in Sources */,
@@ -698,7 +699,6 @@
 				8014C3E9EE7B41AD300C9DF2 /* IngestModels.swift in Sources */,
 				8ECDA2E26F74AF0B3BE83CA8 /* LibraryModels.swift in Sources */,
 				7125C8D2C47981BAA7021609 /* LibraryView.swift in Sources */,
-				B30FD14AD974FE565F3E24DC /* LiquidDock.swift in Sources */,
 				FA6DF024AC57CC1013CFBD71 /* NoteScopePicker.swift in Sources */,
 				1CC0BDE712010385C102706D /* OfflineReviewStore.swift in Sources */,
 				8331C9754ADC84B45D8377D7 /* ProfileListViews.swift in Sources */,

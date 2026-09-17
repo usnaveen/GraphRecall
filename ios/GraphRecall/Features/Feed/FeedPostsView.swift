@@ -23,7 +23,7 @@ struct FeedPostsView: View {
             }
             .padding(.horizontal, 14)
             .padding(.top, 46) // clears the floating style / search buttons
-            .padding(.bottom, GRLayout.dockClearance + 16)
+            .padding(.bottom, 16)
         }
         .scrollIndicators(.hidden)
     }

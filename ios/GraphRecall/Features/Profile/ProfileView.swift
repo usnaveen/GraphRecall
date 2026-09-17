@@ -76,7 +76,6 @@ struct ProfileView: View {
                         }
                         .padding(.horizontal, 20)
                     }
-                    .padding(.bottom, GRLayout.dockClearance)
                 }
                 .refreshable { await refresh() }
             }
@@ -620,7 +619,6 @@ struct SavedItemsListView: View {
                     }
                     .padding(.horizontal, 20)
                 }
-                .padding(.bottom, GRLayout.dockClearance)
             }
         }
         .task { await load() }
