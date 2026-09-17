@@ -546,20 +546,9 @@ struct CreateView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                     }
-                    .foregroundStyle(selected ? GRColor.accent : GRColor.textPrimary)
+                    .foregroundStyle(selected ? GRColor.canvas : GRColor.textPrimary)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 74)
-                    .background {
-                        if selected {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(GRColor.accentSoft)
-                        } else {
-                            Color.clear.grGlassEffect(.interactive, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        }
-                    }
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(selected ? GRColor.accentLine : GRColor.stroke, lineWidth: 1)
-                    )
+                    .frame(height: 58)
                     .overlay(alignment: .topTrailing) {
                         if mode.isNew {
                             Text("NEW")
@@ -568,11 +557,11 @@ struct CreateView: View {
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
                                 .background(GRColor.accent, in: Capsule())
-                                .padding(5)
+                                .offset(x: 8, y: -4)
                         }
                     }
                 }
-                .buttonStyle(.plain)
+                .modifier(CreateModeButtonStyle(selected: selected))
                 .accessibilityLabel(mode.title)
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
@@ -763,7 +752,7 @@ struct CreateView: View {
                 } label: {
                     Label("Open Library", systemImage: "books.vertical.fill")
                 }
-                .buttonStyle(.grGhost)
+                .grButton(.ghost)
             }
         }
     }
@@ -784,13 +773,13 @@ struct CreateView: View {
                 } label: {
                     Label(DocumentScannerView.isSupported ? "Scan" : "No camera", systemImage: "camera.fill")
                 }
-                .buttonStyle(GRButtonStyle(kind: .secondary, compact: true))
+                .grButton(.secondary, compact: true)
                 .disabled(!DocumentScannerView.isSupported)
 
                 PhotosPicker(selection: $photoItems, maxSelectionCount: 6, matching: .images) {
                     Label("From Photos", systemImage: "photo.on.rectangle")
                 }
-                .buttonStyle(GRButtonStyle(kind: .secondary, compact: true))
+                .grButton(.secondary, compact: true)
             }
 
             if model.isRecognizing {
@@ -825,19 +814,15 @@ struct CreateView: View {
                 Button {
                     Task { await toggleDictation(into: \.bodyText, separator: " ") }
                 } label: {
-                    ZStack {
-                        Circle()
-                            .fill(dictation.isRecording ? GRColor.danger.opacity(0.18) : GRColor.accentSoft)
-                        Circle()
-                            .stroke(dictation.isRecording ? GRColor.danger : GRColor.accentLine, lineWidth: 2)
-                        Image(systemName: dictation.isRecording ? "stop.fill" : "mic.fill")
-                            .font(.system(size: 32, weight: .bold))
-                            .foregroundStyle(dictation.isRecording ? GRColor.danger : GRColor.accent)
-                            .symbolEffect(.pulse, isActive: dictation.isRecording)
-                    }
-                    .frame(width: 96, height: 96)
+                    Image(systemName: dictation.isRecording ? "stop.fill" : "mic.fill")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundStyle(GRColor.canvas)
+                        .symbolEffect(.pulse, isActive: dictation.isRecording)
+                        .frame(width: 72, height: 72)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .tint(dictation.isRecording ? GRColor.danger : GRColor.accent)
                 .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Start dictation")
                 Spacer()
             }
@@ -887,11 +872,10 @@ struct CreateView: View {
             Label(dictation.isRecording ? "Stop" : "Dictate", systemImage: dictation.isRecording ? "stop.circle.fill" : "mic.fill")
                 .font(GRType.caption.weight(.bold))
                 .foregroundStyle(dictation.isRecording ? GRColor.danger : GRColor.accent)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(dictation.isRecording ? GRColor.danger.opacity(0.15) : GRColor.accentSoft, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
     }
 
     private var submitButton: some View {
@@ -905,7 +889,7 @@ struct CreateView: View {
                 Text(model.primaryButtonTitle(review: review))
             }
         }
-        .buttonStyle(.grPrimary)
+        .grButton(.primary)
         .disabled(!model.canSubmit)
     }
 
@@ -1260,3 +1244,17 @@ enum CreateFileReader {
 }
 
 #Preview { CreateView().preferredColorScheme(.dark) }
+
+/// Source-type tiles: glass buttons; the chosen one is the prominent (accent) glass.
+private struct CreateModeButtonStyle: ViewModifier {
+    let selected: Bool
+
+    func body(content: Content) -> some View {
+        let shaped = content.buttonBorderShape(.roundedRectangle(radius: 16))
+        if selected {
+            shaped.buttonStyle(.glassProminent).tint(GRColor.accent)
+        } else {
+            shaped.buttonStyle(.glass)
+        }
+    }
+}

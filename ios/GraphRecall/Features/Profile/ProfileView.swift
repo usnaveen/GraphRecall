@@ -208,7 +208,7 @@ struct ProfileView: View {
                     } label: {
                         Label("Start review", systemImage: "play.fill")
                     }
-                    .buttonStyle(GRButtonStyle(kind: .primary, compact: true))
+                    .grButton(.primary, compact: true)
                     .disabled((stats?.dueToday ?? 0) == 0)
                     .accessibilityIdentifier("today.startReview")
                     .padding(.top, 2)

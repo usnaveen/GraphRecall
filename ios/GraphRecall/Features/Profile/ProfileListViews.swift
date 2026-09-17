@@ -396,17 +396,7 @@ struct ProfileConceptsListView: View {
     }
 
     private func domainChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(GRType.caption)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .foregroundStyle(selected ? GRColor.canvas : GRColor.textSecondary)
-                .background(
-                    Capsule().fill(selected ? GRColor.accent : GRColor.fillSubtle)
-                )
-        }
-        .buttonStyle(.plain)
+        GRChip(title: title, style: selected ? .selected : .plain, action: action)
     }
 }
 

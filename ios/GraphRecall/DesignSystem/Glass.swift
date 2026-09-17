@@ -41,17 +41,3 @@ extension View {
 enum GRGlassStyle {
     case regular, clear, interactive
 }
-
-/// The app's one "green button" look: accent-tinted system Liquid Glass. Used for every primary
-/// action — icon buttons, primary CTAs and card reveals — so nothing is flat paint.
-struct GRAccentGlass<S: InsettableShape>: View {
-    let shape: S
-    var tint: Color = GRColor.accent
-    var strength: Double = 0.42
-
-    var body: some View {
-        // System glass only — no painted highlights, strokes or shadows on top of it.
-        Color.clear
-            .glassEffect(.regular.tint(tint.opacity(strength)).interactive(), in: shape)
-    }
-}

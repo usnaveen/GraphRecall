@@ -158,7 +158,7 @@ struct SettingsView: View {
                                 } label: {
                                     Label("Use local Docker backend", systemImage: "shippingbox.fill")
                                 }
-                                .buttonStyle(GRButtonStyle(kind: .secondary, compact: true))
+                                .grButton(.secondary, compact: true)
                                 Text("Runs against `docker compose up` on this Mac (port 8001) with the backend’s test user.")
                                     .font(GRType.micro)
                                     .foregroundStyle(GRColor.textTertiary)
@@ -242,14 +242,14 @@ struct SettingsView: View {
                     } label: {
                         Text("Sign out")
                     }
-                    .buttonStyle(GRButtonStyle(kind: .secondary, compact: true))
+                    .grButton(.secondary, compact: true)
                 } else {
                     Button {
                         Task { await auth.signInWithGoogle() }
                     } label: {
                         Label(auth.isWorking ? "Signing in…" : "Continue with Google", systemImage: "person.crop.circle.badge.checkmark")
                     }
-                    .buttonStyle(GRButtonStyle(kind: .primary, compact: true))
+                    .grButton(.primary, compact: true)
                     .disabled(auth.isWorking)
 
                     Button {
@@ -260,7 +260,7 @@ struct SettingsView: View {
                     } label: {
                         Text("Use demo session")
                     }
-                    .buttonStyle(GRButtonStyle(kind: .ghost, compact: true))
+                    .grButton(.ghost, compact: true)
 
                     if !auth.isGoogleConfigured {
                         Text("Google Sign-In needs your client IDs — see ios/Config/Google.local.xcconfig.example.")

@@ -30,87 +30,31 @@ enum GRTone: Hashable {
 
 // MARK: - Buttons
 
-struct GRButtonStyle: ButtonStyle {
-    enum Kind { case primary, secondary, ghost, destructive }
+/// Button roles, drawn with the system Liquid Glass button styles.
+enum GRButtonKind { case primary, secondary, ghost, destructive }
 
-    var kind: Kind = .primary
-    var fullWidth = true
-    var compact = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        GRButtonBody(configuration: configuration, kind: kind, fullWidth: fullWidth, compact: compact)
-    }
-}
-
-private struct GRButtonBody: View {
-    let configuration: ButtonStyle.Configuration
-    let kind: GRButtonStyle.Kind
-    let fullWidth: Bool
-    let compact: Bool
-    @Environment(\.isEnabled) private var isEnabled
-
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 16, style: .continuous) }
-
-    var body: some View {
-        configuration.label
-            .font(compact ? GRType.caption.weight(.bold) : GRType.headline)
-            .lineLimit(1)
-            .frame(maxWidth: fullWidth ? .infinity : nil)
-            .padding(.vertical, compact ? 10 : 14)
-            .padding(.horizontal, compact ? 12 : 18)
-            .foregroundStyle(foreground)
-            .background { backgroundView }
-            .overlay(shape.stroke(stroke, lineWidth: 1))
-            .opacity(configuration.isPressed ? 0.85 : 1)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-
-    private var foreground: Color {
-        guard isEnabled else { return GRColor.textTertiary }
-        switch kind {
-        case .primary: return .white
-        case .secondary: return GRColor.textPrimary
-        case .ghost: return GRColor.accent
-        case .destructive: return GRColor.danger
-        }
-    }
-
+extension View {
+    /// Native glass button: `.glassProminent` for the main action, `.glass` for the rest.
     @ViewBuilder
-    private var backgroundView: some View {
-        if !isEnabled {
-            shape.fill(GRColor.fillSubtle)
-        } else {
-            switch kind {
-            case .primary:
-                GRAccentGlass(shape: shape, strength: 0.46)
-            case .secondary:
-                shape.fill(GRColor.fillSubtle)
-            case .ghost:
-                shape.fill(Color.clear)
-            case .destructive:
-                shape.fill(GRColor.danger.opacity(0.15))
-            }
-        }
-    }
-
-    private var stroke: Color {
-        guard isEnabled else { return .clear }
+    func grButton(_ kind: GRButtonKind = .primary, fullWidth: Bool = true, compact: Bool = false) -> some View {
+        let sized = self
+            .buttonSizing(fullWidth ? .flexible : .fitted)
+            .controlSize(compact ? .regular : .large)
+            .buttonBorderShape(.capsule)
         switch kind {
-        case .secondary: return GRColor.stroke
-        case .ghost: return GRColor.accentLine
-        default: return .clear
+        case .primary:
+            sized.buttonStyle(.glassProminent).tint(GRColor.accent).foregroundStyle(GRColor.canvas)
+        case .secondary:
+            sized.buttonStyle(.glass)
+        case .ghost:
+            sized.buttonStyle(.glass).tint(GRColor.accent).foregroundStyle(GRColor.accent)
+        case .destructive:
+            sized.buttonStyle(.glass).foregroundStyle(GRColor.danger)
         }
     }
 }
 
-extension ButtonStyle where Self == GRButtonStyle {
-    static var grPrimary: GRButtonStyle { GRButtonStyle(kind: .primary) }
-    static var grSecondary: GRButtonStyle { GRButtonStyle(kind: .secondary) }
-    static var grGhost: GRButtonStyle { GRButtonStyle(kind: .ghost) }
-    static var grDestructive: GRButtonStyle { GRButtonStyle(kind: .destructive) }
-}
-
+/// Circular icon button on the system glass button styles.
 struct GRIconButton: View {
     enum Style { case glass, accent, plain }
 
@@ -122,36 +66,28 @@ struct GRIconButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: size * 0.4, weight: .semibold))
                 .foregroundStyle(foreground)
-                .frame(width: size, height: size)
-                .background { background }
-                .contentShape(Circle())
+                .frame(width: size * 0.6, height: size * 0.6)
         }
-        .buttonStyle(.plain)
+        .buttonBorderShape(.circle)
         .accessibilityLabel(accessibilityLabel)
+
+        switch style {
+        case .glass: button.buttonStyle(.glass)
+        case .accent: button.buttonStyle(.glassProminent).tint(GRColor.accent)
+        case .plain: button.buttonStyle(.borderless)
+        }
     }
 
     private var foreground: Color {
         if let tint { return tint }
         switch style {
         case .glass: return GRColor.accent
-        case .accent: return .white
+        case .accent: return GRColor.canvas
         case .plain: return GRColor.textSecondary
-        }
-    }
-
-    @ViewBuilder
-    private var background: some View {
-        switch style {
-        case .glass:
-            Color.clear.grGlassEffect(.interactive, in: Circle())
-        case .accent:
-            GRAccentGlass(shape: Circle(), strength: 0.42)
-        case .plain:
-            Circle().fill(GRColor.fillSubtle)
         }
     }
 }
@@ -169,14 +105,24 @@ struct GRChip: View {
 
     var body: some View {
         if let action {
-            Button(action: action) { label }
-                .buttonStyle(.plain)
+            // Tappable chips are real glass buttons; the selected one is the prominent (tinted) glass.
+            let button = Button(action: action) { content }
+                .controlSize(compact ? .small : .regular)
+                .buttonBorderShape(.capsule)
+            switch style {
+            case .selected:
+                button.buttonStyle(.glassProminent).tint(GRColor.accent).foregroundStyle(GRColor.canvas)
+            case .tinted(let tone):
+                button.buttonStyle(.glass).tint(tone.color).foregroundStyle(tone == .neutral ? GRColor.textPrimary : tone.color)
+            case .plain, .outline:
+                button.buttonStyle(.glass).foregroundStyle(GRColor.textPrimary)
+            }
         } else {
-            label
+            tag
         }
     }
 
-    private var label: some View {
+    private var content: some View {
         HStack(spacing: 5) {
             if let systemImage {
                 Image(systemName: systemImage)
@@ -186,12 +132,16 @@ struct GRChip: View {
                 .font(isSelected ? GRType.caption.weight(.bold) : GRType.caption)
                 .lineLimit(1)
         }
-        .padding(.horizontal, compact ? 10 : 14)
-        .padding(.vertical, compact ? 5 : 8)
-        .foregroundStyle(foreground)
-        .background(background, in: Capsule(style: .continuous))
-        .overlay(Capsule(style: .continuous).stroke(isOutline ? GRColor.strokeStrong : .clear, lineWidth: 1))
-        .contentShape(Capsule())
+    }
+
+    /// Non-interactive label (a tag on content, not a control).
+    private var tag: some View {
+        content
+            .padding(.horizontal, compact ? 10 : 14)
+            .padding(.vertical, compact ? 5 : 8)
+            .foregroundStyle(foreground)
+            .background(background, in: Capsule(style: .continuous))
+            .overlay(Capsule(style: .continuous).stroke(isOutline ? GRColor.strokeStrong : .clear, lineWidth: 1))
     }
 
     private var isSelected: Bool { if case .selected = style { return true }; return false }
@@ -232,8 +182,8 @@ struct GRSectionHeader: View {
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .font(GRType.caption.weight(.bold))
-                    .foregroundStyle(GRColor.accent)
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderless)
+                    .tint(GRColor.accent)
             }
         }
     }
@@ -372,18 +322,10 @@ struct GRProgressBar: View {
     var height: CGFloat = 6
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(GRColor.fillSubtle)
-                Capsule()
-                    .fill(tint)
-                    .frame(width: max(height, geo.size.width * min(max(value, 0), 1)))
-                    .opacity(value <= 0 ? 0 : 1)
-            }
-        }
-        .frame(height: height)
-        .animation(.easeOut(duration: 0.3), value: value)
-        .accessibilityValue("\(Int((min(max(value, 0), 1)) * 100)) percent")
+        ProgressView(value: min(max(value, 0), 1))
+            .progressViewStyle(.linear)
+            .tint(tint)
+            .animation(.easeOut(duration: 0.3), value: value)
     }
 }
 
@@ -434,20 +376,13 @@ struct GRToast: View {
 struct GRCheckbox: View {
     let isOn: Bool
 
+    /// The system selection mark (as in Mail / Photos edit mode).
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isOn ? GRColor.accent : Color.clear)
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(isOn ? Color.clear : GRColor.strokeStrong, lineWidth: 1.5)
-            if isOn {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(GRColor.canvas)
-            }
-        }
-        .frame(width: 24, height: 24)
-        .animation(.easeOut(duration: 0.15), value: isOn)
+        Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: 22))
+            .foregroundStyle(isOn ? GRColor.accent : GRColor.textTertiary)
+            .contentTransition(.symbolEffect(.replace))
+            .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
 

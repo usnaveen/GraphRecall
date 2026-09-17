@@ -93,7 +93,7 @@ struct ImportReviewView: View {
                 if !concepts.isEmpty {
                     HStack(spacing: 10) {
                         Button("Discard") { confirmDiscard = true }
-                            .buttonStyle(GRButtonStyle(kind: .secondary, fullWidth: false))
+                            .grButton(.secondary, fullWidth: false)
                         Button {
                             Task { await approve() }
                         } label: {
@@ -103,7 +103,7 @@ struct ImportReviewView: View {
                                 Label("Approve \(selectedCount) concept\(selectedCount == 1 ? "" : "s")", systemImage: "checkmark")
                             }
                         }
-                        .buttonStyle(.grPrimary)
+                        .grButton(.primary)
                         .disabled(selectedCount == 0 || isSubmitting)
                     }
                     .padding(10)

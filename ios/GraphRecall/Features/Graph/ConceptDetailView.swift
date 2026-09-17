@@ -73,9 +73,10 @@ struct ConceptDetailView: View {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(GRColor.textPrimary)
-                    .frame(width: 40, height: 40)
-                    .grGlassEffect(.interactive, in: Circle())
+                    .frame(width: 24, height: 24)
             }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .accessibilityLabel("Share concept")
         }
         .padding(.top, 16)
@@ -215,11 +216,10 @@ struct ConceptDetailView: View {
                                 .font(GRType.caption)
                                 .foregroundStyle(GRColor.textPrimary)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(GRColor.fillSubtle))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
                 }
             }
         }
@@ -263,17 +263,15 @@ struct ConceptDetailView: View {
     private var actionBar: some View {
         HStack(spacing: 10) {
             Button { showQuiz = true } label: { Label("Quiz me", systemImage: "target") }
-                .buttonStyle(.grPrimary)
+                .grButton(.primary)
             Button {
                 router.ask("Explain \(node.name) and how it connects to what I already know.", topic: node.name)
                 dismiss()
             } label: {
                 Label("Ask", systemImage: "sparkles")
             }
-            .buttonStyle(.grSecondary)
+            .grButton(.secondary)
         }
-        .padding(10)
-        .grGlassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .padding(.horizontal, 20)
         .padding(.bottom, 8)
     }

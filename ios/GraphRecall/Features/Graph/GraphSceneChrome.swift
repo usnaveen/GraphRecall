@@ -173,7 +173,7 @@ struct GraphMergeBar: View {
 
             HStack(spacing: 8) {
                 Button("Cancel") { model.exitMergeMode() }
-                    .buttonStyle(GRButtonStyle(kind: .secondary, compact: true))
+                    .grButton(.secondary, compact: true)
 
                 Button {
                     confirming = true
@@ -187,11 +187,11 @@ struct GraphMergeBar: View {
                     }
                     .font(GRType.caption.weight(.semibold))
                     .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Self.orange.opacity(count == 0 ? 0.35 : 1), in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.capsule)
+                .buttonSizing(.flexible)
+                .tint(Self.orange)
                 .disabled(count == 0 || model.isMerging)
             }
         }
@@ -302,7 +302,7 @@ struct CreateConceptSheet: View {
                         Label("Create", systemImage: "plus")
                     }
                 }
-                .buttonStyle(.grPrimary)
+                .grButton(.primary)
                 .disabled(trimmedName.isEmpty || isCreating)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)

@@ -180,7 +180,7 @@ struct GraphInspectorPanel: View {
                 }
             }
         }
-        .buttonStyle(GRButtonStyle(kind: .secondary, compact: true))
+        .grButton(.secondary, compact: true)
     }
 
     private var toolChips: some View {
@@ -268,11 +268,10 @@ struct GraphInspectorPanel: View {
                                     .foregroundStyle(GRColor.textSecondary)
                                     .lineLimit(1)
                             }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(GRColor.fillSubtle))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.mini)
                     }
                 }
             }

@@ -55,7 +55,7 @@ struct WelcomeView: View {
                     } label: {
                         Label(auth.isWorking ? "Signing in…" : "Continue with Google", systemImage: "person.crop.circle.badge.checkmark")
                     }
-                    .buttonStyle(.grPrimary)
+                    .grButton(.primary)
                     .disabled(auth.isWorking)
 
                     if let error = auth.lastError {
@@ -68,7 +68,7 @@ struct WelcomeView: View {
                     Button(action: onFinish) {
                         Label("Get started", systemImage: "arrow.right")
                     }
-                    .buttonStyle(.grPrimary)
+                    .grButton(.primary)
                 }
 
                 Button {
@@ -79,7 +79,7 @@ struct WelcomeView: View {
                 } label: {
                     Label("Use demo session", systemImage: "play.fill")
                 }
-                .buttonStyle(GRButtonStyle(kind: auth.isGoogleConfigured ? .ghost : .secondary))
+                .grButton(auth.isGoogleConfigured ? .ghost : .secondary)
 
                 Text(auth.isGoogleConfigured ? "Your graph syncs to your Google account." : "You can sign in later from Profile → Settings.")
                     .font(GRType.micro)

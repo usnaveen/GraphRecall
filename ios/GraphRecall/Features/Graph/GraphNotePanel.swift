@@ -52,10 +52,10 @@ struct GraphNotePanel: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(GRColor.textSecondary)
-                    .padding(8)
-                    .background(Circle().fill(GRColor.fillSubtle))
+                    .frame(width: 16, height: 16)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .accessibilityLabel("Close notes")
         }
         .padding(14)

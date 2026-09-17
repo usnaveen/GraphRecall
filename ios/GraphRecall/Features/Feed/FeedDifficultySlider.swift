@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// How hard was that card? Drag right for tougher — each band ticks under your thumb, and letting
-/// go grades the card. Replaces the row of Again / Hard / Good / Easy buttons, and lives inside the
+/// How hard was that card? A system slider: drag right for tougher — each band ticks under your
+/// thumb, and letting go grades the card. Replaces the row of Again / Hard / Good / Easy buttons, and lives inside the
 /// card so the content keeps the full width.
 struct FeedDifficultySlider: View {
     /// Grade already recorded for this card, if any.
@@ -54,66 +54,29 @@ struct FeedDifficultySlider: View {
                 }
             }
 
-            GeometryReader { geo in
-                let width = geo.size.width
-                let knobX = value * width
-
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(GRColor.fillSubtle)
-                        .overlay(
-                            Capsule().fill(
-                                LinearGradient(
-                                    colors: [GRColor.accent, GRColor.success, GRColor.amber, GRColor.danger],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .opacity(isScrubbing || graded != nil ? 0.85 : 0.45)
-                        )
-                        .overlay(Capsule().strokeBorder(GRColor.stroke, lineWidth: 1))
-                        .frame(height: 22)
-                        .frame(maxHeight: .infinity)
-
-                    Circle()
-                        .fill(activeBand.color)
-                        .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1.5))
-                        .frame(width: isScrubbing ? 26 : 22, height: isScrubbing ? 26 : 22)
-                        .shadow(color: activeBand.color.opacity(0.5), radius: isScrubbing ? 7 : 3)
-                        .offset(x: min(max(knobX - 11, 0), width - 22))
-                        .animation(.easeOut(duration: 0.12), value: isScrubbing)
-                }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { drag in
-                            isScrubbing = true
-                            update(to: drag.location.x / max(width, 1))
-                        }
-                        .onEnded { _ in commit() }
-                )
-            }
-            .frame(height: 28)
-
-            HStack {
+            // The system slider (Liquid Glass thumb); the tint follows the band under the thumb.
+            Slider(value: sliderValue, in: 0...1) {
+                Text("Difficulty")
+            } minimumValueLabel: {
                 Text("Easy")
-                Spacer()
+            } maximumValueLabel: {
                 Text("No idea")
+            } onEditingChanged: { editing in
+                if editing {
+                    isScrubbing = true
+                } else {
+                    commit()
+                }
             }
-            .font(.system(size: 8, weight: .semibold, design: .rounded))
+            .font(GRType.micro)
             .foregroundStyle(GRColor.textTertiary)
+            .tint(activeBand.color)
+            .accessibilityValue(activeBand.label)
         }
-        .accessibilityElement()
-        .accessibilityLabel("Difficulty")
-        .accessibilityValue(activeBand.label)
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment: update(to: value + 0.25)
-            case .decrement: update(to: value - 0.25)
-            default: break
-            }
-            commit()
-        }
+    }
+
+    private var sliderValue: Binding<Double> {
+        Binding(get: { value }, set: { update(to: $0) })
     }
 
     private func update(to raw: Double) {

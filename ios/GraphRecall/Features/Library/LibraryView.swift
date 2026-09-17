@@ -232,29 +232,12 @@ struct BookDetailView: View {
     }
 
     private var sectionPicker: some View {
-        HStack(spacing: 6) {
+        Picker("Section", selection: $section) {
             ForEach(DetailSection.allCases) { tab in
-                Button {
-                    section = tab
-                } label: {
-                    Text(tab.title)
-                        .font(GRType.caption)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .foregroundStyle(section == tab ? GRColor.accent : GRColor.textSecondary)
-                        .background {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(section == tab ? GRColor.accent.opacity(0.18) : Color.clear)
-                        }
-                }
-                .buttonStyle(.plain)
+                Text(tab.title).tag(tab)
             }
         }
-        .padding(4)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(GRColor.fillSubtle)
-        )
+        .pickerStyle(.segmented)
     }
 
     private var overviewBody: some View {
