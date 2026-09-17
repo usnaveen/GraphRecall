@@ -33,10 +33,15 @@ struct ChatView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 6)
                 messagesScroll
-                if showsSuggestions {
-                    suggestionsRow
-                }
-                composer(input: $bindable.input)
+                    // The composer floats over the conversation, so messages scroll under real glass.
+                    .safeAreaBar(edge: .bottom) {
+                        VStack(spacing: 0) {
+                            if showsSuggestions {
+                                suggestionsRow
+                            }
+                            composer(input: $bindable.input)
+                        }
+                    }
             }
             // The dock hides with the keyboard, so the composer can sit directly on the keys.
             .animation(.easeOut(duration: 0.22), value: inputFocused)
@@ -216,7 +221,8 @@ struct ChatView: View {
             }
             // Tapping the conversation is a natural way out of typing.
             .simultaneousGesture(TapGesture().onEnded { inputFocused = false })
-            .mask(topFade)
+            // System scroll-edge fade at the top; the bottom runs under the glass composer.
+            .scrollEdgeEffectStyle(.soft, for: .top)
             .overlay(alignment: .bottomTrailing) {
                 if !isNearBottom {
                     Button {
@@ -268,14 +274,6 @@ struct ChatView: View {
     }
 
     /// Messages fade out under the scope row instead of being cut off by a hard edge.
-    private var topFade: some View {
-        VStack(spacing: 0) {
-            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-                .frame(height: 18)
-            Rectangle().fill(.black)
-        }
-    }
-
     @ViewBuilder
     private func messageBubble(_ message: ChatMessageUI) -> some View {
         if message.role == .user {
@@ -583,7 +581,7 @@ struct ChatView: View {
             }
         }
         .padding(5)
-        .grGlassEffect(.interactive, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 24))
         .padding(.horizontal, router.isKeyboardVisible ? 12 : 20)
         .padding(.top, 8)
         .padding(.bottom, router.isKeyboardVisible ? 8 : 10)
