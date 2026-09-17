@@ -125,17 +125,12 @@ struct FeedTypedCard: View {
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 0)
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(optionBackground(opt))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(optionBorder(opt), lineWidth: 1)
-                    )
+                    .padding(.vertical, 4)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.roundedRectangle(radius: 14))
+                .buttonSizing(.flexible)
+                .tint(optionBorder(opt))
                 .allowsHitTesting(!revealed)
                 .accessibilityIdentifier("review.option")
             }
@@ -167,13 +162,6 @@ struct FeedTypedCard: View {
         if revealed && opt.id == selectedOptionId { return Color.red.opacity(0.35) }
         if opt.id == selectedOptionId { return GRColor.accent.opacity(0.35) }
         return Color.clear
-    }
-
-    private func optionBackground(_ opt: FeedMCQOption) -> Color {
-        if revealed && opt.isCorrect { return Color.green.opacity(0.12) }
-        if revealed && opt.id == selectedOptionId && !opt.isCorrect { return Color.red.opacity(0.12) }
-        if opt.id == selectedOptionId { return GRColor.accent.opacity(0.08) }
-        return GRColor.fillSubtle
     }
 
     // MARK: - Fill blank
@@ -216,21 +204,13 @@ struct FeedTypedCard: View {
                     Button(action: onToggleHint) {
                         Text("Show hint")
                             .font(GRType.caption.weight(.semibold))
-                            .foregroundStyle(GRColor.textPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
+                    .grButton(.secondary)
                     Button(action: onReveal) {
                         Text("Show answer")
                             .font(GRType.caption.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background {
-                                GRAccentGlass(shape: RoundedRectangle(cornerRadius: 14, style: .continuous), tint: GRColor.accentCyan, strength: 0.45)
-                            }
                     }
+                    .grButton(.primary)
                     .accessibilityIdentifier("review.reveal")
                 }
             } else if let ans = item.firstAnswerFromList() {
@@ -451,13 +431,8 @@ struct FeedTypedCard: View {
         Button(action: onReveal) {
             Text(title)
                 .font(GRType.caption.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background {
-                    GRAccentGlass(shape: RoundedRectangle(cornerRadius: 14, style: .continuous), tint: typeColor, strength: 0.45)
-                }
         }
+        .grButton(.primary)
         .accessibilityIdentifier("review.reveal")
         .padding(.top, 4)
     }
@@ -561,10 +536,11 @@ struct FeedCardActionBar: View {
             ShareLink(item: item.sharePlainText) {
                 Image(systemName: "square.and.arrow.up")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(GRColor.textTertiary)
-                    .frame(width: 40, height: 40)
-                    .background(GRColor.fillSubtle, in: Circle())
+                    .foregroundStyle(GRColor.textSecondary)
+                    .frame(width: 24, height: 24)
             }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .accessibilityLabel("Share card")
             Spacer(minLength: 0)
         }
@@ -580,14 +556,11 @@ struct FeedCardActionBar: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(active ? GRColor.accent : GRColor.textTertiary)
-                .frame(width: 40, height: 40)
-                .background(
-                    (active ? GRColor.accent.opacity(0.12) : GRColor.fillSubtle),
-                    in: Circle()
-                )
+                .foregroundStyle(active ? GRColor.accent : GRColor.textSecondary)
+                .frame(width: 24, height: 24)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
         .accessibilityLabel(accessibilityLabel)
     }
 }

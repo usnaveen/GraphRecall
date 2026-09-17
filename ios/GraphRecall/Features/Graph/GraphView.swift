@@ -402,24 +402,23 @@ struct GraphView: View {
 
     /// Shown while a concept is selected — the scene is flat then, and this is the way back out.
     private var focusPill: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "square.on.square.dashed")
-                .font(.system(size: 11, weight: .bold))
-            Text("2D focus")
-                .font(GRType.micro.weight(.bold))
-            Button {
-                withAnimation(.easeInOut(duration: 0.22)) { model.select(nodeId: nil) }
-            } label: {
+        Button {
+            withAnimation(.easeInOut(duration: 0.22)) { model.select(nodeId: nil) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "square.on.square.dashed")
+                    .font(.system(size: 11, weight: .bold))
+                Text("2D focus")
+                    .font(GRType.micro.weight(.bold))
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back to the 3D overview")
+            .foregroundStyle(GRColor.accent)
         }
-        .foregroundStyle(GRColor.accent)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .grGlassEffect(in: Capsule())
+        .buttonStyle(.glass)
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
+        .accessibilityLabel("2D focus. Back to the 3D overview")
         .fixedSize()
     }
 
@@ -468,10 +467,10 @@ struct GraphView: View {
     }
 
     private var canvasTools: some View {
-        VStack(spacing: 4) {
+        GlassEffectContainer(spacing: 8) {
+            VStack(spacing: 8) {
             GRIconButton(
                 systemImage: "target",
-                style: .plain,
                 tint: model.filter == .weak ? GRColor.accent : GRColor.textSecondary,
                 size: 36,
                 accessibilityLabel: "Weak-spot lens"
@@ -480,9 +479,8 @@ struct GraphView: View {
             }
 
             createFABButton
+            }
         }
-        .padding(4)
-        .grGlassEffect(in: Capsule())
     }
 
     private var createFAB: some View {

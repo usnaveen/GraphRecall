@@ -61,10 +61,10 @@ struct GraphQuizSheet: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(GRColor.textSecondary)
-                    .padding(8)
-                    .background(Circle().fill(GRColor.fillSubtle))
+                    .frame(width: 16, height: 16)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .accessibilityLabel("Close quiz")
         }
         .padding(14)
@@ -89,9 +89,8 @@ struct GraphQuizSheet: View {
                 } label: {
                     Label("Retry", systemImage: "arrow.clockwise")
                         .font(GRType.caption)
-                        .foregroundStyle(GRColor.accent)
                 }
-                .buttonStyle(.plain)
+                .grButton(.ghost, fullWidth: false, compact: true)
             } else if !inlineQuestions.isEmpty {
                 questionPreview(inlineQuestions[0])
                 if canOpenFeed {
@@ -117,15 +116,8 @@ struct GraphQuizSheet: View {
                     Button(action: openFeed) {
                         Label("Practice in Feed", systemImage: "house.fill")
                             .font(GRType.caption.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .foregroundStyle(GRColor.canvas)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(GRColor.accent)
-                            )
                     }
-                    .buttonStyle(.plain)
+                    .grButton(.primary, compact: true)
                     .accessibilityLabel("Practice quiz cards in Feed")
 
                     Button {
@@ -133,30 +125,16 @@ struct GraphQuizSheet: View {
                     } label: {
                         Label("Generate again", systemImage: "sparkles")
                             .font(GRType.caption.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .foregroundStyle(GRColor.accent)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(GRColor.accent.opacity(0.4), lineWidth: 1)
-                            )
                     }
-                    .buttonStyle(.plain)
+                    .grButton(.ghost, compact: true)
                 } else {
                     Button {
                         Task { await generate() }
                     } label: {
                         Label(didRun ? "Generate again" : "Generate quiz", systemImage: "sparkles")
                             .font(GRType.caption.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .foregroundStyle(GRColor.canvas)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(GRColor.accent)
-                            )
                     }
-                    .buttonStyle(.plain)
+                    .grButton(.primary, compact: true)
                     .disabled(isGenerating)
                 }
             }
@@ -182,13 +160,11 @@ struct GraphQuizSheet: View {
                             .foregroundStyle(GRColor.textSecondary)
                         Spacer()
                     }
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(optionFill(letter: letter, correct: q.correctAnswer))
-                    )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.roundedRectangle(radius: 10))
+                .buttonSizing(.flexible)
+                .tint(optionFill(letter: letter, correct: q.correctAnswer))
             }
             if revealed, let explanation = q.explanation, !explanation.isEmpty {
                 Text(explanation)

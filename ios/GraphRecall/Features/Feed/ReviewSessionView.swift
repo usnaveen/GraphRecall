@@ -303,9 +303,10 @@ struct ReviewSessionView: View {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(GRColor.textPrimary)
-                    .frame(width: 40, height: 40)
-                    .background(Circle().fill(GRColor.fillSubtle))
+                    .frame(width: 24, height: 24)
             }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .accessibilityLabel("More")
         }
     }
@@ -337,7 +338,7 @@ struct ReviewSessionView: View {
                     } label: {
                         gradeLabel(grade)
                     }
-                    .buttonStyle(.plain)
+                    .modifier(GradeButtonStyle(grade: grade))
                     .disabled(model.isGrading)
                     .accessibilityIdentifier("review.grade.\(grade.label)")
                 }
@@ -348,7 +349,6 @@ struct ReviewSessionView: View {
     private func gradeLabel(_ grade: ReviewDifficulty) -> some View {
         let strong = grade == .good || grade == .easy
         let foreground: Color = strong ? GRColor.canvas : (grade == .again ? GRColor.danger : GRColor.textPrimary)
-        let background: Color = strong ? GRColor.accent : (grade == .again ? GRColor.danger.opacity(0.15) : GRColor.fillMuted)
         return VStack(spacing: 1) {
             Text(grade.label)
                 .font(GRType.caption.weight(.bold))
@@ -358,9 +358,7 @@ struct ReviewSessionView: View {
         }
         .foregroundStyle(foreground)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(GRColor.stroke, lineWidth: 1))
+        .padding(.vertical, 2)
         .accessibilityLabel("\(grade.label), next review \(grade.intervalHint)")
     }
 
@@ -450,7 +448,7 @@ struct SessionSummaryView: View {
                         } label: {
                             Label("Drill \(model.weakCards.count) weak card\(model.weakCards.count == 1 ? "" : "s") now", systemImage: "target")
                         }
-                        .buttonStyle(.grPrimary)
+                        .grButton(.primary)
                     }
                 }
 
@@ -459,7 +457,7 @@ struct SessionSummaryView: View {
                 } label: {
                     Label("Back to Today", systemImage: "house")
                 }
-                .buttonStyle(model.weakCards.isEmpty ? GRButtonStyle(kind: .primary) : GRButtonStyle(kind: .secondary))
+                .grButton(model.weakCards.isEmpty ? .primary : .secondary)
                 .accessibilityIdentifier("review.summary.done")
             }
             .padding(.horizontal, 20)
@@ -505,6 +503,22 @@ struct SessionSummaryView: View {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Good / Easy are the prominent (accent) glass; Again and Hard are plain glass.
+private struct GradeButtonStyle: ViewModifier {
+    let grade: ReviewDifficulty
+
+    func body(content: Content) -> some View {
+        let shaped = content
+            .buttonBorderShape(.roundedRectangle(radius: 16))
+            .buttonSizing(.flexible)
+        if grade == .good || grade == .easy {
+            shaped.buttonStyle(.glassProminent).tint(GRColor.accent)
+        } else {
+            shaped.buttonStyle(.glass)
         }
     }
 }

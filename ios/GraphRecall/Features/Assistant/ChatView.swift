@@ -227,10 +227,10 @@ struct ChatView: View {
                         Image(systemName: "arrow.down")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(GRColor.textPrimary)
-                            .frame(width: 38, height: 38)
-                            .grGlassEffect(.interactive, in: Circle())
+                            .frame(width: 22, height: 22)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
                     .accessibilityLabel("Jump to latest message")
                     .padding(.trailing, 20)
                     .padding(.bottom, 10)
@@ -559,9 +559,10 @@ struct ChatView: View {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(GRColor.textPrimary)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(GRColor.fillMuted))
+                        .frame(width: 22, height: 22)
                 }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
                 .accessibilityLabel("Stop answer")
             } else {
                 Button {
@@ -571,16 +572,12 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(model.canSend ? .white : GRColor.textTertiary)
-                        .frame(width: 36, height: 36)
-                        .background {
-                            if model.canSend {
-                                GRAccentGlass(shape: Circle(), strength: 0.46)
-                            } else {
-                                Circle().fill(GRColor.fillSubtle)
-                            }
-                        }
+                        .frame(width: 22, height: 22)
                 }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .tint(GRColor.accent)
+                .foregroundStyle(model.canSend ? GRColor.canvas : GRColor.textTertiary)
                 .disabled(!model.canSend)
                 .accessibilityLabel("Send")
             }
@@ -754,7 +751,7 @@ private struct ConversationHistorySheet: View {
             } label: {
                 Text("Retry")
             }
-            .buttonStyle(GRButtonStyle(kind: .ghost, fullWidth: false, compact: true))
+            .grButton(.ghost, fullWidth: false, compact: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -74,7 +74,7 @@ struct LinkSuggestionsSheet: View {
                             Label("Apply \(selected.count) link\(selected.count == 1 ? "" : "s")", systemImage: "link.badge.plus")
                         }
                     }
-                    .buttonStyle(.grPrimary)
+                    .grButton(.primary)
                     .disabled(selected.isEmpty || isApplying)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
@@ -243,7 +243,7 @@ struct MergeTargetsSheet: View {
                 } label: {
                     Label("Done · \(model.mergeTargetIds.count) selected", systemImage: "checkmark")
                 }
-                .buttonStyle(.grPrimary)
+                .grButton(.primary)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .background(GRColor.canvas.opacity(0.92))

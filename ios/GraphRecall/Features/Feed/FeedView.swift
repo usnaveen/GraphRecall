@@ -127,7 +127,7 @@ struct FeedView: View {
                 } label: {
                     Label("Add something", systemImage: "plus")
                 }
-                .buttonStyle(GRButtonStyle(kind: .ghost, fullWidth: false, compact: true))
+                .grButton(.ghost, fullWidth: false, compact: true)
             }
         }
     }

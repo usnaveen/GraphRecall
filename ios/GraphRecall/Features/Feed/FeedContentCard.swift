@@ -76,10 +76,11 @@ struct FeedContentCard: View {
             ShareLink(item: item.sharePlainText) {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(GRColor.textTertiary)
-                    .frame(width: 32, height: 32)
-                    .background(GRColor.fillSubtle, in: Circle())
+                    .foregroundStyle(GRColor.textSecondary)
+                    .frame(width: 18, height: 18)
             }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .accessibilityLabel("Share card")
         }
     }
@@ -88,11 +89,11 @@ struct FeedContentCard: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(active ? GRColor.accent : GRColor.textTertiary)
-                .frame(width: 32, height: 32)
-                .background(active ? GRColor.accentSoft : GRColor.fillSubtle, in: Circle())
+                .foregroundStyle(active ? GRColor.accent : GRColor.textSecondary)
+                .frame(width: 18, height: 18)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
         .accessibilityLabel(label)
     }
 }
