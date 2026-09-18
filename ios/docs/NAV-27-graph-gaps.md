@@ -13,7 +13,7 @@ but drops the decorative effects.
 | Renderer | React Three Fiber (`GraphVisualizer.tsx`) + UnrealBloom | Three.js 0.182 in WKWebView (`Tools/graph3d/src/graph3d.js` → `WebAssets/graph3d.bundle.js`), no post-processing, renders only when something changes |
 | Layout | `ForceSimulation3D` (2D d3 simulation, z from seed) | True 3D d3-force-3d with bounded repulsion and a centre pull, seeded from backend positions scaled ×0.25 |
 | Camera | OrbitControls, fly-to-focus | OrbitControls, fly-to-focus at a comfortable distance, fit-to-view on load and reset, focus kept above the bottom card |
-| Data | `GET /api/graph3d?limit&offset` | Same, 1000 per page |
+| Data | `GET /api/graph3d?limit&offset` | Same, 1000 per page. Each page also returns edges that leave it, so links between pages survive the merge |
 | Chrome | Controls / Inspector / modals | Liquid Glass controls panel, compact + expandable concept card, merge bar, create sheet |
 
 ## Visual design (iOS)
@@ -46,5 +46,4 @@ but drops the decorative effects.
 
 ## Known limits
 
-1. `/api/graph3d` only returns edges inside a page, so links between pages are missing; iOS pages at 1000 concepts.
-2. Labels are DOM elements positioned each frame; fine for hundreds of concepts, thousands would want culling by zoom.
+1. Labels are DOM elements positioned each frame; fine for hundreds of concepts, thousands would want culling by zoom.
