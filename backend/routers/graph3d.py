@@ -51,6 +51,19 @@ def get_domain_color(domain: str) -> str:
     return _DYNAMIC_HUE_PALETTE[h]
 
 
+def edge_endpoint_scope(*, focused: bool) -> str:
+    """Which endpoints a graph3d edge query is allowed to match.
+
+    A paged load is only a slice of the graph. Requiring both ends to sit on
+    the same page drops every link between pages, and the clients never see
+    those edges again. A focused neighbourhood is the whole scene, so both
+    ends stay inside it.
+    """
+    if focused:
+        return "c1.id IN $node_ids AND c2.id IN $node_ids"
+    return "(c1.id IN $node_ids OR c2.id IN $node_ids)"
+
+
 def calculate_node_size(complexity: float, relationship_count: int) -> float:
     """Calculate node size based on complexity and connectivity."""
     # Base size from complexity (1-10 scale)
@@ -211,12 +224,14 @@ async def get_3d_graph(
                 color=get_domain_color(domain),
             ))
         
-        # Get edges
+        # Get edges. Paged loads include links that leave the page so the
+        # client can draw them once the other concept arrives on a later page.
         node_ids = [n.id for n in nodes]
+        edge_scope = edge_endpoint_scope(focused=center_concept_id is not None)
         
-        edges_query = """
+        edges_query = f"""
         MATCH (c1:Concept)-[r]->(c2:Concept)
-        WHERE c1.id IN $node_ids AND c2.id IN $node_ids
+        WHERE {edge_scope}
           AND c1.user_id = $user_id AND c2.user_id = $user_id
         RETURN
             c1.id as source,
@@ -256,9 +271,12 @@ async def get_3d_graph(
         for node in nodes:
             G.add_node(node.id)
             
-        # Add edges
+        # Layout only sees edges whose both ends are on this page. Cross-page
+        # edges are still returned; the other concept is not in this response.
+        page_ids = set(node_ids)
         for edge in edges:
-            G.add_edge(edge.source, edge.target, weight=edge.strength)
+            if edge.source in page_ids and edge.target in page_ids:
+                G.add_edge(edge.source, edge.target, weight=edge.strength)
             
         # Calculate layout
         # usage of spring_layout for 3D

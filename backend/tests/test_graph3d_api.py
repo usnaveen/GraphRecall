@@ -38,7 +38,13 @@ async def test_get_3d_graph_returns_communities(monkeypatch):
             ]
         return []
 
-    mock_neo4j.execute_query = AsyncMock(side_effect=execute_query)
+    queries = []
+
+    def execute_and_record(query, params=None):
+        queries.append(query)
+        return execute_query(query, params)
+
+    mock_neo4j.execute_query = AsyncMock(side_effect=execute_and_record)
 
     async def fake_get_neo4j_client():
         return mock_neo4j
@@ -75,3 +81,14 @@ async def test_get_3d_graph_returns_communities(monkeypatch):
     assert response.total_nodes == 1
     assert response.total_edges == 1
     assert len(response.communities) == 1
+    edge_queries = [q for q in queries if "relationship_type" in q]
+    assert edge_queries, "paged load should query edges"
+    assert "c1.id IN $node_ids OR c2.id IN $node_ids" in edge_queries[-1]
+    assert "c1.id IN $node_ids AND c2.id IN $node_ids" not in edge_queries[-1]
+
+
+def test_edge_scope_keeps_cross_page_links_and_contains_focus():
+    paged = graph3d_router.edge_endpoint_scope(focused=False)
+    focused = graph3d_router.edge_endpoint_scope(focused=True)
+    assert paged == "(c1.id IN $node_ids OR c2.id IN $node_ids)"
+    assert focused == "c1.id IN $node_ids AND c2.id IN $node_ids"
