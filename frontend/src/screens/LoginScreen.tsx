@@ -9,7 +9,9 @@ import { useState, useRef } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 
 export function LoginScreen() {
-    const { login, isLoading } = useAuthStore();
+    const { login, devLogin, isLoading } = useAuthStore();
+    // Google sign-in is parked for now: in dev we go straight in as the backend's test user.
+    const devAuth = import.meta.env.DEV;
     const [loginError, setLoginError] = useState<string | null>(null);
     const loginAttemptRef = useRef(false); // prevent One Tap re-triggering
 
@@ -87,6 +89,13 @@ export function LoginScreen() {
                             <div className="h-5 w-5 rounded-full border-2 border-[#B6FF2E] border-t-transparent animate-spin" />
                             <span>Signing in...</span>
                         </motion.div>
+                    ) : devAuth ? (
+                        <button
+                            onClick={devLogin}
+                            className="px-6 py-3 rounded-full bg-[#B6FF2E] text-[#07070A] font-semibold hover:brightness-110 transition"
+                        >
+                            Continue as test user
+                        </button>
                     ) : (
                         <GoogleLogin
                             onSuccess={handleSuccess}
@@ -112,7 +121,7 @@ export function LoginScreen() {
 
                 {/* Footer */}
                 <p className="text-[#5A5C66] text-xs mt-12">
-                    By continuing, you agree to our Terms of Service
+                    {devAuth ? 'Dev build · Google sign-in parked' : 'By continuing, you agree to our Terms of Service'}
                 </p>
             </motion.div>
         </div>
