@@ -203,7 +203,10 @@ def run_pipeline(
     """
     if runner == "docker":
         cmd = [
-            "docker", "compose", "exec", "-T", "api",
+            "docker", "compose", "exec", "-T",
+            # the scripts dir is not a package, so `backend` needs to be importable
+            "-e", "PYTHONPATH=/app",
+            "api",
             "python", "/app/scripts/ingest_book.py",
             "--md-path", _container_path(md_path),
             "--images-dir", _container_path(images_dir),
@@ -257,7 +260,9 @@ async def tag_paper(note_id: str, meta: dict[str, Any], source_path: Path) -> No
     from backend.db.neo4j_client import get_neo4j_client
     from backend.db.postgres_client import get_postgres_client
 
-    tags = [f"paper"]
+    # notes.resource_type is constrained to a fixed list, so 'research' carries the
+    # kind and the 'paper' tag marks these as papers specifically.
+    tags = ["paper"]
     if meta.get("year"):
         tags.append(f"year:{meta['year']}")
     if meta.get("doi"):
@@ -274,15 +279,15 @@ async def tag_paper(note_id: str, meta: dict[str, Any], source_path: Path) -> No
         source_url = f"https://arxiv.org/abs/{meta['arxiv_id']}"
 
     pg = await get_postgres_client()
-    await pg.execute(
+    await pg.execute_update(
         """
         UPDATE notes
-           SET resource_type = 'paper',
-               tags = $2,
-               source_url = COALESCE($3, source_url)
-         WHERE id = $1::uuid
+           SET resource_type = 'research',
+               tags = :tags,
+               source_url = COALESCE(:source_url, source_url)
+         WHERE id = CAST(:note_id AS uuid)
         """,
-        note_id, tags, source_url,
+        {"note_id": note_id, "tags": tags, "source_url": source_url},
     )
 
     # The same metadata on the graph side, so Phase 2 can draw paper-to-paper edges.

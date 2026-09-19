@@ -36,7 +36,8 @@ dependencies = [
     "python-multipart>=0.0.22",
     "google-auth>=2.48.0",
     "langchain-google-genai>=4.2.0",
-    "marker-pdf>=1.10.2",
+    # Pinned below 2.0: marker 2.x requires a llama.cpp server binary.
+    "marker-pdf>=1.10.2,<2",
     "langchain-tavily>=0.0.1",
 ]
 

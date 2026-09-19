@@ -195,7 +195,7 @@ async def _insert_chunks(
         await pg_client.execute_update(
             """
             INSERT INTO chunks (id, note_id, content, chunk_level, chunk_index, source_location, images, created_at)
-            VALUES (:id, :note_id, :content, 'parent', :idx, :source_location::jsonb, :images::jsonb, NOW())
+            VALUES (:id, :note_id, :content, 'parent', :idx, CAST(:source_location AS jsonb), CAST(:images AS jsonb), NOW())
             ON CONFLICT (id) DO NOTHING
             """,
             {
@@ -217,7 +217,7 @@ async def _insert_chunks(
         await pg_client.execute_update(
             """
             INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, source_location, images, embedding, created_at)
-            VALUES (:id, :note_id, :parent_id, :content, 'child', 0, :source_location::jsonb, :images::jsonb, :embedding, NOW())
+            VALUES (:id, :note_id, :parent_id, :content, 'child', 0, CAST(:source_location AS jsonb), CAST(:images AS jsonb), CAST(:embedding AS vector), NOW())
             ON CONFLICT (id) DO NOTHING
             """,
             {
