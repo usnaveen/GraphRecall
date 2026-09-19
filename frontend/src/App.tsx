@@ -120,9 +120,15 @@ function App() {
     );
   }
 
+  const tree = isAuthenticated ? <AuthenticatedApp /> : <LoginScreen />;
+
+  // Google sign-in is parked in dev: skipping the provider also stops One Tap
+  // from opening an accounts popup over the app.
+  if (import.meta.env.DEV) return tree;
+
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      {isAuthenticated ? <AuthenticatedApp /> : <LoginScreen />}
+      {tree}
     </GoogleOAuthProvider>
   );
 }

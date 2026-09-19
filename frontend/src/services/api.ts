@@ -293,9 +293,12 @@ export const conceptsService = {
     },
 };
 
+// Auth endpoints live at /auth/*, not /api/auth/* — strip the /api suffix.
+const AUTH_BASE = API_BASE.replace(/\/api\/?$/, '');
+
 export const authService = {
     updateProfile: async (settings: any) => {
-        const response = await authFetch(`${API_BASE}/auth/profile`, {
+        const response = await authFetch(`${AUTH_BASE}/auth/profile`, {
             method: 'PATCH',
             body: JSON.stringify({ settings })
         });

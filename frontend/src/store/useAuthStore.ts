@@ -22,6 +22,8 @@ interface AuthState {
 
     // Actions
     login: (credential: string) => Promise<void>;
+    /** Dev-only sign-in: uses the backend's DEBUG `test-token`, no Google account needed. */
+    devLogin: () => void;
     logout: () => void;
     setLoading: (loading: boolean) => void;
 }
@@ -112,6 +114,21 @@ export const useAuthStore = create<AuthState>()(
                         throw error;
                     }
                 }
+            },
+
+            devLogin: () => {
+                set({
+                    user: {
+                        id: 'test-user',
+                        email: 'test@graphrecall.dev',
+                        name: 'Test User',
+                        picture: '',
+                        settings_json: {},
+                    },
+                    idToken: 'test-token',
+                    isAuthenticated: true,
+                    isLoading: false,
+                });
             },
 
             logout: () => {
