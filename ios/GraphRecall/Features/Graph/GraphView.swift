@@ -283,7 +283,12 @@ struct GraphView: View {
                 if model.usingStub { demoBadge.padding(10) }
             }
             .overlay(alignment: .bottomTrailing) {
-                if showsCanvasChrome { canvasTools.padding(10) }
+                if showsCanvasChrome {
+                    canvasTools.padding(10)
+                } else if !model.mergeMode && model.activeSheet == nil {
+                    // Keep create reachable while a concept card is open (long-press still works too).
+                    createFAB.padding(10)
+                }
             }
             .overlay(alignment: .bottomLeading) {
                 if showsCanvasChrome && model.colorMode == .mastery { masteryLegendView.padding(10) }
@@ -475,12 +480,22 @@ struct GraphView: View {
                 model.filter = model.filter == .weak ? .all : .weak
             }
 
-            GRIconButton(systemImage: "plus", style: .accent, size: 36, accessibilityLabel: "Create concept") {
-                model.openCreate()
-            }
+            createFABButton
         }
         .padding(4)
         .grGlassEffect(in: Capsule())
+    }
+
+    private var createFAB: some View {
+        createFABButton
+            .padding(4)
+            .grGlassEffect(in: Capsule())
+    }
+
+    private var createFABButton: some View {
+        GRIconButton(systemImage: "plus", style: .accent, size: 36, accessibilityLabel: "Create concept") {
+            model.openCreate()
+        }
     }
 
     private var masteryLegendView: some View {

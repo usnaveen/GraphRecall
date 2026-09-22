@@ -73,7 +73,32 @@ struct LinkSuggestion: Codable, Identifiable, Hashable, Sendable {
 }
 
 struct ApplyLinksBody: Encodable, Sendable {
-    let links: [LinkSuggestion]
+    /// Backend `ApplyLinksRequest` expects snake_case and a concrete strength (null fails Pydantic).
+    struct Link: Encodable, Sendable {
+        let targetId: String
+        let relationshipType: String
+        let strength: Double
+        let reason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case strength, reason
+            case targetId = "target_id"
+            case relationshipType = "relationship_type"
+        }
+    }
+
+    let links: [Link]
+
+    init(links: [LinkSuggestion]) {
+        self.links = links.map {
+            Link(
+                targetId: $0.targetId,
+                relationshipType: $0.relationshipType,
+                strength: $0.strength ?? 0.5,
+                reason: $0.reason
+            )
+        }
+    }
 }
 
 struct MergeConceptsBody: Encodable, Sendable {

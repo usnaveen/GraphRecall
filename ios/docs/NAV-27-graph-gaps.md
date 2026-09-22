@@ -14,7 +14,7 @@ but drops the decorative effects.
 | Layout | `ForceSimulation3D` (2D d3 simulation, z from seed) | True 3D d3-force-3d with bounded repulsion and a centre pull, seeded from backend positions scaled ×0.25 |
 | Camera | OrbitControls, fly-to-focus | OrbitControls, fly-to-focus at a comfortable distance, fit-to-view on load and reset, focus kept above the bottom card |
 | Data | `GET /api/graph3d?limit&offset` | Same, 1000 per page. Each page also returns edges that leave it, so links between pages survive the merge |
-| Chrome | Controls / Inspector / modals | Liquid Glass controls panel, compact + expandable concept card, merge bar, create sheet |
+| Chrome | Controls / Inspector / modals | Liquid Glass controls panel, compact + expandable concept card, merge bar, create sheet, suggest-links sheet |
 
 ## Visual design (iOS)
 
@@ -34,16 +34,41 @@ but drops the decorative effects.
 
 | Feature | iOS |
 | --- | --- |
-| Tap concept | Selects it, camera flies to it, compact card appears |
-| Card | Compact: name, domain · connections, two-line definition, mastery. Top-right: Quiz, Expand, Close |
+| Tap concept | Selects it, camera flies to it, compact card appears; scene flattens to 2D focus |
+| Card | Compact: name, domain · connections, two-line definition, mastery, **Suggest links** / **Merge…**. Top-right: Quiz, Expand, Close |
 | Expanded card | Capped at 58% of the canvas; search and filters collapse to give the graph room; scrolls internally. Full definition, mastery, Notes / Sources / Ask / Details, needs-first / unlocks, suggest links, merge, isolate community, hierarchy, strongest relationships, connected concepts |
 | Tap empty space | Deselects |
 | Double-tap empty space | Flies to the nearest concept |
-| Long-press empty space | Create concept at that point |
+| Long-press empty space | Create concept at that world point (`createAt` bridge; NSNumber-safe) |
+| + FAB | Always reachable (empty canvas tools, or alone while a card is open). Search “Create this node” also opens the sheet |
 | Search | Highlights matches (others dim), "Quiz me", "Create this node" |
 | Graph Controls | Domain, min link weight, colour mode, recompute communities, levels, statistics |
-| Merge mode | Tap targets (orange rings) or pick from a list, confirm, merge N → 1 |
+| Merge mode | Enter from card → tap orange-ring targets or pick from list → confirm → `POST /api/concepts/merge` |
+| Suggest / apply links | Card → sheet → `POST /api/nodes/{id}/suggest-links` then `POST /api/nodes/{id}/link` (strength never sent as null) |
+
+## Create / merge / suggest-links (API ↔ UI)
+
+| Capability | Backend | iOS wiring | Status |
+| --- | --- | --- | --- |
+| Create concept | `POST /api/nodes` (`name`, `description`, `domain`, `parent_concept_id`, `position`) | Long-press / + FAB / search “Create this node” → `CreateConceptSheet` → `GraphViewModel.createConcept` → reload + optional suggest sheet | **Shipped** |
+| Merge concepts | `POST /api/concepts/merge` (`source_ids`, `target_id`) | Card “Merge…” → `GraphMergeBar` + optional `MergeTargetsSheet` → `performMerge` | **Shipped** |
+| Suggest links | `POST /api/nodes/{id}/suggest-links` | Card “Suggest links” → `LinkSuggestionsSheet` | **Shipped** |
+| Apply links | `POST /api/nodes/{id}/link` | Same sheet → Apply N links → reload | **Shipped** |
+
+Demo / stub graph: create, merge, and apply show a toast and do not hit the API.
 
 ## Known limits
 
 1. Labels are DOM elements positioned each frame; fine for hundreds of concepts, thousands would want culling by zoom.
+2. Communities recompute UI calls the API; if the route is down the toast says so and the current communities stay.
+3. Suggest-links depends on the LangGraph workflow + LLM; slow or empty results are surfaced in the sheet, not as a crash.
+4. True web bloom / galaxy / community boxes stay deferred (by design for phone readability).
+5. Do **not** claim full web 1:1 until Naveen OK on deferred decorative behaviours.
+
+## Recent polish (this slice)
+
+- Compact card surfaces Suggest + Merge (no expand required).
+- + FAB stays available while a concept card is open.
+- `createAt` bridge reads WK `NSNumber` coordinates correctly.
+- Apply-links body always sends a concrete `strength` (Pydantic rejects null).
+- After create, selection falls back to name match if the response id is missing.

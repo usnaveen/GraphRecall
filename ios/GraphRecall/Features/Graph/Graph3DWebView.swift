@@ -163,16 +163,31 @@ struct Graph3DWebView: UIViewRepresentable {
                 if let id = body["id"] as? String { onEvent(.mergeToggle(id)) }
             case "createAt":
                 let point = GraphPoint3D(
-                    x: (body["x"] as? Double) ?? 0,
-                    y: (body["y"] as? Double) ?? 0,
-                    z: (body["z"] as? Double) ?? 0
+                    x: Self.double(body["x"]),
+                    y: Self.double(body["y"]),
+                    z: Self.double(body["z"])
                 )
                 onEvent(.createAt(point))
             case "layout":
-                onEvent(.layout(running: (body["running"] as? Bool) ?? false))
+                onEvent(.layout(running: Self.bool(body["running"])))
             default:
                 break
             }
+        }
+
+        /// WKScriptMessage numbers arrive as `NSNumber`; `as? Double` misses them.
+        private static func double(_ value: Any?) -> Double {
+            if let d = value as? Double { return d }
+            if let n = value as? NSNumber { return n.doubleValue }
+            if let i = value as? Int { return Double(i) }
+            if let s = value as? String, let d = Double(s) { return d }
+            return 0
+        }
+
+        private static func bool(_ value: Any?) -> Bool {
+            if let b = value as? Bool { return b }
+            if let n = value as? NSNumber { return n.boolValue }
+            return false
         }
 
         private static func encode<T: Encodable>(_ value: T) -> String? {
