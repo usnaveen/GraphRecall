@@ -102,6 +102,20 @@ struct GraphInspectorPanel: View {
                     .foregroundStyle(GRColor.textTertiary)
                     .fixedSize()
             }
+            // Create / merge / suggest are easy to miss if they only live in the expanded card.
+            compactTools
+        }
+    }
+
+    private var compactTools: some View {
+        HStack(spacing: 6) {
+            GRChip(title: "Suggest links", systemImage: "link.badge.plus", style: .outline, compact: true) {
+                model.toolSheet = .suggestLinks
+            }
+            GRChip(title: "Merge…", systemImage: "arrow.triangle.merge", style: .outline, compact: true) {
+                model.enterMergeMode()
+            }
+            Spacer(minLength: 0)
         }
     }
 

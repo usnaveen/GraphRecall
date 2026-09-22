@@ -472,17 +472,26 @@ final class GraphViewModel {
             return
         }
         let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let id = try await APIClient.shared.createNode(
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: trimmedName,
             description: trimmedDescription.isEmpty ? nil : trimmedDescription,
             domain: domain,
             parentConceptId: parentId,
             position: position
         )
         await reload(selecting: id)
-        showToast("Added \(name)")
-        if let id, selectedNodeId == id {
-            pendingLinkSuggestionsId = id
+        // MERGE-by-name can return an existing id, or decoding can miss it — land on the concept either way.
+        var resolvedId = id
+        if resolvedId == nil || !graph.nodes.contains(where: { $0.id == resolvedId }) {
+            resolvedId = graph.nodes.first {
+                $0.name.compare(trimmedName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            }?.id
+            if let resolvedId { selectedNodeId = resolvedId }
+        }
+        showToast("Added \(trimmedName)")
+        if let resolvedId {
+            pendingLinkSuggestionsId = resolvedId
         }
     }
 
