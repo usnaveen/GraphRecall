@@ -24,10 +24,34 @@ logger = structlog.get_logger()
 
 CONCEPT_VECTOR_INDEX = "concept_embedding"
 
-# Below this cosine score two concepts are not the same idea. Tuned so that
-# rephrasings ("Self-Attention" / "Scaled Dot-Product Attention") match while
-# merely same-field concepts ("Attention" / "Backpropagation") do not.
-DEFAULT_MIN_SCORE = 0.72
+# An absolute floor is nearly useless on its own here. gemini-embedding-001
+# cosine scores sit in a narrow high band — measured against a real graph,
+# "Photosynthesis in C4 Plants" scored 0.846 against "Multi-Head Attention",
+# while a true match ("Matrix Factorization into Orthogonal Bases" against
+# "Singular Value Decomposition") scored 0.935. Cutting anywhere below ~0.88
+# connects everything to everything, and cutting above it is brittle and
+# specific to this model.
+#
+# What separates them is the SHAPE of the result, not its height. A genuine
+# match stands clear of the rest of the pool; an unrelated concept sits flat
+# against the crowd:
+#
+#   Matrix Factorization  top 0.935, pool median 0.884  → gap 0.051  real
+#   Query-Key Scoring     top 0.926, pool median 0.891  → gap 0.035  real
+#   Steepest Descent      top 0.899, pool median 0.894  → gap 0.005  nothing
+#   Photosynthesis        top 0.846, pool median 0.841  → gap 0.005  nothing
+#
+# So a match must clear the pool's own median by a margin. The floor stays only
+# to reject obvious noise.
+DEFAULT_MIN_SCORE = 0.70
+
+# How far above the candidate pool's median a score must sit to count as a real
+# match rather than the general hum of the embedding space.
+DEFAULT_MIN_MARGIN = 0.02
+
+# The pool the median is computed over. Too small and one strong match drags the
+# median up and hides the others behind it.
+_BASELINE_POOL = 25
 
 # The vector index cannot filter by user inside the CALL, so over-fetch and
 # filter after. Multiplier covers a graph shared by a handful of users.
@@ -63,14 +87,24 @@ async def similar_to_embedding(
     *,
     limit: int = 10,
     min_score: float = DEFAULT_MIN_SCORE,
+    min_margin: float = DEFAULT_MIN_MARGIN,
     exclude_ids: Optional[list[str]] = None,
 ) -> list[dict]:
-    """Concepts closest in meaning to ``embedding``, best first."""
+    """Concepts closest in meaning to ``embedding``, best first.
+
+    Keeps only those standing clear of the candidate pool's own median by
+    ``min_margin``. Pass ``min_margin=0`` to take everything over the floor,
+    which is what callers offering suggestions for a human to judge want.
+    """
     if not embedding:
         return []
 
     neo4j = await get_neo4j_client()
     exclude = set(exclude_ids or [])
+
+    # Always pull a pool big enough to have a meaningful median, even when the
+    # caller only wants the top few.
+    pool_size = max(limit * _OVERFETCH, _BASELINE_POOL)
     try:
         rows = await neo4j.execute_query(
             f"""
@@ -82,7 +116,7 @@ async def similar_to_embedding(
             ORDER BY score DESC
             """,
             {
-                "k": max(limit * _OVERFETCH, limit),
+                "k": pool_size,
                 "embedding": embedding,
                 "user_id": user_id,
                 "min_score": min_score,
@@ -92,17 +126,36 @@ async def similar_to_embedding(
         logger.warning("ConceptSimilarity: vector query failed", error=str(e))
         return []
 
+    candidates = [r for r in rows if r["id"] not in exclude]
+    if not candidates:
+        return []
+
+    threshold = min_score
+    if min_margin > 0:
+        scores = sorted(float(r["score"]) for r in candidates)
+        # A pool too small to have a crowd has no baseline to stand out from;
+        # fall back to the floor rather than inventing a median from 2 points.
+        if len(scores) >= 5:
+            mid = len(scores) // 2
+            median = (
+                scores[mid]
+                if len(scores) % 2
+                else (scores[mid - 1] + scores[mid]) / 2
+            )
+            threshold = max(min_score, median + min_margin)
+
     out = []
-    for r in rows:
-        if r["id"] in exclude:
-            continue
+    for r in candidates:
+        score = float(r["score"])
+        if score < threshold:
+            break  # rows are score-ordered, so nothing after this clears it
         out.append(
             {
                 "id": r["id"],
                 "name": r["name"],
                 "definition": r.get("definition") or "",
                 "domain": r.get("domain") or "General",
-                "score": round(float(r["score"]), 4),
+                "score": round(score, 4),
             }
         )
         if len(out) >= limit:
@@ -137,6 +190,7 @@ async def find_related_concepts(
     *,
     per_concept: int = 5,
     min_score: float = DEFAULT_MIN_SCORE,
+    min_margin: float = DEFAULT_MIN_MARGIN,
 ) -> tuple[list[dict], dict[str, list[dict]]]:
     """Match freshly extracted concepts against everything the user already has.
 
@@ -177,7 +231,11 @@ async def find_related_concepts(
         if not vector:
             continue
         matches = await similar_to_embedding(
-            user_id, vector, limit=per_concept, min_score=min_score
+            user_id,
+            vector,
+            limit=per_concept,
+            min_score=min_score,
+            min_margin=min_margin,
         )
         if matches:
             by_concept[key] = matches

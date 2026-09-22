@@ -70,6 +70,11 @@ async def fetch_context_node(state: LinkSuggestionState) -> dict:
             node.get("embedding") or [],
             limit=_CANDIDATE_LIMIT,
             min_score=_CANDIDATE_MIN_SCORE,
+            # No margin gate here: this is a shortlist for the model to reason
+            # over, not a set of matches to act on. A prerequisite is related
+            # without being a near-duplicate, so the standing-clear test that
+            # ingestion needs would hide exactly the links worth drawing.
+            min_margin=0.0,
             exclude_ids=[node_id],
         )
 
