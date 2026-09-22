@@ -8,7 +8,7 @@ struct ContentView: View {
     /// UI-QA launches with `GR_TAB` set; skip the welcome screen there.
     private var showsWelcome: Binding<Bool> {
         Binding(
-            get: { !hasOnboarded && ProcessInfo.processInfo.environment["GR_TAB"] == nil },
+            get: { !hasOnboarded && ProcessInfo.processInfo.environment["GR_TAB"] == nil && ProcessInfo.processInfo.environment["GR_SELECT"] == nil },
             set: { if !$0 { hasOnboarded = true } }
         )
     }
