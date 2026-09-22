@@ -24,6 +24,11 @@ final class AppRouter {
 
     init(initialTab: GRTab = .feed) {
         tab = initialTab
+        // UI-QA: `SIMCTL_CHILD_GR_SELECT=<id|name>` selects a concept after Graph loads.
+        if let raw = ProcessInfo.processInfo.environment["GR_SELECT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty {
+            pendingGraphFocus = raw
+        }
     }
 
     func select(_ newTab: GRTab) {
