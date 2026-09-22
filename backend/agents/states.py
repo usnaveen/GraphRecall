@@ -44,7 +44,11 @@ class IngestionState(TypedDict, total=False):
     
     extracted_concepts: list[dict]  # [{name, description, domain, ...}]
     related_concepts: list[dict]    # Existing concepts found via similarity
-    
+    # Per-extracted-concept matches: {new concept name: [existing concept, ...]}.
+    # Keeps which new concept matched which old one, so edges are built from the
+    # actual pairing instead of re-guessed from the flattened list.
+    related_by_concept: dict
+
     # Overlap detection (for conditional routing)
     overlap_ratio: float  # 0.0 to 1.0
     needs_synthesis: bool

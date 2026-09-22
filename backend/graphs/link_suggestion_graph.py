@@ -16,8 +16,16 @@ from typing_extensions import TypedDict
 
 from backend.config.llm import get_chat_model
 from backend.db.neo4j_client import get_neo4j_client
+from backend.services.concept_similarity import similar_to_embedding
 
 logger = structlog.get_logger()
+
+# How many nearby concepts the model gets to choose links from.
+_CANDIDATE_LIMIT = 40
+# Deliberately looser than the dedup threshold: a prerequisite is related to a
+# concept without being the same idea, so cutting at 0.72 would hide exactly the
+# links worth drawing.
+_CANDIDATE_MIN_SCORE = 0.45
 
 
 class LinkSuggestionState(TypedDict, total=False):
@@ -50,16 +58,46 @@ async def fetch_context_node(state: LinkSuggestionState) -> dict:
             return {"error": "Node not found"}
 
         node = node_result[0]["c"]
+        if hasattr(node, "_properties"):
+            node = dict(node._properties)
 
-        candidates = await neo4j.execute_query(
-            """
-            MATCH (c:Concept {user_id: $user_id})
-            WHERE c.id <> $id
-            RETURN c.id AS id, c.name AS name, c.definition AS definition, c.domain AS domain
-            LIMIT 60
-            """,
-            {"user_id": user_id, "id": node_id},
+        # Candidates are the concepts nearest in meaning, not an arbitrary slice.
+        # A flat LIMIT 60 meant that past 60 concepts the true neighbours were
+        # usually not even shown to the model, and placement quality fell off a
+        # cliff exactly as the graph became worth having.
+        candidates = await similar_to_embedding(
+            user_id,
+            node.get("embedding") or [],
+            limit=_CANDIDATE_LIMIT,
+            min_score=_CANDIDATE_MIN_SCORE,
+            exclude_ids=[node_id],
         )
+
+        if not candidates:
+            # No embedding on the node, or nothing near it: fall back to a slice
+            # of the same graph, which is still a better guess than none.
+            candidates = await neo4j.execute_query(
+                """
+                MATCH (c:Concept {user_id: $user_id})
+                WHERE c.id <> $id
+                RETURN c.id AS id, c.name AS name, c.definition AS definition,
+                       c.domain AS domain
+                ORDER BY coalesce(c.domain, '') = coalesce($domain, '') DESC,
+                         c.created_at DESC
+                LIMIT $limit
+                """,
+                {
+                    "user_id": user_id,
+                    "id": node_id,
+                    "domain": node.get("domain"),
+                    "limit": _CANDIDATE_LIMIT,
+                },
+            )
+            logger.info(
+                "LinkSuggestion: no vector candidates, used recency fallback",
+                node_id=node_id,
+                candidates=len(candidates),
+            )
 
         return {"node": node, "candidates": candidates}
 
@@ -80,14 +118,25 @@ async def generate_links_node(state: LinkSuggestionState) -> dict:
 
     llm = get_chat_model(temperature=0.2, json_mode=True)
 
+    # Trim definitions before serializing: the payload is truncated at 6000
+    # chars, and a few verbose candidates used to push the rest of the list past
+    # the cut, so the model never saw them.
     prompt = {
         "node": {
             "id": node.get("id"),
             "name": node.get("name"),
-            "definition": node.get("definition", ""),
+            "definition": (node.get("definition") or "")[:300],
             "domain": node.get("domain", "General"),
         },
-        "candidates": candidates,
+        "candidates": [
+            {
+                "id": c.get("id"),
+                "name": c.get("name"),
+                "definition": (c.get("definition") or "")[:160],
+                "domain": c.get("domain", "General"),
+            }
+            for c in candidates
+        ],
     }
     system = (
         "You are a graph linking assistant. Given a node and candidate concepts, "

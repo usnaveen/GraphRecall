@@ -10,19 +10,48 @@ from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
 from backend.graphs.link_suggestion_graph import run_link_suggestions
 from backend.config.llm import get_fast_model
+from backend.services.graph_registry import resolve_graph
 from backend.services.ingestion.embedding_service import EmbeddingService
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/nodes", tags=["Nodes"])
 
+# Links the model is confident about attach on their own; the rest come back for
+# review. Dumping a concept should not stop to ask about every edge, but the
+# graph should not fill with guesses either.
+AUTO_LINK_THRESHOLD = 0.7
+
+# A relationship type cannot be a bind parameter in Cypher — it is interpolated
+# into the query text. Since it arrives in a request body, only these pass.
+ALLOWED_RELATIONSHIP_TYPES = {
+    "PREREQUISITE_OF",
+    "RELATED_TO",
+    "SUBTOPIC_OF",
+    "PART_OF",
+    "BUILDS_ON",
+}
+DEFAULT_RELATIONSHIP_TYPE = "RELATED_TO"
+
+
+def _safe_rel_type(raw: Optional[str]) -> str:
+    """Normalize a relationship type to one we know, never to arbitrary Cypher."""
+    candidate = (raw or "").upper().replace(" ", "_").replace("-", "_")
+    if candidate in ALLOWED_RELATIONSHIP_TYPES:
+        return candidate
+    logger.warning("Nodes: rejected unknown relationship type", received=raw)
+    return DEFAULT_RELATIONSHIP_TYPE
+
 
 class CreateNodeRequest(BaseModel):
     name: str
     description: Optional[str] = None
-    domain: Optional[str] = None  # e.g. "Machine Learning", "Mathematics"
+    # Left unset, the graph is chosen by the LLM from the ones the user already
+    # has — that is the normal path from the canvas.
+    domain: Optional[str] = None
     parent_concept_id: Optional[str] = None  # ID of parent concept for SUBTOPIC_OF
     position: Optional[dict] = None  # {x,y,z}
+    auto_link: bool = True  # suggest and attach links as part of creation
 
 
 class LinkSuggestion(BaseModel):
@@ -34,6 +63,22 @@ class LinkSuggestion(BaseModel):
 
 class ApplyLinksRequest(BaseModel):
     links: list[LinkSuggestion]
+
+
+async def _describe_concept(name: str, domain: Optional[str]) -> str:
+    """One or two sentences defining ``name``. Empty string if the model fails."""
+    try:
+        llm = get_fast_model(temperature=0.3)
+        context = f" Domain: {domain}." if domain else ""
+        response = await llm.ainvoke(
+            f"Generate a brief 1-2 sentence educational description for "
+            f"the concept: {name}.{context} Be concise and factual."
+        )
+        return response.text.strip()
+    except Exception as e:
+        # The concept is still worth saving undescribed; it just links less well.
+        logger.warning("Nodes: AI description generation failed", error=str(e))
+        return ""
 
 
 @router.post("")
@@ -71,14 +116,34 @@ async def create_node(
         import uuid
         concept_id = str(uuid.uuid4())
         position = request.position or {}
-        domain = request.domain or "General"
+
+        # Write the description BEFORE choosing the graph. From the canvas the
+        # user types a bare name, and filing on a name alone is a coin toss —
+        # "Scaled Dot-Product Attention" reads as generic AI without its
+        # definition and as NLP with it. The definition also feeds the embedding
+        # that link suggestion searches on, so it has to come first either way.
+        node_definition = (request.description or "").strip()
+        if not node_definition:
+            node_definition = await _describe_concept(request.name, request.domain)
+
+        # Which graph this belongs in is the LLM's call, against the graphs the
+        # user already has, so a concept typed onto the canvas lands beside its
+        # relatives instead of in a new one-node graph.
+        graph_outcome = await resolve_graph(
+            user_id,
+            proposed=request.domain,
+            concept_name=request.name,
+            definition=node_definition,
+        )
+        domain = graph_outcome["graph"]
+
         result = await neo4j.execute_query(
             query,
             {
                 "id": concept_id,
                 "user_id": user_id,
                 "name": request.name,
-                "definition": request.description or "",
+                "definition": node_definition,
                 "domain": domain,
                 "complexity_score": 5.0,
                 "confidence": 1.0,  # User-created concepts have full confidence
@@ -95,35 +160,10 @@ async def create_node(
         except Exception:
             pass
 
-        # AI-generate description if not provided
-        node_definition = request.description or ""
-        if not node_definition.strip():
-            try:
-                llm = get_fast_model(temperature=0.3)
-                ai_prompt = (
-                    f"Generate a brief 1-2 sentence educational description for "
-                    f"the concept: {request.name}. Domain: {domain}. "
-                    f"Be concise and factual."
-                )
-                ai_response = await llm.ainvoke(ai_prompt)
-                node_definition = ai_response.text.strip()
-                if node_definition:
-                    await neo4j.execute_query(
-                        """
-                        MATCH (c:Concept {name: $name, user_id: $user_id})
-                        SET c.definition = $definition
-                        RETURN c
-                        """,
-                        {
-                            "name": request.name,
-                            "user_id": user_id,
-                            "definition": node_definition,
-                        },
-                    )
-                    if isinstance(node, dict):
-                        node["definition"] = node_definition
-            except Exception as e:
-                logger.warning("Nodes: AI description generation failed", error=str(e))
+        # An existing concept keeps whatever definition it already had (the MERGE
+        # coalesces), so reflect that back rather than the one we just wrote.
+        if isinstance(node, dict) and node.get("definition"):
+            node_definition = node["definition"]
 
         # Generate and store embedding for the concept (enables ingestion matching)
         try:
@@ -186,13 +226,91 @@ async def create_node(
         except Exception as e:
             logger.warning("Nodes: Failed to init proficiency", error=str(e))
 
+        node_id = node.get("id") or concept_id
+        applied: list[dict] = []
+        pending: list[dict] = []
+
+        if request.auto_link:
+            try:
+                suggestion = await run_link_suggestions(node_id=node_id, user_id=user_id)
+                for link in suggestion.get("links", []):
+                    if float(link.get("strength", 0)) >= AUTO_LINK_THRESHOLD:
+                        applied.append(link)
+                    else:
+                        pending.append(link)
+                if applied:
+                    await _create_links(
+                        neo4j,
+                        user_id=user_id,
+                        node_id=node_id,
+                        links=[
+                            LinkSuggestion(
+                                target_id=l["target_id"],
+                                relationship_type=l.get("relationship_type", "RELATED_TO"),
+                                strength=float(l.get("strength", 0.5)),
+                                reason=l.get("reason"),
+                            )
+                            for l in applied
+                        ],
+                        source="auto_linked",
+                    )
+            except Exception as e:
+                # A concept that is saved but unlinked is recoverable; one that
+                # failed to save because linking broke is not.
+                logger.warning("Nodes: auto-link failed", node_id=node_id, error=str(e))
+
         return {
             "status": "created",
             "node": node,
+            "graph": {
+                "name": domain,
+                "created": graph_outcome.get("created", False),
+                "reason": graph_outcome.get("reason"),
+            },
+            "links_applied": applied,
+            "links_pending": pending,
         }
     except Exception as e:
         logger.error("Nodes: Error creating node", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _create_links(
+    neo4j,
+    *,
+    user_id: str,
+    node_id: str,
+    links: list[LinkSuggestion],
+    source: str = "user_linked",
+) -> list[dict]:
+    """MERGE each suggested relationship from ``node_id``. Returns what was made."""
+    created = []
+    for link in links:
+        rel = _safe_rel_type(link.relationship_type)
+        await neo4j.execute_query(
+            f"""
+            MATCH (a:Concept {{id: $source_id, user_id: $user_id}})
+            MATCH (b:Concept {{id: $target_id, user_id: $user_id}})
+            MERGE (a)-[r:{rel}]->(b)
+            ON CREATE SET r.strength = $strength,
+                          r.source = $source,
+                          r.mention_count = 1,
+                          r.created_at = datetime()
+            ON MATCH SET r.mention_count = coalesce(r.mention_count, 1) + 1,
+                         r.strength = $strength,
+                         r.updated_at = datetime()
+            RETURN type(r) as relationship
+            """,
+            {
+                "source_id": node_id,
+                "target_id": link.target_id,
+                "user_id": user_id,
+                "strength": link.strength,
+                "source": source,
+            },
+        )
+        created.append({"target_id": link.target_id, "relationship_type": rel})
+    return created
 
 
 @router.post("/{node_id}/suggest-links")
@@ -236,31 +354,9 @@ async def apply_links(
         if not node_result:
             raise HTTPException(status_code=404, detail="Node not found")
 
-        created = []
-        for link in request.links:
-            rel = link.relationship_type.upper().replace(" ", "_")
-            await neo4j.execute_query(
-                f"""
-                MATCH (a:Concept {{id: $source_id, user_id: $user_id}})
-                MATCH (b:Concept {{id: $target_id, user_id: $user_id}})
-                MERGE (a)-[r:{rel}]->(b)
-                ON CREATE SET r.strength = $strength,
-                              r.source = 'user_linked',
-                              r.mention_count = 1,
-                              r.created_at = datetime()
-                ON MATCH SET r.mention_count = coalesce(r.mention_count, 1) + 1,
-                             r.strength = $strength,
-                             r.updated_at = datetime()
-                RETURN type(r) as relationship
-                """,
-                {
-                    "source_id": node_id,
-                    "target_id": link.target_id,
-                    "user_id": user_id,
-                    "strength": link.strength,
-                },
-            )
-            created.append({"target_id": link.target_id, "relationship_type": rel})
+        created = await _create_links(
+            neo4j, user_id=user_id, node_id=node_id, links=request.links
+        )
 
         return {"status": "linked", "node_id": node_id, "links": created}
     except HTTPException:

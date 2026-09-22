@@ -121,6 +121,8 @@ class Neo4jClient:
 
     async def _initialize_schema(self) -> None:
         """Create Neo4j constraints and indexes for the knowledge graph."""
+        from backend.config.llm import get_embedding_dims
+
         schema_queries = [
             # Unique constraints
             "CREATE CONSTRAINT concept_id IF NOT EXISTS FOR (c:Concept) REQUIRE c.id IS UNIQUE",
@@ -130,6 +132,17 @@ class Neo4jClient:
             "CREATE INDEX concept_name IF NOT EXISTS FOR (c:Concept) ON (c.name)",
             "CREATE INDEX concept_domain IF NOT EXISTS FOR (c:Concept) ON (c.domain)",
             "CREATE INDEX note_source_note_id IF NOT EXISTS FOR (n:NoteSource) ON (n.note_id)",
+            # Vector index over concept embeddings: relatedness follows meaning,
+            # so a new paper connects to what it is about, not to what it happens
+            # to share a word with.
+            f"""
+            CREATE VECTOR INDEX concept_embedding IF NOT EXISTS
+            FOR (c:Concept) ON (c.embedding)
+            OPTIONS {{ indexConfig: {{
+                `vector.dimensions`: {int(get_embedding_dims())},
+                `vector.similarity_function`: 'cosine'
+            }} }}
+            """,
         ]
 
         async with self._driver.session() as session:

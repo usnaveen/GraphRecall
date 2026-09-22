@@ -196,9 +196,11 @@ export const feedService = {
 };
 
 export const graphService = {
-    /** Get 3D graph data */
-    getGraph: async (limit: number = 200, offset: number = 0) => {
-        const response = await authFetch(`${API_BASE}/graph3d?limit=${limit}&offset=${offset}`);
+    /** Get 3D graph data. Pass `graph` to show one subject, omit it for all. */
+    getGraph: async (limit: number = 200, offset: number = 0, graph?: string | null) => {
+        const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+        if (graph) params.set('graph', graph);
+        const response = await authFetch(`${API_BASE}/graph3d?${params}`);
         if (!response.ok) throw new Error('Failed to fetch graph data');
         return response.json();
     },
@@ -489,11 +491,9 @@ export const api = {
     },
 
     graph: {
-        getGraph: async (limit: number = 200, offset: number = 0) => {
-            const response = await authFetch(`${API_BASE}/graph3d?limit=${limit}&offset=${offset}`);
-            if (!response.ok) throw new Error('Failed to fetch graph data');
-            return response.json();
-        },
+        // Delegates to graphService so the two entry points cannot drift apart.
+        getGraph: (limit: number = 200, offset: number = 0, graph?: string | null) =>
+            graphService.getGraph(limit, offset, graph),
         getFocus: async (conceptId: string) => {
             const response = await authFetch(`${API_BASE}/graph3d/focus/${encodeURIComponent(conceptId)}`);
             if (!response.ok) throw new Error('Failed to fetch concept focus');
@@ -502,8 +502,57 @@ export const api = {
     }
 };
 
+export interface GraphSummary {
+    name: string;
+    concept_count: number;
+    avg_confidence: number;
+}
+
+export const graphsService = {
+    /** Every named graph, largest first. */
+    list: async (): Promise<{ graphs: GraphSummary[]; total_concepts: number }> => {
+        const response = await authFetch(`${API_BASE}/graphs`);
+        if (!response.ok) throw new Error('Failed to list graphs');
+        return response.json();
+    },
+
+    /** Where would this concept be filed? Read-only preview of the LLM's choice. */
+    resolve: async (concept_name: string, definition?: string, proposed?: string) => {
+        const response = await authFetch(`${API_BASE}/graphs/resolve`, {
+            method: 'POST',
+            body: JSON.stringify({ concept_name, definition, proposed }),
+        });
+        if (!response.ok) throw new Error('Failed to resolve graph');
+        return response.json();
+    },
+
+    /** Rename a graph, or merge it by passing a name that already exists. */
+    rename: async (name: string, new_name: string) => {
+        const response = await authFetch(`${API_BASE}/graphs/${encodeURIComponent(name)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ new_name }),
+        });
+        if (!response.ok) throw new Error('Failed to rename graph');
+        return response.json();
+    },
+
+    /** Build the vector index and embed concepts that are missing one. */
+    reindex: async () => {
+        const response = await authFetch(`${API_BASE}/graphs/reindex`, { method: 'POST' });
+        if (!response.ok) throw new Error('Failed to reindex');
+        return response.json();
+    },
+};
+
 export const nodesService = {
-    createNode: async (name: string, description?: string, position?: { x: number; y: number; z: number }, domain?: string, parent_concept_id?: string) => {
+    /** Create a concept. Leave `domain` unset to let the LLM file it. */
+    createNode: async (
+        name: string,
+        description?: string,
+        position?: { x: number; y: number; z: number },
+        domain?: string,
+        parent_concept_id?: string,
+    ) => {
         const response = await authFetch(`${API_BASE}/nodes`, {
             method: 'POST',
             body: JSON.stringify({ name, description, position, domain, parent_concept_id }),

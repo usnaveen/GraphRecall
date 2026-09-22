@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, X, Target, Link2, Plus, Loader2, ChevronDown, Merge } from "lucide-react";
+import { Search, X, Target, Link2, Plus, Loader2, ChevronDown, Merge, Layers, Check, Sparkles } from "lucide-react";
 import { GraphVisualizer } from "../components/graph/GraphVisualizer";
 import Inspector from "../components/graph/Inspector";
 import Controls from "../components/graph/Controls";
@@ -8,11 +8,13 @@ import NotePanel from "../components/graph/NotePanel";
 import type { GraphData, Community } from "../lib/graphData";
 import { ForceSimulation3D } from "../lib/forceSimulation3d";
 import type { GraphLayout, Node3D, Link3D } from "../lib/forceSimulation3d";
-import { api, nodesService, conceptsService } from "../services/api";
+import { api, nodesService, conceptsService, graphsService } from "../services/api";
+import type { GraphSummary } from "../services/api";
 import { useAppStore } from "../store/useAppStore";
 
 type LinkSuggestion = {
   target_id: string;
+  target_name?: string;
   relationship_type: string;
   strength?: number;
   reason?: string;
@@ -44,11 +46,22 @@ export function GraphScreen() {
   const [resources, setResources] = useState<any[]>([]);
   const [resourcesLoading, setResourcesLoading] = useState(false);
 
+  // Named graphs. `activeGraph === null` means "All graphs".
+  const [graphs, setGraphs] = useState<GraphSummary[]>([]);
+  const [activeGraph, setActiveGraph] = useState<string | null>(null);
+  const [graphSwitcherOpen, setGraphSwitcherOpen] = useState(false);
+  // What the LLM did with the last concept added, shown as a toast.
+  const [lastFiling, setLastFiling] = useState<{
+    concept: string;
+    graph: string;
+    isNewGraph: boolean;
+    applied: number;
+  } | null>(null);
+
   // Manual node creation
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newNodeName, setNewNodeName] = useState("");
   const [newNodeDesc, setNewNodeDesc] = useState("");
-  const [newNodeDomain, setNewNodeDomain] = useState("General");
   const [newNodeParentId, setNewNodeParentId] = useState<string | null>(null);
   const [parentSearchQuery, setParentSearchQuery] = useState("");
   const [creatingNode, setCreatingNode] = useState(false);
@@ -71,19 +84,10 @@ export function GraphScreen() {
   const isDraggingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Available domains from graph data for create modal
-  const availableDomains = useMemo(() => {
-    if (!layout?.nodes) return ["General"];
-    const domains = new Set(layout.nodes.map((n) => n.domain).filter(Boolean));
-    domains.add("General");
-    return Array.from(domains).sort() as string[];
-  }, [layout]);
-
   const openCreateModal = useCallback(
     (prefillName?: string, position?: { x: number; y: number; z: number }) => {
       setNewNodeName(prefillName || "");
       setNewNodeDesc("");
-      setNewNodeDomain("General");
       setNewNodeParentId(null);
       setParentSearchQuery("");
       setPendingPosition(position || null);
@@ -100,13 +104,13 @@ export function GraphScreen() {
       const BATCH_SIZE = 200;
       let currentOffset = 0;
 
-      const data = await api.graph.getGraph(BATCH_SIZE, currentOffset);
+      const data = await api.graph.getGraph(BATCH_SIZE, currentOffset, activeGraph);
       const adapted = adaptGraphData(data);
       const sim = new ForceSimulation3D();
       let layoutResult = await sim.generateLayout(adapted);
 
       setLayout(layoutResult);
-      setGraphCache(adapted, layoutResult);
+      if (activeGraph === null) setGraphCache(adapted, layoutResult);
       setLoading(false);
 
       if (data.nodes && data.nodes.length === BATCH_SIZE) {
@@ -117,7 +121,7 @@ export function GraphScreen() {
         (async () => {
           try {
             while (hasMore) {
-              const nextData = await api.graph.getGraph(BATCH_SIZE, currentOffset);
+              const nextData = await api.graph.getGraph(BATCH_SIZE, currentOffset, activeGraph);
               if (!nextData.nodes || nextData.nodes.length === 0) {
                 hasMore = false;
                 break;
@@ -163,7 +167,7 @@ export function GraphScreen() {
               layoutResult = await nextSim.generateLayout(currentAdapted);
 
               setLayout(layoutResult);
-              setGraphCache(currentAdapted, layoutResult);
+              if (activeGraph === null) setGraphCache(currentAdapted, layoutResult);
 
               currentOffset += BATCH_SIZE;
               hasMore = nextData.nodes.length === BATCH_SIZE;
@@ -179,19 +183,53 @@ export function GraphScreen() {
       setError("Failed to load knowledge graph.");
       setLoading(false);
     }
-  }, [setGraphCache]);
+  }, [setGraphCache, activeGraph]);
 
+  // Deliberately keyed on activeGraph alone. Watching graphCache here would
+  // loop: loading writes the cache, the write changes graphCache, and the
+  // effect runs again. The cache is read as it stands when the graph changes.
   useEffect(() => {
     const isCacheFresh =
       graphCache.loadedAt && Date.now() - graphCache.loadedAt < 1000 * 60 * 30;
 
-    if (graphCache.data && graphCache.layout && isCacheFresh) {
+    // The cache only ever holds the everything view, so a single named graph
+    // always re-fetches rather than being served the full graph from cache.
+    if (activeGraph === null && graphCache.data && graphCache.layout && isCacheFresh) {
       setLayout(graphCache.layout);
       setLoading(false);
     } else {
       loadGraph();
     }
-  }, [graphCache, loadGraph]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGraph]);
+
+  const loadGraphList = useCallback(async () => {
+    try {
+      const { graphs: list } = await graphsService.list();
+      setGraphs(list);
+      // A graph that no longer exists (renamed, merged, emptied) would leave the
+      // view filtering on nothing at all.
+      setActiveGraph((current) =>
+        current && !list.some((g) => g.name === current) ? null : current
+      );
+    } catch (err) {
+      console.error("Failed to list graphs:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadGraphList();
+  }, [loadGraphList]);
+
+  // The filing toast is a confirmation, not a task — clear it on its own. The
+  // countdown waits for `loading`, because the loading state early-returns over
+  // this whole view: without the guard the toast would spend its life hidden
+  // behind the reload it triggered and never actually be seen.
+  useEffect(() => {
+    if (!lastFiling || loading) return;
+    const timer = setTimeout(() => setLastFiling(null), 8000);
+    return () => clearTimeout(timer);
+  }, [lastFiling, loading]);
 
 
   const highlightedIds = useMemo(() => {
@@ -329,38 +367,48 @@ export function GraphScreen() {
 
   const handleCreateNode = async () => {
     if (!newNodeName.trim()) return;
+    const conceptName = newNodeName.trim();
     setCreatingNode(true);
     try {
+      // `domain` is deliberately not sent: the backend writes a definition,
+      // then files the concept into one of the graphs that already exist.
       const created = await nodesService.createNode(
-        newNodeName.trim(),
+        conceptName,
         newNodeDesc.trim() || undefined,
         pendingPosition || undefined,
-        newNodeDomain,
+        undefined,
         newNodeParentId || undefined
       );
       setShowCreateModal(false);
       setNewNodeName("");
       setNewNodeDesc("");
-      setNewNodeDomain("General");
       setNewNodeParentId(null);
       setParentSearchQuery("");
       setPendingPosition(null);
 
-      // Suggest links
       const nodeId = created?.node?.id || created?.node?.properties?.id;
-      if (nodeId) {
+      const applied: LinkSuggestion[] = created?.links_applied || [];
+      const pending: LinkSuggestion[] = created?.links_pending || [];
+
+      setLastFiling({
+        concept: conceptName,
+        graph: created?.graph?.name || "General",
+        isNewGraph: Boolean(created?.graph?.created),
+        applied: applied.length,
+      });
+
+      // Strong links are already attached. Only the uncertain ones are worth
+      // interrupting for, so the modal opens only when there are some.
+      if (nodeId && pending.length > 0) {
         setLinkNodeId(nodeId);
-        const suggestionRes = await nodesService.suggestLinks(nodeId);
-        const links = (suggestionRes.links || []).map((l: any) => ({ ...l, _approved: true }));
-        setSuggestions(links);
-        if (links.length > 0) {
-          setShowLinkModal(true);
-        }
+        setSuggestions(pending.map((l) => ({ ...l, _approved: false })));
+        setShowLinkModal(true);
       }
 
-      await loadGraph();
+      await Promise.all([loadGraph(), loadGraphList()]);
     } catch (err) {
       console.error("Failed to create node:", err);
+      setError("Could not add that concept. It was not saved.");
     } finally {
       setCreatingNode(false);
     }
@@ -524,6 +572,132 @@ export function GraphScreen() {
 
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col relative">
+      {/* Where the last concept was filed. Auto-filing is only trustworthy if
+          you can see what it decided, so this says so and offers a way in. */}
+      <AnimatePresence>
+        {lastFiling && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 px-4 py-3 rounded-2xl bg-[#1a1a1f] border border-[#B6FF2E]/30 shadow-2xl max-w-[90vw]"
+          >
+            <Sparkles className="w-4 h-4 text-[#B6FF2E] shrink-0" />
+            <div className="text-sm">
+              <span className="text-white font-medium">{lastFiling.concept}</span>
+              <span className="text-white/50"> → </span>
+              <button
+                onClick={() => {
+                  setActiveGraph(lastFiling.graph);
+                  setLastFiling(null);
+                }}
+                className="text-[#B6FF2E] hover:underline"
+              >
+                {lastFiling.graph}
+              </button>
+              {lastFiling.isNewGraph && (
+                <span className="ml-2 text-[10px] uppercase tracking-wide text-[#B6FF2E]/70 whitespace-nowrap">
+                  new graph
+                </span>
+              )}
+              {lastFiling.applied > 0 && (
+                <span className="text-white/40">
+                  {" "}· {lastFiling.applied} link{lastFiling.applied === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setLastFiling(null)}
+              className="text-white/30 hover:text-white/60 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Graph switcher: one subject at a time, or everything at once. */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative mb-3 z-[60] flex items-center gap-2"
+      >
+        <button
+          onClick={() => setGraphSwitcherOpen((v) => !v)}
+          className="flex items-center gap-2 pl-3 pr-2.5 py-2 rounded-full glass-surface text-white text-sm hover:border-[#B6FF2E]/40 transition-colors"
+        >
+          <Layers className="w-4 h-4 text-[#B6FF2E]" />
+          <span className="font-medium">{activeGraph || "All graphs"}</span>
+          <span className="text-xs text-white/40">
+            {activeGraph
+              ? graphs.find((g) => g.name === activeGraph)?.concept_count ?? 0
+              : graphs.reduce((sum, g) => sum + g.concept_count, 0)}
+          </span>
+          <ChevronDown
+            className={`w-4 h-4 text-white/40 transition-transform ${graphSwitcherOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+
+        {graphs.length > 0 && !activeGraph && (
+          <span className="text-xs text-white/30">
+            {graphs.length} {graphs.length === 1 ? "graph" : "graphs"}
+          </span>
+        )}
+
+        <AnimatePresence>
+          {graphSwitcherOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="absolute top-full left-0 mt-2 w-72 bg-[#1a1a1f] border border-white/10 rounded-xl overflow-hidden shadow-2xl max-h-80 overflow-y-auto"
+            >
+              <button
+                onClick={() => {
+                  setActiveGraph(null);
+                  setGraphSwitcherOpen(false);
+                  setSelectedNode(null);
+                }}
+                className="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors flex items-center justify-between"
+              >
+                <span className="text-sm text-white">All graphs</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-white/30">
+                    {graphs.reduce((sum, g) => sum + g.concept_count, 0)}
+                  </span>
+                  {activeGraph === null && <Check className="w-4 h-4 text-[#B6FF2E]" />}
+                </div>
+              </button>
+              <div className="h-px bg-white/10" />
+              {graphs.map((g) => (
+                <button
+                  key={g.name}
+                  onClick={() => {
+                    setActiveGraph(g.name);
+                    setGraphSwitcherOpen(false);
+                    setSelectedNode(null);
+                  }}
+                  className="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors flex items-center justify-between group"
+                >
+                  <span className="text-sm text-white/80 group-hover:text-white transition-colors truncate pr-2">
+                    {g.name}
+                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-white/30">{g.concept_count}</span>
+                    {activeGraph === g.name && <Check className="w-4 h-4 text-[#B6FF2E]" />}
+                  </div>
+                </button>
+              ))}
+              {graphs.length === 0 && (
+                <p className="px-4 py-3 text-xs text-white/40">
+                  No graphs yet — add a concept and one will be created.
+                </p>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
       {/* Search Bar */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -780,20 +954,15 @@ export function GraphScreen() {
                 className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-[#B6FF2E]/50 mb-3 h-20 resize-none"
               />
 
-              {/* Domain Dropdown - Dynamic from graph data */}
-              <div className="relative mb-3">
-                <select
-                  value={newNodeDomain}
-                  onChange={(e) => setNewNodeDomain(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-[#B6FF2E]/50 appearance-none cursor-pointer"
-                >
-                  {availableDomains.map((d) => (
-                    <option key={d} value={d} className="bg-[#1a1a1f] text-white">
-                      {d}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" />
+              {/* No graph picker: the model files the concept against the
+                  graphs that already exist, which is the whole point of
+                  dropping a name onto the canvas and moving on. */}
+              <div className="flex items-start gap-2 mb-3 px-3 py-2.5 rounded-xl bg-[#B6FF2E]/5 border border-[#B6FF2E]/20">
+                <Sparkles className="w-4 h-4 text-[#B6FF2E] mt-0.5 shrink-0" />
+                <p className="text-xs text-white/60 leading-relaxed">
+                  Filed into the right graph automatically, and connected to what
+                  it relates to. You only review links the model is unsure about.
+                </p>
               </div>
 
               {/* Parent Concept Search */}
@@ -873,14 +1042,21 @@ export function GraphScreen() {
             >
               <h3 className="text-lg font-semibold text-white mb-2">Suggested Links</h3>
               <p className="text-xs text-white/50 mb-4">
-                Review and approve connections for your new concept.
+                The confident links are already connected. These are the ones the
+                model was unsure about — tick any that belong.
               </p>
               <div className="space-y-2 max-h-[40vh] overflow-y-auto">
                 {suggestions.map((s, i) => (
                   <label key={`${s.target_id}-${i}`} className="flex items-start gap-2 p-2 rounded-lg bg-white/5">
+                    {/* Controlled, and unticked by default: these are the links
+                        that did not clear the auto-apply bar, so approving one
+                        should be a deliberate act. It was `defaultChecked` and
+                        uncontrolled, which drew every box ticked while the
+                        underlying flag stayed false — so Apply Links silently
+                        applied nothing. */}
                     <input
                       type="checkbox"
-                      defaultChecked
+                      checked={Boolean((s as any)._approved)}
                       onChange={(e) => {
                         const next = [...suggestions];
                         (next[i] as any)._approved = e.target.checked;

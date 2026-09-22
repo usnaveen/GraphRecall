@@ -45,6 +45,7 @@ try:
     from backend.routers.notes import router as notes_router
     from backend.routers.concepts import router as concepts_router
     from backend.routers.nodes import router as nodes_router
+    from backend.routers.graphs import router as graphs_router
     from backend.routers.ingest_v2 import router as ingest_v2_router
     from backend.routers.auth import router as auth_router
     from backend.routers.images import router as images_router
@@ -188,6 +189,7 @@ app.include_router(uploads_router)   # /api/uploads - User screenshots/infograph
 app.include_router(notes_router)     # /api/notes - User notes
 app.include_router(concepts_router)  # /api/concepts - Concepts
 app.include_router(nodes_router)     # /api/nodes - Manual node creation/linking
+app.include_router(graphs_router)    # /api/graphs - Named graphs (domains) + reindex
 app.include_router(ingest_v2_router) # /api/v2 - LangGraph-powered ingestion
 app.include_router(auth_router)      # /auth - Google authentication
 app.include_router(images_router)    # /api/images - Serve book images

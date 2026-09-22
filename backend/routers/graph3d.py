@@ -90,6 +90,10 @@ async def get_3d_graph(
     ),
     limit: int = Query(200, ge=1, le=5000),
     offset: int = Query(0, ge=0),
+    graph: Optional[str] = Query(
+        default=None,
+        description="Show only this graph (the concept's domain). Omit for all graphs.",
+    ),
 ):
     """
     Get 3D graph data for visualization.
@@ -154,7 +158,14 @@ async def get_3d_graph(
             # Get all concepts
             where_clauses = ["c.user_id = $user_id"]
             params = {"user_id": user_id, "limit": limit, "offset": offset}
-            
+
+            # Filtering by graph has to happen here rather than in the client:
+            # the response is a page, so a client-side filter would only ever
+            # show the part of a graph that landed on the current page.
+            if graph:
+                where_clauses.append("coalesce(c.domain, 'General') = $graph")
+                params["graph"] = graph
+
             where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
             
             query = f"""

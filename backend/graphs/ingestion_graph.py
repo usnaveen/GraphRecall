@@ -206,6 +206,8 @@ from backend.agents.content_generator import ContentGeneratorAgent
 from backend.agents.proposition_agent import PropositionExtractionAgent
 from backend.services.ingestion import DocumentParserService, BookChunker
 from backend.services.ingestion.embedding_service import EmbeddingService
+from backend.services.concept_similarity import find_related_concepts
+from backend.services.graph_registry import resolve_graph, graph_names
 
 # Initialize agents
 extraction_agent = ExtractionAgent(temperature=0.2)
@@ -762,6 +764,14 @@ async def extract_concepts_node(state: IngestionState) -> dict:
             unique_concepts[key] = c
     concepts = list(unique_concepts.values())
 
+    # File every concept into one of the user's existing graphs where it fits.
+    # Extraction names a domain without knowing what the user already has, so
+    # left alone one paper says "Linear Algebra" and the next "Mathematics" and
+    # a single subject splits into graphs that never meet.
+    concepts = await _canonicalize_domains(
+        state.get("user_id", "default_user"), concepts
+    )
+
     meta = state.get("processing_metadata") or {}
     meta["concepts_extracted"] = len(concepts)
     meta["domains_detected"] = list({c.get("domain", "General") for c in concepts})
@@ -855,53 +865,57 @@ async def find_related_node(state: IngestionState) -> dict:
     try:
         neo4j = await get_neo4j_client()
         user_id = state.get("user_id", "default_user")
-        
-        # Get all existing concepts for user
-        query = """
-        MATCH (c:Concept)
-        WHERE c.user_id = $user_id
-        RETURN c.id AS id, c.name AS name, c.definition AS definition,
-               c.domain AS domain, c.complexity_score AS complexity_score,
-               c.confidence AS confidence
-        LIMIT 100
-        """
-        
-        existing = await neo4j.execute_query(query, {"user_id": user_id})
-        
-        if not existing:
+
+        total_rows = await neo4j.execute_query(
+            "MATCH (c:Concept {user_id: $user_id}) RETURN count(c) AS total",
+            {"user_id": user_id},
+        )
+        total_existing = total_rows[0]["total"] if total_rows else 0
+
+        if not total_existing:
             logger.info("find_related_node: No existing concepts")
             return {"related_concepts": [], "needs_synthesis": False, "overlap_ratio": 0.0}
-        
-        # Simple name matching for MVP
-        related = []
-        extracted_names = [c.get("name", "").lower() for c in extracted]
-        
-        for concept in existing:
-            name = concept.get("name", "").lower()
-            for ext_name in extracted_names:
-                if ext_name in name or name in ext_name or _word_overlap(ext_name, name) > 0.5:
-                    related.append(concept)
-                    break
-        
-        # Calculate overlap ratio
-        overlap_ratio = len(related) / len(extracted) if extracted else 0.0
-        needs_synthesis = overlap_ratio > 0.3  # Threshold for synthesis
-        
+
+        # Match on meaning, over the whole graph. Name matching missed every
+        # rephrasing ("Self-Attention" vs "Scaled Dot-Product Attention"), which
+        # is exactly how a new paper relates to one already ingested.
+        related, by_concept = await find_related_concepts(user_id, extracted)
+
+        if not related:
+            related, by_concept = _name_match_related(
+                await _all_concepts(neo4j, user_id), extracted
+            )
+            if related:
+                logger.info(
+                    "find_related_node: embedding search empty, used name fallback",
+                    num_related=len(related),
+                )
+
+        # Overlap is how many NEW concepts landed on something existing — not how
+        # many existing concepts were hit. The old ratio could exceed 1.0 when one
+        # new concept matched several old ones, and skipped synthesis when it
+        # matched none.
+        matched_new = len(by_concept)
+        overlap_ratio = matched_new / len(extracted) if extracted else 0.0
+        needs_synthesis = overlap_ratio > 0.3
+
         logger.info(
             "find_related_node: Complete",
             num_related=len(related),
-            overlap_ratio=overlap_ratio,
+            matched_new=matched_new,
+            overlap_ratio=round(overlap_ratio, 2),
             needs_synthesis=needs_synthesis,
         )
-        
+
         # Enrich processing metadata
         meta = state.get("processing_metadata") or {}
-        meta["existing_concepts_scanned"] = len(existing)
+        meta["existing_concepts_scanned"] = total_existing
         meta["overlap_ratio"] = round(overlap_ratio, 2)
         meta["related_concept_names"] = [r.get("name", "") for r in related[:5]]
 
         return {
             "related_concepts": related,
+            "related_by_concept": by_concept,
             "needs_synthesis": needs_synthesis,
             "overlap_ratio": overlap_ratio,
             "processing_metadata": meta,
@@ -910,6 +924,100 @@ async def find_related_node(state: IngestionState) -> dict:
     except Exception as e:
         logger.error("find_related_node: Failed", error=str(e))
         return {"related_concepts": [], "needs_synthesis": False, "overlap_ratio": 0.0}
+
+
+async def _canonicalize_domains(user_id: str, concepts: list[dict]) -> list[dict]:
+    """Map each concept's freely-invented domain onto the user's existing graphs.
+
+    Resolves one domain per distinct proposed name rather than per concept, so a
+    30-concept paper spanning two subjects costs two LLM calls, not thirty. Any
+    graph that turns out to be new is logged, because a new subject appearing in
+    the graph should be visible rather than silent.
+    """
+    if not concepts:
+        return concepts
+
+    try:
+        existing = await graph_names(user_id)
+    except Exception as e:
+        logger.warning("_canonicalize_domains: could not read graphs", error=str(e))
+        return concepts
+
+    resolved: dict[str, str] = {}
+    created: list[str] = []
+
+    for concept in concepts:
+        proposed = (concept.get("domain") or "General").strip()
+        if proposed not in resolved:
+            try:
+                outcome = await resolve_graph(
+                    user_id,
+                    proposed=proposed,
+                    concept_name=concept.get("name", ""),
+                    definition=concept.get("definition") or concept.get("description") or "",
+                    existing=existing,
+                )
+            except Exception as e:
+                logger.warning(
+                    "_canonicalize_domains: resolve failed",
+                    proposed=proposed,
+                    error=str(e),
+                )
+                resolved[proposed] = proposed
+                continue
+
+            resolved[proposed] = outcome["graph"]
+            if outcome.get("created"):
+                created.append(outcome["graph"])
+                # Later concepts in this same document should land in the graph
+                # we just opened, not open a second one beside it.
+                existing.append(outcome["graph"])
+
+        concept["domain"] = resolved[proposed]
+
+    logger.info(
+        "_canonicalize_domains: filed concepts",
+        concepts=len(concepts),
+        graphs=sorted(set(resolved.values())),
+        new_graphs=created,
+    )
+    return concepts
+
+
+async def _all_concepts(neo4j, user_id: str) -> list[dict]:
+    """Every concept for a user, for the name-matching fallback."""
+    return await neo4j.execute_query(
+        """
+        MATCH (c:Concept {user_id: $user_id})
+        RETURN c.id AS id, c.name AS name, c.definition AS definition,
+               c.domain AS domain, c.complexity_score AS complexity_score,
+               c.confidence AS confidence
+        """,
+        {"user_id": user_id},
+    )
+
+
+def _name_match_related(
+    existing: list[dict], extracted: list[dict]
+) -> tuple[list[dict], dict[str, list[dict]]]:
+    """Name-overlap matching, kept as a fallback for when embeddings are absent."""
+    related: list[dict] = []
+    by_concept: dict[str, list[dict]] = {}
+
+    for concept in existing:
+        name = (concept.get("name") or "").lower()
+        if not name:
+            continue
+        for ext in extracted:
+            ext_name = (ext.get("name") or "").lower()
+            if not ext_name:
+                continue
+            if ext_name in name or name in ext_name or _word_overlap(ext_name, name) > 0.5:
+                related.append(concept)
+                by_concept.setdefault(ext.get("name") or "", []).append(concept)
+                break
+
+    return related, by_concept
 
 
 def _word_overlap(s1: str, s2: str) -> float:
