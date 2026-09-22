@@ -25,7 +25,7 @@ but drops the decorative effects.
 | Community wireframe boxes + glow spheres | Removed; "Color by → Community" instead | Boxes overlapped and tinted the scene |
 | Neighbours spring toward the selection | Removed; focus dimming instead | Moving nodes are hard to tap |
 | Parent / child recolouring on selection | Removed; relationship shown by link colour and in the card | Keeps each node's colour meaning stable |
-| Labels on every node, world-sized | Collision-free screen labels: important nodes when browsing; the selection and its neighbours when focused | Readable at any zoom without overlap |
+| Labels on every node, world-sized | Collision-free screen labels with scale LOD: hubs / large / search / merge when browsing; selection + neighbours when focused; zoom + distance cull and a 40–80 cap once the graph is large | Readable at phone zoom; stays usable at thousands of concepts |
 | Node size in world units | Clamped to 5–20 px on screen | Distant concepts stay visible and tappable |
 | — | Colour by Domain / Mastery / Community | Mastery mode shows weak spots at a glance |
 | — | Selection or search dims everything else to 14% | Focus + context |
@@ -59,7 +59,7 @@ Demo / stub graph: create, merge, and apply show a toast and do not hit the API.
 
 ## Known limits
 
-1. Labels are DOM elements positioned each frame; fine for hundreds of concepts, thousands would want culling by zoom.
+1. Labels are still DOM elements (not a GPU atlas). Scale LOD ships: importance + camera-distance cull, stable priority, and a 40–80 browsing cap (selection / neighbours / search / merge always kept). Tens of thousands of concepts may still want a texture atlas later.
 2. Communities recompute UI calls the API; if the route is down the toast says so and the current communities stay.
 3. Suggest-links depends on the LangGraph workflow + LLM; slow or empty results are surfaced in the sheet, not as a crash.
 4. True web bloom / galaxy / community boxes stay deferred (by design for phone readability).
@@ -67,6 +67,7 @@ Demo / stub graph: create, merge, and apply show a toast and do not hit the API.
 
 ## Recent polish (this slice)
 
+- Label LOD at scale (`Tools/graph3d` → `WebAssets/graph3d.bundle.js`): browsing shows hubs / large / nearby / search / merge only; zoom + distance cull when node count is high; 40–80 cap with stable priority; focus keeps selection + neighbours labeled.
 - Compact card surfaces Suggest + Merge (no expand required).
 - + FAB stays available while a concept card is open.
 - `createAt` bridge reads WK `NSNumber` coordinates correctly.

@@ -56,7 +56,10 @@ const COMMUNITY_PALETTE = [
 
 const NODE_MIN_PX = 5;   // on-screen radius floor, so distant concepts stay visible and tappable
 const NODE_MAX_PX = 20;  // ceiling, so zooming in never fills the screen with one sphere
-const LABEL_LIMIT = 36;
+/// DOM labels are expensive at thousands of concepts — keep a stable, zoom-aware cap.
+const LABEL_CAP_MIN = 40;
+const LABEL_CAP_MAX = 80;
+const LABEL_LOD_NODE_COUNT = 350; // above this, gate browsing labels by importance + distance
 const DIM_OPACITY = 0.14;
 /// 2D focus layout: ring radius, extra ring spacing when crowded, and how fast things settle.
 const FOCUS = { radius: 48, ringGap: 30, lerp: 0.16, perRing: 7 };
@@ -627,6 +630,8 @@ function updateArrows() {
 /* ---------------------------------------------------------------- labels */
 
 const measureContext = document.createElement('canvas').getContext('2d');
+const labelDepth = new THREE.Vector3();
+const projected = new THREE.Vector3();
 
 function labelFor(obj) {
   if (!obj.label) {
@@ -644,24 +649,72 @@ function labelFor(obj) {
   return obj.label;
 }
 
-const projected = new THREE.Vector3();
+/** How many DOM labels to keep this frame — more when zoomed in / few nodes, fewer when far / huge. */
+function labelCap(nodeCount, cameraDist) {
+  if (nodeCount <= LABEL_LOD_NODE_COUNT) return LABEL_CAP_MAX;
+  // ~120 world units is a comfortable overview; closer → allow more labels.
+  const zoomFactor = THREE.MathUtils.clamp(120 / Math.max(cameraDist, 1), 0.25, 1);
+  let cap = Math.round(LABEL_CAP_MIN + (LABEL_CAP_MAX - LABEL_CAP_MIN) * zoomFactor);
+  if (nodeCount > 1000) cap = Math.min(cap, 56);
+  if (nodeCount > 2000) cap = Math.min(cap, 48);
+  return THREE.MathUtils.clamp(cap, LABEL_CAP_MIN, LABEL_CAP_MAX);
+}
+
+/** Browsing (non-protected) labels only for hubs / large / nearby nodes once the graph is big. */
+function browsingLabelEligible(obj, nodeCount, depth, cameraDist) {
+  if (nodeCount <= LABEL_LOD_NODE_COUNT) return true;
+  const maxDepth = cameraDist * (nodeCount > 1000 ? 1.2 : 1.65);
+  if (depth > maxDepth) return false;
+  // On-screen size already encodes distance — keep labels that read as substantial.
+  if (obj.pxRadius >= 11) return true;
+  const minDegree = nodeCount > 2000 ? 4 : nodeCount > 1000 ? 3 : 2;
+  if (obj.node.degree >= minDegree) return true;
+  if ((obj.node.size ?? 1) >= 2.5) return true;
+  return false;
+}
+
+function labelPriority(obj, selectedId) {
+  const id = obj.node.id;
+  if (id === selectedId) return 1e6;
+  if (selectedId && neighborIds.has(id)) return 1e5 + obj.node.degree;
+  if (state.highlightIds.has(id) || state.mergeTargetIds.has(id)) return 5e4 + obj.node.degree;
+  // Stable browsing score: degree + size + radius; id tie-break happens in sort.
+  return obj.node.degree * 10 + (obj.node.size ?? 1) * 5 + obj.radius;
+}
 
 function placeLabels() {
   const selected = selectedObject();
   const selectedId = selected ? selected.node.id : null;
+  const nodeCount = objects.size;
+  const cameraDist = camera.position.distanceTo(controls.target);
+  const cap = labelCap(nodeCount, cameraDist);
+  const lod = nodeCount > LABEL_LOD_NODE_COUNT;
+  camera.getWorldDirection(forward);
+
   const candidates = [];
   for (const obj of objects.values()) {
     if (!obj.visible || obj.dimmed) continue;
     const id = obj.node.id;
-    let priority;
-    if (id === selectedId) priority = 1e6;
-    else if (selectedId && neighborIds.has(id)) priority = 1e5 + obj.node.degree;
-    else if (state.highlightIds.has(id) || state.mergeTargetIds.has(id)) priority = 5e4 + obj.node.degree;
-    else if (selectedId && !focusView) continue;
-    else priority = obj.node.degree * 10 + obj.radius;
-    candidates.push([priority, obj]);
+    const protectedLabel = id === selectedId
+      || (selectedId && neighborIds.has(id))
+      || state.highlightIds.has(id)
+      || state.mergeTargetIds.has(id);
+
+    // Focus keeps selection + neighbours; browsing LOD does not invent labels outside that set.
+    if (selectedId && !focusView && !protectedLabel) continue;
+    if (focusView && !protectedLabel && !focusView.members.has(id)) continue;
+
+    if (!protectedLabel) {
+      if (lod) {
+        const depth = Math.max(0.1, labelDepth.copy(obj.mesh.position).sub(camera.position).dot(forward));
+        if (!browsingLabelEligible(obj, nodeCount, depth, cameraDist)) continue;
+      }
+    }
+
+    candidates.push([labelPriority(obj, selectedId), obj]);
   }
-  candidates.sort((a, b) => b[0] - a[0]);
+  // Higher priority first; id tie-break keeps the set stable across frames.
+  candidates.sort((a, b) => b[0] - a[0] || (a[1].node.id < b[1].node.id ? -1 : a[1].node.id > b[1].node.id ? 1 : 0));
 
   const placed = [];
   const shown = new Set();
@@ -675,20 +728,30 @@ function placeLabels() {
   }
 
   for (const [, obj] of candidates) {
-    if (shown.size >= LABEL_LIMIT) break;
+    // Hard ceiling so a huge focus neighbourhood cannot spawn unbounded DOM nodes.
+    if (shown.size >= 120) break;
     projected.copy(obj.mesh.position).project(camera);
     if (projected.z > 1 || projected.x < -1.1 || projected.x > 1.1 || projected.y < -1.1 || projected.y > 1.1) continue;
     const isSelected = obj.node.id === selectedId;
+    const isNeighbor = neighborIds.has(obj.node.id);
+    const isProtected = isSelected
+      || (selectedId && isNeighbor)
+      || state.highlightIds.has(obj.node.id)
+      || state.mergeTargetIds.has(obj.node.id);
+    // Cap applies to browsing labels only — selection, neighbours, search, and merge stay labeled.
+    if (!isProtected && shown.size >= cap) continue;
+    // Selection + neighbours always keep a slot even if collision is tight.
+    const mustShow = isSelected || (selectedId && isNeighbor);
     const label = labelFor(obj);
     const labelWidth = label.__width * (isSelected ? 13 / 11 : 1);
     // Keep labels inside the canvas instead of letting edge concepts lose half their name.
     const x = Math.min(Math.max(((projected.x + 1) / 2) * width, labelWidth / 2 + 4), width - labelWidth / 2 - 4);
     const y = ((1 - projected.y) / 2) * height + obj.pxRadius + 3;
     const rect = [x - labelWidth / 2, y, x + labelWidth / 2, y + (isSelected ? 18 : 15)];
-    if (!isSelected && placed.some((p) => rect[0] < p[2] && rect[2] > p[0] && rect[1] < p[3] && rect[3] > p[1])) continue;
+    if (!mustShow && placed.some((p) => rect[0] < p[2] && rect[2] > p[0] && rect[1] < p[3] && rect[3] > p[1])) continue;
     placed.push(rect);
     shown.add(obj);
-    const className = isSelected ? 'label selected' : neighborIds.has(obj.node.id) ? 'label neighbor' : 'label';
+    const className = isSelected ? 'label selected' : isNeighbor ? 'label neighbor' : 'label';
     if (label.__class !== className) { label.className = className; label.__class = className; }
     label.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translateX(-50%)`;
     label.style.display = 'block';
