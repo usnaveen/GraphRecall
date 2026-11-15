@@ -912,19 +912,21 @@ Return the consolidated note as clean markdown."""
 @router.get("/health")
 async def health_check():
     """Health check for the V2 API."""
-    is_production = os.getenv("ENVIRONMENT", "development") == "production"
-    has_db = bool(os.getenv("DATABASE_URL"))
-    checkpointer_mode = "postgres" if (is_production and has_db) else "memory"
+    from backend.graphs.checkpointer import checkpointer_status
+
+    cp = checkpointer_status()
+    durable = cp.get("backend") == "postgres" and cp.get("ready", False)
     return {
         "status": "healthy",
         "version": "2.2",
         "workflow": "langgraph",
-        "checkpointer_mode": checkpointer_mode,
-        "durable_thread_persistence": checkpointer_mode == "postgres",
+        "checkpointer_mode": cp.get("backend"),
+        "checkpointer_ready": cp.get("ready", False),
+        "durable_thread_persistence": durable,
         "features": [
             "conditional_edges",
             "human_in_the_loop",
-            "postgres_checkpointer",
+            *(["postgres_checkpointer"] if durable else []),
             "processed_zip_background_ingestion",
             "youtube_links",
             "chat_transcript_ingestion",
