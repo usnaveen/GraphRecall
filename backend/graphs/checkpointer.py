@@ -36,6 +36,7 @@ logger = structlog.get_logger()
 _saver: Optional[Any] = None
 _pool: Optional[Any] = None
 _postgres_ready = False
+_open_lock: Optional[asyncio.Lock] = None
 
 
 def _psycopg_conninfo(url: str) -> str:
@@ -89,6 +90,29 @@ def _deferred_postgres_saver(pool):
         def bind_loop(self) -> None:
             self.loop = asyncio.get_running_loop()
 
+        # Self-opening: callers outside the FastAPI lifespan (backend/scripts/
+        # seed_content.py, scripts/ingest_book.py, notebooks) just work.
+        async def aget_tuple(self, config):
+            await open_checkpointer()
+            return await super().aget_tuple(config)
+
+        async def alist(self, *args, **kwargs):
+            await open_checkpointer()
+            async for item in super().alist(*args, **kwargs):
+                yield item
+
+        async def aput(self, *args, **kwargs):
+            await open_checkpointer()
+            return await super().aput(*args, **kwargs)
+
+        async def aput_writes(self, *args, **kwargs):
+            await open_checkpointer()
+            return await super().aput_writes(*args, **kwargs)
+
+        async def adelete_thread(self, thread_id):
+            await open_checkpointer()
+            return await super().adelete_thread(thread_id)
+
     return DeferredAsyncPostgresSaver(pool)
 
 
@@ -136,23 +160,30 @@ async def open_checkpointer() -> str:
     their compiled saver and requests that need it will fail loudly, rather than
     silently losing HITL state.
     """
-    global _postgres_ready
+    global _postgres_ready, _open_lock
     saver = get_checkpointer()
     if _pool is None:
         return "memory"
-    saver.bind_loop()
-    await _pool.open(wait=True, timeout=float(os.getenv("CHECKPOINTER_CONNECT_TIMEOUT", "15")))
-    await saver.setup()
-    _postgres_ready = True
-    logger.info("checkpointer: Postgres checkpoint tables ready")
+    if _postgres_ready:
+        return "postgres"
+    if _open_lock is None:
+        _open_lock = asyncio.Lock()
+    async with _open_lock:
+        if not _postgres_ready:
+            saver.bind_loop()
+            await _pool.open(wait=True, timeout=float(os.getenv("CHECKPOINTER_CONNECT_TIMEOUT", "15")))
+            await saver.setup()
+            _postgres_ready = True
+            logger.info("checkpointer: Postgres checkpoint tables ready")
     return "postgres"
 
 
 async def close_checkpointer() -> None:
-    global _postgres_ready
-    if _pool is not None:
+    global _postgres_ready, _open_lock
+    if _pool is not None and _postgres_ready:
         await _pool.close()
     _postgres_ready = False
+    _open_lock = None
 
 
 def checkpointer_status() -> dict:

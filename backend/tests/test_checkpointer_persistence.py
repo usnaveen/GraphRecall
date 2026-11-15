@@ -54,8 +54,9 @@ SCRIPT = textwrap.dedent(
     b.add_edge(START, "extract"); b.add_edge("extract", "review"); b.add_edge("review", "commit"); b.add_edge("commit", END)
     graph = b.compile(checkpointer=cp.get_checkpointer())   # compiled before the pool opens, like the app
 
-    async def main(phase, thread_id):
-        backend = await cp.open_checkpointer()
+    async def main(phase, thread_id, lazy):
+        # lazy: behave like a standalone script that never calls open_checkpointer()
+        backend = cp.checkpointer_status()["backend"] if lazy else await cp.open_checkpointer()
         cfg = {"configurable": {"thread_id": thread_id}}
         if phase == "start":
             out = await graph.ainvoke({}, cfg)
@@ -69,15 +70,15 @@ SCRIPT = textwrap.dedent(
             print(json.dumps({"backend": backend, "found": True, "committed": out.get("committed"), "concepts": out.get("concepts")}))
         await cp.close_checkpointer()
 
-    asyncio.run(main(sys.argv[2], sys.argv[3]))
+    asyncio.run(main(sys.argv[2], sys.argv[3], sys.argv[4] == "lazy"))
     """
 )
 
 
-def _run(phase: str, thread_id: str, mode: str) -> dict:
+def _run(phase: str, thread_id: str, mode: str, lazy: bool = False) -> dict:
     env = {**os.environ, "DATABASE_URL": PG_URL, "CHECKPOINTER": mode}
     proc = subprocess.run(
-        [sys.executable, "-c", SCRIPT, str(CHECKPOINTER_PY), phase, thread_id],
+        [sys.executable, "-c", SCRIPT, str(CHECKPOINTER_PY), phase, thread_id, "lazy" if lazy else "explicit"],
         env=env, capture_output=True, text=True, timeout=60,
     )
     assert proc.returncode == 0, proc.stderr
@@ -93,6 +94,15 @@ def test_interrupt_survives_restart_with_postgres():
     assert second["found"] is True
     assert second["committed"] is True
     assert second["concepts"] == ["eigenvector", "eigenvalue"]
+
+
+def test_scripts_without_lifespan_open_the_pool_themselves():
+    """backend/scripts/seed_content.py and scripts/ingest_book.py never call open_checkpointer()."""
+    thread_id = f"test-{uuid.uuid4()}"
+    first = _run("start", thread_id, "postgres", lazy=True)
+    assert first["next"] == ["review"] and first["interrupted"] is True
+    second = _run("resume", thread_id, "postgres", lazy=True)
+    assert second["found"] is True and second["committed"] is True
 
 
 def test_memory_backend_loses_state_on_restart():
