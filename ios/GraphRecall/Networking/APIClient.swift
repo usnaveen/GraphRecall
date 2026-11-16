@@ -75,12 +75,16 @@ actor APIClient {
         try await get("/api/feed/stats")
     }
 
-    func submitReview(itemId: String, itemType: String, difficulty: ReviewDifficulty, responseTimeMs: Int? = nil) async throws -> ReviewSubmitResult {
+    func submitReview(itemId: String, itemType: String, difficulty: ReviewDifficulty, conceptId: String? = nil, responseTimeMs: Int? = nil) async throws -> ReviewSubmitResult {
         var items: [URLQueryItem] = [
             URLQueryItem(name: "item_id", value: itemId),
             URLQueryItem(name: "item_type", value: itemType),
             URLQueryItem(name: "difficulty", value: difficulty.rawValue)
         ]
+        // SM-2 schedules concepts, not cards: without this the server has to look the concept up.
+        if let conceptId, !conceptId.isEmpty {
+            items.append(URLQueryItem(name: "concept_id", value: conceptId))
+        }
         if let responseTimeMs {
             items.append(URLQueryItem(name: "response_time_ms", value: String(responseTimeMs)))
         }

@@ -60,9 +60,11 @@ export const feedService = {
     },
 
     /** Record a review for a card */
-    recordReview: async (itemId: string, itemType: string, difficulty: string) => {
+    recordReview: async (itemId: string, itemType: string, difficulty: string, conceptId?: string) => {
+        const params = new URLSearchParams({ item_id: itemId, item_type: itemType, difficulty });
+        if (conceptId) params.set('concept_id', conceptId);   // the concept's schedule is what SM-2 updates
         const response = await authFetch(
-            `${API_BASE}/feed/review?item_id=${itemId}&item_type=${itemType}&difficulty=${difficulty}`,
+            `${API_BASE}/feed/review?${params.toString()}`,
             { method: 'POST' }
         );
         if (!response.ok) throw new Error('Failed to record review');

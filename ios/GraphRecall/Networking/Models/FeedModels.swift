@@ -494,6 +494,8 @@ struct PendingOfflineReview: Codable, Sendable, Identifiable, Hashable {
     let itemType: String
     let difficulty: ReviewDifficulty
     let queuedAt: Date
+    /// Optional so reviews queued by older builds still decode.
+    var conceptId: String? = nil
 }
 
 struct FeedLikeResponse: Codable, Sendable {
