@@ -132,7 +132,11 @@ async def record_review(
         try:
             target, resolved_by = await resolve_review_concept(pg_client, neo4j_client, user_id, item_id, concept_id)
         except UnresolvableReviewTarget as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            # Cards without a concept (screenshots/uploads, on-the-fly cards, old offline-queued
+            # reviews) have nothing to schedule. Answer 200 "skipped" rather than an error: the iOS
+            # offline queue retries every failed review, so a 4xx here would loop forever.
+            logger.warning("Feed: review skipped, no concept", item_id=item_id, item_type=item_type)
+            return {"status": "skipped", "reason": str(e), "concept_id": None}
 
         user_settings = (current_user.get("settings_json") or {})
         if isinstance(user_settings, str):

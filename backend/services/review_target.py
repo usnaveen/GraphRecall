@@ -8,8 +8,9 @@ schedule never advanced. Resolution order:
 1. an explicit `concept_id` from the client,
 2. the concept of the quiz / flashcard row whose id the client sent,
 3. the id itself, if it is already one of the user's Concept nodes (older clients),
-otherwise the target is unknown and the caller should reject the review rather than
-create a schedule row for an id that isn't a concept.
+otherwise there is no concept to schedule: the router answers 200 "skipped" (never an
+error, since the iOS offline queue retries failed reviews) instead of creating a schedule
+row for an id that isn't a concept.
 
 Kept free of heavy imports so it can be unit-tested with fakes.
 """
