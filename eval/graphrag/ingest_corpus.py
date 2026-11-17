@@ -124,7 +124,7 @@ async def main(dataset: str, upto: int | None, communities_only: bool, limit: in
         print(f"{len(corpus)} notes in scope; {len(todo)} to ingest", flush=True)
         for i, p in enumerate(todo, 1):
             k = p["key"]
-            before, t0 = llm_totals(), time.time()
+            before, t0, embed_err_before = llm_totals(), time.time(), _env.EMBED_ERRORS["count"]
             try:
                 res = await graph.ainvoke(initial_state(user_id, p["title"], p["text"]),
                                           {"configurable": {"thread_id": str(uuid.uuid4())}})
@@ -138,18 +138,21 @@ async def main(dataset: str, upto: int | None, communities_only: bool, limit: in
                        llm=diff_totals(llm_totals(), before))
             rec["chunks"], rec["chunks_embedded"] = await chunk_count(pg, rec["note_id"])
             llm_errors = sum(v.get("errors", 0) for v in rec["llm"].values())
+            embed_errors = _env.EMBED_ERRORS["count"] - embed_err_before
             # "completed" only if every chunk is searchable (has a vector), the graph got concepts, and
-            # no model call failed along the way (a 429 inside a node can silently thin the graph).
+            # no chat or embedding call failed along the way (failures inside nodes are swallowed, so
+            # a quota hit would otherwise leave a thinner graph that still looks ingested).
             rec["status"] = ("completed" if rec["chunks"] > 0 and rec["chunks_embedded"] == rec["chunks"]
-                             and rec["concepts"] > 0 and not rec["error"] and not llm_errors else "incomplete")
-            rec["llm_errors"] = llm_errors
+                             and rec["concepts"] > 0 and not rec["error"] and not llm_errors and not embed_errors
+                             else "incomplete")
+            rec["llm_errors"], rec["embed_errors"] = llm_errors, embed_errors
             log["notes"][k] = rec
             log_path.write_text(json.dumps(log, indent=1, ensure_ascii=False))
             calls = sum(v["calls"] for v in rec["llm"].values())
             print(f"[{i}/{len(todo)}] {rec['status']:10s} {rec['seconds']:5.1f}s calls={calls} err={llm_errors} "
                   f"chunks={rec['chunks_embedded']}/{rec['chunks']} concepts={rec['concepts']} {p['title'][:40]} {rec.get('error') or ''}", flush=True)
-            if "RESOURCE_EXHAUSTED" in (rec.get("error") or ""):
-                print("Gemini quota exhausted; stopping (rerun to resume).", flush=True)
+            if "RESOURCE_EXHAUSTED" in (rec.get("error") or "") or _env.EMBED_ERRORS["daily_quota"]:
+                print("Gemini quota exhausted (daily embedding cap or chat quota); stopping. Rerun to resume.", flush=True)
                 return
 
     if skip_communities:

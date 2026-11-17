@@ -57,6 +57,17 @@ def models() -> dict:
             "reasoning": llm.DEFAULT_REASONING_MODEL, "embedding": llm.DEFAULT_EMBEDDING_MODEL}
 
 
+# Embedding failures are swallowed inside product nodes (chunks saved without vectors, synthesis
+# skipped), so the eval counts them here. DAILY_QUOTA flips when the free tier's per-day cap is hit.
+EMBED_ERRORS = {"count": 0, "daily_quota": False}
+
+
+def _record_embed_error(e: Exception) -> None:
+    EMBED_ERRORS["count"] += 1
+    if "PerDay" in str(e) or "per_day" in str(e).lower():
+        EMBED_ERRORS["daily_quota"] = True
+
+
 def throttle_llm() -> None:
     """Client-side rate limit on every Gemini chat call (EVAL_RPM, default 12/min for the free tier).
 
@@ -89,12 +100,20 @@ def throttle_llm() -> None:
     class ThrottledEmbeddings(GoogleGenerativeAIEmbeddings):
         async def aembed_query(self, text, **kw):
             await elimiter.aacquire()
-            return await super().aembed_query(text, **kw)
+            try:
+                return await super().aembed_query(text, **kw)
+            except Exception as e:
+                _record_embed_error(e)
+                raise
 
         async def aembed_documents(self, texts, **kw):
             for _ in texts:
                 await elimiter.aacquire()
-            return await super().aembed_documents(texts, **kw)
+            try:
+                return await super().aembed_documents(texts, **kw)
+            except Exception as e:
+                _record_embed_error(e)
+                raise
 
     llm.GoogleGenerativeAIEmbeddings = ThrottledEmbeddings
     llm.get_embeddings.cache_clear()

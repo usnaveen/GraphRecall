@@ -389,13 +389,21 @@ async def get_context_node(state: ChatState) -> dict:
             ) if entities else []
 
             if use_vector_seeds:
-                from backend.services.concept_similarity import similar_to_embedding
+                # Separate try: an embedding failure must not cost the substring seeds.
+                try:
+                    from backend.services.concept_similarity import similar_to_embedding
 
-                vector_seeds = await similar_to_embedding(user_id, await embed_task, limit=5)
-                if focused_source_ids:
-                    vector_seeds = [s for s in vector_seeds if s["id"] in focused_source_ids]
-                known = {c.get("id") for c in seed_concepts}
-                seed_concepts = seed_concepts + [s for s in vector_seeds if s["id"] not in known]
+                    vector_seeds = await similar_to_embedding(user_id, await embed_task, limit=5)
+                    if focused_source_ids:
+                        vector_seeds = [s for s in vector_seeds if s["id"] in focused_source_ids]
+                    known = {c.get("id") for c in seed_concepts}
+                    seed_concepts = seed_concepts + [s for s in vector_seeds if s["id"] not in known]
+                    graph_context["vector_seeds"] = {
+                        "count": len(vector_seeds),
+                        "top_score": vector_seeds[0]["score"] if vector_seeds else None,
+                    }
+                except Exception as e:
+                    logger.warning("get_context_node: vector seeds failed", error=str(e))
 
             concept_ids = list({c["id"] for c in seed_concepts if c.get("id")})
             if concept_ids:

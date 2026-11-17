@@ -30,6 +30,7 @@ import argparse
 import asyncio
 import json
 import math
+import os
 import random
 import re
 import time
@@ -227,7 +228,8 @@ async def run_question(q: dict, user_id: str) -> dict:
     ctx = await cb.get_context_node({**state, **analysis})
     gc, rag = ctx["graph_context"], ctx["rag_context"]
     retrieval = {"intent": intent, "intent_overridden": overridden, "entities": analysis.get("entities", []),
-                 "search_mode": gc.get("search_mode"), "concepts": len(gc.get("concepts", [])),
+                 "search_mode": gc.get("search_mode"), "vector_seeds": gc.get("vector_seeds"),
+                 "concepts": len(gc.get("concepts", [])),
                  "relationships": len(gc.get("relationships", [])), "notes": len(rag),
                  "note_titles": [n.get("title") for n in rag], "llm_calls": calls() - c0, "seconds": round(time.time() - t0, 1)}
 
@@ -356,20 +358,36 @@ async def main(questions_file: str, limit: int | None) -> None:
     user_id = await _env.eval_user_id("grb")
     spec = json.loads((_env.HERE / questions_file).read_text())
     qs = spec["questions"][:limit] if limit else spec["questions"]
-    name = questions_file.removesuffix(".json")
+    name = questions_file.removesuffix(".json") + ("" if os.getenv("GRAPH_SEED_MODE", "substring") == "substring" else "." + os.getenv("GRAPH_SEED_MODE"))
     RESULTS.mkdir(exist_ok=True)
     partial = RESULTS / f"{name}.partial.jsonl"
     done = {json.loads(l)["id"]: json.loads(l) for l in partial.open()} if partial.exists() else {}
+    invalid: list[str] = []
     for i, q in enumerate(qs, 1):
         if q["id"] in done:
             continue
         t0, c0 = time.time(), calls()
+        e0 = _env.EMBED_ERRORS["count"]
+        l0 = sum(v["errors"] for v in telemetry.snapshot()["llm"].values())
         try:
             row = await run_question(q, user_id)
         except Exception as e:  # noqa: BLE001
             print(f"[{i}/{len(qs)}] FAILED {q['id']}: {type(e).__name__}: {str(e)[:200]}", flush=True)
             continue
         row["seconds"], row["llm_calls"] = round(time.time() - t0, 1), calls() - c0
+        # Product nodes swallow model errors (an empty vector context, a skipped map step), which would
+        # score as a real zero. Such rows are kept on disk but excluded from every aggregate.
+        row["embed_errors"] = _env.EMBED_ERRORS["count"] - e0
+        row["llm_errors"] = sum(v["errors"] for v in telemetry.snapshot()["llm"].values()) - l0
+        row["valid"] = not row["embed_errors"] and not row["llm_errors"]
+        if not row["valid"]:
+            invalid.append(q["id"])
+            print(f"[{i}/{len(qs)}] INVALID {q['id']} (embed_errors={row['embed_errors']}, llm_errors={row['llm_errors']}); "
+                  "not saved, a rerun retries it", flush=True)
+            if _env.EMBED_ERRORS["daily_quota"]:
+                print("Daily embedding quota hit; stopping (rerun resumes).", flush=True)
+                break
+            continue
         done[q["id"]] = row
         with partial.open("a") as fh:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -380,7 +398,10 @@ async def main(questions_file: str, limit: int | None) -> None:
     ingest_log = json.loads((_env.DATA / "ingested_grb.json").read_text())
     meta = {"run_at": time.strftime("%Y-%m-%d %H:%M"), "questions_file": questions_file, "models": _env.models(),
             "corpus_notes": len(ingest_log["notes"]), "communities": ingest_log.get("communities", {}).get("count"),
-            "missing": [q["id"] for q in qs if q["id"] not in done]}
+            "incomplete_notes": sum(n.get("status") != "completed" for n in ingest_log["notes"].values()),
+            "seed_mode": os.getenv("GRAPH_SEED_MODE", "substring"),
+            "missing": [q["id"] for q in qs if q["id"] not in done],
+            "invalid_this_run": invalid}
     agg = aggregate(rows) if rows else {}
     (RESULTS / f"{name}.json").write_text(json.dumps({"meta": meta, "aggregate": agg, "rows": rows}, indent=1, ensure_ascii=False))
     if rows:
