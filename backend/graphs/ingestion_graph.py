@@ -1151,12 +1151,29 @@ async def create_concepts_node(state: IngestionState) -> dict:
     if not concepts:
         return {"created_concept_ids": [], "concept_name_to_id": {}}
     
+    # Embed the concepts as they are written. Without a vector a concept is invisible to the
+    # concept_embedding index, so later notes can't link to it by meaning (find_related_concepts)
+    # and only a manual POST /graphs/reindex used to fix that. Same text format as that backfill.
+    # One batched call per note; on failure the concepts are still written, as before.
+    concept_vectors: list[Optional[list[float]]] = [None] * len(concepts)
+    try:
+        from backend.services.ingestion.embedding_service import EmbeddingService
+
+        texts = [
+            f"{c.get('name', '')}: {c.get('definition')}" if c.get("definition") else c.get("name", "")
+            for c in concepts
+        ]
+        vectors = await EmbeddingService().embed_batch(texts)
+        concept_vectors = [vectors[i] if i < len(vectors) else None for i in range(len(concepts))]
+    except Exception as e:
+        logger.warning("create_concepts_node: concept embedding failed; writing without vectors", error=str(e))
+
     try:
         neo4j = await get_neo4j_client()
         concept_ids: list[Optional[str]] = []
         concept_name_to_id: dict[str, str] = {}
-        
-        for concept in concepts:
+
+        for concept, concept_vector in zip(concepts, concept_vectors):
             # Call create_concept with correct signature
             # Use concept.get("id") if present (from merge logic), otherwise None (generates new UUID)
             result_node = await neo4j.create_concept(
@@ -1167,7 +1184,7 @@ async def create_concepts_node(state: IngestionState) -> dict:
                 confidence=float(concept.get("confidence", 0.8)),
                 user_id=user_id,
                 concept_id=concept.get("id"),
-                # embedding=None (for now)
+                embedding=concept_vector,
             )
             # Neo4j RETURN c gives {"c": {node_props}} — extract the node dict
             node_data = result_node.get("c", result_node) if isinstance(result_node, dict) else {}

@@ -12,6 +12,7 @@ START → analyze_query → (conditional) → [tools] → get_context → genera
 """
 
 import json
+import os
 from typing import Annotated, Literal, Optional
 
 import structlog
@@ -371,7 +372,12 @@ async def get_context_node(state: ChatState) -> dict:
 
     # Get graph context
     graph_start = now()
-    if entities:
+    # Seeds: "substring" (default) matches extracted entity strings against concept names;
+    # "hybrid" also takes the concepts closest to the question embedding (concept_embedding index),
+    # so a question that never spells a concept's name can still enter the graph.
+    seed_mode = os.getenv("GRAPH_SEED_MODE", "substring")
+    use_vector_seeds = seed_mode == "hybrid" and embed_task is not None
+    if entities or use_vector_seeds:
         try:
             neo4j = await get_neo4j_client()
 
@@ -380,7 +386,16 @@ async def get_context_node(state: ChatState) -> dict:
                 user_id=user_id,
                 terms=entities,
                 allowed_concept_ids=focused_source_ids or None,
-            )
+            ) if entities else []
+
+            if use_vector_seeds:
+                from backend.services.concept_similarity import similar_to_embedding
+
+                vector_seeds = await similar_to_embedding(user_id, await embed_task, limit=5)
+                if focused_source_ids:
+                    vector_seeds = [s for s in vector_seeds if s["id"] in focused_source_ids]
+                known = {c.get("id") for c in seed_concepts}
+                seed_concepts = seed_concepts + [s for s in vector_seeds if s["id"] not in known]
 
             concept_ids = list({c["id"] for c in seed_concepts if c.get("id")})
             if concept_ids:

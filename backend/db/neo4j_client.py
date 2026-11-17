@@ -312,7 +312,7 @@ class Neo4jClient:
                 SET c.definition = CASE WHEN size($definition) > size(coalesce(c.definition, '')) THEN $definition ELSE c.definition END,
                     c.complexity_score = $complexity_score,
                     c.confidence = CASE WHEN $confidence > c.confidence THEN $confidence ELSE c.confidence END,
-                    c.embedding = coalesce($embedding, c.embedding),
+                    c.embedding = coalesce(c.embedding, $embedding),
                     c.updated_at = datetime()
                 RETURN c
                 """,
@@ -339,8 +339,8 @@ class Neo4jClient:
             c.definition = CASE WHEN size($definition) > size(coalesce(c.definition, '')) THEN $definition ELSE c.definition END,
             c.complexity_score = $complexity_score,
             c.confidence = CASE WHEN $confidence > c.confidence THEN $confidence ELSE c.confidence END,
-            // Ingestion passes no embedding; keep the stored one (concept_embedding vector index).
-            c.embedding = coalesce($embedding, c.embedding),
+            // Keep the stored vector (concept_embedding index); only fill one that is missing.
+            c.embedding = coalesce(c.embedding, $embedding),
             c.updated_at = datetime()
         RETURN c
         """
