@@ -300,6 +300,28 @@ class Neo4jClient:
         name_normalized = re.sub(r"\s*\([^)]*\)", "", name).strip().lower()
         name_normalized = re.sub(r"\s+", " ", name_normalized)
 
+        if concept_id:
+            # A merge/enhance decision points a new concept at an existing node, usually under a
+            # different name ("NSCLC" → "Non-small cell lung cancer"). MERGE-by-name would miss it and
+            # try to CREATE a second node carrying the existing id, which the uniqueness constraint
+            # rejects, failing the whole create_concepts step. Update the existing node by id instead;
+            # its canonical name stays.
+            merged = await self.execute_query(
+                """
+                MATCH (c:Concept {id: $id, user_id: $user_id})
+                SET c.definition = CASE WHEN size($definition) > size(coalesce(c.definition, '')) THEN $definition ELSE c.definition END,
+                    c.complexity_score = $complexity_score,
+                    c.confidence = CASE WHEN $confidence > c.confidence THEN $confidence ELSE c.confidence END,
+                    c.embedding = coalesce($embedding, c.embedding),
+                    c.updated_at = datetime()
+                RETURN c
+                """,
+                {"id": concept_id, "user_id": user_id, "definition": definition,
+                 "complexity_score": complexity_score, "confidence": confidence, "embedding": embedding},
+            )
+            if merged:
+                return {"c": merged[0]["c"]}
+
         query = """
         MERGE (c:Concept {name_normalized: $name_normalized, user_id: $user_id})
         ON CREATE SET
@@ -317,7 +339,8 @@ class Neo4jClient:
             c.definition = CASE WHEN size($definition) > size(coalesce(c.definition, '')) THEN $definition ELSE c.definition END,
             c.complexity_score = $complexity_score,
             c.confidence = CASE WHEN $confidence > c.confidence THEN $confidence ELSE c.confidence END,
-            c.embedding = $embedding,
+            // Ingestion passes no embedding; keep the stored one (concept_embedding vector index).
+            c.embedding = coalesce($embedding, c.embedding),
             c.updated_at = datetime()
         RETURN c
         """
