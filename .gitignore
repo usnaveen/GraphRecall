@@ -107,3 +107,8 @@ ios/**/xcuserdata/
 ios/**/*.xcuserstate
 ios/GraphRecall.xcodeproj/project.xcworkspace/xcuserdata/
 DerivedData/
+
+# Local backend venv and generated eval question sets (rebuilt by eval/graphrag/fetch_*.py)
+/.venv/
+eval/graphrag/questions*.json
+eval/graphrag/results/*.partial.jsonl
