@@ -97,3 +97,18 @@ def test_production_settings_refuse_debug_bypass(monkeypatch):
     assert any("CORS_ORIGINS" in p for p in P.problems())
     monkeypatch.setenv("ENVIRONMENT", "development")
     assert P.problems() == []                              # development is never blocked
+
+
+def test_cloud_postgres_tls_verifies_certificates(monkeypatch):
+    import ssl
+
+    from backend.db.postgres_client import _tls_connect_args
+
+    url, args = _tls_connect_args("postgresql+asyncpg://u:p@ep-x.eu-central-1.aws.neon.tech/db?sslmode=require&application_name=gr")
+    assert "sslmode" not in url and "application_name=gr" in url         # asyncpg rejects sslmode
+    assert args["ssl"].verify_mode == ssl.CERT_REQUIRED and args["ssl"].check_hostname
+    assert _tls_connect_args("postgresql+asyncpg://me@localhost:5432/graphrecall")[1] == {}   # local: no TLS
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("PG_SSL_INSECURE", "1")
+    with pytest.raises(RuntimeError):
+        _tls_connect_args("postgresql+asyncpg://u@db.supabase.co/x")
