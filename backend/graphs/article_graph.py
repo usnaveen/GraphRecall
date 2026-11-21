@@ -1,152 +1,128 @@
-"""
-LangGraph Article Processing Agent (Substack/Blog)
+"""Article import (Substack, blogs): fetch -> extract -> dedupe -> ingest.
 
-Goal: Fetch URL -> Extract Content/Structure -> Convert to Markdown -> Ingest to Knowledge Graph.
+Previously this sent up to 200k characters of raw HTML to the LLM to find the article body. Now
+extraction is deterministic (``backend/services/ingestion/article_extract.py``), which is free,
+fast and testable. The LLM only cleans up when that extraction finds almost no text, and it sees
+visible page text rather than markup.
 """
 
-import httpx
-from typing import TypedDict, Optional, List
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Optional
+
 import structlog
-from datetime import datetime
+from langchain_core.messages import HumanMessage, SystemMessage
 
-from langgraph.graph import StateGraph, START, END
-from backend.config.llm import get_chat_model
-from backend.graphs.ingestion_graph import run_ingestion
-from langchain_core.messages import SystemMessage, HumanMessage
+from backend.services.ingestion.article_extract import (
+    ArticleFetchError,
+    ExtractedArticle,
+    canonicalize_url,
+    dedupe_key,
+    extract_article,
+    fetch_html,
+    render_note,
+)
 
 logger = structlog.get_logger()
-llm = get_chat_model(temperature=0.1) # Deterministic for structure
 
-# ============================================================================
-# State
-# ============================================================================
+_FALLBACK_PROMPT = """You are given the visible text of a web page that contains an article.
+Return only the article itself as clean Markdown: drop navigation, subscribe prompts, comments,
+share buttons and footers. Keep headings, lists and code blocks. Do not summarize or add text.
+Return JSON: {"title": "...", "author": "... or null", "markdown": "..."}"""
 
-class ArticleState(TypedDict):
-    url: str
-    user_id: str
-    html_content: Optional[str]
-    title: Optional[str]
-    author: Optional[str]
-    markdown_content: Optional[str]
-    ingestion_result: Optional[dict]
-    error: Optional[str]
 
-# ============================================================================
-# Nodes
-# ============================================================================
+def url_hash(canonical_url: str) -> str:
+    """Notes imported from a URL are deduplicated per user by their canonical URL."""
+    return hashlib.sha256(f"url:{dedupe_key(canonical_url)}".encode()).hexdigest()
 
-async def fetch_article_node(state: ArticleState) -> dict:
-    """Fetch raw HTML from URL."""
-    url = state["url"]
-    logger.info("fetch_article: Fetching", url=url)
-    
+
+async def _existing_note(user_id: str, content_hash: str) -> Optional[str]:
+    from backend.db.postgres_client import get_postgres_client
+
+    pg = await get_postgres_client()
+    rows = await pg.execute_query(
+        "SELECT id FROM notes WHERE user_id = :user_id AND content_hash = :h LIMIT 1",
+        {"user_id": user_id, "h": content_hash},
+    )
+    return str(rows[0]["id"]) if rows else None
+
+
+async def _llm_clean(article: ExtractedArticle, html: str) -> ExtractedArticle:
+    from bs4 import BeautifulSoup
+
+    from backend.config.llm import get_chat_model
+
+    soup = BeautifulSoup(html, "lxml")
+    for junk in soup(["script", "style", "noscript", "svg"]):
+        junk.decompose()
+    text = soup.get_text("\n", strip=True)[:60_000]
+    llm = get_chat_model(temperature=0.1)
+    resp = await llm.ainvoke([SystemMessage(content=_FALLBACK_PROMPT), HumanMessage(content=text)])
+    raw = resp.text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```", 2)[1].removeprefix("json").strip()
+    data = json.loads(raw)
+    article.title = article.title or data.get("title")
+    article.author = article.author or data.get("author")
+    article.markdown = data.get("markdown") or article.markdown
+    return article
+
+
+async def process_article_url(url: str, user_id: str) -> dict:
+    """Returns {title, url, ingestion_result, warnings, duplicate_note_id, error}."""
+    from backend.graphs.ingestion_graph import run_ingestion
+
+    result: dict = {"url": url, "warnings": [], "ingestion_result": {}, "error": None, "duplicate_note_id": None}
+
+    # 1. Cheap duplicate check on the shared link, before any network fetch.
+    shared = canonicalize_url(url)
+    dup = await _existing_note(user_id, url_hash(shared))
+    if dup:
+        result.update(url=shared, duplicate_note_id=dup)
+        return result
+
+    # 2. Fetch safely and extract.
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            response = await client.get(url, timeout=30.0)
-            response.raise_for_status()
-            return {"html_content": response.text}
-    except Exception as e:
-        logger.error("fetch_article: Failed", error=str(e))
-        return {"error": f"Failed to fetch URL: {str(e)}"}
+        final_url, html = await fetch_html(shared)
+    except ArticleFetchError as e:
+        result["error"] = f"Couldn't import that link: {e}"
+        return result
+    article = extract_article(html, final_url)
 
-async def parse_structure_node(state: ArticleState) -> dict:
-    """Use Gemini to extract structured content (Title, Author, Markdown)."""
-    if state.get("error"):
-        return {}
-        
-    html = state["html_content"]
-    # Truncate likely-too-large HTML to safe limits (e.g. 100k chars) 
-    # Gemini 1.5 has 1M-2M context, so 100k is safe.
-    html_safe = html[:200000] 
-    
-    prompt = """You are an expert Article Curator.
-Analyze the provided HTML content (from a blog or Substack).
+    # 3. The page's own canonical URL may differ from the shared link (custom domains, redirects).
+    if dedupe_key(article.url) != dedupe_key(shared):
+        dup = await _existing_note(user_id, url_hash(article.url))
+        if dup:
+            result.update(url=article.url, title=article.title, duplicate_note_id=dup)
+            return result
 
-Goals:
-1. Extract the MAIN Article content (ignore nav, footers, sidebars).
-2. Format it as Clean Markdown.
-3. Identify Title and Author.
-4. Keep Code Blocks intact.
+    if article.needs_llm_fallback:
+        logger.info("article_import: thin extraction, using LLM fallback", url=article.url,
+                    chars=len(article.markdown))
+        try:
+            article = await _llm_clean(article, html)
+        except Exception as e:  # keep what we have rather than failing the import
+            logger.warning("article_import: LLM fallback failed", error=str(e))
+    if len(article.markdown.strip()) < 80:
+        result["error"] = "Couldn't find article text on that page."
+        return result
 
-Return VALID JSON:
-{
-    "title": "Article Title",
-    "author": "Author Name",
-    "markdown": "# Title\\n\\nBy Author\\n\\n...content..."
-}
-"""
-    
-    try:
-        response = await llm.ainvoke([
-            SystemMessage(content=prompt),
-            HumanMessage(content=f"HTML Content:\n{html_safe}")
-        ])
-        
-        # Clean JSON
-        content = response.text.strip()
-        if content.startswith("```json"):
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif content.startswith("```"):
-            content = content.split("```")[1].split("```")[0].strip()
-            
-        import json
-        data = json.loads(content)
-        
-        return {
-            "title": data.get("title"),
-            "author": data.get("author"),
-            "markdown_content": data.get("markdown")
-        }
-    except Exception as e:
-        logger.error("parse_structure: LLM Failed", error=str(e))
-        return {"error": f"Failed to parse article: {str(e)}"}
+    logger.info("article_import: extracted", url=article.url, substack=article.is_substack,
+                paywalled=article.paywalled, chars=len(article.markdown))
 
-async def ingest_article_node(state: ArticleState) -> dict:
-    """Trigger the main Ingestion Graph."""
-    if state.get("error"):
-        return {}
-        
-    markdown = state["markdown_content"]
-    title = state.get("title", "Untitled Article")
-    user_id = state.get("user_id", "default_user")
-    
-    # Prefix with explicit attribution source
-    full_content = f"Source: {state['url']}\nAuthor: {state.get('author', 'Unknown')}\n\n{markdown}"
-    
-    try:
-        result = await run_ingestion(
-            content=full_content,
-            title=title,
-            user_id=user_id,
-            skip_review=True # Auto-ingest for smooth UX, or False if preferred
-        )
-        return {"ingestion_result": result}
-    except Exception as e:
-        return {"error": f"Ingestion failed: {str(e)}"}
-
-# ============================================================================
-# Graph
-# ============================================================================
-
-builder = StateGraph(ArticleState)
-builder.add_node("fetch", fetch_article_node)
-builder.add_node("parse", parse_structure_node)
-builder.add_node("ingest", ingest_article_node)
-
-builder.add_edge(START, "fetch")
-builder.add_edge("fetch", "parse")
-builder.add_edge("parse", "ingest")
-builder.add_edge("ingest", END)
-
-article_graph = builder.compile()
-
-async def process_article_url(url: str, user_id: str = "default_user") -> dict:
-    """Entry point for API."""
-    initial = {
-        "url": url,
-        "user_id": user_id,
-        "html_content": None,
-        "markdown_content": None,
-        "error": None
-    }
-    return await article_graph.ainvoke(initial)
+    ingestion = await run_ingestion(
+        content=render_note(article),
+        title=article.title or article.url,
+        user_id=user_id,
+        skip_review=True,
+        content_hash=url_hash(article.url),
+        resource_type="article",
+    )
+    ingestion = dict(ingestion or {})
+    ingestion["warnings"] = list(ingestion.get("warnings") or []) + article.warnings
+    result.update(url=article.url, title=article.title, author=article.author,
+                  published=article.published, ingestion_result=ingestion,
+                  warnings=ingestion["warnings"])
+    return result

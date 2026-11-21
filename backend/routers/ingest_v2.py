@@ -725,23 +725,30 @@ async def ingest_url(
     request: IngestUrlRequest,
     current_user: dict = Depends(require_quota("ingest")),
 ):
-    """
-    Ingest an article from a URL (e.g. Substack, Medium, Blog).
-    
-    1. Fetches HTML.
-    2. Parses Title/Author/Content using Gemini.
-    3. Ingests into Knowledge Graph (auto-approved).
+    """Import an article from a shared link (Substack, Medium, blogs).
+
+    Fetches with an SSRF guard, extracts title/author/date/body deterministically, dedupes by
+    canonical URL, and ingests with review skipped. Paywalled Substack posts ingest the free
+    preview and report it in ``warnings``.
     """
     user_id = str(current_user["id"])
     logger.info("v2/ingest/url: Starting", url=request.url)
-    
+
     try:
-        # Run Article Graph
         result = await process_article_url(request.url, user_id=user_id)
-        
+
         if result.get("error"):
-             raise HTTPException(status_code=400, detail=result["error"])
-             
+            raise HTTPException(status_code=422, detail=result["error"])
+        if result.get("duplicate_note_id"):
+            return IngestResponse(
+                note_id=result["duplicate_note_id"],
+                status="completed",
+                status_reason="completed_duplicate",
+                next_action="none",
+                thread_id="duplicate_skipped",
+                warnings=["already in your library: this link was imported before"],
+            )
+
         ingestion_res = result.get("ingestion_result", {})
         await _schedule_reembed_if_needed(ingestion_res, user_id)
         if ingestion_res.get("note_id") and ingestion_res.get("status", "completed") == "completed":
@@ -764,9 +771,9 @@ async def ingest_url(
             next_action=ingestion_res.get("next_action", "none"),
             thread_id=ingestion_res.get("thread_id", ""),
             error=ingestion_res.get("error"),
-            warnings=ingestion_res.get("warnings", []),
+            warnings=result.get("warnings") or ingestion_res.get("warnings", []),
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
