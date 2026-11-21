@@ -102,6 +102,40 @@ async def chunk_count(pg, note_id: str | None) -> tuple[int, int]:
     return (int(rows[0]["n"]), int(rows[0]["v"])) if rows else (0, 0)
 
 
+async def purge_unfinished(pg, user_id: str, log: dict) -> int:
+    """Delete this eval user's notes that aren't recorded as completed, before they are re-ingested.
+
+    A retried note gets a new note id, so without this its partial first attempt (chunks, some without
+    vectors, and its NoteSource) would stay in the graph next to the retry and skew retrieval. Concepts
+    are kept: the retry merges into them by name. Deleting a note cascades to its chunks and
+    propositions. Refuses to run outside the eval database or for a non-eval user.
+    """
+    import os
+
+    from backend.db.neo4j_client import get_neo4j_client
+
+    if "graphrecall_eval" not in os.environ.get("DATABASE_URL", ""):
+        raise SystemExit("purge_unfinished: DATABASE_URL is not the graphrecall_eval database; refusing")
+    owner = await pg.execute_query("SELECT email FROM users WHERE id = CAST(:u AS uuid)", {"u": user_id})
+    if not owner or not owner[0]["email"].startswith("graphrag-eval+"):
+        raise SystemExit("purge_unfinished: not an eval user; refusing")
+    done = {v["note_id"] for v in log["notes"].values() if v.get("status") == "completed" and v.get("note_id")}
+    rows = await pg.execute_query("SELECT id::text AS id FROM notes WHERE user_id = CAST(:u AS uuid)", {"u": user_id})
+    stale = [r["id"] for r in rows if r["id"] not in done]
+    if not stale:
+        return 0
+    neo4j = await get_neo4j_client()
+    await neo4j.execute_query("MATCH (n:NoteSource {user_id: $u}) WHERE n.id IN $ids DETACH DELETE n",
+                              {"u": user_id, "ids": stale})
+    for nid in stale:
+        await pg.execute_update("DELETE FROM notes WHERE id = CAST(:n AS uuid) AND user_id = CAST(:u AS uuid)",
+                                {"n": nid, "u": user_id})
+    for v in log["notes"].values():
+        if v.get("note_id") in stale:
+            v["note_id"], v["purged_partial"] = None, True
+    return len(stale)
+
+
 async def main(dataset: str, upto: int | None, communities_only: bool, limit: int | None, skip_communities: bool) -> None:
     from backend.db.postgres_client import get_postgres_client
 
@@ -119,6 +153,10 @@ async def main(dataset: str, upto: int | None, communities_only: bool, limit: in
     graph = build_eval_graph()
 
     if not communities_only:
+        purged = await purge_unfinished(pg, user_id, log)
+        if purged:
+            log_path.write_text(json.dumps(log, indent=1, ensure_ascii=False))
+            print(f"removed {purged} partially ingested note(s) before retrying them", flush=True)
         todo = [p for p in corpus if log["notes"].get(p["key"], {}).get("status") != "completed"]
         todo = todo[:limit] if limit else todo
         print(f"{len(corpus)} notes in scope; {len(todo)} to ingest", flush=True)
