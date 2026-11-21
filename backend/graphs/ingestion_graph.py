@@ -2201,7 +2201,7 @@ async def resume_ingestion(
     try:
         # Check ownership if user_id provided
         if user_id:
-            state = ingestion_graph.get_state(config)
+            state = await ingestion_graph.aget_state(config)
             if state and state.values.get("user_id") != user_id:
                 logger.warning(
                     "resume_ingestion: Unauthorized access attempt",
@@ -2267,7 +2267,7 @@ async def get_ingestion_status(thread_id: str, user_id: Optional[str] = None) ->
     config = {"configurable": {"thread_id": thread_id}}
     
     try:
-        state = ingestion_graph.get_state(config)
+        state = await ingestion_graph.aget_state(config)
         
         if not state:
             return {

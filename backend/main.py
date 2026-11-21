@@ -25,6 +25,7 @@ from backend.db.postgres_client import (
     get_postgres_client,
 )
 from backend.graphs import run_ingestion
+from backend.graphs.checkpointer import close_checkpointer, open_checkpointer
 from backend.models.schemas import (
     ConceptResponse,
     GraphResponse,
@@ -140,6 +141,13 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to initialize databases", error=str(e))
         # Continue anyway - databases might come up later
 
+    # Durable LangGraph checkpoints (HITL pauses survive restarts).
+    try:
+        backend_name = await open_checkpointer()
+        logger.info("LangGraph checkpointer ready", backend=backend_name)
+    except Exception as e:
+        logger.error("LangGraph checkpointer unavailable", error=str(e))
+
     lag_monitor = asyncio.create_task(telemetry.monitor_event_loop())
 
     yield
@@ -147,6 +155,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     lag_monitor.cancel()
     logger.info("Shutting down GraphRecall API")
+    await close_checkpointer()
     await close_postgres_client()
     await close_neo4j_client()
 
