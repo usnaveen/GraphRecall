@@ -31,6 +31,7 @@ async def verify_google_token(token: str) -> dict:
             return {
                 "google_id": "test-google-id",
                 "email": "test@example.com",
+                "email_verified": True,
                 "name": "Test User",
                 "profile_picture": None,
             }
@@ -44,7 +45,8 @@ async def verify_google_token(token: str) -> dict:
         # ID token is valid. Get the user's Google ID from the 'sub' claim.
         return {
             "google_id": idinfo["sub"],
-            "email": idinfo["email"],
+            "email": idinfo.get("email"),
+            "email_verified": idinfo.get("email_verified", False),
             "name": idinfo.get("name"),
             "profile_picture": idinfo.get("picture"),
         }

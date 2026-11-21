@@ -87,6 +87,16 @@ async def delete_user_data(user_id: str, *, delete_account: bool, pg=None, neo4j
 
     # 4. relational data
     if delete_account:
+        # Sign in with Apple: revoke the user's Apple authorization (App Store guideline 5.1.1(v)).
+        # Best effort; refresh tokens and everything else cascade from the users row.
+        if "users" in tables:
+            rows = await pg.execute_query(
+                "SELECT apple_refresh_token_enc FROM users WHERE id = CAST(:u AS uuid)", {"u": user_id})
+            blob = rows[0].get("apple_refresh_token_enc") if rows else None
+            if blob:
+                from backend.auth import apple
+
+                counts["apple_revoked"] = int(await apple.revoke(blob))
         await pg.execute_update("DELETE FROM users WHERE id = CAST(:u AS uuid)", {"u": user_id})
         counts["account"] = 1
     else:

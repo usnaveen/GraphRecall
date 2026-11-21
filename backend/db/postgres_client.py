@@ -236,21 +236,32 @@ class PostgresClient:
         statements = []
         current_stmt = []
         in_dollar_quote = False
+        in_string = False
         i = 0
         length = len(sql)
-        
+
         while i < length:
             char = sql[i]
-            
+
             # Check for $$ start/end
-            if char == '$' and i + 1 < length and sql[i+1] == '$':
+            if char == '$' and not in_string and i + 1 < length and sql[i+1] == '$':
                 in_dollar_quote = not in_dollar_quote
                 current_stmt.append("$$")
                 i += 2
                 continue
-            
-            # Split on semicolon only if not in a dollar quote block
-            if char == ';' and not in_dollar_quote:
+
+            if not in_dollar_quote:
+                # '...' literals ('' escapes toggle twice, so they stay inside)
+                if char == "'":
+                    in_string = not in_string
+                # -- comments run to end of line; a ';' in one must not split a statement
+                elif not in_string and char == '-' and i + 1 < length and sql[i+1] == '-':
+                    end = sql.find("\n", i)
+                    i = length if end == -1 else end
+                    continue
+
+            # Split on semicolon only outside dollar quotes and string literals
+            if char == ';' and not in_dollar_quote and not in_string:
                 stmt = "".join(current_stmt).strip()
                 if stmt:
                     statements.append(stmt)
@@ -258,7 +269,7 @@ class PostgresClient:
             else:
                 current_stmt.append(char)
             i += 1
-            
+
         # Append remaining
         if current_stmt:
             stmt = "".join(current_stmt).strip()

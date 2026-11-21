@@ -1,83 +1,55 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import structlog
-from datetime import datetime, timedelta, timezone
+
+from backend.auth import sessions
 from backend.auth.google_oauth import verify_google_token
+from backend.auth.identity import resolve_user
 from backend.db.postgres_client import get_postgres_client
 from backend.telemetry import stage
 
 logger = structlog.get_logger()
 security = HTTPBearer()
 
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
-    """
-    FastAPI dependency to get the current authenticated user.
-    
-    Validates the Bearer token, fetches/creates the user in Postgres,
-    and returns the user record.
-    
-    Args:
-        credentials: The HTTP Bearer credentials from the request.
-        
-    Returns:
-        The user record from the database.
-        
-    Raises:
-        HTTPException: If authentication fails.
+    """Authenticate the bearer token and return the user row.
+
+    Two kinds of bearer are accepted:
+    - a GraphRecall session access token (``backend/auth/sessions.py``), issued by ``/auth/apple``,
+      ``/auth/session/google`` and ``/auth/refresh``. The user must still exist: a deleted
+      account's unexpired token gets 401, and no account is ever created on this path.
+    - a Google ID token, for older app builds and the web app: verified with Google, then the
+      user is found, linked or created (``backend/auth/identity.py``).
+
+    Routing looks at the unverified issuer only; each branch then verifies fully, so a forged
+    token can't cross over.
     """
     token = credentials.credentials
-    
-    # 1. Verify Google Token
-    with stage("auth.verify_token"):
-        user_info = await verify_google_token(token)
-    
-    # 2. Get or Create User in Postgres
     pg_client = await get_postgres_client()
+
+    if sessions.looks_like_session_token(token):
+        with stage("auth.verify_session"):
+            user_id = sessions.verify_access_token(token)
+        rows = await pg_client.execute_query("SELECT * FROM users WHERE id = CAST(:id AS uuid)", {"id": user_id})
+        if not rows:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account not found",
+                                headers={"WWW-Authenticate": "Bearer"})
+        return rows[0]
+
+    with stage("auth.verify_token"):
+        info = await verify_google_token(token)
     try:
-        # Try to find existing user
         with stage("auth.load_user"):
-            result = await pg_client.execute_query(
-                "SELECT * FROM users WHERE google_id = :google_id",
-                {"google_id": user_info["google_id"]}
+            return await resolve_user(
+                pg_client, provider="google", subject=info["google_id"], email=info.get("email"),
+                email_verified=info.get("email_verified"), name=info.get("name"),
+                picture=info.get("profile_picture"),
             )
-        
-        if result:
-            user = result[0]
-            
-            # Optimization: Only update last_login if > 1 hour ago
-            should_update = True
-            last_login = user.get("last_login")
-            
-            if last_login:
-                # Ensure last_login is timezone-aware if possible, assuming UTC from DB
-                if last_login.tzinfo is None:
-                    last_login = last_login.replace(tzinfo=timezone.utc)
-                
-                if (datetime.now(timezone.utc) - last_login) < timedelta(hours=1):
-                    should_update = False
-            
-            if should_update:
-                await pg_client.execute_update(
-                    "UPDATE users SET last_login = NOW() WHERE id = :id",
-                    {"id": user["id"]}
-                )
-            
-            return user
-        
-        # Create new user if doesn't exist
-        logger.info("Auth: Creating new user", email=user_info["email"])
-        new_users = await pg_client.execute_query(
-            """
-            INSERT INTO users (google_id, email, name, profile_picture)
-            VALUES (:google_id, :email, :name, :profile_picture)
-            RETURNING *
-            """,
-            user_info
-        )
-        return new_users[0] if new_users else {}
-        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Auth: Database error in get_current_user", error=str(e))
         raise HTTPException(

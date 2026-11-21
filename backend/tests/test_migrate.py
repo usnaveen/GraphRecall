@@ -87,6 +87,8 @@ def test_production_settings_refuse_debug_bypass(monkeypatch):
         monkeypatch.setenv(k, "x")
     monkeypatch.setenv("GOOGLE_CLIENT_IDS", "ios-client,web-client")
     monkeypatch.setenv("CORS_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("SESSION_SECRET", "k" * 48)
+    monkeypatch.delenv("APPLE_CLIENT_IDS", raising=False)
     monkeypatch.delenv("FEED_DEMO_CARDS", raising=False)
     monkeypatch.delenv("CHECKPOINTER", raising=False)
     monkeypatch.setenv("DEBUG", "false")
@@ -95,6 +97,12 @@ def test_production_settings_refuse_debug_bypass(monkeypatch):
     assert any("test-token" in p for p in P.problems())
     monkeypatch.setenv("CORS_ORIGINS", "*")
     assert any("CORS_ORIGINS" in p for p in P.problems())
+    monkeypatch.setenv("CORS_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("SESSION_SECRET", "short")
+    assert any("SESSION_SECRET" in p for p in P.problems())
+    monkeypatch.setenv("SESSION_SECRET", "k" * 48)
+    monkeypatch.setenv("APPLE_CLIENT_IDS", "com.usnaveen.graphrecall")
+    assert any("5.1.1(v)" in p for p in P.problems())  # Apple on without the revocation key
     monkeypatch.setenv("ENVIRONMENT", "development")
     assert P.problems() == []                              # development is never blocked
 
@@ -112,3 +120,17 @@ def test_cloud_postgres_tls_verifies_certificates(monkeypatch):
     monkeypatch.setenv("PG_SSL_INSECURE", "1")
     with pytest.raises(RuntimeError):
         _tls_connect_args("postgresql+asyncpg://u@db.supabase.co/x")
+
+
+def test_splitter_ignores_semicolons_in_comments_and_strings():
+    from backend.db.postgres_client import PostgresClient
+
+    sql = """-- a comment; with a semicolon
+CREATE TABLE t (a TEXT DEFAULT 'x;y', b TEXT DEFAULT 'it''s; fine'); -- trailing; comment
+CREATE FUNCTION f() RETURNS void AS $$ BEGIN PERFORM 1; END $$ LANGUAGE plpgsql;
+SELECT '--not a comment';"""
+    stmts = PostgresClient._split_sql_statements(sql)
+    assert len(stmts) == 3
+    assert "'x;y'" in stmts[0] and "'it''s; fine'" in stmts[0]
+    assert "PERFORM 1; END" in stmts[1]
+    assert stmts[2] == "SELECT '--not a comment'"
