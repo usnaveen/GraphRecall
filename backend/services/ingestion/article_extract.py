@@ -38,9 +38,13 @@ USER_AGENT = "GraphRecallBot/1.0 (+article import; respects paywalls)"
 
 PAYWALL_WARNING = "paywalled preview: only the free part was ingested"
 
-_TRACKING_PARAMS = {
-    "r", "s", "triedredirect", "showwelcome", "isfreemail", "token", "publication_id",
-    "post_id", "ref", "fbclid", "gclid", "mc_cid", "mc_eid", "source", "sd", "triedRedirect",
+# Removed on every host: unambiguous trackers only.
+_TRACKING_PARAMS = {"fbclid", "gclid", "mc_cid", "mc_eid", "igshid"}
+# Short names like ``s``/``r``/``ref`` can select content on ordinary sites, so they're only
+# stripped on Substack, where they're share/referral markers.
+_SUBSTACK_TRACKING_PARAMS = {
+    "r", "s", "triedredirect", "showwelcome", "isfreemail", "token", "publication_id", "post_id",
+    "ref", "source", "sd",
 }
 _BOILERPLATE_SELECTORS = [
     "script", "style", "noscript", "iframe", "form", "button", "svg", "nav", "footer", "header",
@@ -66,10 +70,15 @@ class ExtractedArticle:
     markdown: str = ""
     is_substack: bool = False
     paywalled: bool = False
+    body_matched: bool = False  # a site-specific body selector (e.g. Substack's) found the article
     warnings: list[str] = field(default_factory=list)
 
     @property
     def needs_llm_fallback(self) -> bool:
+        # A paywalled preview or a matched Substack body is short because the post is short or
+        # locked; the LLM would only see the paywall and comments, so trust the extraction.
+        if self.paywalled or self.body_matched:
+            return False
         return len(self.markdown) < MIN_BODY_CHARS
 
 
@@ -94,9 +103,10 @@ def canonicalize_url(url: str) -> str:
     if host.startswith("www.") and host.endswith(".substack.com"):
         host = host[4:]
 
+    drop = _TRACKING_PARAMS | (_SUBSTACK_TRACKING_PARAMS if host.endswith("substack.com") else set())
     query = [
-        (k, v) for k, v in parse_qsl(parts.query, keep_blank_values=False)
-        if k.lower() not in {p.lower() for p in _TRACKING_PARAMS} and not k.lower().startswith("utm_")
+        (k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if k.lower() not in drop and not k.lower().startswith("utm_")
     ]
     port = f":{parts.port}" if parts.port and parts.port not in (80, 443) else ""
     return urlunsplit((scheme, host + port, path, urlencode(query), ""))
@@ -329,20 +339,21 @@ def _density_root(soup: BeautifulSoup) -> Optional[Tag]:
     return best
 
 
-def _body_root(soup: BeautifulSoup, substack: bool) -> Optional[Tag]:
+def _body_root(soup: BeautifulSoup, substack: bool) -> tuple[Optional[Tag], bool]:
+    """Returns (root, matched_site_selector)."""
     if substack:
-        for sel in (".available-content .body.markup", ".body.markup", ".available-content", "article"):
+        for sel in (".available-content .body.markup", ".body.markup", ".available-content"):
             node = soup.select_one(sel)
-            if node and len(node.get_text(strip=True)) > 80:
-                return node
+            if node and len(node.get_text(strip=True)) > 40:
+                return node, True
     for sel in ("[itemprop='articleBody']", ".post-content", ".entry-content", ".article-body"):
         node = soup.select_one(sel)
         if node and len(node.get_text(strip=True)) > 200:
-            return node
+            return node, False
     dense = _density_root(soup)
     if dense is not None:
-        return dense
-    return soup.find("article") or soup.find("main") or soup.body
+        return dense, False
+    return soup.find("article") or soup.find("main") or soup.body, False
 
 
 def extract_article(html: str, url: str) -> ExtractedArticle:
@@ -364,7 +375,7 @@ def extract_article(html: str, url: str) -> ExtractedArticle:
     if title and site and title.endswith(f" - {site}"):
         title = title[: -len(site) - 3].strip()
 
-    root = _body_root(soup, substack)
+    root, matched = _body_root(soup, substack)
     if root is not None:
         for sel in _BOILERPLATE_SELECTORS:
             for junk in root.select(sel):
@@ -376,7 +387,7 @@ def extract_article(html: str, url: str) -> ExtractedArticle:
 
     art = ExtractedArticle(
         url=canonical, title=title, author=author, published=published, site_name=site,
-        markdown=markdown, is_substack=substack, paywalled=paywalled,
+        markdown=markdown, is_substack=substack, paywalled=paywalled, body_matched=matched,
     )
     if paywalled:
         art.warnings.append(PAYWALL_WARNING)

@@ -60,6 +60,8 @@ BLOG = """<html><head><title>Notes on HNSW</title>
      "https://latentnotes.substack.com/p/why-retrieval/"),
     ("https://www.latentnotes.substack.com/p/x?triedRedirect=true", "https://latentnotes.substack.com/p/x"),
     ("https://example.com/post?id=7&utm_source=x", "https://example.com/post?id=7"),
+    # short params can select content off Substack: keep them there
+    ("https://news.example.com/item?s=42&ref=main&fbclid=abc", "https://news.example.com/item?s=42&ref=main"),
 ])
 def test_canonicalize(shared, expected):
     assert ae.canonicalize_url(shared) == expected
@@ -96,6 +98,7 @@ def test_substack_paywall_warns():
     assert "Free preview paragraph" in art.markdown
     assert "paid subscribers" not in art.markdown
     assert "only the free preview" in ae.render_note(art)
+    assert not art.needs_llm_fallback  # short because locked: don't hand the paywall page to the LLM
 
 
 def test_generic_blog():
