@@ -110,7 +110,7 @@ async def main(dataset: str, upto: int | None, communities_only: bool, limit: in
     await pg.initialize_schema()
     user_id = await _env.eval_user_id(dataset)
     corpus_path = _env.DATA / ("grb/corpus.jsonl" if dataset == "grb" else "corpus.jsonl")
-    log_path = _env.DATA / f"ingested_{dataset}.json"
+    log_path = _env.DATA / f"ingested_{_env.run_key(dataset)}.json"
 
     corpus = [json.loads(l) for l in corpus_path.open()]
     corpus = corpus[:upto] if upto else corpus

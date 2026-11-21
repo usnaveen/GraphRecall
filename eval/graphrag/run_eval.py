@@ -358,7 +358,8 @@ async def main(questions_file: str, limit: int | None) -> None:
     user_id = await _env.eval_user_id("grb")
     spec = json.loads((_env.HERE / questions_file).read_text())
     qs = spec["questions"][:limit] if limit else spec["questions"]
-    name = questions_file.removesuffix(".json") + ("" if os.getenv("GRAPH_SEED_MODE", "substring") == "substring" else "." + os.getenv("GRAPH_SEED_MODE"))
+    name = (questions_file.removesuffix(".json") + (f".{os.getenv('EVAL_RUN')}" if os.getenv("EVAL_RUN") else "")
+            + ("" if os.getenv("GRAPH_SEED_MODE", "substring") == "substring" else "." + os.getenv("GRAPH_SEED_MODE")))
     RESULTS.mkdir(exist_ok=True)
     partial = RESULTS / f"{name}.partial.jsonl"
     done = {json.loads(l)["id"]: json.loads(l) for l in partial.open()} if partial.exists() else {}
@@ -395,7 +396,7 @@ async def main(questions_file: str, limit: int | None) -> None:
         print(f"[{i}/{len(qs)}] {q['type'][:12]:12s} {row['seconds']:5.0f}s calls={row['llm_calls']} mode={row['retrieval']['search_mode']} {s}", flush=True)
 
     rows = [done[q["id"]] for q in qs if q["id"] in done]
-    ingest_log = json.loads((_env.DATA / "ingested_grb.json").read_text())
+    ingest_log = json.loads((_env.DATA / f"ingested_{_env.run_key('grb')}.json").read_text())
     meta = {"run_at": time.strftime("%Y-%m-%d %H:%M"), "questions_file": questions_file, "models": _env.models(),
             "corpus_notes": len(ingest_log["notes"]), "communities": ingest_log.get("communities", {}).get("count"),
             "incomplete_notes": sum(n.get("status") != "completed" for n in ingest_log["notes"].values()),

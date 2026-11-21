@@ -119,15 +119,22 @@ def throttle_llm() -> None:
     llm.get_embeddings.cache_clear()
 
 
+def run_key(dataset: str = "grb") -> str:
+    """Dataset name plus the optional EVAL_RUN tag. A new tag gives a fresh eval user and ingest log,
+    so a re-run never has to delete an earlier run's data (concept ids are unique, names per user)."""
+    tag = os.getenv("EVAL_RUN", "").strip()
+    return f"{dataset}-{tag}" if tag else dataset
+
+
 async def eval_user_id(dataset: str = "grb") -> str:
-    """One user per dataset, so corpora never share a graph."""
+    """One user per dataset (and EVAL_RUN tag), so corpora and runs never share a graph."""
     from backend.db.postgres_client import get_postgres_client
 
-    email = EVAL_USER_EMAIL.replace("@", f"+{dataset}@")
+    email = EVAL_USER_EMAIL.replace("@", f"+{run_key(dataset)}@")
     pg = await get_postgres_client()
     rows = await pg.execute_query("SELECT id FROM users WHERE email = :e", {"e": email})
     if rows:
         return str(rows[0]["id"])
-    await pg.execute_update("INSERT INTO users (email, name) VALUES (:e, :n)", {"e": email, "n": f"GraphRAG eval ({dataset})"})
+    await pg.execute_update("INSERT INTO users (email, name) VALUES (:e, :n)", {"e": email, "n": f"GraphRAG eval ({run_key(dataset)})"})
     rows = await pg.execute_query("SELECT id FROM users WHERE email = :e", {"e": email})
     return str(rows[0]["id"])
