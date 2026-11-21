@@ -1,0 +1,36 @@
+# Essential books for GraphRecall (relative to iCloud Drive/Library). One per line; '#' = comment.
+# Picked for AI-engineering / data-science interviews; duplicates and older editions dropped.
+# --- LLMs and AI engineering
+Academics/NLP, GenAI, LLM/AI Engineering Building Applications with Foundation Models.pdf
+Academics/NLP, GenAI, LLM/Hands-On Large Language Models.pdf
+Academics/NLP, GenAI, LLM/Build a Large Language Model.pdf
+Academics/NLP, GenAI, LLM/Natural Language Processing with Transformers Revised Edition.pdf
+Academics/NLP, GenAI, LLM/LLM Engineer's Handbook 2024.epub
+Academics/NLP, GenAI, LLM/The Hundred-Page Language Models Book 2025.pdf
+Academics/NLP, GenAI, LLM/Prompt Engineering for LLMs.epub
+Academics/NLP, GenAI, LLM/Speech and Language Processing.pdf
+# --- ML and ML systems
+Academics/Machine Learning/Designing Machine Learning Systems.pdf
+Academics/Machine Learning/Hands-On Machine Learning with Scikit-Learn and PyTorch.pdf
+Academics/Machine Learning/Pattern Recognition and Machine Learning.pdf
+Academics/Machine Learning/Math for ML book.pdf
+Academics/Machine Learning/Python Data Science Handbook 2nd Ed.pdf
+# --- Deep learning
+Academics/Deep Learning/Understanding Deep Learning Nov 21 2024.pdf
+Academics/Deep Learning/Deep Learning MIT Press 2016.pdf
+Academics/Deep Learning/Deep Learning with PyTorch.pdf
+# --- AI, algorithms, databases, maths
+Academics/Traditional AI/AI Modern Approach 4th Edition.pdf
+Academics/Algorithms/Coding Interview Patterns.pdf
+Academics/Database/Database Internals Deep Dive.pdf
+Academics/Math/Linear Algebra/Linear Algebra Done Right 4e.pdf
+Academics/Math/Probabilty/Introduction to Probability.pdf
+Academics/Math/Calculus/Convex Optimisation.pdf
+# --- Interviews
+Academics/Interview/dokumen.pub_ace-the-data-science-interview-201-real-interview-questions-asked-by-faang-tech-startups-amp-wall-street-0578973839-9780578973838-a-2464936.pdf
+# --- Classic papers (paper pipeline)
+Papers/NLP Papers/Attention is all you need.pdf
+Papers/NLP Papers/4. WordToVec.pdf
+Papers/NLP Papers/5. GloVe- Global Vectors for Word Representation.pdf
+Papers/NLP Papers/6. Sequence to Sequence Learning.pdf
+Papers/NLP Papers/3. LONG SHORT-TERM MEMORY.pdf
