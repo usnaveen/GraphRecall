@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import uuid4
@@ -119,17 +120,38 @@ class PostgresJobQueue:
         )
         return _row_to_job(rows[0])
 
-    async def claim_next(self, worker_id: str) -> Optional[AgentJob]:
+    async def claim_next(self, worker_id: str, *, lease_seconds: float = 300.0) -> Optional[AgentJob]:
         async with self._pg.session() as session:
+            # First dead-letter expired running jobs that have exhausted attempts.
+            await session.execute(
+                text(
+                    """
+                    UPDATE agent_jobs
+                    SET status = 'dead_letter',
+                        locked_at = NULL,
+                        locked_by = NULL,
+                        last_error = COALESCE(last_error, 'worker lease expired after max attempts'),
+                        updated_at = NOW()
+                    WHERE status = 'running'
+                      AND locked_at < NOW() - make_interval(secs => :lease_seconds)
+                      AND attempts >= max_attempts
+                    """
+                ),
+                {"lease_seconds": float(lease_seconds)},
+            )
             result = await session.execute(
                 text(
                     """
                     WITH next_job AS (
                         SELECT id
                         FROM agent_jobs
-                        WHERE status = 'pending'
-                          AND run_after <= NOW()
-                        ORDER BY run_after ASC, created_at ASC
+                        WHERE (status = 'pending' AND run_after <= NOW())
+                           OR (
+                               status = 'running'
+                               AND locked_at < NOW() - make_interval(secs => :lease_seconds)
+                               AND attempts < max_attempts
+                           )
+                        ORDER BY COALESCE(locked_at, run_after) ASC, created_at ASC
                         LIMIT 1
                         FOR UPDATE SKIP LOCKED
                     )
@@ -144,7 +166,7 @@ class PostgresJobQueue:
                     RETURNING j.*
                     """
                 ),
-                {"worker_id": worker_id},
+                {"worker_id": worker_id, "lease_seconds": float(lease_seconds)},
             )
             row = result.mappings().first()
             return _row_to_job(dict(row)) if row else None
@@ -359,12 +381,13 @@ class PostgresRunLogger:
 
 
 class InMemoryJobQueue:
-    """Deterministic in-memory JobQueue with atomic claim and exponential backoff."""
+    """Deterministic in-memory JobQueue with atomic claim, lease recovery, and backoff."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: Callable[[], datetime] = utcnow) -> None:
         self._jobs: dict[str, AgentJob] = {}
         self._order: list[str] = []
         self._lock = asyncio.Lock()
+        self._clock = clock
 
     async def enqueue(
         self,
@@ -376,7 +399,7 @@ class InMemoryJobQueue:
         run_after: Optional[datetime] = None,
     ) -> AgentJob:
         async with self._lock:
-            now_ts = utcnow()
+            now_ts = self._clock()
             job = AgentJob(
                 id=str(uuid4()),
                 user_id=user_id,
@@ -393,17 +416,43 @@ class InMemoryJobQueue:
             self._order.append(job.id)
             return job.model_copy(deep=True)
 
-    async def claim_next(self, worker_id: str) -> Optional[AgentJob]:
+    async def claim_next(self, worker_id: str, *, lease_seconds: float = 300.0) -> Optional[AgentJob]:
         async with self._lock:
-            now_ts = utcnow()
+            now_ts = self._clock()
+            lease_cutoff = now_ts - timedelta(seconds=float(lease_seconds))
+
+            for jid in self._order:
+                j = self._jobs[jid]
+                if (
+                    j.status == "running"
+                    and j.locked_at is not None
+                    and j.locked_at < lease_cutoff
+                    and j.attempts >= j.max_attempts
+                ):
+                    self._jobs[jid] = j.model_copy(
+                        update={
+                            "status": "dead_letter",
+                            "locked_at": None,
+                            "locked_by": None,
+                            "last_error": j.last_error or "worker lease expired after max attempts",
+                            "updated_at": now_ts,
+                        }
+                    )
+
             eligible = [
                 self._jobs[jid]
                 for jid in self._order
-                if self._jobs[jid].status == "pending" and self._jobs[jid].run_after <= now_ts
+                if (self._jobs[jid].status == "pending" and self._jobs[jid].run_after <= now_ts)
+                or (
+                    self._jobs[jid].status == "running"
+                    and self._jobs[jid].locked_at is not None
+                    and self._jobs[jid].locked_at < lease_cutoff
+                    and self._jobs[jid].attempts < self._jobs[jid].max_attempts
+                )
             ]
             if not eligible:
                 return None
-            eligible.sort(key=lambda j: (j.run_after, j.created_at))
+            eligible.sort(key=lambda j: (j.locked_at or j.run_after, j.created_at))
             job = eligible[0]
             updated = job.model_copy(
                 update={
@@ -425,7 +474,7 @@ class InMemoryJobQueue:
                     "status": "completed",
                     "locked_at": None,
                     "locked_by": None,
-                    "updated_at": utcnow(),
+                    "updated_at": self._clock(),
                 }
             )
 
@@ -438,7 +487,7 @@ class InMemoryJobQueue:
     ) -> AgentJob:
         async with self._lock:
             job = self._jobs[job_id]
-            now_ts = utcnow()
+            now_ts = self._clock()
             exhausted = job.attempts >= job.max_attempts
             delay = timedelta(seconds=backoff_seconds * (2 ** max(job.attempts - 1, 0)))
             updated = job.model_copy(

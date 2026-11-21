@@ -30,16 +30,51 @@ from backend.services.storage_service import get_storage_service
 from backend.services.ingestion.reembed import reembed_missing_chunks
 import base64
 
+from backend.agent_v2.protocols import NoteIngestedPayload
 from backend.graphs.ingestion_graph import (
     run_ingestion,
     resume_ingestion,
     get_ingestion_status,
 )
+from backend.routers import agent_v2 as agent_v2_router
 
 logger = structlog.get_logger()
 scanner_agent = ScannerAgent()
 
 router = APIRouter(prefix="/api/v2", tags=["V2 Ingestion"])
+
+
+async def _enqueue_note_ingested_event(
+    user_id: str,
+    note_id: Optional[str],
+    note_title: str,
+    concepts: list[Any],
+) -> None:
+    """Best-effort enqueue of a `note.ingested` Agent v2 job; never fails HTTP ingest."""
+    if not note_id:
+        return
+    concept_names: list[str] = []
+    for item in concepts or []:
+        if isinstance(item, dict):
+            name = item.get("name") or item.get("concept_name")
+            if name:
+                concept_names.append(str(name))
+        elif isinstance(item, str) and item.strip():
+            concept_names.append(item.strip())
+    try:
+        queue = await agent_v2_router.get_job_queue()
+        payload = NoteIngestedPayload(
+            note_id=str(note_id),
+            note_title=note_title or "",
+            concept_names=concept_names,
+        )
+        await queue.enqueue(user_id, "note.ingested", payload.model_dump())
+    except Exception as exc:  # noqa: BLE001 - best-effort async event hook
+        logger.warning(
+            "v2/ingest: failed to enqueue note.ingested",
+            note_id=note_id,
+            error=str(exc),
+        )
 
 SUPPORTED_ZIP_IMAGE_TYPES = {
     ".png": "image/png",
@@ -219,6 +254,12 @@ async def _ingest_processed_zip_background(
 
         if status == "completed":
             asyncio.create_task(_recompute_communities(user_id))
+            await _enqueue_note_ingested_event(
+                user_id,
+                result.get("note_id"),
+                resolved_title,
+                result.get("concepts", []) or [],
+            )
         _schedule_reembed_if_needed(result, user_id)
 
         if status in {"completed", "awaiting_review"} and result.get("note_id"):
@@ -520,6 +561,12 @@ async def ingest_note(
         
         if status == "completed":
             asyncio.create_task(_recompute_communities(user_id))
+            await _enqueue_note_ingested_event(
+                user_id,
+                result.get("note_id"),
+                request.title or result.get("note_title") or "",
+                result.get("concepts", []) or [],
+            )
         _schedule_reembed_if_needed(result, user_id)
 
         if status == "completed" or (status == "awaiting_review" and result.get("note_id")):
@@ -652,6 +699,13 @@ async def ingest_url(
              
         ingestion_res = result.get("ingestion_result", {})
         _schedule_reembed_if_needed(ingestion_res, user_id)
+        if ingestion_res.get("note_id") and ingestion_res.get("status", "completed") == "completed":
+            await _enqueue_note_ingested_event(
+                user_id,
+                ingestion_res.get("note_id"),
+                result.get("title") or ingestion_res.get("note_title") or request.url,
+                ingestion_res.get("concepts", []) or [],
+            )
 
         # Merge structured metadata
         return IngestResponse(
@@ -802,6 +856,13 @@ async def approve_and_resume(
         
         status = result.get("status", "completed")
         _schedule_reembed_if_needed(result, user_id)
+        if status == "completed" and result.get("note_id"):
+            await _enqueue_note_ingested_event(
+                user_id,
+                result.get("note_id"),
+                result.get("note_title") or "",
+                request.approved_concepts,
+            )
 
         if status == "cancelled":
             logger.info("v2/ingest/approve: Workflow cancelled by user")

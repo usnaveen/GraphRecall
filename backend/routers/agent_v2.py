@@ -12,11 +12,14 @@ from backend.agent_v2.protocols import (
     AgentInsight,
     AgentJob,
     AgentRunRecord,
+    FeedInsightCard,
+    HeartbeatDailyPayload,
     InsightStatus,
     InsightStore,
     JobQueue,
     JobStatus,
     NoteIngestedPayload,
+    ReviewLapsedPayload,
     RunLogger,
 )
 from backend.auth.middleware import get_current_user
@@ -47,6 +50,18 @@ class NoteIngestedTriggerRequest(BaseModel):
     concept_names: list[str] = Field(default_factory=list)
 
 
+class ReviewLapsedTriggerRequest(BaseModel):
+    concept_id: str
+    concept_name: str
+    lapse_count: int = Field(default=1, ge=1)
+    note_id: Optional[str] = None
+
+
+class BriefingTriggerRequest(BaseModel):
+    window_days: int = Field(default=7, ge=1, le=90)
+    max_items: int = Field(default=5, ge=1, le=20)
+
+
 class JobListResponse(BaseModel):
     jobs: list[AgentJob]
     total: int
@@ -54,6 +69,11 @@ class JobListResponse(BaseModel):
 
 class InsightListResponse(BaseModel):
     insights: list[AgentInsight]
+    total: int
+
+
+class FeedInsightCardListResponse(BaseModel):
+    cards: list[FeedInsightCard]
     total: int
 
 
@@ -82,6 +102,44 @@ async def enqueue_note_ingested(
     )
 
 
+@router.post("/triggers/review-lapsed", response_model=AgentJob, status_code=status.HTTP_202_ACCEPTED)
+async def enqueue_review_lapsed(
+    body: ReviewLapsedTriggerRequest,
+    current_user: dict = Depends(get_current_user),
+    queue: JobQueue = Depends(get_job_queue),
+) -> AgentJob:
+    """Enqueue a `review.lapsed` background remediation job for the authenticated user."""
+    payload = ReviewLapsedPayload(
+        concept_id=body.concept_id,
+        concept_name=body.concept_name,
+        lapse_count=body.lapse_count,
+        note_id=body.note_id,
+    )
+    return await queue.enqueue(
+        str(current_user["id"]),
+        "review.lapsed",
+        payload.model_dump(),
+    )
+
+
+@router.post("/triggers/briefing", response_model=AgentJob, status_code=status.HTTP_202_ACCEPTED)
+async def enqueue_daily_briefing(
+    body: BriefingTriggerRequest,
+    current_user: dict = Depends(get_current_user),
+    queue: JobQueue = Depends(get_job_queue),
+) -> AgentJob:
+    """Enqueue a `heartbeat.daily` proactive study briefing job for the authenticated user."""
+    payload = HeartbeatDailyPayload(
+        window_days=body.window_days,
+        max_items=body.max_items,
+    )
+    return await queue.enqueue(
+        str(current_user["id"]),
+        "heartbeat.daily",
+        payload.model_dump(),
+    )
+
+
 @router.get("/insights", response_model=InsightListResponse)
 async def list_insights(
     status_filter: Optional[InsightStatus] = Query(default=None, alias="status"),
@@ -98,6 +156,34 @@ async def list_insights(
     return InsightListResponse(insights=items, total=len(items))
 
 
+@router.get("/feed-cards", response_model=FeedInsightCardListResponse)
+async def list_feed_insight_cards(
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+    insights: InsightStore = Depends(get_insight_store),
+) -> FeedInsightCardListResponse:
+    """Return active agent insights serialized as feed cards for iOS/Web Feed integration."""
+    items = await insights.list_for_user(
+        str(current_user["id"]),
+        status="active",
+        limit=limit,
+    )
+    cards = [
+        FeedInsightCard(
+            id=ins.id,
+            insight_type=ins.insight_type,
+            title=ins.title,
+            body_md=ins.body_md,
+            concept_ids=ins.concept_ids,
+            source_quotes=ins.source_quotes,
+            action_payload=ins.action_payload,
+            created_at=ins.created_at,
+        )
+        for ins in items
+    ]
+    return FeedInsightCardListResponse(cards=cards, total=len(cards))
+
+
 @router.post("/insights/{insight_id}/dismiss", response_model=AgentInsight)
 async def dismiss_insight(
     insight_id: str,
@@ -109,6 +195,23 @@ async def dismiss_insight(
         str(current_user["id"]),
         insight_id,
         "dismissed",
+    )
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Insight not found")
+    return updated
+
+
+@router.post("/insights/{insight_id}/act", response_model=AgentInsight)
+async def act_on_insight(
+    insight_id: str,
+    current_user: dict = Depends(get_current_user),
+    insights: InsightStore = Depends(get_insight_store),
+) -> AgentInsight:
+    """Mark an insight card acted upon for the authenticated user."""
+    updated = await insights.update_status(
+        str(current_user["id"]),
+        insight_id,
+        "acted",
     )
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Insight not found")

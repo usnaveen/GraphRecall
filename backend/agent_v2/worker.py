@@ -17,19 +17,60 @@ from backend.agent_v2.protocols import (
     AgentInsight,
     AgentJob,
     AgentRunRecord,
+    HeartbeatDailyPayload,
     InsightStore,
     JobQueue,
     LLMGateway,
     MemoryFacade,
     NoteIngestedPayload,
+    ReviewLapsedPayload,
     RunLogger,
+    VerifiedQuote,
 )
-from backend.agent_v2.provenance import validate_proposed_bridges
+from backend.agent_v2.provenance import validate_proposed_bridges, verify_quote_in_text
 from backend.db.postgres_client import close_postgres_client, get_postgres_client
 
 logger = structlog.get_logger()
 
 JobHandler = Callable[[AgentJob], Awaitable[None]]
+
+
+async def _record_skipped_run(
+    runs: RunLogger,
+    job: AgentJob,
+    started: float,
+    tool_call: dict,
+) -> None:
+    await runs.record(
+        AgentRunRecord(
+            user_id=job.user_id,
+            trigger_type=job.job_type,
+            job_id=job.id,
+            tool_calls=[tool_call],
+            latency_ms=(time.perf_counter() - started) * 1000.0,
+            status="completed",
+        )
+    )
+
+
+async def _record_failed_run(
+    runs: RunLogger,
+    job: AgentJob,
+    started: float,
+    tool_name: str,
+    exc: Exception,
+) -> None:
+    await runs.record(
+        AgentRunRecord(
+            user_id=job.user_id,
+            trigger_type=job.job_type,
+            job_id=job.id,
+            tool_calls=[{"tool": tool_name, "error": str(exc)}],
+            latency_ms=(time.perf_counter() - started) * 1000.0,
+            status="failed",
+            error=str(exc),
+        )
+    )
 
 
 async def handle_note_ingested(
@@ -54,23 +95,16 @@ async def handle_note_ingested(
     candidate_chunks = [c for c in chunks if c.note_id != payload.note_id]
 
     if not note_chunks or not candidate_chunks:
-        latency_ms = (time.perf_counter() - started) * 1000.0
-        await runs.record(
-            AgentRunRecord(
-                user_id=job.user_id,
-                trigger_type=job.job_type,
-                job_id=job.id,
-                tool_calls=[
-                    {
-                        "tool": "memory.fetch_note_and_related_chunks",
-                        "note_chunks": len(note_chunks),
-                        "candidate_chunks": len(candidate_chunks),
-                        "skipped_reason": "insufficient_cross_note_context",
-                    }
-                ],
-                latency_ms=latency_ms,
-                status="completed",
-            )
+        await _record_skipped_run(
+            runs,
+            job,
+            started,
+            {
+                "tool": "memory.fetch_note_and_related_chunks",
+                "note_chunks": len(note_chunks),
+                "candidate_chunks": len(candidate_chunks),
+                "skipped_reason": "insufficient_cross_note_context",
+            },
         )
         return []
 
@@ -82,18 +116,7 @@ async def handle_note_ingested(
             concept_names=payload.concept_names,
         )
     except Exception as exc:
-        latency_ms = (time.perf_counter() - started) * 1000.0
-        await runs.record(
-            AgentRunRecord(
-                user_id=job.user_id,
-                trigger_type=job.job_type,
-                job_id=job.id,
-                tool_calls=[{"tool": "llm.propose_bridges", "error": str(exc)}],
-                latency_ms=latency_ms,
-                status="failed",
-                error=str(exc),
-            )
-        )
+        await _record_failed_run(runs, job, started, "llm.propose_bridges", exc)
         raise
 
     report = validate_proposed_bridges(batch.bridges, chunks_by_id)
@@ -147,6 +170,243 @@ async def handle_note_ingested(
     return saved_insights
 
 
+async def handle_review_lapsed(
+    job: AgentJob,
+    *,
+    memory: MemoryFacade,
+    llm: LLMGateway,
+    insights: InsightStore,
+    runs: RunLogger,
+) -> Optional[AgentInsight]:
+    """Process a `review.lapsed` event into a provenance-grounded remedial insight card."""
+    started = time.perf_counter()
+    payload = ReviewLapsedPayload.model_validate(job.payload)
+
+    context = await memory.fetch_concept_review_context(
+        job.user_id,
+        payload.concept_id,
+        payload.concept_name,
+        note_id=payload.note_id,
+    )
+    if not context.chunks:
+        await _record_skipped_run(
+            runs,
+            job,
+            started,
+            {
+                "tool": "memory.fetch_concept_review_context",
+                "chunks": 0,
+                "skipped_reason": "no_supporting_chunks",
+            },
+        )
+        return None
+
+    try:
+        diagnosis, llm_meta = await llm.diagnose_review_lapse(
+            context=context,
+            lapse_count=payload.lapse_count,
+        )
+    except Exception as exc:
+        await _record_failed_run(runs, job, started, "llm.diagnose_review_lapse", exc)
+        raise
+
+    chunks_by_id = {c.chunk_id: c for c in context.chunks}
+    cited_chunk = chunks_by_id.get(diagnosis.source_chunk_id)
+    rejection_reason: Optional[str] = None
+    if cited_chunk is None:
+        rejection_reason = "missing_source_chunk"
+    elif not verify_quote_in_text(diagnosis.source_quote, cited_chunk.content):
+        rejection_reason = "unverified_source_quote"
+
+    if rejection_reason is not None or cited_chunk is None:
+        await runs.record(
+            AgentRunRecord(
+                user_id=job.user_id,
+                trigger_type=job.job_type,
+                job_id=job.id,
+                model=llm_meta.get("model"),
+                input_tokens=int(llm_meta.get("input_tokens", 0)),
+                output_tokens=int(llm_meta.get("output_tokens", 0)),
+                tool_calls=[
+                    {
+                        "tool": "provenance.verify_quote_in_text",
+                        "accepted": 0,
+                        "rejected": 1,
+                        "rejection_reason": rejection_reason,
+                    }
+                ],
+                latency_ms=(time.perf_counter() - started) * 1000.0,
+                status="completed",
+            )
+        )
+        return None
+
+    verified_quote = VerifiedQuote(
+        chunk_id=cited_chunk.chunk_id,
+        note_id=cited_chunk.note_id,
+        note_title=cited_chunk.note_title,
+        quote=diagnosis.source_quote.strip(),
+    )
+    body_md = (
+        f"{diagnosis.explanation}\n\n"
+        f"**Quick Recall Prompt:** {diagnosis.study_prompt}\n\n"
+        f'> "{verified_quote.quote}" — *{verified_quote.note_title}*'
+    )
+    concept_ids = [payload.concept_id]
+    if diagnosis.missing_prerequisite and diagnosis.missing_prerequisite not in concept_ids:
+        concept_ids.append(diagnosis.missing_prerequisite)
+
+    saved = await insights.save(
+        AgentInsight(
+            user_id=job.user_id,
+            insight_type="remedial",
+            title=diagnosis.title,
+            body_md=body_md,
+            concept_ids=concept_ids,
+            source_quotes=[verified_quote],
+            action_payload={
+                "concept_id": payload.concept_id,
+                "concept_name": payload.concept_name,
+                "lapse_count": payload.lapse_count,
+                "missing_prerequisite": diagnosis.missing_prerequisite,
+                "prerequisite_graph_available": context.has_prerequisite_edges,
+                "study_prompt": diagnosis.study_prompt,
+            },
+        )
+    )
+    await runs.record(
+        AgentRunRecord(
+            user_id=job.user_id,
+            trigger_type=job.job_type,
+            job_id=job.id,
+            model=llm_meta.get("model"),
+            input_tokens=int(llm_meta.get("input_tokens", 0)),
+            output_tokens=int(llm_meta.get("output_tokens", 0)),
+            tool_calls=[
+                {
+                    "tool": "provenance.verify_quote_in_text",
+                    "accepted": 1,
+                    "rejected": 0,
+                    "prerequisite_graph_available": context.has_prerequisite_edges,
+                }
+            ],
+            latency_ms=(time.perf_counter() - started) * 1000.0,
+            status="completed",
+        )
+    )
+    return saved
+
+
+async def handle_heartbeat_daily(
+    job: AgentJob,
+    *,
+    memory: MemoryFacade,
+    llm: LLMGateway,
+    insights: InsightStore,
+    runs: RunLogger,
+) -> Optional[AgentInsight]:
+    """Process a `heartbeat.daily` event into a provenance-grounded daily study briefing."""
+    started = time.perf_counter()
+    payload = HeartbeatDailyPayload.model_validate(job.payload)
+
+    digest = await memory.fetch_learning_digest(
+        job.user_id,
+        window_days=payload.window_days,
+        limit=max(payload.max_items, 8),
+    )
+    if not digest.sample_chunks or (
+        digest.recent_notes_count == 0 and not digest.due_concepts and not digest.lapsed_concepts
+    ):
+        await _record_skipped_run(
+            runs,
+            job,
+            started,
+            {
+                "tool": "memory.fetch_learning_digest",
+                "sample_chunks": len(digest.sample_chunks),
+                "skipped_reason": "empty_learning_digest",
+            },
+        )
+        return None
+
+    try:
+        draft, llm_meta = await llm.compose_daily_briefing(
+            digest=digest,
+            window_days=payload.window_days,
+        )
+    except Exception as exc:
+        await _record_failed_run(runs, job, started, "llm.compose_daily_briefing", exc)
+        raise
+
+    chunks_by_id = {c.chunk_id: c for c in digest.sample_chunks}
+    cited_chunk = chunks_by_id.get(draft.cited_chunk_id)
+    rejection_reason: Optional[str] = None
+    if cited_chunk is None:
+        rejection_reason = "missing_cited_chunk"
+    elif not verify_quote_in_text(draft.cited_quote, cited_chunk.content):
+        rejection_reason = "unverified_cited_quote"
+
+    if rejection_reason is not None or cited_chunk is None:
+        await runs.record(
+            AgentRunRecord(
+                user_id=job.user_id,
+                trigger_type=job.job_type,
+                job_id=job.id,
+                model=llm_meta.get("model"),
+                input_tokens=int(llm_meta.get("input_tokens", 0)),
+                output_tokens=int(llm_meta.get("output_tokens", 0)),
+                tool_calls=[
+                    {
+                        "tool": "provenance.verify_quote_in_text",
+                        "accepted": 0,
+                        "rejected": 1,
+                        "rejection_reason": rejection_reason,
+                    }
+                ],
+                latency_ms=(time.perf_counter() - started) * 1000.0,
+                status="completed",
+            )
+        )
+        return None
+
+    verified_quote = VerifiedQuote(
+        chunk_id=cited_chunk.chunk_id,
+        note_id=cited_chunk.note_id,
+        note_title=cited_chunk.note_title,
+        quote=draft.cited_quote.strip(),
+    )
+    body_md = f'{draft.summary_md}\n\n> "{verified_quote.quote}" — *{verified_quote.note_title}*'
+    saved = await insights.save(
+        AgentInsight(
+            user_id=job.user_id,
+            insight_type="briefing",
+            title=draft.title,
+            body_md=body_md,
+            concept_ids=draft.priority_concepts or digest.due_concepts[:3],
+            source_quotes=[verified_quote],
+            action_payload={
+                "window_days": payload.window_days,
+                "priority_concepts": draft.priority_concepts,
+                "recent_notes_count": digest.recent_notes_count,
+            },
+        )
+    )
+    await runs.record(
+        AgentRunRecord(
+            user_id=job.user_id,
+            trigger_type=job.job_type,
+            job_id=job.id,
+            model=llm_meta.get("model"),
+            input_tokens=int(llm_meta.get("input_tokens", 0)),
+            output_tokens=int(llm_meta.get("output_tokens", 0)),
+            tool_calls=[{"tool": "provenance.verify_quote_in_text", "accepted": 1, "rejected": 0}],
+            latency_ms=(time.perf_counter() - started) * 1000.0,
+            status="completed",
+        )
+    )
+    return saved
+
+
 class AgentWorker:
     """Async daemon polling a JobQueue and dispatching registered vertical-slice handlers."""
 
@@ -157,11 +417,13 @@ class AgentWorker:
         worker_id: Optional[str] = None,
         poll_interval_s: float = 2.0,
         backoff_base_s: float = 15.0,
+        lease_seconds: float = 300.0,
     ) -> None:
         self._queue = job_queue
         self._worker_id = worker_id or f"worker-{os.getpid()}"
         self._poll_interval_s = poll_interval_s
         self._backoff_base_s = backoff_base_s
+        self._lease_seconds = lease_seconds
         self._handlers: dict[str, JobHandler] = {}
 
     def register(self, job_type: str, handler: JobHandler) -> None:
@@ -169,7 +431,7 @@ class AgentWorker:
 
     async def process_one(self) -> bool:
         """Claim and execute a single due job. Returns True if a job was processed."""
-        job = await self._queue.claim_next(self._worker_id)
+        job = await self._queue.claim_next(self._worker_id, lease_seconds=self._lease_seconds)
         if job is None:
             return False
 
@@ -232,7 +494,27 @@ async def build_default_worker() -> AgentWorker:
             runs=runs,
         )
 
+    async def _on_review_lapsed(job: AgentJob) -> None:
+        await handle_review_lapsed(
+            job,
+            memory=memory,
+            llm=llm,
+            insights=insights,
+            runs=runs,
+        )
+
+    async def _on_heartbeat_daily(job: AgentJob) -> None:
+        await handle_heartbeat_daily(
+            job,
+            memory=memory,
+            llm=llm,
+            insights=insights,
+            runs=runs,
+        )
+
     worker.register("note.ingested", _on_note_ingested)
+    worker.register("review.lapsed", _on_review_lapsed)
+    worker.register("heartbeat.daily", _on_heartbeat_daily)
     return worker
 
 

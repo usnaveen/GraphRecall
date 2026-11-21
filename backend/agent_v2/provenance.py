@@ -25,6 +25,19 @@ _SMART_TRANS = str.maketrans({
 })
 
 _WHITESPACE_RE = re.compile(r"\s+")
+_TOKEN_RE = re.compile(r"[a-z0-9_]+")
+_STOPWORDS = frozenset({
+    "a", "an", "the", "and", "or", "but", "if", "in", "on", "at", "to", "for",
+    "of", "by", "with", "from", "as", "is", "are", "was", "were", "be", "been",
+    "being", "have", "has", "had", "do", "does", "did", "will", "would", "shall",
+    "should", "may", "might", "can", "could", "this", "that", "these", "those",
+    "it", "its", "he", "she", "they", "we", "you", "i", "me", "my", "your",
+    "our", "their", "his", "her", "not", "no", "nor", "so", "too", "very",
+    "than", "then", "there", "here", "where", "when", "what", "which", "who",
+    "whom", "how", "all", "any", "both", "each", "few", "more", "most", "other",
+    "some", "such", "into", "out", "up", "down", "over", "under", "about",
+    "between", "through", "during", "before", "after",
+})
 
 
 def normalize_for_quote_match(text: str) -> str:
@@ -35,10 +48,22 @@ def normalize_for_quote_match(text: str) -> str:
     return _WHITESPACE_RE.sub(" ", cleaned)
 
 
-def verify_quote_in_text(quote: str, chunk_text: str, *, min_chars: int = 12) -> bool:
-    """Return True iff `quote` is non-trivial and appears verbatim in `chunk_text`."""
+def verify_quote_in_text(
+    quote: str,
+    chunk_text: str,
+    *,
+    min_chars: int = 12,
+    min_content_tokens: int = 2,
+) -> bool:
+    """Return True iff `quote` is non-trivial (length + content words) and appears verbatim."""
     norm_quote = normalize_for_quote_match(quote)
     if len(norm_quote) < min_chars:
+        return False
+    content_tokens = {
+        tok for tok in _TOKEN_RE.findall(norm_quote)
+        if len(tok) >= 3 and tok not in _STOPWORDS
+    }
+    if len(content_tokens) < min_content_tokens:
         return False
     norm_chunk = normalize_for_quote_match(chunk_text)
     if not norm_chunk:

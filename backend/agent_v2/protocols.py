@@ -87,6 +87,76 @@ class NoteIngestedPayload(BaseModel):
     concept_names: list[str] = Field(default_factory=list)
 
 
+class ReviewLapsedPayload(BaseModel):
+    """Typed payload for `review.lapsed` background jobs."""
+
+    concept_id: str
+    concept_name: str
+    lapse_count: int = 1
+    note_id: Optional[str] = None
+
+
+class HeartbeatDailyPayload(BaseModel):
+    """Typed payload for `heartbeat.daily` briefing jobs."""
+
+    window_days: int = 7
+    max_items: int = 5
+
+
+class ConceptReviewContext(BaseModel):
+    """Retrieved study context for diagnosing a lapsed concept review."""
+
+    concept_id: str
+    concept_name: str
+    prerequisites: list[str] = Field(default_factory=list)
+    has_prerequisite_edges: bool = False
+    chunks: list[NoteChunk] = Field(default_factory=list)
+
+
+class UserLearningDigest(BaseModel):
+    """User-scoped learning summary for daily briefing composition."""
+
+    recent_notes_count: int = 0
+    due_concepts: list[str] = Field(default_factory=list)
+    lapsed_concepts: list[str] = Field(default_factory=list)
+    sample_chunks: list[NoteChunk] = Field(default_factory=list)
+
+
+class RemedialDiagnosis(BaseModel):
+    """Structured remedial explanation requiring an exact verbatim quote."""
+
+    title: str
+    explanation: str
+    missing_prerequisite: Optional[str] = None
+    source_chunk_id: str
+    source_quote: str
+    study_prompt: str
+
+
+class DailyBriefingDraft(BaseModel):
+    """Structured daily learning briefing requiring an exact verbatim quote."""
+
+    title: str
+    summary_md: str
+    priority_concepts: list[str] = Field(default_factory=list)
+    cited_chunk_id: str
+    cited_quote: str
+
+
+class FeedInsightCard(BaseModel):
+    """Feed-ready serializer view of an active AgentInsight."""
+
+    id: str
+    card_type: Literal["agent_insight"] = "agent_insight"
+    insight_type: InsightType
+    title: str
+    body_md: str
+    concept_ids: list[str]
+    source_quotes: list[VerifiedQuote]
+    action_payload: dict[str, Any]
+    created_at: datetime
+
+
 class AgentJob(BaseModel):
     """Durable background job record."""
 
@@ -153,7 +223,7 @@ class JobQueue(Protocol):
         run_after: Optional[datetime] = None,
     ) -> AgentJob: ...
 
-    async def claim_next(self, worker_id: str) -> Optional[AgentJob]: ...
+    async def claim_next(self, worker_id: str, *, lease_seconds: float = 300.0) -> Optional[AgentJob]: ...
 
     async def complete(self, job_id: str) -> None: ...
 
@@ -218,6 +288,24 @@ class MemoryFacade(Protocol):
         limit: int = 12,
     ) -> list[NoteChunk]: ...
 
+    async def fetch_concept_review_context(
+        self,
+        user_id: str,
+        concept_id: str,
+        concept_name: str,
+        *,
+        note_id: Optional[str] = None,
+        limit: int = 6,
+    ) -> ConceptReviewContext: ...
+
+    async def fetch_learning_digest(
+        self,
+        user_id: str,
+        *,
+        window_days: int = 7,
+        limit: int = 8,
+    ) -> UserLearningDigest: ...
+
 
 @runtime_checkable
 class LLMGateway(Protocol):
@@ -231,3 +319,17 @@ class LLMGateway(Protocol):
         candidate_chunks: list[NoteChunk],
         concept_names: list[str],
     ) -> tuple[BridgeProposalBatch, dict[str, Any]]: ...
+
+    async def diagnose_review_lapse(
+        self,
+        *,
+        context: ConceptReviewContext,
+        lapse_count: int,
+    ) -> tuple[RemedialDiagnosis, dict[str, Any]]: ...
+
+    async def compose_daily_briefing(
+        self,
+        *,
+        digest: UserLearningDigest,
+        window_days: int,
+    ) -> tuple[DailyBriefingDraft, dict[str, Any]]: ...
