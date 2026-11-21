@@ -295,8 +295,8 @@ async def get_concept_notes(
 
         # Get the concept title to use as fallback matching
         concept_res = await neo4j.execute_query(
-            "MATCH (c:Concept {id: $id}) RETURN c.title AS title",
-            {"id": concept_id}
+            "MATCH (c:Concept {id: $id, user_id: $user_id}) RETURN c.title AS title",
+            {"id": concept_id, "user_id": user_id}
         )
         concept_title = concept_res[0]["title"] if concept_res else ""
 
