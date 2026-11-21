@@ -1,0 +1,18 @@
+# HTTPS for the API with automatic Let's Encrypt certificates. Only Caddy is exposed to the
+# internet; Postgres and Neo4j listen on the compose network only.
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:8000 {
+		# chat streams responses (SSE): don't buffer them
+		flush_interval -1
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+	request_body {
+		max_size 60MB
+	}
+}

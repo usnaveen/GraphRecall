@@ -7,6 +7,7 @@ on:
     paths: ["backend/**", "requirements.txt", "pyproject.toml", ".github/workflows/backend-ci.yml"]
   pull_request:
     paths: ["backend/**", "requirements.txt", "pyproject.toml", ".github/workflows/backend-ci.yml"]
+  workflow_call:   # reused by deploy.yml: no deploy without a green suite
 
 concurrency:
   group: backend-ci-${{ github.ref }}

@@ -1,0 +1,49 @@
+# Deploy on a version tag: build and push the image to GHCR, then update the VPS over SSH.
+# Migrations run in the stack's one-shot `migrate` service before api/agent-worker start.
+# Repository secrets: DEPLOY_HOST (server IP or name), DEPLOY_SSH_KEY (private key for user deploy).
+name: deploy
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    uses: ./.github/workflows/backend-ci.yml
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/graphrecall-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        run: |
+          docker build -t "$IMAGE:${GITHUB_REF_NAME}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${GITHUB_REF_NAME}"
+          docker push "$IMAGE:latest"
+      - name: Ship the stack files and roll out
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          install -m 600 /dev/null ~/.ssh_deploy_key && printf '%s\n' "$SSH_KEY" > ~/.ssh_deploy_key
+          SSH="ssh -i $HOME/.ssh_deploy_key -o StrictHostKeyChecking=accept-new deploy@$HOST"
+          scp -i ~/.ssh_deploy_key -o StrictHostKeyChecking=accept-new \
+            deploy/compose.prod.yml deploy/Caddyfile deploy/backup.sh deploy/restore.sh "deploy@$HOST:/opt/graphrecall/"
+          $SSH "cd /opt/graphrecall && sed -i 's#^GRAPHRECALL_IMAGE=.*#GRAPHRECALL_IMAGE=$IMAGE:${GITHUB_REF_NAME}#' .env \
+            && docker compose -f compose.prod.yml --env-file .env pull \
+            && docker compose -f compose.prod.yml --env-file .env up -d --wait"
+          $SSH "curl -fsS https://\$(grep ^API_DOMAIN= /opt/graphrecall/.env | cut -d= -f2)/api/v2/health"
