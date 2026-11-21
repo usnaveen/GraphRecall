@@ -9,6 +9,7 @@ Combines:
 
 import random
 import asyncio
+import os
 import uuid
 import time
 from datetime import datetime, timezone
@@ -1303,8 +1304,10 @@ class FeedService:
         # Sort by priority
         feed_items.sort(key=lambda x: x.priority_score, reverse=True)
 
-        # Inject Demo Transformer Cards at the very top of the feed for demonstration purposes
-        demo_items = [
+        # Demo Transformer cards: opt-in only (FEED_DEMO_CARDS=1), e.g. for screenshots on an empty
+        # account. They used to be prepended to every feed, and their fake concept ids would reach
+        # the review endpoint.
+        demo_items = [] if os.getenv("FEED_DEMO_CARDS", "0") != "1" else [
             FeedItem(
                 id=f"demo-transformer-mcq-{uuid.uuid4()}",
                 item_type=FeedItemType.MCQ,

@@ -25,6 +25,7 @@ from backend.models.feed_schemas import (
 )
 from backend.services.feed_service import FeedService
 from backend.services.spaced_repetition import SpacedRepetitionService
+from backend.services.review_target import UnresolvableReviewTarget, resolve_review_concept
 from backend.agents.research_agent import WebResearchAgent
 
 logger = structlog.get_logger()
@@ -105,13 +106,16 @@ async def record_review(
     difficulty: DifficultyLevel,
     current_user: dict = Depends(get_current_user),
     response_time_ms: Optional[int] = None,
+    concept_id: Optional[str] = None,
 ):
     """
     Record a review for a feed item.
-    
-    This updates the spaced repetition data and calculates
-    the next review date.
-    
+
+    This updates the spaced repetition data of the item's *concept* and
+    calculates its next review date. Clients should send `concept_id`;
+    without it the concept is looked up from the quiz/flashcard id (or the
+    id is accepted if it already is one of the user's concepts).
+
     Difficulty levels:
     - again: Complete failure, reset to beginning
     - hard: Correct but difficult
@@ -120,6 +124,20 @@ async def record_review(
     """
     try:
         pg_client = await get_postgres_client()
+        user_id = str(current_user["id"])
+        try:
+            neo4j_client = await get_neo4j_client()
+        except Exception:  # noqa: BLE001 - resolution can still use Postgres
+            neo4j_client = None
+        try:
+            target, resolved_by = await resolve_review_concept(pg_client, neo4j_client, user_id, item_id, concept_id)
+        except UnresolvableReviewTarget as e:
+            # Cards without a concept (screenshots/uploads, on-the-fly cards, old offline-queued
+            # reviews) have nothing to schedule. Answer 200 "skipped" rather than an error: the iOS
+            # offline queue retries every failed review, so a 4xx here would loop forever.
+            logger.warning("Feed: review skipped, no concept", item_id=item_id, item_type=item_type)
+            return {"status": "skipped", "reason": str(e), "concept_id": None}
+
         user_settings = (current_user.get("settings_json") or {})
         if isinstance(user_settings, str):
             user_settings = json.loads(user_settings)
@@ -127,23 +145,27 @@ async def record_review(
         sr_service = SpacedRepetitionService(pg_client, algorithm=algorithm)
 
         review = ReviewResult(
-            item_id=item_id,
+            item_id=target,
             item_type=item_type,
-            user_id=str(current_user["id"]),
+            user_id=user_id,
             difficulty=difficulty,
             response_time_ms=response_time_ms,
         )
 
         updated_data = await sr_service.record_review(review)
-        
+
         return {
             "status": "recorded",
+            "concept_id": target,
+            "resolved_by": resolved_by,
             "next_review": updated_data.next_review.isoformat(),
             "new_interval_days": updated_data.interval,
             "easiness_factor": updated_data.easiness_factor,
             "streak": updated_data.correct_streak,
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Feed: Error recording review", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

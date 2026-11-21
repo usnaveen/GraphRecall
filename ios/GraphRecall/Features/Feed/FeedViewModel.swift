@@ -317,6 +317,7 @@ final class FeedViewModel {
                 itemId: item.id,
                 itemType: itemType,
                 difficulty: difficulty,
+                conceptId: item.conceptId,
                 responseTimeMs: responseTimeMs
             )
             completedToday += 1
@@ -328,7 +329,8 @@ final class FeedViewModel {
                 itemId: item.id,
                 itemType: itemType,
                 difficulty: difficulty,
-                queuedAt: Date()
+                queuedAt: Date(),
+                conceptId: item.conceptId
             )
             await OfflineReviewStore.shared.enqueue(pending)
             await OfflineReviewStore.shared.clearDumpItems(ids: [item.id])
@@ -387,7 +389,8 @@ final class FeedViewModel {
                 _ = try await APIClient.shared.submitReview(
                     itemId: review.itemId,
                     itemType: review.itemType,
-                    difficulty: review.difficulty
+                    difficulty: review.difficulty,
+                    conceptId: review.conceptId
                 )
             } catch {
                 remaining.append(review)

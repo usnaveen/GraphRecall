@@ -37,6 +37,8 @@ interface AppState {
 
   // Feed State
   feedItems: FeedItem[];
+  /** feed item id -> concept id, so reviews update the concept's SM-2 schedule */
+  reviewConcepts: Record<string, string>;
   currentFeedIndex: number;
   likedItems: Set<string>;
   savedItems: Set<string>;
@@ -107,6 +109,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeTab: 'feed',
   feedTopicFilter: null,
   feedItems: [],
+  reviewConcepts: {},
   currentFeedIndex: 0,
   likedItems: new Set(),
   savedItems: new Set(),
@@ -358,6 +361,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       set({
         feedItems: transformedItems,
+        reviewConcepts: Object.fromEntries(
+          data.items.filter((i: any) => i.id && i.concept_id).map((i: any) => [String(i.id), String(i.concept_id)])
+        ),
         itemsReviewedToday: data.completed_today,
         dailyItemLimit: data.daily_goal !== undefined ? data.daily_goal : (data.total_due_today + data.completed_today),
         isLoading: false,
@@ -507,7 +513,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (itemType === 'fillblank') backendType = 'fill_blank';
 
       // Record review in backend
-      await feedService.recordReview(itemId, backendType, difficulty);
+      await feedService.recordReview(itemId, backendType, difficulty, state.reviewConcepts[itemId]);
 
       // Update local stats
       set({
