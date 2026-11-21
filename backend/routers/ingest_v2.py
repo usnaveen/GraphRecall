@@ -27,6 +27,7 @@ from backend.agents.scanner_agent import ScannerAgent
 from backend.db.postgres_client import get_postgres_client
 from backend.services.community_service import CommunityService
 from backend.services.storage_service import get_storage_service
+from backend.services.ingestion.reembed import reembed_missing_chunks
 import base64
 
 from backend.graphs.ingestion_graph import (
@@ -218,6 +219,7 @@ async def _ingest_processed_zip_background(
 
         if status == "completed":
             asyncio.create_task(_recompute_communities(user_id))
+        _schedule_reembed_if_needed(result, user_id)
 
         if status in {"completed", "awaiting_review"} and result.get("note_id"):
             asyncio.create_task(
@@ -242,6 +244,54 @@ async def _ingest_processed_zip_background(
         }
         _zip_ingest_results[thread_id] = error_result
         _append_zip_event(thread_id, "error", "Background ingest failed", error=str(e))
+
+
+REEMBED_RETRY_DELAYS_S = (60, 300, 900)
+
+
+def _schedule_reembed_if_needed(result: dict, user_id: str) -> None:
+    """If an ingest saved chunks without vectors, retry embedding them in the background."""
+    if result.get("next_action") == "reembed" and result.get("note_id"):
+        asyncio.create_task(_retry_missing_embeddings(str(result["note_id"]), user_id))
+
+
+async def _retry_missing_embeddings(note_id: str, user_id: str, delays=REEMBED_RETRY_DELAYS_S) -> None:
+    """Backoff retries for chunks saved without embeddings (quota errors are usually transient).
+
+    In-process, so a restart drops pending retries; POST /ingest/notes/{note_id}/reembed and the
+    eval's backfill script cover that until a durable job queue owns retries.
+    """
+    for delay in delays:
+        await asyncio.sleep(delay)
+        try:
+            result = await reembed_missing_chunks(user_id, note_id)
+        except Exception as e:  # noqa: BLE001 - background task; log and try again later
+            logger.warning("reembed retry failed", note_id=note_id, error=str(e))
+            continue
+        if result["still_missing"] == 0:
+            return
+    logger.error("reembed: chunks still without embeddings after retries", note_id=note_id)
+
+
+class ReembedResponse(BaseModel):
+    note_id: str
+    missing_before: int
+    embedded: int
+    still_missing: int
+
+
+@router.post("/ingest/notes/{note_id}/reembed", response_model=ReembedResponse)
+async def reembed_note(note_id: str, current_user: dict = Depends(get_current_user)):
+    """Embed this note's chunks that were saved without a vector (makes them searchable)."""
+    user_id = str(current_user["id"])
+    pg = await get_postgres_client()
+    owned = await pg.execute_query(
+        "SELECT 1 FROM notes WHERE id = CAST(:n AS uuid) AND user_id = CAST(:u AS uuid)", {"n": note_id, "u": user_id}
+    )
+    if not owned:
+        raise HTTPException(status_code=404, detail="Note not found")
+    result = await reembed_missing_chunks(user_id, note_id, pg=pg)
+    return ReembedResponse(note_id=note_id, **result)
 
 
 async def _recompute_communities(user_id: str) -> None:
@@ -293,6 +343,8 @@ class IngestResponse(BaseModel):
     next_action: str = "none"  # approve_required, none
     thread_id: str  # For resuming workflow
     error: Optional[str] = None
+    # e.g. chunks saved without embeddings (status_reason "completed_missing_embeddings")
+    warnings: list[str] = []
 
 
 class ResumeRequest(BaseModel):
@@ -468,6 +520,7 @@ async def ingest_note(
         
         if status == "completed":
             asyncio.create_task(_recompute_communities(user_id))
+        _schedule_reembed_if_needed(result, user_id)
 
         if status == "completed" or (status == "awaiting_review" and result.get("note_id")):
              # Trigger Lazy Quiz Scanner in background
@@ -491,6 +544,7 @@ async def ingest_note(
             next_action=result.get("next_action", "approve_required" if status == "awaiting_review" else "none"),
             thread_id=result.get("thread_id", ""),
             error=result.get("error"),
+            warnings=result.get("warnings", []),
         )
         
     except Exception as e:
@@ -597,7 +651,8 @@ async def ingest_url(
              raise HTTPException(status_code=400, detail=result["error"])
              
         ingestion_res = result.get("ingestion_result", {})
-        
+        _schedule_reembed_if_needed(ingestion_res, user_id)
+
         # Merge structured metadata
         return IngestResponse(
             note_id=ingestion_res.get("note_id"),
@@ -610,6 +665,7 @@ async def ingest_url(
             next_action=ingestion_res.get("next_action", "none"),
             thread_id=ingestion_res.get("thread_id", ""),
             error=ingestion_res.get("error"),
+            warnings=ingestion_res.get("warnings", []),
         )
         
     except HTTPException:
@@ -745,7 +801,8 @@ async def approve_and_resume(
         )
         
         status = result.get("status", "completed")
-        
+        _schedule_reembed_if_needed(result, user_id)
+
         if status == "cancelled":
             logger.info("v2/ingest/approve: Workflow cancelled by user")
         else:
@@ -766,6 +823,7 @@ async def approve_and_resume(
             next_action=result.get("next_action", "none"),
             thread_id=thread_id,
             error=result.get("error"),
+            warnings=result.get("warnings", []),
         )
         
     except Exception as e:

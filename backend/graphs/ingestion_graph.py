@@ -440,14 +440,41 @@ async def embed_node(state: IngestionState) -> dict:
         for emb in group["child_embeddings"]
         if emb is not None
     )
+    missing = len(all_child_texts) - embedded_count
     logger.info(
         "embed_node: Complete",
         total_chunks=len(all_child_texts),
         embedded=embedded_count,
-        missing=len(all_child_texts) - embedded_count,
+        missing=missing,
     )
 
-    return {"chunks": chunks}
+    # Recorded so the final status can say the note is not fully searchable yet (see
+    # embedding_outcome); the chunks are still saved, so no text is lost.
+    meta = dict(state.get("processing_metadata") or {})
+    meta["embeddings"] = {"total": len(all_child_texts), "embedded": embedded_count, "missing": missing}
+    return {"chunks": chunks, "processing_metadata": meta}
+
+
+def embedding_outcome(meta: Optional[dict]) -> dict:
+    """Status fields for a finished ingest, given processing_metadata.
+
+    A note whose chunks were saved without vectors is invisible to vector search, so it must not be
+    reported as a plain success. Status stays "completed" (the note, chunks and concepts exist, and
+    clients switch on it); status_reason, next_action and warnings say what is missing.
+    """
+    emb = (meta or {}).get("embeddings") or {}
+    missing, total = int(emb.get("missing") or 0), int(emb.get("total") or 0)
+    if missing <= 0:
+        return {"status_reason": "completed", "next_action": "none", "warnings": [], "embeddings_missing": 0}
+    return {
+        "status_reason": "completed_missing_embeddings",
+        "next_action": "reembed",
+        "warnings": [
+            f"{missing} of {total} chunks were saved without embeddings and are not searchable yet. "
+            "A retry is scheduled; POST /api/v2/ingest/notes/{note_id}/reembed retries now."
+        ],
+        "embeddings_missing": missing,
+    }
 
 async def save_chunks_node(state: IngestionState) -> dict:
     """
@@ -2123,8 +2150,7 @@ async def run_ingestion(
             "quiz_ids": result.get("quiz_ids", []),
             "processing_metadata": meta,
             "status": "completed",
-            "status_reason": "completed",
-            "next_action": "none",
+            **embedding_outcome(meta),
             "thread_id": thread_id,
             "error": result.get("error"),
         }
@@ -2204,13 +2230,15 @@ async def resume_ingestion(
             num_concepts=len(result.get("created_concept_ids", [])),
         )
         
+        outcome = embedding_outcome(result.get("processing_metadata"))
+        if user_cancelled:
+            outcome = {**outcome, "status_reason": "cancelled_by_user"}
         return {
             "note_id": result.get("note_id"),
             "concept_ids": result.get("created_concept_ids", []),
             "flashcard_ids": result.get("term_card_ids", []),
             "status": "completed" if not user_cancelled else "cancelled",
-            "status_reason": "completed" if not user_cancelled else "cancelled_by_user",
-            "next_action": "none",
+            **outcome,
             "thread_id": thread_id,
         }
         
