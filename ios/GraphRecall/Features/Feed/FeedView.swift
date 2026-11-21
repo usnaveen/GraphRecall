@@ -7,6 +7,7 @@ struct FeedView: View {
     @State private var model = FeedViewModel()
     @State private var contentReady = false
     @State private var activeSession: SessionLaunch?
+    @State private var showAgentInsights = false
     @AppStorage(GRSettingsKey.feedStyle) private var feedStyleRaw = FeedStyle.reels.rawValue
     @Environment(AppRouter.self) private var router
 
@@ -72,6 +73,11 @@ struct FeedView: View {
             )
             .environment(router)
         }
+        .sheet(isPresented: $showAgentInsights) {
+            AgentInsightsSheet(model: model)
+                .environment(router)
+                .presentationDragIndicator(.visible)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .grDumpCompleted)) { _ in
             Task { await model.load() }
         }
@@ -94,6 +100,15 @@ struct FeedView: View {
                     .grGlassEffect(in: Capsule())
             }
             Spacer()
+            GRIconButton(
+                systemImage: "sparkles",
+                tint: model.agentInsights.isEmpty ? GRColor.textSecondary : GRColor.accent,
+                size: 38,
+                accessibilityLabel: "Agent Inbox"
+            ) {
+                showAgentInsights = true
+                GRHaptics.tap()
+            }
             GRIconButton(
                 systemImage: style == .reels ? "rectangle.stack" : "rectangle.portrait.on.rectangle.portrait",
                 tint: GRColor.textSecondary,

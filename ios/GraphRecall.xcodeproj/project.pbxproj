@@ -21,11 +21,13 @@
 		3E02F3AF69D407BE9DF907F3 /* GraphInspectorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBE13CB88D5744985FFF987 /* GraphInspectorPanel.swift */; };
 		5112E312DEEFF11F487E1FE4 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFEB0867569B5D9A228B3E7C /* ChatModels.swift */; };
 		548CAE724C27CF0C9595C8B5 /* FeedPostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571574011BF854B11FF5626D /* FeedPostsView.swift */; };
+		54D62B63DB351CE3DB305053 /* AgentInboxUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C670D511ACB3A69231A7E51 /* AgentInboxUITests.swift */; };
 		56EAEACF6E68918C9A446A00 /* GraphNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */; };
 		5D8A719D00E8E4E5BCCEE8F1 /* GraphToolsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D3BF4391B44E6E2469BCD9 /* GraphToolsSheets.swift */; };
 		60FF4F0896591B3C7A8F0EF7 /* ChatSSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0A25E9DDEB6FA4EA9F3A30 /* ChatSSEClient.swift */; };
 		6101AF7D0815012D1D0AFC96 /* APIConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D60F0755297C074FCE2F88D /* APIConfig.swift */; };
 		61B337021FBEEFEBC12CCD2E /* GraphRecallWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 354919E7BDFE313704962EDC /* GraphRecallWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		654FECEEC7D9E3B199F5D8F9 /* AgentInsightsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A122E64F532D4834DD4424ED /* AgentInsightsSheet.swift */; };
 		66B3F9863520E9EF2083B633 /* FeedContentCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C25355E86F96487699425E9E /* FeedContentCard.swift */; };
 		677AC8792FA0E88D851F90AD /* DemoFeedSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */; };
 		699532DBB9BBE0DB0E0F30A4 /* Graph3DWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E402B1CDCA1B88C1C47A976 /* Graph3DWebView.swift */; };
@@ -37,6 +39,7 @@
 		7125C8D2C47981BAA7021609 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7FF515475618D8C73AE527 /* LibraryView.swift */; };
 		74487DC936815D7E43050870 /* GRScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F78211E1B8741510C9AA24D /* GRScreenHeader.swift */; };
 		7A2B978B52F0F7F688B9FB06 /* GRDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25FEC977B2A9130C876E1D4F /* GRDictation.swift */; };
+		7B1817D2D0E7B0023662114E /* APIClient+AgentV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB5935E72A0316C830009116 /* APIClient+AgentV2.swift */; };
 		8014C3E9EE7B41AD300C9DF2 /* IngestModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54D8E856C0FE63DA3A324D85 /* IngestModels.swift */; };
 		81F71FDA03D069B4197F7F46 /* FeedViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE14E2BBC801DE9BC6A5BA7 /* FeedViewModel.swift */; };
 		8331C9754ADC84B45D8377D7 /* ProfileListViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D86AD75648AE1A7BBFA84F /* ProfileListViews.swift */; };
@@ -66,6 +69,7 @@
 		CD0F69AA837E4ECEEE281D46 /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15AEBE53BAF79659722715F /* Colors.swift */; };
 		CDA03F95E4C9FADB6C409478 /* GraphRecallApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1D08115F01D059725E1075 /* GraphRecallApp.swift */; };
 		D04DB3E2BD0A6BC68AE7FD66 /* GraphRecallShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5C70EAAF05F4CDA100854C26 /* GraphRecallShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D25475139FE09E6F3E4317F9 /* AgentInsightModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EAFB110B6E18FDCB56BE905 /* AgentInsightModels.swift */; };
 		D2A05657AAACF954D3E49D31 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30114AD9B85E20BDC976757 /* ContentView.swift */; };
 		D6C1E3C34FF1FB23F0940C77 /* CreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D5550930146E10280F9D9BE /* CreateView.swift */; };
 		E04164430170B0C25D25C35E /* GRSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */; };
@@ -124,6 +128,7 @@
 		07010B2398942B883315389E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		08EF6500A115E505F0EB5B7A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0B6149E4976D7EDB8AFEB78E /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
+		0C670D511ACB3A69231A7E51 /* AgentInboxUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInboxUITests.swift; sourceTree = "<group>"; };
 		0F488B9751BD5542CD868BEE /* GraphRecallShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GraphRecallShare.entitlements; sourceTree = "<group>"; };
 		1EAC19540B0FC26CF2901971 /* GraphLinksSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphLinksSheet.swift; sourceTree = "<group>"; };
 		20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphNotePanel.swift; sourceTree = "<group>"; };
@@ -131,6 +136,7 @@
 		25FEC977B2A9130C876E1D4F /* GRDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRDictation.swift; sourceTree = "<group>"; };
 		2843D7F6A870BAFAC6EEF06D /* ConceptDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptDetailView.swift; sourceTree = "<group>"; };
 		2B41DFEE6E9CC527A799EF02 /* ImportReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportReviewView.swift; sourceTree = "<group>"; };
+		2EAFB110B6E18FDCB56BE905 /* AgentInsightModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInsightModels.swift; sourceTree = "<group>"; };
 		31B4155BF84146B9C4C8466B /* Glass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Glass.swift; sourceTree = "<group>"; };
 		354389AA6E635E3758568334 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		354919E7BDFE313704962EDC /* GraphRecallWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = GraphRecallWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -175,9 +181,11 @@
 		96A4733D8764BF042C8A70B4 /* OfflineReviewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineReviewStore.swift; sourceTree = "<group>"; };
 		9D2096EF6D52D11205391033 /* ScanCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanCapture.swift; sourceTree = "<group>"; };
 		9E36CA9F421CD5D86DBD874E /* GRTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRTab.swift; sourceTree = "<group>"; };
+		A122E64F532D4834DD4424ED /* AgentInsightsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInsightsSheet.swift; sourceTree = "<group>"; };
 		A30114AD9B85E20BDC976757 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoFeedSeed.swift; sourceTree = "<group>"; };
 		AB2B223947F7FA737F47CF8A /* graph3d.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = graph3d.html; sourceTree = "<group>"; };
+		AB5935E72A0316C830009116 /* APIClient+AgentV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+AgentV2.swift"; sourceTree = "<group>"; };
 		BB5A4D68618C46B7F6C7AD0D /* App.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = App.xcconfig; sourceTree = "<group>"; };
 		BECBEB72ED744FC19DA09627 /* GraphQuizSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphQuizSheet.swift; sourceTree = "<group>"; };
 		BF5D56B9E352FA1D5C34665C /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
@@ -283,6 +291,7 @@
 			children = (
 				403EE59686F0C30E886F83B0 /* Models */,
 				4F4AB921E260606FD5618584 /* APIClient.swift */,
+				AB5935E72A0316C830009116 /* APIClient+AgentV2.swift */,
 				938F31619C9D22F04EF0EE69 /* APIClient+Profile.swift */,
 				68CC963AAC899E05A3CBEE45 /* APIClient+Revamp.swift */,
 				4D60F0755297C074FCE2F88D /* APIConfig.swift */,
@@ -312,6 +321,7 @@
 		403EE59686F0C30E886F83B0 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				2EAFB110B6E18FDCB56BE905 /* AgentInsightModels.swift */,
 				DE2F576A29F1A4101ADB03AE /* AuthModels.swift */,
 				FFEB0867569B5D9A228B3E7C /* ChatModels.swift */,
 				877AC1570FFB645C19F03AF7 /* ConceptDumpModels.swift */,
@@ -370,6 +380,7 @@
 		827D12B04839C3724638E2DF /* Feed */ = {
 			isa = PBXGroup;
 			children = (
+				A122E64F532D4834DD4424ED /* AgentInsightsSheet.swift */,
 				A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */,
 				D53E4786769C667032C743FF /* FeedCardViews.swift */,
 				C25355E86F96487699425E9E /* FeedContentCard.swift */,
@@ -410,6 +421,7 @@
 		B02E2EA3134B54920D43E7BE /* GraphRecallUITests */ = {
 			isa = PBXGroup;
 			children = (
+				0C670D511ACB3A69231A7E51 /* AgentInboxUITests.swift */,
 				8FF54DECE7F455EA0BB8D0F0 /* ReviewFlowUITests.swift */,
 			);
 			path = GraphRecallUITests;
@@ -624,6 +636,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				54D62B63DB351CE3DB305053 /* AgentInboxUITests.swift in Sources */,
 				F1FBC2793C54513177F326C9 /* ReviewFlowUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -650,10 +663,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7B1817D2D0E7B0023662114E /* APIClient+AgentV2.swift in Sources */,
 				6ABFB64B8EABE5B7233E9384 /* APIClient+Profile.swift in Sources */,
 				E11AA42201F79DF141DBA3E3 /* APIClient+Revamp.swift in Sources */,
 				EA91840184ADA49500E76AD3 /* APIClient.swift in Sources */,
 				6101AF7D0815012D1D0AFC96 /* APIConfig.swift in Sources */,
+				D25475139FE09E6F3E4317F9 /* AgentInsightModels.swift in Sources */,
+				654FECEEC7D9E3B199F5D8F9 /* AgentInsightsSheet.swift in Sources */,
 				12D4BFAF0592D4677EDD85B3 /* AppRouter.swift in Sources */,
 				17EF10D95152450277DAFDC0 /* AuthModels.swift in Sources */,
 				9B6EE52772CAB0FBA3DA7934 /* AuthSession.swift in Sources */,

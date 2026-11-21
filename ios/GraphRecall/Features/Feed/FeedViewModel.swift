@@ -41,6 +41,8 @@ final class FeedViewModel {
     var focusDomain: String?
     /// Cards graded since the last load — keeps the widget's due count honest between reloads.
     private var gradedSinceLoad = 0
+    /// Always-On Agent v2 proactive feed insights.
+    var agentInsights: [AgentFeedCard] = []
     @ObservationIgnored private var softBannerTask: Task<Void, Never>?
 
     /// Settings → Daily goal. 0 means "use the server's goal".
@@ -158,6 +160,7 @@ final class FeedViewModel {
             rebuildQueue()
             resetCardState()
         }
+        await loadAgentInsights()
     }
 
     /// Due cards first, then whatever revisit cards were already prepared.
@@ -487,6 +490,43 @@ final class FeedViewModel {
         } catch {
             if wasSaved { savedIds.insert(item.id) } else { savedIds.remove(item.id) }
             showSoftBanner(APIError.userFacing(error, resource: "save"))
+        }
+    }
+
+    // MARK: - Always-On Agent v2 Insights
+
+    func loadAgentInsights() async {
+        do {
+            let cards = try await APIClient.shared.fetchAgentFeedCards()
+            if !cards.isEmpty {
+                agentInsights = cards
+            } else if isDemoMode {
+                agentInsights = AgentFeedCard.demoSamples
+            } else {
+                agentInsights = []
+            }
+        } catch {
+            if isDemoMode {
+                agentInsights = AgentFeedCard.demoSamples
+            } else {
+                agentInsights = []
+            }
+        }
+    }
+
+    func dismissInsight(_ card: AgentFeedCard) {
+        agentInsights.removeAll { $0.id == card.id }
+        guard !card.isDemo, !isOffline else { return }
+        Task {
+            _ = try? await APIClient.shared.dismissAgentInsight(id: card.id)
+        }
+    }
+
+    func actOnInsight(_ card: AgentFeedCard) {
+        agentInsights.removeAll { $0.id == card.id }
+        guard !card.isDemo, !isOffline else { return }
+        Task {
+            _ = try? await APIClient.shared.actOnAgentInsight(id: card.id)
         }
     }
 
