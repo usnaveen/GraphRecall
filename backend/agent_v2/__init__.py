@@ -1,0 +1,51 @@
+"""Additive Always-On Agent v2 package (black-box protocols, provenance, durable queue, worker)."""
+
+from backend.agent_v2.protocols import (
+    AgentInsight,
+    AgentJob,
+    AgentRunRecord,
+    BridgeProposalBatch,
+    InsightStatus,
+    InsightStore,
+    InsightType,
+    JobQueue,
+    JobStatus,
+    LLMGateway,
+    MemoryFacade,
+    NoteChunk,
+    NoteIngestedPayload,
+    ProposedBridge,
+    ProvenanceReport,
+    RunLogger,
+    VerifiedBridge,
+    VerifiedQuote,
+)
+from backend.agent_v2.provenance import (
+    normalize_for_quote_match,
+    validate_proposed_bridges,
+    verify_quote_in_text,
+)
+
+__all__ = [
+    "AgentInsight",
+    "AgentJob",
+    "AgentRunRecord",
+    "BridgeProposalBatch",
+    "InsightStatus",
+    "InsightStore",
+    "InsightType",
+    "JobQueue",
+    "JobStatus",
+    "LLMGateway",
+    "MemoryFacade",
+    "NoteChunk",
+    "NoteIngestedPayload",
+    "ProposedBridge",
+    "ProvenanceReport",
+    "RunLogger",
+    "VerifiedBridge",
+    "VerifiedQuote",
+    "normalize_for_quote_match",
+    "validate_proposed_bridges",
+    "verify_quote_in_text",
+]

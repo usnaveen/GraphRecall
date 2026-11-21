@@ -51,6 +51,7 @@ try:
     from backend.routers.images import router as images_router
     from backend.routers.knowledge import router as knowledge_router
     from backend.routers.users import router as users_router
+    from backend.routers.agent_v2 import router as agent_v2_router
 except Exception as e:
     import traceback
     traceback.print_exc()
@@ -195,6 +196,7 @@ app.include_router(auth_router)      # /auth - Google authentication
 app.include_router(images_router)    # /api/images - Serve book images
 app.include_router(knowledge_router) # /api/knowledge - Global summaries
 app.include_router(users_router)     # /api/users - User management (purge, etc)
+app.include_router(agent_v2_router)  # /api/v2/agent - Always-on agent insights & jobs
 
 
 # ============================================================================
