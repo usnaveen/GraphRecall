@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from backend.auth.middleware import get_current_user
+from backend.services.quota import require_quota
 
 from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
@@ -34,7 +35,7 @@ class QuickChatRequest(BaseModel):
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_quota("chat")),
 ):
     """
     Chat with the GraphRAG assistant.
@@ -79,7 +80,7 @@ async def chat(
 @router.post("/quick", response_model=ChatResponse)
 async def quick_chat(
     request: QuickChatRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_quota("chat")),
 ):
     """
     Quick chat without conversation history.
@@ -315,7 +316,7 @@ async def create_conversation(
 async def add_message_to_conversation(
     conversation_id: str,
     message: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_quota("chat")),
 ):
     """
     Add a message to a conversation and get AI response.
@@ -819,7 +820,7 @@ async def delete_conversation(
 @router.post("/stream")
 async def stream_chat(
     request: ChatRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_quota("chat")),
 ):
     """
     Stream chat responses using Server-Sent Events.

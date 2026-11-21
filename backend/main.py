@@ -149,6 +149,9 @@ app.add_middleware(
 )
 
 # Per-request timing (total, time to first byte, Server-Timing header). Added last = outermost.
+from backend.middleware.rate_limit import RateLimitMiddleware  # noqa: E402
+
+app.add_middleware(RateLimitMiddleware)  # per-client token bucket; daily LLM cost caps: services/quota.py
 app.add_middleware(telemetry.TimingMiddleware)
 
 # Register new routers
