@@ -127,6 +127,10 @@ async def purge_unfinished(pg, user_id: str, log: dict) -> int:
     neo4j = await get_neo4j_client()
     await neo4j.execute_query("MATCH (n:NoteSource {user_id: $u}) WHERE n.id IN $ids DETACH DELETE n",
                               {"u": user_id, "ids": stale})
+    # Concepts that only the purged attempts explained are now orphans; the retry recreates whatever
+    # it extracts. (Before this run every eval concept had an EXPLAINS edge, so nothing else matches.)
+    await neo4j.execute_query("MATCH (c:Concept {user_id: $u}) WHERE NOT (c)-[:EXPLAINS]-() DETACH DELETE c",
+                              {"u": user_id})
     for nid in stale:
         await pg.execute_update("DELETE FROM notes WHERE id = CAST(:n AS uuid) AND user_id = CAST(:u AS uuid)",
                                 {"n": nid, "u": user_id})

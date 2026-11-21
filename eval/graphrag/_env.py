@@ -48,6 +48,7 @@ def setup() -> None:
     logging.basicConfig(level=logging.WARNING)
     for noisy in ("httpx", "neo4j", "google_genai", "langchain_google_genai"):
         logging.getLogger(noisy).setLevel(logging.ERROR)
+    throttle_llm()  # before any backend module builds a model (see throttle_llm)
 
 
 def models() -> dict:
@@ -68,12 +69,22 @@ def _record_embed_error(e: Exception) -> None:
         EMBED_ERRORS["daily_quota"] = True
 
 
+_THROTTLED = False
+
+
 def throttle_llm() -> None:
     """Client-side rate limit on every Gemini chat call (EVAL_RPM, default 12/min for the free tier).
 
     The app's nodes catch model errors, so an unthrottled run that hits 429s would quietly produce a
-    thinner graph instead of failing. Patched before backend.config.llm builds any model.
+    thinner graph instead of failing. It must run before any backend graph module is imported: the
+    ingestion graph builds its agents' models at import time, and a client built before this patch
+    keeps the unthrottled class (that is how the 2026-11-21 run made ~20 calls/min under EVAL_RPM=12).
+    setup() therefore calls it; calling it again is a no-op.
     """
+    global _THROTTLED
+    if _THROTTLED:
+        return
+    _THROTTLED = True
     from langchain_core.rate_limiters import InMemoryRateLimiter
     from langchain_google_genai import ChatGoogleGenerativeAI
 
