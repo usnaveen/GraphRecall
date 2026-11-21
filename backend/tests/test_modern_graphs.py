@@ -32,7 +32,12 @@ def mock_dependencies():
     mock_neo4j_client.execute_query = AsyncMock(return_value=[])
     mock_neo4j_client.create_concept = AsyncMock(return_value={"c": {"id": "concept-1"}})
     mock_neo4j_client.create_relationship = AsyncMock(return_value={})
-    
+    # Chat retrieval calls these directly; unconfigured, AsyncMock returns mock objects that end up in
+    # graph state and break the checkpointer's msgpack serialisation.
+    mock_neo4j_client.find_seed_concepts = AsyncMock(return_value=[])
+    mock_neo4j_client.similar_to_embedding = AsyncMock(return_value=[])
+    mock_neo4j_client.k_hop_context = AsyncMock(return_value={"nodes": [], "edges": []})
+
     mock_pg_client = AsyncMock()
     mock_pg_client.fetch = AsyncMock(return_value=[])
     mock_pg_client.execute = AsyncMock(return_value=None)
@@ -58,10 +63,16 @@ def mock_dependencies():
     mock_extraction_result = MagicMock()
     mock_extraction_result.concepts = [mock_concept]
 
+    # No network in these tests: query embeddings are a fixed vector.
+    mock_embeddings = MagicMock()
+    mock_embeddings.aembed_query = AsyncMock(return_value=[0.0] * 768)
+
     # Patch list
     patches = [
-        # Chat Graph
+        # Chat Graph (intent analysis and map-reduce use the fast model; answers use the chat model)
         patch("backend.graphs.chat_graph.get_chat_model", new=lambda *args, **kwargs: mock_llm_instance),
+        patch("backend.graphs.chat_graph.get_fast_model", new=lambda *args, **kwargs: mock_llm_instance),
+        patch("backend.graphs.chat_graph.get_embeddings", new=lambda *args, **kwargs: mock_embeddings),
         patch("backend.graphs.chat_graph.get_neo4j_client", new_callable=AsyncMock, return_value=mock_neo4j_client),
         patch("backend.graphs.chat_graph.get_postgres_client", new_callable=AsyncMock, return_value=mock_pg_client),
         

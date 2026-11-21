@@ -3,6 +3,8 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from langchain_core.messages import AIMessage
+
 import pytest
 
 from backend.agents.extraction import ExtractionAgent, _escape_invalid_json_backslashes
@@ -40,7 +42,7 @@ class TestExtractionAgent:
         }
 
         mock_llm.ainvoke = AsyncMock(
-            return_value=MagicMock(content=json.dumps(mock_response))
+            return_value=AIMessage(content=json.dumps(mock_response))
         )
 
         with patch.object(ExtractionAgent, "__init__", lambda self, **kwargs: None):
@@ -63,7 +65,7 @@ class TestExtractionAgent:
         """Test extraction with empty input returns empty concepts."""
         mock_response = {"concepts": []}
         mock_llm.ainvoke = AsyncMock(
-            return_value=MagicMock(content=json.dumps(mock_response))
+            return_value=AIMessage(content=json.dumps(mock_response))
         )
 
         with patch.object(ExtractionAgent, "__init__", lambda self, **kwargs: None):
@@ -83,7 +85,7 @@ class TestExtractionAgent:
         from tenacity import RetryError
 
         mock_llm.ainvoke = AsyncMock(
-            return_value=MagicMock(content="This is not valid JSON {{{")
+            return_value=AIMessage(content="This is not valid JSON {{{")
         )
 
         with patch.object(ExtractionAgent, "__init__", lambda self, **kwargs: None):
@@ -113,7 +115,7 @@ class TestExtractionAgent:
             ]
         }
         mock_llm.ainvoke = AsyncMock(
-            return_value=MagicMock(content=json.dumps(mock_response))
+            return_value=AIMessage(content=json.dumps(mock_response))
         )
 
         with patch.object(ExtractionAgent, "__init__", lambda self, **kwargs: None):
@@ -142,7 +144,7 @@ class TestExtractionAgent:
             '"evidence_span":"The expressions (?<!\\\\\\S) and (?!\\\\S) isolate tokens.",'
             '"related_concepts":["Negative Lookahead"],"prerequisites":[]}]}'
         )
-        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content=malformed_json))
+        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content=malformed_json))
 
         with patch.object(ExtractionAgent, "__init__", lambda self, **kwargs: None):
             agent = ExtractionAgent()

@@ -33,6 +33,13 @@ async def test_create_node_persists_position(monkeypatch):
     monkeypatch.setattr(nodes_router, "get_neo4j_client", fake_get_neo4j_client)
     monkeypatch.setattr(nodes_router, "get_postgres_client", fake_get_postgres_client)
 
+    # Graph placement is graph_registry's job (its own Neo4j client and an LLM call); this test is
+    # about the router persisting the node and its canvas position.
+    async def fake_resolve_graph(user_id, **kwargs):
+        return {"graph": "Machine Learning", "created": False, "reason": "test"}
+
+    monkeypatch.setattr(nodes_router, "resolve_graph", fake_resolve_graph)
+
     req = nodes_router.CreateNodeRequest(
         name="Semantic Search",
         description="Search with embeddings",

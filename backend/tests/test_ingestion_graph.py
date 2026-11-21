@@ -43,35 +43,65 @@ async def test_extract_concepts_node_success(monkeypatch):
     assert result["extracted_concepts"][0]["name"] == "Neural Network"
 
 
-@pytest.mark.asyncio
-async def test_find_related_node_detects_overlap(monkeypatch):
+EXISTING = {
+    "id": "existing-1",
+    "name": "Neural Network",
+    "definition": "Computing systems",
+    "domain": "Machine Learning",
+    "complexity_score": 6,
+}
+NEW_STATE = {
+    "user_id": "user-1",
+    "extracted_concepts": [
+        {"name": "Neural Network", "definition": "Computing systems", "domain": "Machine Learning"}
+    ],
+}
+
+
+def _fake_neo4j(monkeypatch):
+    """find_related_node first counts the user's concepts, then (fallback only) lists them."""
     mock_neo4j = AsyncMock()
-    mock_neo4j.execute_query.return_value = [
-        {
-            "id": "existing-1",
-            "name": "Neural Network",
-            "definition": "Computing systems",
-            "domain": "Machine Learning",
-            "complexity_score": 6,
-        }
-    ]
+
+    async def execute_query(query, params=None):
+        return [{"total": 1}] if "count(c)" in query else [EXISTING]
+
+    mock_neo4j.execute_query.side_effect = execute_query
 
     async def fake_get_neo4j_client():
         return mock_neo4j
 
     monkeypatch.setattr(ingestion_module, "get_neo4j_client", fake_get_neo4j_client)
 
-    state = {
-        "user_id": "user-1",
-        "extracted_concepts": [
-            {"name": "Neural Network", "definition": "Computing systems", "domain": "Machine Learning"}
-        ],
-    }
 
-    result = await ingestion_module.find_related_node(state)
+@pytest.mark.asyncio
+async def test_find_related_node_detects_overlap(monkeypatch):
+    """Meaning-based match (find_related_concepts) drives the overlap ratio."""
+    _fake_neo4j(monkeypatch)
+
+    async def fake_find_related(user_id, extracted):
+        return [EXISTING], {"Neural Network": [EXISTING]}
+
+    monkeypatch.setattr(ingestion_module, "find_related_concepts", fake_find_related)
+    result = await ingestion_module.find_related_node(NEW_STATE)
 
     assert result["needs_synthesis"] is True
+    assert result["overlap_ratio"] == 1.0
     assert len(result["related_concepts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_find_related_node_name_fallback(monkeypatch):
+    """With no embedding matches (e.g. concepts not embedded yet), name matching still finds overlap."""
+    _fake_neo4j(monkeypatch)
+
+    async def no_matches(user_id, extracted):
+        return [], {}
+
+    monkeypatch.setattr(ingestion_module, "find_related_concepts", no_matches)
+    result = await ingestion_module.find_related_node(NEW_STATE)
+
+    assert result["needs_synthesis"] is True
+    assert [r["id"] for r in result["related_concepts"]] == ["existing-1"]
 
 
 @pytest.mark.asyncio
