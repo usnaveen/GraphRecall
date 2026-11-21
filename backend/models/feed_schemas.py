@@ -193,11 +193,14 @@ class FeedItem(BaseModel):
     concept_id: Optional[str] = None
     concept_name: Optional[str] = None
     domain: Optional[str] = None
-    priority_score: float = 0.5
 
     # Spaced repetition data
     due_date: Optional[datetime] = None
     priority_score: float = Field(default=1.0, description="Higher = more urgent")
+
+    # Ranking metadata (invisible session pacing + "Revisit" badge on cold/lapsed concepts)
+    badge: Optional[str] = None
+    ranking_reason: Optional[str] = None
 
     # Metadata
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

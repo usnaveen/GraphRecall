@@ -1,6 +1,7 @@
 """Feed Router - Active Recall Feed Endpoints."""
 
 import json
+import os
 import uuid
 import random
 import asyncio
@@ -34,6 +35,17 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/feed", tags=["Feed"])
 
 
+def _resolve_user_sr_algorithm(current_user: dict) -> str:
+    """Resolve user's spaced repetition algorithm, defaulting to FSRS."""
+    user_settings = current_user.get("settings_json") or {}
+    if isinstance(user_settings, str):
+        try:
+            user_settings = json.loads(user_settings)
+        except Exception:
+            user_settings = {}
+    return user_settings.get("sr_algorithm") or os.getenv("FEED_DEFAULT_SR_ALGORITHM", "fsrs")
+
+
 @router.get("", response_model=FeedResponse)
 async def get_feed(
     current_user: dict = Depends(get_current_user),
@@ -61,8 +73,9 @@ async def get_feed(
     try:
         pg_client = await get_postgres_client()
         neo4j_client = await get_neo4j_client()
-        
-        feed_service = FeedService(pg_client, neo4j_client)
+
+        algorithm = _resolve_user_sr_algorithm(current_user)
+        feed_service = FeedService(pg_client, neo4j_client, sr_algorithm=algorithm)
         
         # Parse item types
         parsed_types = None
@@ -138,10 +151,7 @@ async def record_review(
             logger.warning("Feed: review skipped, no concept", item_id=item_id, item_type=item_type)
             return {"status": "skipped", "reason": str(e), "concept_id": None}
 
-        user_settings = (current_user.get("settings_json") or {})
-        if isinstance(user_settings, str):
-            user_settings = json.loads(user_settings)
-        algorithm = user_settings.get("sr_algorithm", "sm2")
+        algorithm = _resolve_user_sr_algorithm(current_user)
         sr_service = SpacedRepetitionService(pg_client, algorithm=algorithm)
 
         review = ReviewResult(

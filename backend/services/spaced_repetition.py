@@ -13,12 +13,51 @@ import math
 import structlog
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Union
 from pydantic import BaseModel
 
 from backend.models.feed_schemas import DifficultyLevel, SM2Data, ReviewResult
 
 logger = structlog.get_logger()
+
+
+# Explicit iOS slider band <-> DifficultyLevel <-> FSRS grade (1-4) mapping.
+# Must stay aligned with ios/GraphRecall/Features/Feed/FeedDifficultySlider.swift:
+#   "Easy" -> .easy, "Knew it" -> .good, "Shaky" -> .hard, "No idea" -> .again
+IOS_SLIDER_BAND_TO_DIFFICULTY: dict[str, DifficultyLevel] = {
+    "Easy": DifficultyLevel.EASY,
+    "Knew it": DifficultyLevel.GOOD,
+    "Shaky": DifficultyLevel.HARD,
+    "No idea": DifficultyLevel.AGAIN,
+}
+
+FSRS_GRADE_TO_SLIDER_LABEL: dict[int, str] = {
+    1: "No idea",
+    2: "Shaky",
+    3: "Knew it",
+    4: "Easy",
+}
+
+FSRS_GRADE_TO_INTERACTION_TYPE: dict[int, str] = {
+    1: "review:again",
+    2: "review:hard",
+    3: "review:good",
+    4: "review:easy",
+}
+
+
+def difficulty_to_fsrs_grade(difficulty: Union[DifficultyLevel, str]) -> int:
+    """Resolve a DifficultyLevel enum, API string, or iOS slider label to an FSRS grade (1-4)."""
+    if isinstance(difficulty, DifficultyLevel):
+        return FSRSAlgorithm.DIFFICULTY_TO_GRADE[difficulty]
+    raw = str(difficulty).strip()
+    if raw in IOS_SLIDER_BAND_TO_DIFFICULTY:
+        return FSRSAlgorithm.DIFFICULTY_TO_GRADE[IOS_SLIDER_BAND_TO_DIFFICULTY[raw]]
+    try:
+        lvl = DifficultyLevel(raw.lower())
+    except ValueError as exc:
+        raise ValueError(f"Unsupported difficulty value: {difficulty!r}") from exc
+    return FSRSAlgorithm.DIFFICULTY_TO_GRADE[lvl]
 
 
 # ============================================================================
@@ -180,7 +219,8 @@ class FSRSAlgorithm:
         """Probability of recall: R(t) = (1 + t / (9·S))^(−1)."""
         if stability <= 0:
             return 0.0
-        return (1.0 + elapsed_days / (9.0 * stability)) ** (-1)
+        elapsed = max(0.0, float(elapsed_days))
+        return (1.0 + elapsed / (9.0 * stability)) ** (-1)
 
     @classmethod
     def initial_stability(cls, grade: int) -> float:
@@ -206,13 +246,14 @@ class FSRSAlgorithm:
     def next_stability(cls, s: float, d: float, r: float, grade: int) -> float:
         """Calculate new stability after a review."""
         if grade == 1:
-            # Failure path — stability drops
-            new_s = (
+            # Failure path — stability must drop (clamp prevents low-r/tiny-s overshoot)
+            fail_s = (
                 cls.W[11]
                 * d ** (-cls.W[12])
                 * ((s + 1) ** cls.W[13] - 1)
                 * math.exp(cls.W[14] * (1.0 - r))
             )
+            new_s = min(s, fail_s)
         else:
             # Success path (hard / good / easy)
             hard_penalty = cls.W[15] if grade == 2 else 1.0
@@ -233,6 +274,44 @@ class FSRSAlgorithm:
         """Optimal interval (days) to reach desired_retention."""
         interval = 9.0 * stability * (1.0 / desired_retention - 1.0)
         return max(1, min(365, round(interval)))
+
+    @classmethod
+    def cold_start_priors(cls, complexity_score: Optional[float] = None) -> tuple[float, float]:
+        """Seed (stability, difficulty) for unreviewed concepts from extraction complexity (1-10)."""
+        complexity = (
+            5.0
+            if complexity_score is None
+            else max(1.0, min(10.0, float(complexity_score)))
+        )
+        initial_d = max(1.0, min(10.0, 1.0 + 0.8 * complexity))
+        initial_s = max(0.4, min(2.6, 0.4 + (10.0 - initial_d) * 0.25))
+        return round(initial_s, 4), round(initial_d, 4)
+
+    @classmethod
+    def calculate_priority_score(
+        cls,
+        stability: Optional[float],
+        difficulty: Optional[float],
+        elapsed_days: Optional[float],
+        reps: int = 0,
+        desired_retention: float = 0.9,
+        complexity_score: Optional[float] = None,
+    ) -> float:
+        """Compute smooth FSRS urgency score in [0.0, 1.5] for feed ranking."""
+        if stability is None or stability <= 0 or (reps or 0) == 0:
+            s, _ = cls.cold_start_priors(complexity_score)
+            elapsed = 0.5 if elapsed_days is None else max(0.0, float(elapsed_days))
+        else:
+            s = float(stability)
+            elapsed = max(0.0, float(elapsed_days or 0.0))
+
+        r = cls.retrievability(elapsed, s)
+        forgetting_urgency = 1.0 - r
+        cliff_center = desired_retention - 0.1
+        cliff_bonus = 0.15 * math.exp(-((r - cliff_center) ** 2) / (2.0 * 0.12 ** 2))
+        overdue_pressure = 0.35 * max(0.0, (0.70 - r) / 0.70)
+        score = min(1.5, max(0.0, forgetting_urgency + cliff_bonus + overdue_pressure))
+        return round(score, 4)
 
 
 # ============================================================================
@@ -490,28 +569,53 @@ class SpacedRepetitionService:
                 },
             )
 
-        # ── Common: Log study session for activity tracking ──
+        # ── Common: Log study session for activity tracking & FSRS history replay ──
+        fsrs_grade = self.fsrs.DIFFICULTY_TO_GRADE[review.difficulty]
+        interaction_type = FSRS_GRADE_TO_INTERACTION_TYPE[fsrs_grade]
+        session_payload = {
+            "id": str(uuid.uuid4()),
+            "user_id": review.user_id,
+            "concept_id": review.item_id,
+            "reviewed_at": now,
+            "is_correct": is_correct,
+            "item_type": review.item_type,
+            "interaction_type": interaction_type,
+            "rating": fsrs_grade,
+            "response_time_ms": review.response_time_ms,
+            "session_type": "flashcard" if review.item_type == "flashcard" else "quiz",
+        }
         try:
             await self.pg_client.execute_insert(
                 """
                 INSERT INTO study_sessions
-                    (id, user_id, concept_id, reviewed_at, is_correct, item_type, response_time_ms, session_type)
+                    (id, user_id, concept_id, reviewed_at, is_correct, item_type,
+                     interaction_type, rating, response_time_ms, session_type)
                 VALUES
-                    (:id, :user_id, :concept_id, :reviewed_at, :is_correct, :item_type, :response_time_ms, :session_type)
+                    (:id, :user_id, :concept_id, :reviewed_at, :is_correct, :item_type,
+                     :interaction_type, :rating, :response_time_ms, :session_type)
                 """,
-                {
-                    "id": str(uuid.uuid4()),
-                    "user_id": review.user_id,
-                    "concept_id": review.item_id,
-                    "reviewed_at": now,
-                    "is_correct": is_correct,
-                    "item_type": review.item_type,
-                    "response_time_ms": review.response_time_ms,
-                    "session_type": "flashcard" if review.item_type == "flashcard" else "quiz",
-                }
+                session_payload,
             )
         except Exception as e:
-            logger.warning("Failed to log study session", error=str(e))
+            # Fallback if migration 016 (`rating` column) has not yet been applied
+            try:
+                await self.pg_client.execute_insert(
+                    """
+                    INSERT INTO study_sessions
+                        (id, user_id, concept_id, reviewed_at, is_correct, item_type,
+                         interaction_type, response_time_ms, session_type)
+                    VALUES
+                        (:id, :user_id, :concept_id, :reviewed_at, :is_correct, :item_type,
+                         :interaction_type, :response_time_ms, :session_type)
+                    """,
+                    {k: v for k, v in session_payload.items() if k != "rating"},
+                )
+            except Exception as fallback_err:
+                logger.warning(
+                    "Failed to log study session",
+                    error=str(e),
+                    fallback_error=str(fallback_err),
+                )
 
         logger.info(
             "SpacedRepetitionService: Review recorded",
@@ -565,7 +669,10 @@ class SpacedRepetitionService:
                 COALESCE(ps.next_review_due, NOW()) as next_review,
                 COALESCE(ps.total_reviews, 0) as total_reviews,
                 COALESCE(ps.correct_streak, 0) as correct_streak,
-                COALESCE(ps.score, 0) as mastery_score
+                COALESCE(ps.score, 0) as mastery_score,
+                ps.stability,
+                ps.difficulty_fsrs,
+                COALESCE(ps.reps_fsrs, 0) as reps_fsrs
             FROM proficiency_scores ps
             WHERE ps.user_id = :user_id
               AND (ps.next_review_due IS NULL OR ps.next_review_due <= :now)
@@ -582,25 +689,62 @@ class SpacedRepetitionService:
             # Calculate priority scores
             items = []
             for row in results:
+                last_rev = row.get("last_review")
+                elapsed_days: Optional[float] = None
+                if last_rev is not None:
+                    if getattr(last_rev, "tzinfo", None) is None:
+                        last_rev = last_rev.replace(tzinfo=timezone.utc)
+                    elapsed_days = max(0.0, (now - last_rev).total_seconds() / 86400.0)
+
+                next_rev = row.get("next_review") or now
+                if getattr(next_rev, "tzinfo", None) is None:
+                    next_rev = next_rev.replace(tzinfo=timezone.utc)
+
                 sm2_data = SM2Data(
                     item_id=row["item_id"],
                     item_type=row["item_type"],
                     user_id=user_id,
-                    easiness_factor=row["easiness_factor"],
-                    interval=row["interval"],
-                    repetition=row["repetition"],
-                    last_review=row["last_review"],
-                    next_review=row["next_review"],
-                    total_reviews=row["total_reviews"],
-                    correct_streak=row["correct_streak"],
+                    easiness_factor=row.get("easiness_factor", 2.5),
+                    interval=row.get("interval", 1),
+                    repetition=row.get("repetition", 0),
+                    last_review=last_rev,
+                    next_review=next_rev,
+                    total_reviews=row.get("total_reviews", 0),
+                    correct_streak=row.get("correct_streak", 0),
                 )
-                
-                priority = self.sm2.calculate_priority_score(sm2_data, now)
-                
+
+                stability = row.get("stability")
+                difficulty_fsrs = row.get("difficulty_fsrs")
+                reps_fsrs = row.get("reps_fsrs", 0) or 0
+                if stability is not None and stability > 0 and reps_fsrs > 0:
+                    eff_s = float(stability)
+                    eff_elapsed = 0.0 if elapsed_days is None else elapsed_days
+                else:
+                    eff_s, _ = self.fsrs.cold_start_priors()
+                    eff_elapsed = 0.5 if elapsed_days is None else elapsed_days
+                retrievability = self.fsrs.retrievability(eff_elapsed, eff_s)
+
+                if self.algorithm_name == "fsrs":
+                    priority = self.fsrs.calculate_priority_score(
+                        stability=stability,
+                        difficulty=difficulty_fsrs,
+                        elapsed_days=elapsed_days,
+                        reps=reps_fsrs,
+                    )
+                else:
+                    priority = self.sm2.calculate_priority_score(sm2_data, now)
+
                 items.append({
                     "sm2_data": sm2_data.model_dump(),
+                    "fsrs_data": {
+                        "stability": stability,
+                        "difficulty": difficulty_fsrs,
+                        "reps": reps_fsrs,
+                        "elapsed_days": elapsed_days,
+                        "retrievability": round(retrievability, 4),
+                    },
                     "priority_score": priority,
-                    "mastery_score": row["mastery_score"],
+                    "mastery_score": row.get("mastery_score", 0.0),
                 })
             
             # Sort by priority

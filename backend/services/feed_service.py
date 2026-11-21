@@ -24,6 +24,7 @@ from backend.models.feed_schemas import (
     FeedResponse,
     FeedFilterRequest,
 )
+from backend.feed_ranker import CandidateCard, FeedRanker, load_graph_signals
 from backend.services.spaced_repetition import SpacedRepetitionService
 
 from backend.agents.content_generator import ContentGeneratorAgent
@@ -36,11 +37,21 @@ logger = structlog.get_logger()
 
 class FeedService:
     """Service for generating user's learning feed."""
-    
-    def __init__(self, pg_client, neo4j_client):
+
+    def __init__(
+        self,
+        pg_client,
+        neo4j_client,
+        sr_algorithm: Optional[str] = None,
+        graph_signals=None,
+        ranker: Optional[FeedRanker] = None,
+    ):
         self.pg_client = pg_client
         self.neo4j_client = neo4j_client
-        self.sr_service = SpacedRepetitionService(pg_client)
+        algo = sr_algorithm or os.getenv("FEED_DEFAULT_SR_ALGORITHM", "fsrs")
+        self.sr_service = SpacedRepetitionService(pg_client, algorithm=algo)
+        self.graph_signals = graph_signals or load_graph_signals(neo4j_client, pg_client)
+        self.ranker = ranker or FeedRanker(graph_signals=self.graph_signals)
         self.content_generator = ContentGeneratorAgent()
         self.web_quiz_agent = WebQuizAgent()
         self.llm_timeout_seconds = 8
@@ -402,7 +413,7 @@ class FeedService:
                     {"concept_ids": concept_ids, "user_id": user_id}
                 )
                 for row in results:
-                    c = row["c"]
+                    c = dict(row["c"])
                     concepts_map[c["id"]] = c
             
             # Enrich with concept data
@@ -416,12 +427,230 @@ class FeedService:
                         **concept,
                         **item,
                     })
-            
+
+            await self._attach_latest_review_grades(user_id, enriched_concepts)
             return enriched_concepts
             
         except Exception as e:
             logger.error("FeedService: Error getting due concepts", error=str(e))
             return []
+
+    async def _attach_latest_review_grades(
+        self, user_id: str, enriched_concepts: list[dict]
+    ) -> None:
+        """Attach most recent FSRS grade and timestamp per concept from study_sessions."""
+        concept_ids = [c.get("id") for c in enriched_concepts if c.get("id")]
+        if not concept_ids:
+            return
+        interaction_grade_map = {
+            "review:again": 1,
+            "review:hard": 2,
+            "review:good": 3,
+            "review:easy": 4,
+        }
+        try:
+            rows = await self.pg_client.execute_query(
+                """
+                SELECT DISTINCT ON (concept_id)
+                    concept_id, interaction_type, is_correct, reviewed_at
+                FROM study_sessions
+                WHERE user_id = :user_id
+                  AND concept_id = ANY(:cids)
+                ORDER BY concept_id, reviewed_at DESC
+                """,
+                {"user_id": user_id, "cids": concept_ids},
+            )
+        except Exception:
+            return
+
+        latest_map: dict[str, dict] = {}
+        for row in rows or []:
+            cid = row.get("concept_id")
+            if not cid or cid in latest_map:
+                continue
+            itype = row.get("interaction_type")
+            grade = interaction_grade_map.get(itype)
+            if grade is None and row.get("is_correct") is not None:
+                grade = 3 if row.get("is_correct") else 1
+            latest_map[cid] = {
+                "last_review_grade": grade,
+                "last_reviewed_at": row.get("reviewed_at"),
+            }
+
+        for concept in enriched_concepts:
+            info = latest_map.get(concept.get("id"))
+            if info:
+                concept.update(info)
+
+    def _select_modality_for_concept(
+        self, concept: dict, allowed_types: list[FeedItemType]
+    ) -> Optional[FeedItemType]:
+        """Deterministically select card modality conditioned on FSRS stability."""
+        if not allowed_types:
+            return None
+        fsrs_data = concept.get("fsrs_data") or {}
+        reps = fsrs_data.get("reps") or 0
+        stability = fsrs_data.get("stability")
+
+        if reps == 0 or stability is None or float(stability) < 2.0:
+            order = [
+                FeedItemType.CONCEPT_SHOWCASE,
+                FeedItemType.TERM_CARD,
+                FeedItemType.MCQ,
+                FeedItemType.FILL_BLANK,
+                FeedItemType.MERMAID_DIAGRAM,
+            ]
+        elif float(stability) < 7.0:
+            order = [
+                FeedItemType.MCQ,
+                FeedItemType.FILL_BLANK,
+                FeedItemType.TERM_CARD,
+                FeedItemType.CONCEPT_SHOWCASE,
+                FeedItemType.MERMAID_DIAGRAM,
+            ]
+        else:
+            order = [
+                FeedItemType.MCQ,
+                FeedItemType.MERMAID_DIAGRAM,
+                FeedItemType.FILL_BLANK,
+                FeedItemType.TERM_CARD,
+                FeedItemType.CONCEPT_SHOWCASE,
+            ]
+
+        for candidate_type in order:
+            if candidate_type in allowed_types:
+                return candidate_type
+        return allowed_types[0]
+
+    def _build_candidate_cards(
+        self, items: list[FeedItem], concept_map: dict[str, dict]
+    ) -> list[CandidateCard]:
+        """Convert FeedItems and concept proficiency metadata into CandidateCards."""
+        candidates: list[CandidateCard] = []
+        for item in items:
+            cid = item.concept_id
+            c_info = concept_map.get(cid, {}) if cid else {}
+            fsrs_data = c_info.get("fsrs_data") or {}
+            sm2_data = c_info.get("sm2_data") or {}
+            candidates.append(
+                CandidateCard(
+                    item_id=item.id,
+                    concept_id=cid,
+                    item_type=item.item_type.value,
+                    domain=item.domain or c_info.get("domain"),
+                    complexity_score=c_info.get("complexity_score"),
+                    stability=fsrs_data.get("stability"),
+                    difficulty_fsrs=fsrs_data.get("difficulty"),
+                    reps_fsrs=fsrs_data.get("reps", 0) or 0,
+                    elapsed_days=fsrs_data.get("elapsed_days"),
+                    last_review_grade=c_info.get("last_review_grade"),
+                    last_reviewed_at=c_info.get("last_reviewed_at"),
+                    correct_streak=sm2_data.get("correct_streak", 0) or 0,
+                    embedding=c_info.get("embedding"),
+                    fallback_priority=float(item.priority_score),
+                    payload=item,
+                )
+            )
+        return candidates
+
+    async def _fetch_cached_items_for_concepts(
+        self,
+        user_id: str,
+        concept_ids: list[str],
+        concept_map: dict[str, dict],
+        allowed_types: list[FeedItemType],
+        limit: int,
+    ) -> list[FeedItem]:
+        """Load cached quizzes and flashcards for specific concept IDs."""
+        if not concept_ids or limit <= 0:
+            return []
+
+        items: list[FeedItem] = []
+        allowed_values = {t.value for t in allowed_types}
+        try:
+            cached_quizzes = await self.pg_client.execute_query(
+                """
+                SELECT id, question_text, question_type, options_json,
+                       correct_answer, explanation, concept_id, language, initial_code
+                FROM quizzes
+                WHERE user_id = :uid
+                  AND concept_id = ANY(:cids)
+                ORDER BY created_at DESC
+                LIMIT :lim
+                """,
+                {"uid": user_id, "cids": concept_ids, "lim": limit},
+            )
+            for q in cached_quizzes or []:
+                opts = q.get("options_json")
+                if isinstance(opts, str):
+                    try:
+                        opts = json.loads(opts)
+                    except Exception:
+                        opts = []
+                q_type = q.get("question_type", "mcq")
+                if q_type not in allowed_values:
+                    continue
+                cid = q.get("concept_id")
+                c_info = concept_map.get(cid, {})
+                if q_type == "code_challenge":
+                    content = {
+                        "instruction": q.get("question_text", ""),
+                        "initialCode": q.get("initial_code", ""),
+                        "solutionCode": q.get("correct_answer", ""),
+                        "explanation": q.get("explanation", ""),
+                        "language": q.get("language") or "Python",
+                    }
+                else:
+                    content = {
+                        "question": q.get("question_text", ""),
+                        "options": opts or [],
+                        "correct_answer": q.get("correct_answer", ""),
+                        "explanation": q.get("explanation", ""),
+                    }
+                items.append(
+                    FeedItem(
+                        id=str(q["id"]),
+                        item_type=FeedItemType(q_type),
+                        content=content,
+                        concept_id=cid,
+                        concept_name=c_info.get("name", ""),
+                        domain=c_info.get("domain"),
+                        priority_score=c_info.get("priority_score", 0.8),
+                    )
+                )
+
+            if FeedItemType.TERM_CARD.value in allowed_values:
+                cached_flashcards = await self.pg_client.execute_query(
+                    """
+                    SELECT id, front_content, back_content, concept_id
+                    FROM flashcards
+                    WHERE user_id = :uid
+                      AND concept_id = ANY(:cids)
+                    ORDER BY created_at DESC
+                    LIMIT :lim
+                    """,
+                    {"uid": user_id, "cids": concept_ids, "lim": limit},
+                )
+                for f in cached_flashcards or []:
+                    cid = f.get("concept_id")
+                    c_info = concept_map.get(cid, {})
+                    items.append(
+                        FeedItem(
+                            id=str(f["id"]),
+                            item_type=FeedItemType.TERM_CARD,
+                            content={
+                                "front": f.get("front_content", ""),
+                                "back": f.get("back_content", ""),
+                            },
+                            concept_id=cid,
+                            concept_name=c_info.get("name", ""),
+                            domain=c_info.get("domain"),
+                            priority_score=c_info.get("priority_score", 0.7),
+                        )
+                    )
+        except Exception as e:
+            logger.warning("FeedService: Failed fetching prerequisite cached items", error=str(e))
+        return items
     
     async def get_user_uploads(
         self,
@@ -1014,6 +1243,7 @@ class FeedService:
                     domain: c.domain,
                     complexity_score: c.complexity_score,
                     confidence: coalesce(c["confidence"], 0.8),
+                    embedding: c.embedding,
                     related_concepts: related_names
                 } AS concept
                 ORDER BY c.created_at DESC
@@ -1076,6 +1306,8 @@ class FeedService:
         # Determine content type distribution
         allowed_types = request.item_types or list(FeedItemType)
 
+        use_neurofeed = os.getenv("FEED_RANKER_MODE", "neurofeed").lower() != "legacy"
+
         # ---------------------------------------------------------------
         # PHASE 1: Serve cached content from DB first (instant, no LLM)
         # ---------------------------------------------------------------
@@ -1090,111 +1322,23 @@ class FeedService:
                 concept_map[cid] = c
 
         if concept_ids_available:
-            try:
-                # Fetch existing quizzes
-                cached_quizzes = await self.pg_client.execute_query(
-                    """
-                    SELECT id, question_text, question_type, options_json,
-                           correct_answer, explanation, concept_id, language, initial_code
-                    FROM quizzes
-                    WHERE user_id = :uid
-                      AND concept_id = ANY(:cids)
-                    ORDER BY created_at DESC
-                    LIMIT :lim
-                    """,
-                    {
-                        "uid": request.user_id,
-                        "cids": concept_ids_available,
-                        "lim": request.max_items,
-                    },
-                )
-
-                for q in cached_quizzes or []:
-                    opts = q.get("options_json")
-                    if isinstance(opts, str):
-                        try:
-                            opts = json.loads(opts)
-                        except Exception:
-                            opts = []
-                    
-                    q_type = q.get("question_type", "mcq")
-                    cid = q.get("concept_id")
-                    c_info = concept_map.get(cid, {})
-                    
-                    # Map the content fields differently depending on question type
-                    if q_type == "code_challenge":
-                        content = {
-                            "instruction": q.get("question_text", ""),
-                            "initialCode": q.get("initial_code", ""),
-                            "solutionCode": q.get("correct_answer", ""),
-                            "explanation": q.get("explanation", ""),
-                            "language": q.get("language") or "Python",
-                        }
-                    else:
-                        content = {
-                            "question": q.get("question_text", ""),
-                            "options": opts or [],
-                            "correct_answer": q.get("correct_answer", ""),
-                            "explanation": q.get("explanation", ""),
-                        }
-
-                    cached_items.append(
-                        FeedItem(
-                            id=str(q["id"]),
-                            item_type=FeedItemType(q_type),
-                            content=content,
-                            concept_id=cid,
-                            concept_name=c_info.get("name", ""),
-                            domain=c_info.get("domain"),
-                            priority_score=c_info.get("priority_score", 0.8),
-                        )
-                    )
-
-                # Fetch existing flashcards
-                cached_flashcards = await self.pg_client.execute_query(
-                    """
-                    SELECT id, front_content, back_content, concept_id
-                    FROM flashcards
-                    WHERE user_id = :uid
-                      AND concept_id = ANY(:cids)
-                    ORDER BY created_at DESC
-                    LIMIT :lim
-                    """,
-                    {
-                        "uid": request.user_id,
-                        "cids": concept_ids_available,
-                        "lim": request.max_items,
-                    },
-                )
-
-                for f in cached_flashcards or []:
-                    cid = f.get("concept_id")
-                    c_info = concept_map.get(cid, {})
-                    cached_items.append(
-                        FeedItem(
-                            id=str(f["id"]),
-                            item_type=FeedItemType.TERM_CARD,
-                            content={
-                                "front": f.get("front_content", ""),
-                                "back": f.get("back_content", ""),
-                            },
-                            concept_id=cid,
-                            concept_name=c_info.get("name", ""),
-                            domain=c_info.get("domain"),
-                            priority_score=c_info.get("priority_score", 0.7),
-                        )
-                    )
-
-                # Shuffle and trim cached items
+            cached_limit = request.max_items * 2 if use_neurofeed else request.max_items
+            cached_items = await self._fetch_cached_items_for_concepts(
+                user_id=request.user_id,
+                concept_ids=concept_ids_available,
+                concept_map=concept_map,
+                allowed_types=allowed_types,
+                limit=cached_limit,
+            )
+            if use_neurofeed:
+                feed_items.extend(cached_items[:cached_limit])
+            else:
                 random.shuffle(cached_items)
                 feed_items.extend(cached_items[:request.max_items])
-                logger.info(
-                    "FeedService: Loaded cached DB items",
-                    count=len(feed_items),
-                )
-
-            except Exception as e:
-                logger.warning("FeedService: Cached items query failed", error=str(e))
+            logger.info(
+                "FeedService: Loaded cached DB items",
+                count=len(feed_items),
+            )
 
         # ---------------------------------------------------------------
         # PHASE 2: Fill remaining slots with LLM generation (with timeout)
@@ -1238,8 +1382,14 @@ class FeedService:
                 
                 if not possible_types:
                     continue
-                
-                item_type = random.choice(possible_types)
+
+                if use_neurofeed:
+                    item_type = self._select_modality_for_concept(concept, possible_types)
+                else:
+                    item_type = random.choice(possible_types)
+
+                if item_type is None:
+                    continue
                 
                 tasks.append(
                     asyncio.create_task(
@@ -1268,14 +1418,15 @@ class FeedService:
                 for task in pending:
                     task.cancel()
         
-        # Add user uploads if allowed
-        if (
+        # Add user uploads if allowed and slots remain
+        upload_limit = min(3, max(0, request.max_items - len(feed_items)))
+        if upload_limit > 0 and (
             FeedItemType.SCREENSHOT in allowed_types or
             FeedItemType.INFOGRAPHIC in allowed_types
         ):
             uploads = await self.get_user_uploads(
                 user_id=request.user_id,
-                limit=min(3, request.max_items - len(feed_items)),
+                limit=upload_limit,
             )
             
             for upload in uploads:
@@ -1301,8 +1452,57 @@ class FeedService:
                         feed_kwargs["id"] = str(upload.get("id"))
                     feed_items.append(FeedItem(**feed_kwargs))
         
-        # Sort by priority
-        feed_items.sort(key=lambda x: x.priority_score, reverse=True)
+        if use_neurofeed and feed_items:
+            candidates = self._build_candidate_cards(feed_items, concept_map)
+            missing_prereqs = await self.ranker.missing_backtrack_prerequisites(
+                request.user_id, candidates
+            )
+            if missing_prereqs:
+                unknown_pids = [pid for pid in missing_prereqs[:4] if pid not in concept_map]
+                if unknown_pids and self.neo4j_client is not None:
+                    try:
+                        neo_rows = await self.neo4j_client.execute_query(
+                            "MATCH (c:Concept) WHERE c.id IN $ids AND c.user_id = $user_id RETURN c",
+                            {"ids": unknown_pids, "user_id": request.user_id},
+                        )
+                        for row in neo_rows or []:
+                            c = dict(row["c"])
+                            if c.get("id"):
+                                concept_map[c["id"]] = c
+                    except Exception:
+                        pass
+                prereq_items = await self._fetch_cached_items_for_concepts(
+                    user_id=request.user_id,
+                    concept_ids=missing_prereqs[:4],
+                    concept_map=concept_map,
+                    allowed_types=allowed_types,
+                    limit=2,
+                )
+                seen_ids = {item.id for item in feed_items}
+                added_prereqs = [it for it in prereq_items if it.id not in seen_ids][:2]
+                if added_prereqs:
+                    feed_items.extend(added_prereqs)
+                    candidates.extend(
+                        self._build_candidate_cards(added_prereqs, concept_map)
+                    )
+
+            ranked_cards = await self.ranker.rank(
+                user_id=request.user_id,
+                candidates=candidates,
+                limit=request.max_items,
+            )
+            ranked_feed_items: list[FeedItem] = []
+            for rc in ranked_cards:
+                item = rc.card.payload
+                if isinstance(item, FeedItem):
+                    item.priority_score = rc.score
+                    item.badge = rc.badge
+                    item.ranking_reason = rc.reason
+                    ranked_feed_items.append(item)
+            feed_items = ranked_feed_items
+        else:
+            # Sort by priority
+            feed_items.sort(key=lambda x: x.priority_score, reverse=True)
 
         # Demo Transformer cards: opt-in only (FEED_DEMO_CARDS=1), e.g. for screenshots on an empty
         # account. They used to be prepended to every feed, and their fake concept ids would reach

@@ -1,0 +1,148 @@
+{
+  "dataset_format": "duolingo",
+  "input_path": "/Users/naveenus/Projects/GraphRecall-gemini/eval/feed_algo/data/duolingo_traces_sample.csv",
+  "total_raw_events": 147723,
+  "min_user_transitions": 20,
+  "models": {
+    "constant_baseline": {
+      "eligible_users": 707,
+      "scored_transitions": 39497,
+      "positive_rate": 0.93954,
+      "micro": {
+        "log_loss": 0.46883,
+        "rmse": 0.24571,
+        "rmse_bins_20": 0.05977,
+        "brier_vs_p_recall": 0.0702,
+        "auc": 0.49344
+      },
+      "per_user_95ci": {
+        "log_loss": {
+          "mean": 0.4545,
+          "ci_low": 0.41148,
+          "ci_high": 0.49732
+        },
+        "rmse": {
+          "mean": 0.19098,
+          "ci_low": 0.1794,
+          "ci_high": 0.20187
+        },
+        "brier_vs_p_recall": {
+          "mean": 0.0691,
+          "ci_low": 0.0635,
+          "ci_high": 0.07446
+        },
+        "auc": {
+          "mean": 0.51298,
+          "ci_low": 0.49606,
+          "ci_high": 0.52942
+        },
+        "auc_valid_users": 507
+      }
+    },
+    "sm2_shipped": {
+      "eligible_users": 707,
+      "scored_transitions": 39497,
+      "positive_rate": 0.93954,
+      "micro": {
+        "log_loss": 0.51351,
+        "rmse": 0.24576,
+        "rmse_bins_20": 0.05998,
+        "brier_vs_p_recall": 0.07023,
+        "auc": 0.54491
+      },
+      "per_user_95ci": {
+        "log_loss": {
+          "mean": 0.48479,
+          "ci_low": 0.43923,
+          "ci_high": 0.52935
+        },
+        "rmse": {
+          "mean": 0.19096,
+          "ci_low": 0.17938,
+          "ci_high": 0.20186
+        },
+        "brier_vs_p_recall": {
+          "mean": 0.06913,
+          "ci_low": 0.06352,
+          "ci_high": 0.07449
+        },
+        "auc": {
+          "mean": 0.53089,
+          "ci_low": 0.51497,
+          "ci_high": 0.54714
+        },
+        "auc_valid_users": 507
+      }
+    },
+    "fsrs_shipped": {
+      "eligible_users": 707,
+      "scored_transitions": 39497,
+      "positive_rate": 0.93954,
+      "micro": {
+        "log_loss": 0.49618,
+        "rmse": 0.24575,
+        "rmse_bins_20": 0.06002,
+        "brier_vs_p_recall": 0.07023,
+        "auc": 0.54618
+      },
+      "per_user_95ci": {
+        "log_loss": {
+          "mean": 0.48309,
+          "ci_low": 0.43847,
+          "ci_high": 0.52641
+        },
+        "rmse": {
+          "mean": 0.19092,
+          "ci_low": 0.17932,
+          "ci_high": 0.20182
+        },
+        "brier_vs_p_recall": {
+          "mean": 0.06914,
+          "ci_low": 0.06353,
+          "ci_high": 0.0745
+        },
+        "auc": {
+          "mean": 0.51764,
+          "ci_low": 0.49969,
+          "ci_high": 0.53409
+        },
+        "auc_valid_users": 507
+      }
+    },
+    "fsrs_unclamped_ablation": {
+      "eligible_users": 707,
+      "scored_transitions": 39497,
+      "positive_rate": 0.93954,
+      "micro": {
+        "log_loss": 0.49618,
+        "rmse": 0.24575,
+        "rmse_bins_20": 0.06002,
+        "brier_vs_p_recall": 0.07023,
+        "auc": 0.54618
+      },
+      "per_user_95ci": {
+        "log_loss": {
+          "mean": 0.48309,
+          "ci_low": 0.43847,
+          "ci_high": 0.52641
+        },
+        "rmse": {
+          "mean": 0.19092,
+          "ci_low": 0.17932,
+          "ci_high": 0.20182
+        },
+        "brier_vs_p_recall": {
+          "mean": 0.06914,
+          "ci_low": 0.06353,
+          "ci_high": 0.0745
+        },
+        "auc": {
+          "mean": 0.51764,
+          "ci_low": 0.49969,
+          "ci_high": 0.53409
+        },
+        "auc_valid_users": 507
+      }
+    }
+  }
+}
