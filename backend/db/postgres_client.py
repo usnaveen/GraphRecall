@@ -25,6 +25,43 @@ class PostgresSettings(BaseSettings):
     model_config = {"env_prefix": "", "extra": "ignore"}
 
 
+CLOUD_HOST_HINTS = ("neon.tech", "supabase", "render.com", "aivencloud", "rds.amazonaws.com")
+
+
+def _tls_connect_args(db_url: str) -> tuple[str, dict]:
+    """TLS for managed Postgres, with certificate and hostname verification.
+
+    asyncpg doesn't accept libpq's `sslmode` query parameter, so it is removed from the URL and turned
+    into an SSL context. The old code disabled verification (CERT_NONE, no hostname check), which lets
+    anyone on the path impersonate the database. PG_SSL_INSECURE=1 restores that for local debugging
+    only and is refused in production.
+    """
+    import os
+    import ssl
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    parts = urlsplit(db_url)
+    query = dict(parse_qsl(parts.query))
+    sslmode = query.pop("sslmode", None)
+    clean_url = urlunsplit(parts._replace(query=urlencode(query)))
+    wants_tls = sslmode in ("require", "verify-ca", "verify-full") or any(h in (parts.hostname or "") for h in CLOUD_HOST_HINTS)
+    if not wants_tls or sslmode == "disable":
+        return clean_url, {}
+    insecure = os.getenv("PG_SSL_INSECURE") == "1"
+    if insecure and os.getenv("ENVIRONMENT", "development") == "production":
+        raise RuntimeError("PG_SSL_INSECURE=1 is not allowed in production")
+    try:
+        import certifi
+
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = ssl.create_default_context()
+    if insecure:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return clean_url, {"ssl": ctx}
+
+
 class PostgresClient:
     """Async PostgreSQL client with connection pooling."""
 
@@ -44,20 +81,9 @@ class PostgresClient:
         if db_url.startswith("postgresql://"):
             db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-        # Configure SSL for Cloud Databases (Supabase/Render)
-        connect_args = {"statement_cache_size": 0}
-        
-        # Check if SSL is required (common in cloud deployments)
-        is_cloud_db = "supabase" in db_url or "render" in db_url or "?sslmode=require" in db_url
-        if is_cloud_db:
-            # Create a simplified SSL context for asyncpg
-            # This is often needed because asyncpg is strict about SSL
-            import ssl
-            ssl_ctx = ssl.create_default_context()
-            ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode = ssl.CERT_NONE
-            connect_args["ssl"] = ssl_ctx
-            
+        db_url, connect_args = _tls_connect_args(db_url)
+        connect_args["statement_cache_size"] = 0
+
         self._engine = create_async_engine(
             db_url,
             pool_size=10,

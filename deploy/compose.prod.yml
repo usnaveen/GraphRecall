@@ -1,0 +1,120 @@
+# GraphRecall production stack on one VPS (Hetzner CPX31: 4 vCPU, 8 GB RAM).
+# Decided with Gemini (agent-collab/messages/033-035): one box, no Neo4j node caps, sub-ms DB hops,
+# nightly backups to Cloudflare R2 with a CI restore drill. Moving Postgres to Neon or Neo4j to Aura
+# later is a DATABASE_URL / NEO4J_URI change plus a dump/restore.
+#
+#   docker compose -f compose.prod.yml --env-file /opt/graphrecall/.env up -d
+#
+# Memory is capped per service so a bulk book ingest can't OOM-kill Postgres. Budget (8 GB box):
+#   neo4j 2.5 GB (heap 1 GB + page cache 1 GB) / postgres 2 GB / api 1.5 GB / worker 0.75 GB /
+#   caddy 0.15 GB / leaves ~1 GB for the OS and backups.
+
+name: graphrecall
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
+
+x-app: &app
+  image: ${GRAPHRECALL_IMAGE:-ghcr.io/usnaveen/graphrecall-api:latest}
+  restart: unless-stopped
+  env_file: /opt/graphrecall/.env
+  environment:
+    ENVIRONMENT: production
+    DATABASE_URL: postgresql://graphrecall:${POSTGRES_PASSWORD}@postgres:5432/graphrecall
+    NEO4J_URI: bolt://neo4j:7687
+    NEO4J_USER: neo4j
+    NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+    CHECKPOINTER: postgres
+  logging: *logging
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: graphrecall
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in /opt/graphrecall/.env}
+      POSTGRES_DB: graphrecall
+    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "effective_cache_size=1GB",
+              "-c", "max_connections=60", "-c", "work_mem=16MB"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graphrecall -d graphrecall"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    logging: *logging
+
+  neo4j:
+    image: neo4j:5-community
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in /opt/graphrecall/.env}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_initial__size: 1g
+      NEO4J_server_memory_heap_max__size: 1g
+      NEO4J_server_memory_pagecache_size: 1g
+      NEO4J_PASSWORD_FOR_HEALTHCHECK: ${NEO4J_PASSWORD}
+    volumes: [neo4jdata:/data]
+    mem_limit: 2560m
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$$NEO4J_PASSWORD_FOR_HEALTHCHECK\" 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    logging: *logging
+
+  # One-shot: apply pending migrations, then exit. api/worker start only after it succeeds
+  # (the API also refuses to start in production while any migration is pending).
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["python", "-m", "backend.db.migrate"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000",
+              "--proxy-headers", "--forwarded-allow-ips", "*", "--workers", "2"]
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/health', timeout=5)\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      neo4j: { condition: service_healthy }
+
+  # Always-on agent (Gemini's backend/agent_v2/worker.py; lease-based crash recovery).
+  agent-worker:
+    <<: *app
+    command: ["python", "-m", "backend.agent_v2.worker"]
+    stop_grace_period: 60s       # SIGTERM: finish or release the current job within its lease
+    mem_limit: 768m
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      neo4j: { condition: service_healthy }
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN (e.g. api.example.com) in /opt/graphrecall/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    mem_limit: 160m
+    depends_on: [api]
+    logging: *logging
+
+volumes:
+  pgdata:
+  neo4jdata:
+  caddydata:

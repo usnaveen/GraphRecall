@@ -1,0 +1,57 @@
+# Weekly restore drill: an untested backup is not a backup. Brings up the production compose stack
+# (Postgres + Neo4j + migrations), writes known data, backs up with deploy/backup.sh, destroys the
+# data, restores with deploy/restore.sh, and checks every row and node came back.
+name: restore-drill
+
+on:
+  schedule: [{ cron: "0 5 * * 1" }]   # Mondays 05:00 UTC
+  workflow_dispatch:
+  push:
+    paths: ["deploy/**", ".github/workflows/restore-drill.yml"]
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the API image
+        run: docker build -t graphrecall-api:ci .
+      - name: Env file for the drill (throwaway secrets)
+        run: |
+          sudo install -d -m 755 /opt/graphrecall
+          printf '%s\n' \
+            "API_DOMAIN=drill.invalid" "GRAPHRECALL_IMAGE=graphrecall-api:ci" \
+            "POSTGRES_PASSWORD=$(openssl rand -hex 16)" "NEO4J_PASSWORD=$(openssl rand -hex 16)" \
+            | sudo tee /opt/graphrecall/.env >/dev/null
+          sudo chmod 644 /opt/graphrecall/.env
+      - name: Start databases and migrate
+        run: docker compose -f deploy/compose.prod.yml --env-file /opt/graphrecall/.env up -d --wait postgres neo4j migrate
+      - name: Seed known data
+        run: |
+          set -a; . /opt/graphrecall/.env; set +a
+          C="docker compose -f deploy/compose.prod.yml --env-file /opt/graphrecall/.env"
+          $C exec -T postgres psql -U graphrecall -d graphrecall -c \
+            "INSERT INTO users (email, name) VALUES ('drill@example.invalid', 'drill');
+             INSERT INTO notes (user_id, title, content_text) SELECT id, 'drill note', 'restore me' FROM users WHERE email='drill@example.invalid';"
+          $C exec -T neo4j cypher-shell -u neo4j -p "$NEO4J_PASSWORD" "CREATE (:Concept {id: 'drill-1', name: 'Restore Drill'})-[:RELATED_TO]->(:Concept {id: 'drill-2', name: 'Backups'})"
+      - name: Back up
+        run: BACKUP_DEST=/tmp/drill ENV_FILE=/opt/graphrecall/.env deploy/backup.sh
+      - name: Destroy the data
+        run: |
+          set -a; . /opt/graphrecall/.env; set +a
+          C="docker compose -f deploy/compose.prod.yml --env-file /opt/graphrecall/.env"
+          $C exec -T postgres psql -U graphrecall -d graphrecall -c "DELETE FROM users WHERE email='drill@example.invalid';"
+          $C exec -T neo4j cypher-shell -u neo4j -p "$NEO4J_PASSWORD" "MATCH (n) DETACH DELETE n"
+      - name: Restore
+        run: BACKUP_DEST=/tmp/drill ENV_FILE=/opt/graphrecall/.env RESTORE_YES=1 deploy/restore.sh latest
+      - name: Verify everything came back
+        run: |
+          set -a; . /opt/graphrecall/.env; set +a
+          C="docker compose -f deploy/compose.prod.yml --env-file /opt/graphrecall/.env"
+          for i in $(seq 1 30); do $C exec -T neo4j cypher-shell -u neo4j -p "$NEO4J_PASSWORD" "RETURN 1" >/dev/null 2>&1 && break; sleep 3; done
+          notes=$($C exec -T postgres psql -U graphrecall -d graphrecall -Atc "SELECT count(*) FROM notes WHERE title='drill note'")
+          rels=$($C exec -T neo4j cypher-shell -u neo4j -p "$NEO4J_PASSWORD" --format plain "MATCH (:Concept {id:'drill-1'})-[r:RELATED_TO]->(:Concept {id:'drill-2'}) RETURN count(r)" | tail -1)
+          migrations=$($C exec -T postgres psql -U graphrecall -d graphrecall -Atc "SELECT count(*) FROM schema_migrations")
+          echo "notes=$notes rels=$rels migrations=$migrations"
+          test "$notes" = 1 && test "$rels" = 1 && test "$migrations" -gt 0

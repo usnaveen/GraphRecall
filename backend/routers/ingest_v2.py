@@ -23,6 +23,7 @@ import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from backend.auth.middleware import get_current_user
+from backend.services.quota import require_quota
 from backend.agents.scanner_agent import ScannerAgent
 from backend.db.postgres_client import get_postgres_client
 from backend.services.community_service import CommunityService
@@ -445,7 +446,7 @@ class IngestEventsResponse(BaseModel):
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest_note(
     request: IngestRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_quota("ingest")),
 ):
     """
     Ingest a note using the LangGraph workflow.
@@ -605,7 +606,7 @@ async def ingest_processed_zip(
     skip_review: bool = Form(True),
     title: Optional[str] = Form(None),
     resource_type: Optional[str] = Form("book"),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_quota("ingest")),
 ):
     """
     Queue a processed-book ZIP ingestion and run it in the background.
@@ -678,7 +679,7 @@ class IngestUrlRequest(BaseModel):
 @router.post("/ingest/url", response_model=IngestResponse)
 async def ingest_url(
     request: IngestUrlRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_quota("ingest")),
 ):
     """
     Ingest an article from a URL (e.g. Substack, Medium, Blog).
@@ -962,7 +963,7 @@ class IngestChatTranscriptRequest(BaseModel):
 @router.post("/ingest/chat-transcript", response_model=IngestResponse)
 async def ingest_chat_transcript(
     request: IngestChatTranscriptRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_quota("ingest")),
 ):
     """
     Ingest an LLM chat transcript.

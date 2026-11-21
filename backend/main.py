@@ -85,61 +85,27 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting GraphRecall API")
     
+    from backend.config.production import check_production_settings
+    from backend.db.migrate import MigrationError, ensure_schema, is_production
+
+    check_production_settings()  # raises on unsafe production config (e.g. DEBUG test-token auth)
+
     try:
         # Initialize database clients
         pg_client = await get_postgres_client()
-        
-        # Fix missing columns BEFORE running init.sql (which creates indexes)
-        try:
-            logger.info("Applying schema fixes...")
-            async with pg_client.session() as session:
-                # 1. Notes table fixes
-                await session.execute(text(
-                    "ALTER TABLE notes ADD COLUMN IF NOT EXISTS resource_type VARCHAR(50) DEFAULT 'notes'"
-                ))
-                await session.execute(text(
-                    "ALTER TABLE notes ADD COLUMN IF NOT EXISTS content_hash TEXT"
-                ))
-                await session.execute(text(
-                    "ALTER TABLE notes ADD COLUMN IF NOT EXISTS summary TEXT"
-                ))
-                
-                # 2. Proficiency scores fixes (SM2 metadata)
-                await session.execute(text(
-                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS easiness_factor DECIMAL(3,2) DEFAULT 2.5"
-                ))
-                await session.execute(text(
-                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS interval_days INTEGER DEFAULT 1"
-                ))
-                await session.execute(text(
-                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS repetition_count INTEGER DEFAULT 0"
-                ))
-                await session.execute(text(
-                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS total_reviews INTEGER DEFAULT 0"
-                ))
-                await session.execute(text(
-                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS correct_streak INTEGER DEFAULT 0"
-                ))
-                # Fix name mismatch: ensure next_review_due is the primary column, 
-                # but also support next_review if legacy code uses it.
-                await session.execute(text(
-                    "ALTER TABLE proficiency_scores ADD COLUMN IF NOT EXISTS next_review_due TIMESTAMP WITH TIME ZONE"
-                ))
-                
-                await session.commit()
-
-            logger.info("Schema fixes applied (resource_type, content_hash, SM2 metadata)")
-
-        except Exception as e:
-            logger.warning("Schema fixes skipped", error=str(e))
-        
-        await pg_client.initialize_schema()
+        # Versioned migrations (backend/db/migrate.py): auto-applied in development; in production the
+        # deploy applies them and the API refuses to start while any are pending.
+        await ensure_schema(pg_client)
         neo4j_client = await get_neo4j_client()
         await neo4j_client.warm_up()
         logger.info("Database connections established")
+    except MigrationError:
+        raise  # a schema that doesn't match the code must stop the app, in every environment
     except Exception as e:
+        if is_production():
+            raise  # in production, failing loudly at start beats serving errors later
         logger.error("Failed to initialize databases", error=str(e))
-        # Continue anyway - databases might come up later
+        # Development: continue, databases might come up later
 
     # Durable LangGraph checkpoints (HITL pauses survive restarts).
     try:
@@ -172,12 +138,17 @@ app = FastAPI(
 # We must specify the exact origins.
 import os
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-origins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://graph-recall.vercel.app",  # Explicit Vercel URL
-    frontend_url,
-]
+# CORS_ORIGINS (comma-separated) is the production list and is required there (backend/config/
+# production.py); development keeps the local defaults.
+if os.getenv("CORS_ORIGINS"):
+    origins = [o.strip() for o in os.getenv("CORS_ORIGINS").split(",") if o.strip()]
+else:
+    origins = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://graph-recall.vercel.app",  # Explicit Vercel URL
+        frontend_url,
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -188,6 +159,9 @@ app.add_middleware(
 )
 
 # Per-request timing (total, time to first byte, Server-Timing header). Added last = outermost.
+from backend.middleware.rate_limit import RateLimitMiddleware  # noqa: E402
+
+app.add_middleware(RateLimitMiddleware)  # per-client token bucket; daily LLM cost caps: services/quota.py
 app.add_middleware(telemetry.TimingMiddleware)
 
 # Register new routers

@@ -1,0 +1,62 @@
+# Backend CI: the full test suite against real Postgres (pgvector) and Neo4j, plus migrations from
+# an empty database. No Gemini calls: tests use the stub key from backend/tests/conftest.py.
+name: backend-ci
+
+on:
+  push:
+    paths: ["backend/**", "requirements.txt", "pyproject.toml", ".github/workflows/backend-ci.yml"]
+  pull_request:
+    paths: ["backend/**", "requirements.txt", "pyproject.toml", ".github/workflows/backend-ci.yml"]
+  workflow_call:   # reused by deploy.yml: no deploy without a green suite
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: graphrecall
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci" --health-interval 5s --health-timeout 5s --health-retries 20
+      neo4j:
+        image: neo4j:5
+        env:
+          NEO4J_AUTH: neo4j/ci-password
+        ports: ["7687:7687"]
+        options: >-
+          --health-cmd "wget -qO- http://localhost:7474 || exit 1" --health-interval 10s --health-timeout 5s --health-retries 30
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/graphrecall
+      MIGTEST_PG_ADMIN_URL: postgresql+asyncpg://ci:ci@localhost:5432/postgres
+      NEO4J_URI: bolt://localhost:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ci-password
+      ENVIRONMENT: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -r requirements.txt pytest pytest-asyncio ruff
+      - name: Lint (errors only)
+        run: ruff check backend --select E9,F63,F7,F82
+      - name: Migrations from an empty database
+        run: |
+          python -m backend.db.migrate
+          python -m backend.db.migrate --status
+      - name: Tests
+        run: python -m pytest backend/tests -q
+      - name: Production config refuses unsafe settings
+        run: |
+          ENVIRONMENT=production DEBUG=true python -c "from backend.config.production import problems; p = problems(); assert any('test-token' in x for x in p), p; print('refused:', len(p), 'problems')"

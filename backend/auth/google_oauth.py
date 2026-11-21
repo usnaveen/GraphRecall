@@ -7,6 +7,9 @@ import structlog
 logger = structlog.get_logger()
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+# Tokens from the iOS app carry the iOS OAuth client ID as their audience, the web app's carry the web
+# client ID: accept any of the configured ones (comma-separated), falling back to GOOGLE_CLIENT_ID.
+GOOGLE_CLIENT_IDS = [c.strip() for c in os.getenv("GOOGLE_CLIENT_IDS", GOOGLE_CLIENT_ID or "").split(",") if c.strip()]
 
 async def verify_google_token(token: str) -> dict:
     """
@@ -23,7 +26,8 @@ async def verify_google_token(token: str) -> dict:
     """
     try:
         # If we're in debug mode and token is 'test-token', return a mock user
-        if os.getenv("DEBUG") == "true" and token == "test-token":
+        if (os.getenv("DEBUG") == "true" and token == "test-token"
+                and os.getenv("ENVIRONMENT", "development") != "production"):
             return {
                 "google_id": "test-google-id",
                 "email": "test@example.com",
@@ -34,7 +38,7 @@ async def verify_google_token(token: str) -> dict:
         idinfo = id_token.verify_oauth2_token(
             token, 
             requests.Request(), 
-            GOOGLE_CLIENT_ID
+            GOOGLE_CLIENT_IDS or GOOGLE_CLIENT_ID
         )
 
         # ID token is valid. Get the user's Google ID from the 'sub' claim.
