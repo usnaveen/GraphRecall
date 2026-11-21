@@ -178,10 +178,15 @@ class SM2Algorithm:
 
 class FSRSAlgorithm:
     """
-    Free Spaced Repetition Scheduler (FSRS) v4.5 implementation.
+    Free Spaced Repetition Scheduler (FSRS) v4 implementation.
 
-    Uses three core parameters:
-      Stability (S)  — expected half-life of a memory in days
+    Uses the 17 default FSRS v4 weights (`W`) and power-law forgetting curve:
+      R(t) = (1 + t / (9 * S)) ** (-1)
+    Deviation from raw v4: `next_stability` clamps lapse stability (`grade == 1`)
+    to `min(s, fail_s)` so failing a review cannot increase stability on small `S`.
+
+    Three core state parameters:
+      Stability (S)  — interval (days) for R to decay from 1.0 to 0.9
       Difficulty (D) — intrinsic difficulty of the item (1–10)
       Retrievability (R) — probability of recall at elapsed time t
 
@@ -196,7 +201,7 @@ class FSRSAlgorithm:
         DifficultyLevel.EASY: 4,
     }
 
-    # Default FSRS-4.5 weight vector (17 parameters)
+    # Default FSRS v4 weight vector (17 parameters)
     W = [
         0.4, 0.6, 2.4, 5.8,   # w0-w3: initial stability per grade (1-4)
         4.93,                   # w4: initial difficulty offset

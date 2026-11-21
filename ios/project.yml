@@ -59,6 +59,8 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         GRDevServerHost: $(GR_DEV_SERVER_HOST)
+        GRAPIBaseURL: $(GR_API_BASE_URL)
+        GRPrivacyPolicyURL: $(GR_PRIVACY_POLICY_URL)
         GIDClientID: $(GOOGLE_IOS_CLIENT_ID)
         GIDServerClientID: $(GOOGLE_SERVER_CLIENT_ID)
         CFBundleURLTypes:

@@ -38,8 +38,9 @@ python eval/feed_algo/eval_scheduler.py --format duolingo --input eval/feed_algo
 Once authenticated on HuggingFace for the gated `open-spaced-repetition/anki-revlogs-10k` dataset, export/download the per-user revlogs directory and run:
 
 ```bash
-python eval/feed_algo/eval_scheduler.py --format anki --input /path/to/anki-revlogs-dir
+python eval/feed_algo/eval_scheduler.py --format anki --data-dir /path/to/anki-revlogs-dir
 ```
+Supports CSV, TSV, and Parquet (`pyarrow`) revlogs, and automatically runs a 5th `py_fsrs_reference` arm when `fsrs` (`py-fsrs`) is installed.
 
 ---
 
@@ -53,6 +54,7 @@ Evaluated across **707 eligible users** (`>= 20` causal transitions, **`39,497` 
 | `sm2_shipped` | 707 | 39,497 | 0.4848 [0.4392, 0.5293] | 0.1910 [0.1794, 0.2019] | 0.5309 [0.5150, 0.5471] | 0.0600 |
 | `fsrs_shipped` | 707 | 39,497 | 0.4831 [0.4385, 0.5264] | 0.1909 [0.1793, 0.2018] | 0.5176 [0.4997, 0.5341] | 0.0600 |
 | `fsrs_unclamped_ablation` | 707 | 39,497 | 0.4831 [0.4385, 0.5264] | 0.1909 [0.1793, 0.2018] | 0.5176 [0.4997, 0.5341] | 0.0600 |
+| `py_fsrs_reference` | 707 | 39,497 | 0.4571 [0.4150, 0.4989] | 0.1910 [0.1794, 0.2018] | 0.5167 [0.4993, 0.5338] | 0.0597 |
 
 Full JSON output is saved in [`results/real_scheduler_benchmark.json`](results/real_scheduler_benchmark.json).
 

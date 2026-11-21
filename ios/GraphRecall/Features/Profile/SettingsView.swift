@@ -19,7 +19,9 @@ struct SettingsView: View {
     @State private var studySyncTask: Task<Void, Never>?
     @State private var message: String?
     @State private var confirmPurge = false
+    @State private var confirmDeleteAccount = false
     @State private var isPurging = false
+    @State private var isDeletingAccount = false
 
     var body: some View {
         NavigationStack {
@@ -132,9 +134,33 @@ struct SettingsView: View {
                                 }
                             }
                             .buttonStyle(.plain)
-                            .disabled(!canUseAccount || isPurging)
+                            .disabled(!canUseAccount || isPurging || isDeletingAccount)
+                            SettingsDivider()
+                            Button {
+                                confirmDeleteAccount = true
+                            } label: {
+                                SettingsRow(title: "Delete account", subtitle: canUseAccount ? "Permanently deletes your account and data" : "Sign in with Google first", systemImage: "person.crop.circle.badge.xmark", tone: .danger, titleColor: GRColor.danger) {
+                                    if isDeletingAccount { ProgressView().tint(GRColor.danger) }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!canUseAccount || isPurging || isDeletingAccount)
                         }
 
+                        if let privacyURL = APIConfig.privacyPolicyURL {
+                            SettingsGroup(title: "Legal") {
+                                Link(destination: privacyURL) {
+                                    SettingsRow(title: "Privacy Policy", systemImage: "hand.raised.fill", tone: .cyan) {
+                                        Image(systemName: "arrow.up.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(GRColor.textTertiary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        #if DEBUG
                         SettingsGroup(title: "Developer") {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("API base URL")
@@ -165,6 +191,7 @@ struct SettingsView: View {
                             }
                             .padding(14)
                         }
+                        #endif
 
                         Text("GraphRecall \(appVersion) · com.usnaveen.graphrecall")
                             .font(GRType.micro)
@@ -189,6 +216,13 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("This permanently removes your notes, concepts, cards and chats from the server. It can’t be undone.")
+            }
+            .confirmationDialog("Delete your GraphRecall account?", isPresented: $confirmDeleteAccount, titleVisibility: .visible) {
+                Button("Delete account", role: .destructive) {
+                    Task { await deleteAccount() }
+                }
+            } message: {
+                Text("This permanently deletes your account, notes, knowledge graph, cards and chats from the server. It can’t be undone.")
             }
         }
         .preferredColorScheme(.dark)
@@ -329,10 +363,28 @@ struct SettingsView: View {
             try await APIClient.shared.purgeMyData()
             await OfflineReviewStore.shared.clearAll()
             RecentImportsStore.shared.clear()
+            GRShareInbox.clear()
             GRHaptics.warning()
             message = "All data deleted"
         } catch {
             message = APIError.userFacing(error, resource: "account data")
+        }
+    }
+
+    private func deleteAccount() async {
+        isDeletingAccount = true
+        defer { isDeletingAccount = false }
+        do {
+            try await APIClient.shared.deleteMyAccount()
+            await OfflineReviewStore.shared.clearAll()
+            RecentImportsStore.shared.clear()
+            GRShareInbox.clear()
+            GRSharedAuth.clear()
+            await auth.signOut()
+            GRHaptics.warning()
+            dismiss()
+        } catch {
+            message = APIError.userFacing(error, resource: "account")
         }
     }
 }

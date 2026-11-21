@@ -103,6 +103,32 @@ class HeartbeatDailyPayload(BaseModel):
     max_items: int = 5
 
 
+class CommunityRecomputePayload(BaseModel):
+    """Typed payload for `community.recompute` durable background jobs."""
+
+    trigger: str = "ingest"
+    note_id: Optional[str] = None
+
+
+class EmbeddingsRetryPayload(BaseModel):
+    """Typed payload for `embeddings.retry` durable background jobs."""
+
+    note_id: str
+
+
+class QuizScanPayload(BaseModel):
+    """Typed payload for `quiz.scan` durable background jobs."""
+
+    note_id: str
+    content: Optional[str] = None
+
+
+class FeedBufferEnsurePayload(BaseModel):
+    """Typed payload for `feed.buffer_ensure` durable background jobs."""
+
+    trigger: str = "feed_get"
+
+
 class ConceptReviewContext(BaseModel):
     """Retrieved study context for diagnosing a lapsed concept review."""
 
@@ -226,6 +252,8 @@ class JobQueue(Protocol):
     async def claim_next(self, worker_id: str, *, lease_seconds: float = 300.0) -> Optional[AgentJob]: ...
 
     async def complete(self, job_id: str) -> None: ...
+
+    async def release(self, job_id: str, worker_id: str) -> bool: ...
 
     async def fail(
         self,

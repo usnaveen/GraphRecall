@@ -312,7 +312,11 @@ async def test_get_ingestion_status_includes_live_save_chunks_progress(monkeypat
         next = ("save_chunks",)
 
     thread_id = "thread-live-progress-1"
-    monkeypatch.setattr(ingestion_module.ingestion_graph, "get_state", lambda _config: FakeState())
+
+    async def _fake_aget_state(_config):
+        return FakeState()
+
+    monkeypatch.setattr(ingestion_module.ingestion_graph, "aget_state", _fake_aget_state)
     ingestion_module._live_node_progress[thread_id] = {
         "current_node": "save_chunks",
         "chunk_save_total": 1000,

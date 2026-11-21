@@ -48,7 +48,7 @@ class FeedService:
     ):
         self.pg_client = pg_client
         self.neo4j_client = neo4j_client
-        algo = sr_algorithm or os.getenv("FEED_DEFAULT_SR_ALGORITHM", "fsrs")
+        algo = sr_algorithm or os.getenv("FEED_DEFAULT_SR_ALGORITHM", "sm2")
         self.sr_service = SpacedRepetitionService(pg_client, algorithm=algo)
         self.graph_signals = graph_signals or load_graph_signals(neo4j_client, pg_client)
         self.ranker = ranker or FeedRanker(graph_signals=self.graph_signals)

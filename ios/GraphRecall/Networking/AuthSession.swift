@@ -127,6 +127,7 @@ final class AuthSession {
         }
         UserDefaults.standard.set(false, forKey: Self.demoKey)
         UserDefaults.standard.set(false, forKey: Self.localDevKey)
+        GRSharedAuth.clear()
         await APIClient.shared.setAccessToken(nil)
         state = .signedOut
     }

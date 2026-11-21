@@ -3,6 +3,7 @@ import Foundation
 enum APIError: Error, LocalizedError {
     case invalidURL
     case http(Int, String)
+    case rateLimited(retryAfter: Int?, detail: String?)
     case decoding(Error)
     case transport(Error)
 
@@ -10,13 +11,47 @@ enum APIError: Error, LocalizedError {
         switch self {
         case .invalidURL: return "Invalid URL"
         case .http(let code, let body): return "HTTP \(code): \(body)"
+        case .rateLimited(let retryAfter, let detail):
+            if let detail, !detail.isEmpty { return detail }
+            if let retryAfter { return "Too many requests — try again in \(retryAfter)s." }
+            return "Too many requests — please slow down."
         case .decoding(let err): return "Decode failed: \(err.localizedDescription)"
         case .transport(let err): return err.localizedDescription
         }
     }
 
+    /// Parse HTTP error responses consistently across JSON, query, and multipart requests.
+    static func fromHTTPResponse(_ http: HTTPURLResponse, data: Data) -> APIError {
+        let text = String(data: data, encoding: .utf8) ?? ""
+        if http.statusCode == 429 {
+            let retryRaw = http.value(forHTTPHeaderField: "Retry-After")?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let retrySeconds = retryRaw.flatMap(Int.init)
+            var detail: String?
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let msg = obj["detail"] as? String {
+                detail = msg
+            }
+            return .rateLimited(retryAfter: retrySeconds, detail: detail)
+        }
+        return .http(http.statusCode, text)
+    }
+
     /// Short, UI-safe copy — never dump HTML / huge bodies into empty states.
     static func userFacing(_ error: Error, resource: String) -> String {
+        if case let APIError.rateLimited(retryAfter, detail) = error {
+            if let detail, !detail.isEmpty {
+                if let retryAfter, retryAfter > 0, !detail.contains("s") {
+                    return "\(detail) Try again in \(retryAfter)s."
+                }
+                return detail
+            }
+            if let retryAfter {
+                return "Too many requests — try again in \(retryAfter)s."
+            }
+            return "Too many requests. Please try again shortly."
+        }
+
         let raw = error.localizedDescription
         let lower = raw.lowercased()
         let isHTML = lower.contains("<html") || lower.contains("<!doctype")
@@ -27,6 +62,7 @@ enum APIError: Error, LocalizedError {
             case 401, 403: return "Sign in to load your \(resource)."
             case 404: return "\(resource.capitalized) API not found (404)."
             case 408, 504: return "Couldn\u{2019}t reach the \(resource) API."
+            case 429: return "Too many requests. Please slow down and try again shortly."
             default: break
             }
         }
@@ -57,6 +93,7 @@ actor APIClient {
 
     func setAccessToken(_ token: String?) {
         accessToken = token
+        GRSharedAuth.sync(apiBaseURL: APIConfig.baseURL.absoluteString, bearerToken: token)
     }
 
     func getAccessToken() -> String? { accessToken }
@@ -379,8 +416,7 @@ actor APIClient {
                 throw APIError.http(-1, "No HTTP response")
             }
             guard (200..<300).contains(http.statusCode) else {
-                let body = String(data: data, encoding: .utf8) ?? ""
-                throw APIError.http(http.statusCode, body)
+                throw APIError.fromHTTPResponse(http, data: data)
             }
             do {
                 return try makeDecoder().decode(T.self, from: data)
@@ -438,8 +474,7 @@ actor APIClient {
                 throw APIError.http(-1, "No HTTP response")
             }
             guard (200..<300).contains(http.statusCode) else {
-                let text = String(data: data, encoding: .utf8) ?? ""
-                throw APIError.http(http.statusCode, text)
+                throw APIError.fromHTTPResponse(http, data: data)
             }
             do {
                 return try makeDecoder().decode(T.self, from: data)
@@ -503,8 +538,7 @@ actor APIClient {
                 throw APIError.http(-1, "No HTTP response")
             }
             guard (200..<300).contains(http.statusCode) else {
-                let body = String(data: data, encoding: .utf8) ?? ""
-                throw APIError.http(http.statusCode, body)
+                throw APIError.fromHTTPResponse(http, data: data)
             }
             do {
                 return try makeDecoder().decode(T.self, from: data)
@@ -544,8 +578,7 @@ actor APIClient {
                 throw APIError.http(-1, "No HTTP response")
             }
             guard (200..<300).contains(http.statusCode) else {
-                let text = String(data: data, encoding: .utf8) ?? ""
-                throw APIError.http(http.statusCode, text)
+                throw APIError.fromHTTPResponse(http, data: data)
             }
             do {
                 return try makeDecoder().decode(T.self, from: data)

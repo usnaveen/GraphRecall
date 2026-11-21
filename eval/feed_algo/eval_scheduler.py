@@ -14,10 +14,16 @@ import math
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 import numpy as np
+
+try:
+    import fsrs as py_fsrs  # type: ignore
+except ImportError:
+    py_fsrs = None
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -88,36 +94,54 @@ def load_duolingo_events(path: Path) -> list[TraceEvent]:
 
 
 def load_anki_events(path: Path) -> list[TraceEvent]:
-    """Load Anki revlogs (file or directory of per-user CSV/TSV files)."""
+    """Load Anki revlogs (file or directory of per-user CSV/TSV/Parquet files)."""
     files = sorted(path.rglob("*")) if path.is_dir() else [path]
-    grouped: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
 
     for fp in files:
-        if not fp.is_file() or fp.suffix.lower() not in {".csv", ".tsv"}:
+        if not fp.is_file():
             continue
-        delimiter = "\t" if fp.suffix.lower() == ".tsv" else ","
+        suffix = fp.suffix.lower()
         default_uid = fp.stem
-        with fp.open("r", encoding="utf-8", newline="") as f:
-            reader = csv.DictReader(f, delimiter=delimiter)
-            for row in reader:
+        if default_uid.startswith("revlogs_"):
+            default_uid = default_uid[len("revlogs_") :]
+        elif fp.parent.name.startswith("user_id="):
+            default_uid = fp.parent.name.split("=", 1)[1]
+
+        if suffix in {".csv", ".tsv"}:
+            delimiter = "\t" if suffix == ".tsv" else ","
+            with fp.open("r", encoding="utf-8", newline="") as f:
+                for row in csv.DictReader(f, delimiter=delimiter):
+                    uid = str(row.get("user_id") or default_uid)
+                    cid = str(row["card_id"])
+                    grouped[(uid, cid)].append(row)
+        elif suffix == ".parquet":
+            try:
+                import pyarrow.parquet as pq  # type: ignore
+            except ImportError as exc:
+                raise RuntimeError("Installing pyarrow is required to read .parquet Anki revlogs") from exc
+            table = pq.read_table(fp)
+            for row in table.to_pylist():
                 uid = str(row.get("user_id") or default_uid)
                 cid = str(row["card_id"])
                 grouped[(uid, cid)].append(row)
 
     events: list[TraceEvent] = []
     for (uid, cid), rows in grouped.items():
-        rows.sort(key=lambda r: int(float(r.get("review_th", 0))))
+        rows.sort(key=lambda r: float(r.get("review_th") or r.get("day_offset") or 0))
         for idx, r in enumerate(rows):
             rating = int(float(r["rating"]))
             rating = max(1, min(4, rating))
-            raw_elapsed = float(r.get("elapsed_days", -1))
-            elapsed_days = max(0.0, raw_elapsed) if idx > 0 and raw_elapsed > 0 else 0.0
+            raw_elapsed = r.get("elapsed_days", r.get("delta_t", -1))
+            raw_elapsed_f = -1.0 if raw_elapsed is None else float(raw_elapsed)
+            elapsed_days = max(0.0, raw_elapsed_f) if idx > 0 and raw_elapsed_f > 0 else 0.0
             y = 1 if rating > 1 else 0
+            ts_val = float(r.get("review_th") if r.get("review_th") is not None else idx)
             events.append(
                 TraceEvent(
                     user_id=uid,
                     item_id=cid,
-                    timestamp=float(r.get("review_th", idx)),
+                    timestamp=ts_val,
                     elapsed_days=elapsed_days,
                     y=y,
                     p_recall=float(y),
@@ -166,6 +190,24 @@ def replay_model(events: Iterable[TraceEvent], model_name: str) -> list[ScoredTr
             ef, interval, rep = SM2Algorithm.calculate_new_interval(
                 ef, interval, rep, SM2Algorithm.DIFFICULTY_TO_QUALITY[q_lvl]
             )
+        elif model_name == "py_fsrs_reference":
+            if py_fsrs is None:
+                raise RuntimeError("py-fsrs package is not installed")
+            py_scheduler = py_fsrs.Scheduler(
+                learning_steps=(),
+                relearning_steps=(),
+                enable_fuzzing=False,
+            )
+            rating_map = {
+                1: py_fsrs.Rating.Again,
+                2: py_fsrs.Rating.Hard,
+                3: py_fsrs.Rating.Good,
+                4: py_fsrs.Rating.Easy,
+            }
+            t_cur = datetime(2025, 1, 1, tzinfo=timezone.utc)
+            py_card, _ = py_scheduler.review_card(
+                py_fsrs.Card(), rating_map[first.grade], review_datetime=t_cur
+            )
         elif model_name in {"fsrs_shipped", "fsrs_unclamped_ablation"}:
             s = FSRSAlgorithm.initial_stability(first.grade)
             d = FSRSAlgorithm.initial_difficulty(first.grade)
@@ -182,6 +224,14 @@ def replay_model(events: Iterable[TraceEvent], model_name: str) -> list[ScoredTr
                 pred = 0.9 ** (dt / 1.0)
             elif model_name == "sm2_shipped":
                 pred = 0.9 ** (dt / max(1.0, float(interval)))
+            elif model_name == "py_fsrs_reference":
+                t_cur = t_cur + timedelta(days=dt)
+                factor = getattr(py_scheduler, "_FACTOR", None)
+                decay = getattr(py_scheduler, "_DECAY", None)
+                if factor is not None and decay is not None and py_card.stability:
+                    pred = (1.0 + float(factor) * dt / float(py_card.stability)) ** float(decay)
+                else:
+                    pred = float(py_scheduler.get_card_retrievability(py_card, current_datetime=t_cur))
             else:
                 pred = FSRSAlgorithm.retrievability(dt, s)
 
@@ -200,6 +250,10 @@ def replay_model(events: Iterable[TraceEvent], model_name: str) -> list[ScoredTr
                 q_lvl = DifficultyLevel.GOOD if ev.y == 1 else DifficultyLevel.AGAIN
                 ef, interval, rep = SM2Algorithm.calculate_new_interval(
                     ef, interval, rep, SM2Algorithm.DIFFICULTY_TO_QUALITY[q_lvl]
+                )
+            elif model_name == "py_fsrs_reference":
+                py_card, _ = py_scheduler.review_card(
+                    py_card, rating_map[ev.grade], review_datetime=t_cur
                 )
             elif model_name == "fsrs_shipped":
                 r_state = FSRSAlgorithm.retrievability(dt, s)
@@ -336,20 +390,20 @@ def compute_metrics(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--format", choices=("duolingo", "anki"), default="duolingo")
-    parser.add_argument("--input", type=Path, default=DEFAULT_DUOLINGO_PATH)
+    parser.add_argument("--input", "--data-dir", dest="input_path", type=Path, default=DEFAULT_DUOLINGO_PATH)
     parser.add_argument("--out", type=Path, default=DEFAULT_RESULTS_PATH)
     parser.add_argument("--min-user-transitions", type=int, default=20)
     args = parser.parse_args()
 
-    if not args.input.exists():
+    if not args.input_path.exists():
         raise FileNotFoundError(
-            f"Input traces not found at {args.input}. Run fetch_real_traces.py first."
+            f"Input traces not found at {args.input_path}. Run fetch_real_traces.py first."
         )
 
     events = (
-        load_duolingo_events(args.input)
+        load_duolingo_events(args.input_path)
         if args.format == "duolingo"
-        else load_anki_events(args.input)
+        else load_anki_events(args.input_path)
     )
 
     models = [
@@ -358,9 +412,12 @@ def main() -> None:
         "fsrs_shipped",
         "fsrs_unclamped_ablation",
     ]
+    if py_fsrs is not None:
+        models.append("py_fsrs_reference")
+
     results = {
         "dataset_format": args.format,
-        "input_path": str(args.input),
+        "input_path": str(args.input_path),
         "total_raw_events": len(events),
         "min_user_transitions": args.min_user_transitions,
         "models": {},

@@ -10,5 +10,10 @@ GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.unconfigured
 DEVELOPMENT_TEAM =
 GR_DEV_SERVER_HOST =
 
+// Production Release settings live in untracked Release.local.xcconfig — see Release.local.xcconfig.example.
+GR_API_BASE_URL =
+GR_PRIVACY_POLICY_URL =
+
 #include? "Google.local.xcconfig"
 #include? "Dev.local.xcconfig"
+#include? "Release.local.xcconfig"

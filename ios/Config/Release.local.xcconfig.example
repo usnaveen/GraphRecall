@@ -1,0 +1,4 @@
+// Copy to Release.local.xcconfig (git-ignored) before archiving for TestFlight / App Store.
+// Production release builds require an HTTPS base URL.
+GR_API_BASE_URL = https:/$()/api.example.com
+GR_PRIVACY_POLICY_URL = https:/$()/example.com/privacy

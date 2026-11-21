@@ -396,6 +396,9 @@ final class CreateViewModel {
         if let err = response.error, !err.isEmpty, response.statusReason.contains("duplicate") {
             parts.append(err)
         }
+        if let warning = response.warnings.first, !warning.isEmpty {
+            parts.append(warning)
+        }
         successMessage = parts.joined(separator: " · ")
         RecentImportsStore.shared.add(RecentImport(
             title: title,
@@ -506,10 +509,15 @@ struct CreateView: View {
         }
         .task {
             model.loadSharedInbox()
+            await ShareInboxDrainer.shared.drainIfNeeded()
+            model.loadSharedInbox()
             await model.loadPendingSessions()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.loadSharedInbox() }
+        }
+        .onChange(of: ShareInboxDrainer.shared.revision) { _, _ in
+            model.loadSharedInbox()
         }
         .onDisappear { dictation.stop() }
     }
@@ -948,32 +956,69 @@ struct CreateView: View {
             GRSectionHeader(title: "Shared to GraphRecall")
             ForEach(model.sharedInbox) { item in
                 GlassCard(cornerRadius: 18) {
-                    HStack(spacing: 12) {
-                        GRIconTile(
-                            systemImage: item.kind == .url ? "globe" : "doc.text.fill",
-                            tone: item.kind == .url ? .cyan : .accent,
-                            size: 36
-                        )
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.displayTitle)
-                                .font(GRType.headline)
-                                .foregroundStyle(GRColor.textPrimary)
-                                .lineLimit(1)
-                            Text(item.content)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 12) {
+                            GRIconTile(
+                                systemImage: item.kind == .url ? "globe" : "doc.text.fill",
+                                tone: item.kind == .url ? .cyan : .accent,
+                                size: 36
+                            )
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.displayTitle)
+                                    .font(GRType.headline)
+                                    .foregroundStyle(GRColor.textPrimary)
+                                    .lineLimit(1)
+                                Text(item.content)
+                                    .font(GRType.caption)
+                                    .foregroundStyle(GRColor.textSecondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            sharedItemAction(for: item)
+                            GRIconButton(systemImage: "xmark", style: .plain, tint: GRColor.textTertiary, size: 30, accessibilityLabel: "Dismiss shared item") {
+                                model.dismissShared(item)
+                            }
+                        }
+
+                        if item.status == .failed, let err = item.lastError, !err.isEmpty {
+                            Text(err)
                                 .font(GRType.caption)
-                                .foregroundStyle(GRColor.textSecondary)
-                                .lineLimit(1)
+                                .foregroundStyle(GRColor.warning)
                         }
-                        Spacer(minLength: 8)
-                        GRChip(title: "Use", systemImage: "arrow.down.to.line", style: .selected, compact: true) {
-                            model.useShared(item)
-                            GRHaptics.tap()
-                        }
-                        GRIconButton(systemImage: "xmark", style: .plain, tint: GRColor.textTertiary, size: 30, accessibilityLabel: "Dismiss shared item") {
-                            model.dismissShared(item)
+                        ForEach(item.warnings, id: \.self) { warning in
+                            Label(warning, systemImage: "exclamationmark.triangle.fill")
+                                .font(GRType.caption)
+                                .foregroundStyle(GRColor.amber)
                         }
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sharedItemAction(for item: GRSharedImport) -> some View {
+        switch item.status {
+        case .uploading:
+            HStack(spacing: 6) {
+                ProgressView().tint(GRColor.accent).scaleEffect(0.8)
+                Text("Ingesting…")
+                    .font(GRType.caption.weight(.semibold))
+                    .foregroundStyle(GRColor.accent)
+            }
+        case .sent:
+            Text("Saved")
+                .font(GRType.caption.weight(.semibold))
+                .foregroundStyle(GRColor.accent)
+        case .failed:
+            GRChip(title: "Retry", systemImage: "arrow.clockwise", style: .selected, compact: true) {
+                GRHaptics.tap()
+                Task { await ShareInboxDrainer.shared.retry(item: item) }
+            }
+        case .pending:
+            GRChip(title: "Use", systemImage: "arrow.down.to.line", style: .selected, compact: true) {
+                model.useShared(item)
+                GRHaptics.tap()
             }
         }
     }
@@ -1156,6 +1201,11 @@ struct CreateView: View {
                     Text(err)
                         .font(GRType.caption)
                         .foregroundStyle(GRColor.warning)
+                }
+                ForEach(response.warnings, id: \.self) { warning in
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.amber)
                 }
             }
         }

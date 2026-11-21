@@ -65,6 +65,26 @@ struct ContentView: View {
                 .environment(router)
                 .presentationDragIndicator(.visible)
         }
+        .overlay(alignment: .top) {
+            if let message = ShareInboxDrainer.shared.toastMessage {
+                Button {
+                    ShareInboxDrainer.shared.dismissToast()
+                } label: {
+                    GRBanner(
+                        systemImage: ShareInboxDrainer.shared.toastTone == .warning
+                            ? "exclamationmark.triangle.fill"
+                            : "checkmark.circle.fill",
+                        title: message,
+                        subtitle: ShareInboxDrainer.shared.toastDetail,
+                        tone: ShareInboxDrainer.shared.toastTone == .warning ? .warning : .accent
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .grNavigateLibrary)) { _ in
             router.tab = .profile
             router.openLibraryToken += 1
@@ -78,6 +98,17 @@ struct ContentView: View {
             if AuthSession.shared.isSignedIn {
                 NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
             }
+            #if DEBUG
+            if let seedURL = ProcessInfo.processInfo.environment["GR_SEED_SHARE_URL"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !seedURL.isEmpty {
+                let normalized = GRShareURLNormalizer.extractURL(from: seedURL) ?? seedURL
+                if !GRShareInbox.load().contains(where: { $0.content == normalized }) {
+                    GRShareInbox.append(GRSharedImport(kind: .url, content: normalized, status: .pending))
+                }
+            }
+            #endif
+            await ShareInboxDrainer.shared.drainIfNeeded()
         }
         .onOpenURL { url in
             if AuthSession.shared.handle(url) { return }
@@ -85,7 +116,10 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            Task { await AuthSession.shared.refreshIfNeeded() }
+            Task {
+                await AuthSession.shared.refreshIfNeeded()
+                await ShareInboxDrainer.shared.drainIfNeeded()
+            }
         }
     }
 }

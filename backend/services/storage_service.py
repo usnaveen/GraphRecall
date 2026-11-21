@@ -1,54 +1,121 @@
-"""S3-compatible storage service for file uploads."""
+"""S3 / Cloudflare R2 object storage service with dev local fallback."""
 
+from __future__ import annotations
+
+import asyncio
 import os
+from pathlib import Path
 import time
 from typing import Optional
 
 import boto3
-import structlog
 from botocore.config import Config
 from botocore.exceptions import ClientError
+import structlog
 
 logger = structlog.get_logger()
 
-ALLOWED_CONTENT_TYPES = {
+ALLOWED_IMAGE_TYPES = {
     "image/jpeg",
     "image/png",
     "image/gif",
     "image/webp",
     "image/svg+xml",
 }
+ALLOWED_CONTENT_TYPES = ALLOWED_IMAGE_TYPES | {"application/pdf"}
 
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB images
+MAX_PDF_SIZE_BYTES = 50 * 1024 * 1024   # 50 MB PDFs
+
+
+def _is_production() -> bool:
+    return os.getenv("ENVIRONMENT", "development") == "production"
 
 
 class StorageService:
-    """S3-compatible file storage (works with AWS S3, Supabase Storage, MinIO, etc.)."""
+    """S3-compatible object storage (Cloudflare R2, AWS S3, MinIO) with async thread offload."""
 
     def __init__(self) -> None:
-        self.bucket_name = os.environ.get("S3_BUCKET_NAME", "graphrecall-uploads")
-        self.public_url_base = os.environ.get("S3_PUBLIC_URL_BASE", "")
-        self.region = os.environ.get("S3_REGION", "us-east-1")
-        endpoint_url = os.environ.get("S3_ENDPOINT_URL") or None
-
-        self.s3_client = boto3.client(
-            "s3",
-            region_name=self.region,
-            endpoint_url=endpoint_url,
-            aws_access_key_id=os.environ.get("S3_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.environ.get("S3_SECRET_ACCESS_KEY"),
-            config=Config(signature_version="s3v4"),
+        r2_account = os.environ.get("R2_ACCOUNT_ID")
+        endpoint_url = (
+            os.environ.get("R2_ENDPOINT_URL")
+            or os.environ.get("S3_ENDPOINT_URL")
+            or (f"https://{r2_account}.r2.cloudflarestorage.com" if r2_account else None)
+        )
+        self.endpoint_url = endpoint_url.rstrip("/") if endpoint_url else None
+        self.bucket_name = (
+            os.environ.get("R2_BUCKET_NAME")
+            or os.environ.get("S3_BUCKET_NAME")
+            or "graphrecall-uploads"
+        )
+        self.public_url_base = (
+            os.environ.get("R2_PUBLIC_URL_BASE")
+            or os.environ.get("S3_PUBLIC_URL_BASE")
+            or ""
+        ).rstrip("/")
+        default_region = (
+            "auto"
+            if self.endpoint_url and "r2.cloudflarestorage.com" in self.endpoint_url
+            else "us-east-1"
+        )
+        self.region = os.environ.get("S3_REGION") or default_region
+        self._access_key = (
+            os.environ.get("R2_ACCESS_KEY_ID") or os.environ.get("S3_ACCESS_KEY_ID")
+        )
+        self._secret_key = (
+            os.environ.get("R2_SECRET_ACCESS_KEY") or os.environ.get("S3_SECRET_ACCESS_KEY")
+        )
+        self.local_fallback_dir = Path(
+            os.environ.get("LOCAL_UPLOAD_DIR", "/tmp/graphrecall_uploads")
         )
 
+        self.s3_client = (
+            boto3.client(
+                "s3",
+                region_name=self.region,
+                endpoint_url=self.endpoint_url,
+                aws_access_key_id=self._access_key,
+                aws_secret_access_key=self._secret_key,
+                config=Config(signature_version="s3v4"),
+            )
+            if self.is_configured()
+            else None
+        )
+
+    def is_configured(self) -> bool:
+        """Return True when object-storage credentials and bucket are configured."""
+        return bool(self._access_key and self._secret_key and self.bucket_name)
+
     def validate_file(self, content_type: str | None, size: int) -> tuple[bool, str]:
-        """Validate file type and size."""
+        """Validate MIME type and size (10 MB images, 50 MB PDFs)."""
         if not content_type or content_type not in ALLOWED_CONTENT_TYPES:
-            return False, f"File type '{content_type}' not allowed. Accepted: {', '.join(ALLOWED_CONTENT_TYPES)}"
-        if size > MAX_FILE_SIZE_BYTES:
-            return False, f"File too large ({size} bytes). Maximum: {MAX_FILE_SIZE_BYTES} bytes ({MAX_FILE_SIZE_BYTES // 1024 // 1024} MB)"
-        if size == 0:
+            return (
+                False,
+                f"File type '{content_type}' not allowed. Accepted: {', '.join(sorted(ALLOWED_CONTENT_TYPES))}",
+            )
+        max_bytes = MAX_PDF_SIZE_BYTES if content_type == "application/pdf" else MAX_FILE_SIZE_BYTES
+        if size > max_bytes:
+            return (
+                False,
+                f"File too large ({size} bytes). Maximum: {max_bytes} bytes ({max_bytes // 1024 // 1024} MB)",
+            )
+        if size <= 0:
             return False, "File is empty"
         return True, ""
+
+    @staticmethod
+    def _build_key(filename: str, user_id: str) -> str:
+        safe_name = "".join(c for c in filename if c.isalnum() or c in ".-_").strip()
+        if not safe_name:
+            safe_name = "upload"
+        return f"uploads/{user_id}/{int(time.time())}_{safe_name}"
+
+    def _public_url_for_key(self, key: str) -> str:
+        if self.public_url_base:
+            return f"{self.public_url_base}/{key}"
+        if self.endpoint_url:
+            return f"{self.endpoint_url}/{self.bucket_name}/{key}"
+        return f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{key}"
 
     async def upload_file(
         self,
@@ -57,15 +124,27 @@ class StorageService:
         content_type: str,
         user_id: str,
     ) -> str:
-        """Upload file to S3 and return the public URL."""
-        # Sanitize filename
-        safe_name = "".join(c for c in filename if c.isalnum() or c in ".-_").strip()
-        if not safe_name:
-            safe_name = "upload"
+        """Upload file to R2/S3 (async thread offload), with dev local fallback."""
+        key = self._build_key(filename, user_id)
 
-        key = f"uploads/{user_id}/{int(time.time())}_{safe_name}"
+        if not self.is_configured():
+            if _is_production():
+                raise RuntimeError(
+                    "Object storage credentials (R2/S3) must be configured when ENVIRONMENT=production"
+                )
+            dest = self.local_fallback_dir / key
 
-        self.s3_client.put_object(
+            def _write_local() -> str:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(file_data)
+                return dest.resolve().as_uri()
+
+            url = await asyncio.to_thread(_write_local)
+            logger.info("Storage: File stored in dev fallback", key=key, size=len(file_data))
+            return url
+
+        await asyncio.to_thread(
+            self.s3_client.put_object,
             Bucket=self.bucket_name,
             Key=key,
             Body=file_data,
@@ -73,21 +152,37 @@ class StorageService:
         )
 
         logger.info("Storage: File uploaded", key=key, size=len(file_data), content_type=content_type)
-
-        # Build public URL
-        if self.public_url_base:
-            return f"{self.public_url_base.rstrip('/')}/{key}"
-        return f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{key}"
+        return self._public_url_for_key(key)
 
     async def delete_file(self, file_url: str) -> bool:
-        """Delete file from S3 by its public URL. Returns True on success."""
+        """Delete file from R2/S3 or dev local fallback by its URL."""
+        if file_url.startswith("file://") and not _is_production():
+            local_root = self.local_fallback_dir.resolve()
+            target = Path(file_url[len("file://") :]).resolve()
+            if target != local_root and local_root in target.parents:
+                def _unlink_local() -> bool:
+                    if target.exists():
+                        target.unlink()
+                        return True
+                    return False
+
+                return await asyncio.to_thread(_unlink_local)
+            return False
+
+        if self.s3_client is None:
+            return False
+
         key = self._url_to_key(file_url)
         if not key:
             logger.warning("Storage: Could not extract key from URL", file_url=file_url)
             return False
 
         try:
-            self.s3_client.delete_object(Bucket=self.bucket_name, Key=key)
+            await asyncio.to_thread(
+                self.s3_client.delete_object,
+                Bucket=self.bucket_name,
+                Key=key,
+            )
             logger.info("Storage: File deleted", key=key)
             return True
         except ClientError as e:
@@ -95,17 +190,19 @@ class StorageService:
             return False
 
     def _url_to_key(self, url: str) -> Optional[str]:
-        """Extract S3 key from a public URL."""
-        if self.public_url_base and url.startswith(self.public_url_base):
-            base = self.public_url_base.rstrip("/")
-            return url[len(base) + 1 :]
+        """Extract object key from an R2/S3 public or path-style URL."""
+        if self.public_url_base and url.startswith(f"{self.public_url_base}/"):
+            return url[len(self.public_url_base) + 1 :]
 
-        # Standard AWS S3 URL patterns
-        for prefix in [
+        prefixes = [
             f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/",
             f"https://{self.bucket_name}.s3.amazonaws.com/",
             f"https://s3.{self.region}.amazonaws.com/{self.bucket_name}/",
-        ]:
+        ]
+        if self.endpoint_url:
+            prefixes.append(f"{self.endpoint_url}/{self.bucket_name}/")
+
+        for prefix in prefixes:
             if url.startswith(prefix):
                 return url[len(prefix) :]
 

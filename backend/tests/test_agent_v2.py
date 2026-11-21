@@ -611,6 +611,8 @@ def test_ingest_v2_auto_enqueues_note_ingested_job(monkeypatch):
     async def _fake_queue():
         return q
 
+    monkeypatch.setenv("QUOTA_INGEST_PER_DAY", "0")
+    monkeypatch.setattr("backend.db.postgres_client.get_postgres_client", _fake_pg)
     monkeypatch.setattr(ingest_v2_router, "get_postgres_client", _fake_pg)
     monkeypatch.setattr(ingest_v2_router, "run_ingestion", _fake_run_ingestion)
     monkeypatch.setattr(ingest_v2_router.scanner_agent, "scan_and_save", _noop_scan)

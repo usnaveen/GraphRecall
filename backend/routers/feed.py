@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from backend.auth.middleware import get_current_user
+from backend.agent_v2.enqueue import enqueue_durable_job
+from backend.agent_v2.protocols import FeedBufferEnsurePayload
 from backend.config.llm import get_chat_model
 
 from backend.db.neo4j_client import get_neo4j_client
@@ -36,14 +38,14 @@ router = APIRouter(prefix="/api/feed", tags=["Feed"])
 
 
 def _resolve_user_sr_algorithm(current_user: dict) -> str:
-    """Resolve user's spaced repetition algorithm, defaulting to FSRS."""
+    """Resolve user's spaced repetition algorithm, defaulting to SM-2 until Anki benchmark gate."""
     user_settings = current_user.get("settings_json") or {}
     if isinstance(user_settings, str):
         try:
             user_settings = json.loads(user_settings)
         except Exception:
             user_settings = {}
-    return user_settings.get("sr_algorithm") or os.getenv("FEED_DEFAULT_SR_ALGORITHM", "fsrs")
+    return user_settings.get("sr_algorithm") or os.getenv("FEED_DEFAULT_SR_ALGORITHM", "sm2")
 
 
 @router.get("", response_model=FeedResponse)
@@ -99,9 +101,15 @@ async def get_feed(
         
         response = await feed_service.get_feed(request)
         
-        # Inject Daily Goal & Trigger Pre-gen Buffer
+        # Inject Daily Goal & Trigger Durable Pre-gen Buffer
         response.daily_goal = await feed_service.get_daily_goal(request.user_id)
-        asyncio.create_task(feed_service.ensure_weekly_buffer(request.user_id))
+        await enqueue_durable_job(
+            request.user_id,
+            "feed.buffer_ensure",
+            FeedBufferEnsurePayload(trigger="feed_get").model_dump(),
+            dedupe_window_seconds=3600,
+            pg_client=pg_client,
+        )
         
         return response
         

@@ -136,4 +136,13 @@ extension APIClient {
             // 204 No Content has no JSON body — the purge still succeeded.
         }
     }
+
+    /// DELETE `/api/users/me` — App Store 5.1.1(v) full account + data deletion (204 empty body).
+    func deleteMyAccount() async throws {
+        do {
+            let _: EmptyJSON = try await send("/api/users/me", method: "DELETE", body: nil, timeout: 120)
+        } catch APIError.decoding(_) {
+            // 204 No Content has no JSON body — the account deletion still succeeded.
+        }
+    }
 }

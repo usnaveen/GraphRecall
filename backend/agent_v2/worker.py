@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 import signal
 import time
 from collections.abc import Awaitable, Callable
-from typing import Optional
+from typing import Any, Optional
 
 import structlog
 
@@ -17,17 +18,23 @@ from backend.agent_v2.protocols import (
     AgentInsight,
     AgentJob,
     AgentRunRecord,
+    CommunityRecomputePayload,
+    EmbeddingsRetryPayload,
+    FeedBufferEnsurePayload,
     HeartbeatDailyPayload,
     InsightStore,
     JobQueue,
     LLMGateway,
     MemoryFacade,
     NoteIngestedPayload,
+    QuizScanPayload,
     ReviewLapsedPayload,
     RunLogger,
     VerifiedQuote,
 )
 from backend.agent_v2.provenance import validate_proposed_bridges, verify_quote_in_text
+from backend.db.migrate import ensure_schema
+from backend.db.neo4j_client import close_neo4j_client, get_neo4j_client
 from backend.db.postgres_client import close_postgres_client, get_postgres_client
 
 logger = structlog.get_logger()
@@ -407,6 +414,124 @@ async def handle_heartbeat_daily(
     return saved
 
 
+async def handle_community_recompute(
+    job: AgentJob,
+    *,
+    community_service: Any,
+    runs: RunLogger,
+) -> None:
+    """Recompute Neo4j/Postgres graph communities durably after note ingest."""
+    started = time.perf_counter()
+    CommunityRecomputePayload.model_validate(job.payload)
+    try:
+        summary = await community_service.recompute_communities(job.user_id)
+    except Exception as exc:
+        await _record_failed_run(runs, job, started, "community.recompute", exc)
+        raise
+    await _record_skipped_run(
+        runs,
+        job,
+        started,
+        {"tool": "community.recompute", "summary": summary or {}},
+    )
+
+
+async def handle_embeddings_retry(
+    job: AgentJob,
+    *,
+    reembed_fn: Callable[[str, str], Awaitable[dict[str, Any]]],
+    runs: RunLogger,
+) -> dict[str, Any]:
+    """Retry missing chunk embeddings; raise if chunks remain unembedded so job_queue backs off."""
+    started = time.perf_counter()
+    payload = EmbeddingsRetryPayload.model_validate(job.payload)
+    try:
+        result = await reembed_fn(job.user_id, payload.note_id)
+        still_missing = int(result.get("still_missing", 0))
+        if still_missing > 0:
+            raise RuntimeError(
+                f"Chunks still missing embeddings for note {payload.note_id}: {still_missing}"
+            )
+    except Exception as exc:
+        await _record_failed_run(runs, job, started, "embeddings.retry", exc)
+        raise
+    await _record_skipped_run(
+        runs,
+        job,
+        started,
+        {"tool": "embeddings.retry", "note_id": payload.note_id, **result},
+    )
+    return result
+
+
+async def handle_quiz_scan(
+    job: AgentJob,
+    *,
+    pg: Any,
+    scanner: Any,
+    runs: RunLogger,
+) -> None:
+    """Scan a newly ingested note for passive inline quizzes durably."""
+    started = time.perf_counter()
+    payload = QuizScanPayload.model_validate(job.payload)
+    content = payload.content
+    if not content:
+        rows = await pg.execute_query(
+            """
+            SELECT COALESCE(content_text, '') AS content
+            FROM notes
+            WHERE id = CAST(:note_id AS uuid)
+              AND user_id = CAST(:user_id AS uuid)
+            LIMIT 1
+            """,
+            {"note_id": payload.note_id, "user_id": job.user_id},
+        )
+        content = rows[0]["content"] if rows else ""
+
+    if not content:
+        await _record_skipped_run(
+            runs,
+            job,
+            started,
+            {"tool": "quiz.scan", "note_id": payload.note_id, "skipped_reason": "empty_note"},
+        )
+        return
+
+    try:
+        await scanner.scan_and_save(content, payload.note_id, job.user_id)
+    except Exception as exc:
+        await _record_failed_run(runs, job, started, "quiz.scan", exc)
+        raise
+    await _record_skipped_run(
+        runs,
+        job,
+        started,
+        {"tool": "quiz.scan", "note_id": payload.note_id},
+    )
+
+
+async def handle_feed_buffer_ensure(
+    job: AgentJob,
+    *,
+    feed_service: Any,
+    runs: RunLogger,
+) -> None:
+    """Ensure weekly pre-generated feed buffer exists for user without blocking HTTP GET /feed."""
+    started = time.perf_counter()
+    FeedBufferEnsurePayload.model_validate(job.payload)
+    try:
+        await feed_service.ensure_weekly_buffer(job.user_id)
+    except Exception as exc:
+        await _record_failed_run(runs, job, started, "feed.buffer_ensure", exc)
+        raise
+    await _record_skipped_run(
+        runs,
+        job,
+        started,
+        {"tool": "feed.buffer_ensure"},
+    )
+
+
 class AgentWorker:
     """Async daemon polling a JobQueue and dispatching registered vertical-slice handlers."""
 
@@ -418,19 +543,42 @@ class AgentWorker:
         poll_interval_s: float = 2.0,
         backoff_base_s: float = 15.0,
         lease_seconds: float = 300.0,
+        heartbeat_path: Optional[str] = None,
+        shutdown_grace_seconds: float = 45.0,
     ) -> None:
         self._queue = job_queue
         self._worker_id = worker_id or f"worker-{os.getpid()}"
         self._poll_interval_s = poll_interval_s
         self._backoff_base_s = backoff_base_s
         self._lease_seconds = lease_seconds
+        self._heartbeat_path = (
+            os.getenv("AGENT_WORKER_HEARTBEAT_PATH", "/tmp/worker.alive")
+            if heartbeat_path is None
+            else heartbeat_path
+        )
+        self._shutdown_grace_seconds = max(0.0, float(shutdown_grace_seconds))
         self._handlers: dict[str, JobHandler] = {}
 
     def register(self, job_type: str, handler: JobHandler) -> None:
         self._handlers[job_type] = handler
 
-    async def process_one(self) -> bool:
-        """Claim and execute a single due job. Returns True if a job was processed."""
+    def touch_heartbeat(self) -> None:
+        """Touch container healthcheck heartbeat file (best-effort)."""
+        if not self._heartbeat_path:
+            return
+        try:
+            hb = Path(self._heartbeat_path)
+            hb.parent.mkdir(parents=True, exist_ok=True)
+            hb.touch(exist_ok=True)
+            os.utime(hb, None)
+        except OSError as exc:
+            logger.warning("agent_worker.heartbeat_failed", path=self._heartbeat_path, error=str(exc))
+
+    async def process_one(self, stop_event: Optional[asyncio.Event] = None) -> bool:
+        """Claim and execute a single due job with optional graceful shutdown release."""
+        if stop_event is not None and stop_event.is_set():
+            return False
+
         job = await self._queue.claim_next(self._worker_id, lease_seconds=self._lease_seconds)
         if job is None:
             return False
@@ -442,8 +590,41 @@ class AgentWorker:
             await self._queue.fail(job.id, err, backoff_seconds=self._backoff_base_s)
             return True
 
+        job_task = asyncio.create_task(handler(job))
+        stop_wait_task: Optional[asyncio.Task[bool]] = None
+        interrupted_by_stop = False
+
         try:
-            await handler(job)
+            if stop_event is not None:
+                stop_wait_task = asyncio.create_task(stop_event.wait())
+                done, _ = await asyncio.wait(
+                    {job_task, stop_wait_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if job_task not in done:
+                    interrupted_by_stop = True
+        finally:
+            if stop_wait_task is not None and not stop_wait_task.done():
+                stop_wait_task.cancel()
+                await asyncio.gather(stop_wait_task, return_exceptions=True)
+
+        if interrupted_by_stop:
+            try:
+                await asyncio.wait_for(asyncio.shield(job_task), timeout=self._shutdown_grace_seconds)
+            except asyncio.TimeoutError:
+                job_task.cancel()
+                await asyncio.gather(job_task, return_exceptions=True)
+                await self._queue.release(job.id, self._worker_id)
+                logger.info(
+                    "agent_worker.job_released_on_shutdown",
+                    job_id=job.id,
+                    job_type=job.job_type,
+                    worker_id=self._worker_id,
+                )
+                return True
+
+        try:
+            await job_task
         except Exception as exc:
             logger.warning(
                 "agent_worker.job_failed",
@@ -459,12 +640,15 @@ class AgentWorker:
         return True
 
     async def run_forever(self, stop_event: Optional[asyncio.Event] = None) -> None:
-        """Poll for jobs until `stop_event` is set."""
+        """Poll for jobs until `stop_event` is set, touching heartbeat each loop."""
         stopper = stop_event or asyncio.Event()
         logger.info("agent_worker.started", worker_id=self._worker_id)
+        self.touch_heartbeat()
         while not stopper.is_set():
-            did_work = await self.process_one()
-            if not did_work:
+            self.touch_heartbeat()
+            did_work = await self.process_one(stop_event=stopper)
+            self.touch_heartbeat()
+            if not did_work and not stopper.is_set():
                 try:
                     await asyncio.wait_for(stopper.wait(), timeout=self._poll_interval_s)
                 except asyncio.TimeoutError:
@@ -473,15 +657,25 @@ class AgentWorker:
 
 
 async def build_default_worker() -> AgentWorker:
-    """Construct the Postgres-backed AgentWorker with default handlers."""
+    """Construct the Postgres-backed AgentWorker with Agent v2 + durable P3 handlers."""
+    from backend.agents.scanner_agent import ScannerAgent
+    from backend.services.community_service import CommunityService
+    from backend.services.feed_service import FeedService
+    from backend.services.ingestion.reembed import reembed_missing_chunks
+
     pg = await get_postgres_client()
-    await pg.initialize_schema()
+    await ensure_schema(pg)
+    neo4j = await get_neo4j_client()
 
     queue = PostgresJobQueue(pg)
     insights = PostgresInsightStore(pg)
     runs = PostgresRunLogger(pg)
     memory = PostgresMemoryFacade(pg)
     llm = GeminiLLMGateway()
+
+    community_service = CommunityService(pg, neo4j)
+    scanner_agent = ScannerAgent()
+    feed_service = FeedService(pg, neo4j)
 
     worker = AgentWorker(queue)
 
@@ -512,9 +706,42 @@ async def build_default_worker() -> AgentWorker:
             runs=runs,
         )
 
+    async def _on_community_recompute(job: AgentJob) -> None:
+        await handle_community_recompute(
+            job,
+            community_service=community_service,
+            runs=runs,
+        )
+
+    async def _on_embeddings_retry(job: AgentJob) -> None:
+        await handle_embeddings_retry(
+            job,
+            reembed_fn=reembed_missing_chunks,
+            runs=runs,
+        )
+
+    async def _on_quiz_scan(job: AgentJob) -> None:
+        await handle_quiz_scan(
+            job,
+            pg=pg,
+            scanner=scanner_agent,
+            runs=runs,
+        )
+
+    async def _on_feed_buffer_ensure(job: AgentJob) -> None:
+        await handle_feed_buffer_ensure(
+            job,
+            feed_service=feed_service,
+            runs=runs,
+        )
+
     worker.register("note.ingested", _on_note_ingested)
     worker.register("review.lapsed", _on_review_lapsed)
     worker.register("heartbeat.daily", _on_heartbeat_daily)
+    worker.register("community.recompute", _on_community_recompute)
+    worker.register("embeddings.retry", _on_embeddings_retry)
+    worker.register("quiz.scan", _on_quiz_scan)
+    worker.register("feed.buffer_ensure", _on_feed_buffer_ensure)
     return worker
 
 
@@ -532,6 +759,7 @@ async def _run_main() -> None:
         await worker.run_forever(stop_event=stop_event)
     finally:
         await close_postgres_client()
+        await close_neo4j_client()
 
 
 def main() -> None:

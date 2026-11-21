@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Share-sheet entry point: stores the shared link or text in the App Group inbox for Create.
+/// Share-sheet entry point: persists shared links/text to the App Group inbox and immediately
+/// starts a background `URLSession` upload for URLs when an API endpoint + token are available.
 final class ShareViewController: UIViewController {
     private let model = ShareModel()
 
@@ -58,9 +59,10 @@ final class ShareModel: ObservableObject {
     func load(providers: [NSItemProvider]) async {
         defer { isLoading = false }
         for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-            if let url = await Self.loadString(provider, type: .url), url.hasPrefix("http") {
+            if let raw = await Self.loadString(provider, type: .url),
+               let normalized = GRShareURLNormalizer.extractURL(from: raw) {
                 kind = .url
-                content = url
+                content = normalized
                 return
             }
         }
@@ -68,25 +70,84 @@ final class ShareModel: ObservableObject {
             guard let raw = await Self.loadString(provider, type: .plainText) else { continue }
             let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
-            // Plenty of apps share a bare link as plain text.
-            if !text.contains(where: \.isWhitespace), let url = URL(string: text), url.scheme?.hasPrefix("http") == true {
+            // Substack and news apps frequently share either a bare scheme-less URL or "Headline URL".
+            if let normalized = GRShareURLNormalizer.extractURL(from: text) {
                 kind = .url
+                if title.isEmpty, text != normalized {
+                    let prefix = text.replacingOccurrences(of: normalized, with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !prefix.isEmpty && prefix.count < 120 { title = prefix }
+                }
+                content = normalized
             } else {
                 kind = .text
                 if title == text { title = "" }
+                content = text
             }
-            content = text
             return
         }
     }
 
     func save() {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        GRShareInbox.append(GRSharedImport(
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let entry = GRSharedImport(
             kind: kind,
-            content: content.trimmingCharacters(in: .whitespacesAndNewlines),
-            title: trimmedTitle.isEmpty ? nil : trimmedTitle
-        ))
+            content: trimmedContent,
+            title: trimmedTitle.isEmpty ? nil : trimmedTitle,
+            status: .pending
+        )
+        GRShareInbox.append(entry)
+
+        if kind == .url, startBackgroundUpload(for: entry) {
+            GRShareInbox.update(id: entry.id, status: .uploading)
+        }
+    }
+
+    private func startBackgroundUpload(for item: GRSharedImport) -> Bool {
+        let lower = item.content.lowercased()
+        let isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be")
+        guard !isYouTube else { return false }
+
+        guard let baseString = GRSharedAuth.apiBaseURL,
+              let baseURL = URL(string: baseString),
+              let token = GRSharedAuth.bearerToken,
+              !token.isEmpty,
+              token != "demo-local-token",
+              let payloadFile = GRShareUploadConfig.payloadFileURL(for: item.id) else {
+            return false
+        }
+
+        guard let endpoint = URL(string: "/api/v2/ingest/url", relativeTo: baseURL)?.absoluteURL else {
+            return false
+        }
+
+        let bodyDict = ["url": item.content]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyDict) else {
+            return false
+        }
+        do {
+            try bodyData.write(to: payloadFile, options: .atomic)
+        } catch {
+            return false
+        }
+
+        let config = URLSessionConfiguration.background(withIdentifier: GRShareUploadConfig.backgroundSessionId)
+        config.sharedContainerIdentifier = GRShared.appGroup
+        config.isDiscretionary = false
+        config.sessionSendsLaunchEvents = true
+
+        var req = URLRequest(url: endpoint)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let session = URLSession(configuration: config)
+        let task = session.uploadTask(with: req, fromFile: payloadFile)
+        task.taskDescription = item.id.uuidString
+        task.resume()
+        session.finishTasksAndInvalidate()
+        return true
     }
 
     private static func loadString(_ provider: NSItemProvider, type: UTType) async -> String? {
@@ -143,7 +204,7 @@ struct ShareSheetView: View {
                     Text("Save to GraphRecall")
                         .font(.system(.headline, design: .rounded))
                         .foregroundStyle(.white)
-                    Text("It’ll wait for you in Create")
+                    Text("Starts ingesting right away")
                         .font(.system(.caption, design: .rounded))
                         .foregroundStyle(.white.opacity(0.6))
                 }
@@ -167,7 +228,7 @@ struct ShareSheetView: View {
                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             Button(action: onSave) {
-                Label("Save to inbox", systemImage: "tray.and.arrow.down.fill")
+                Label("Save & ingest", systemImage: "arrow.up.circle.fill")
                     .font(.system(.headline, design: .rounded))
                     .foregroundStyle(SharePalette.canvas)
                     .frame(maxWidth: .infinity)

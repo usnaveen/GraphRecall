@@ -1,6 +1,6 @@
 {
   "dataset_format": "duolingo",
-  "input_path": "/Users/naveenus/Projects/GraphRecall-gemini/eval/feed_algo/data/duolingo_traces_sample.csv",
+  "input_path": "eval/feed_algo/data/duolingo_traces_sample.csv",
   "total_raw_events": 147723,
   "min_user_transitions": 20,
   "models": {
@@ -140,6 +140,41 @@
           "mean": 0.51764,
           "ci_low": 0.49969,
           "ci_high": 0.53409
+        },
+        "auc_valid_users": 507
+      }
+    },
+    "py_fsrs_reference": {
+      "eligible_users": 707,
+      "scored_transitions": 39497,
+      "positive_rate": 0.93954,
+      "micro": {
+        "log_loss": 0.46854,
+        "rmse": 0.24561,
+        "rmse_bins_20": 0.05969,
+        "brier_vs_p_recall": 0.07014,
+        "auc": 0.55469
+      },
+      "per_user_95ci": {
+        "log_loss": {
+          "mean": 0.4571,
+          "ci_low": 0.41504,
+          "ci_high": 0.49892
+        },
+        "rmse": {
+          "mean": 0.19097,
+          "ci_low": 0.17938,
+          "ci_high": 0.20183
+        },
+        "brier_vs_p_recall": {
+          "mean": 0.06907,
+          "ci_low": 0.06345,
+          "ci_high": 0.07442
+        },
+        "auc": {
+          "mean": 0.51668,
+          "ci_low": 0.49928,
+          "ci_high": 0.53378
         },
         "auc_valid_users": 507
       }

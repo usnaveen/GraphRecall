@@ -31,7 +31,13 @@ from backend.services.storage_service import get_storage_service
 from backend.services.ingestion.reembed import reembed_missing_chunks
 import base64
 
-from backend.agent_v2.protocols import NoteIngestedPayload
+from backend.agent_v2.enqueue import enqueue_durable_job
+from backend.agent_v2.protocols import (
+    CommunityRecomputePayload,
+    EmbeddingsRetryPayload,
+    NoteIngestedPayload,
+    QuizScanPayload,
+)
 from backend.graphs.ingestion_graph import (
     run_ingestion,
     resume_ingestion,
@@ -254,23 +260,17 @@ async def _ingest_processed_zip_background(
         )
 
         if status == "completed":
-            asyncio.create_task(_recompute_communities(user_id))
+            await _schedule_community_recompute(user_id, result.get("note_id"))
             await _enqueue_note_ingested_event(
                 user_id,
                 result.get("note_id"),
                 resolved_title,
                 result.get("concepts", []) or [],
             )
-        _schedule_reembed_if_needed(result, user_id)
+        await _schedule_reembed_if_needed(result, user_id)
 
         if status in {"completed", "awaiting_review"} and result.get("note_id"):
-            asyncio.create_task(
-                scanner_agent.scan_and_save(
-                    final_content,
-                    result.get("note_id"),
-                    user_id,
-                )
-            )
+            await _schedule_quiz_scan(user_id, result.get("note_id"), final_content)
     except Exception as e:
         logger.error(
             "v2/ingest/processed-zip: Background task failed",
@@ -291,10 +291,58 @@ async def _ingest_processed_zip_background(
 REEMBED_RETRY_DELAYS_S = (60, 300, 900)
 
 
-def _schedule_reembed_if_needed(result: dict, user_id: str) -> None:
-    """If an ingest saved chunks without vectors, retry embedding them in the background."""
+async def _schedule_community_recompute(user_id: str, note_id: Optional[str] = None) -> None:
+    """Enqueue durable community recomputation with short dedup window."""
+    try:
+        pg = await get_postgres_client()
+    except Exception:
+        pg = None
+    if pg is None:
+        return
+    await enqueue_durable_job(
+        user_id,
+        "community.recompute",
+        CommunityRecomputePayload(note_id=str(note_id) if note_id else None).model_dump(),
+        dedupe_window_seconds=120,
+        pg_client=pg,
+    )
+
+
+async def _schedule_quiz_scan(user_id: str, note_id: Optional[str], content: str) -> None:
+    """Enqueue durable passive quiz scan on `agent_jobs`."""
+    if not note_id:
+        return
+    try:
+        pg = await get_postgres_client()
+    except Exception:
+        pg = None
+    if pg is None:
+        return
+    await enqueue_durable_job(
+        user_id,
+        "quiz.scan",
+        QuizScanPayload(note_id=str(note_id), content=content[:12000]).model_dump(),
+        pg_client=pg,
+    )
+
+
+async def _schedule_reembed_if_needed(result: dict, user_id: str) -> None:
+    """If an ingest saved chunks without vectors, enqueue durable backoff retries."""
     if result.get("next_action") == "reembed" and result.get("note_id"):
-        asyncio.create_task(_retry_missing_embeddings(str(result["note_id"]), user_id))
+        try:
+            pg = await get_postgres_client()
+        except Exception:
+            pg = None
+        if pg is None:
+            return
+        await enqueue_durable_job(
+            user_id,
+            "embeddings.retry",
+            EmbeddingsRetryPayload(note_id=str(result["note_id"])).model_dump(),
+            delay_seconds=60.0,
+            max_attempts=4,
+            pg_client=pg,
+        )
 
 
 async def _retry_missing_embeddings(note_id: str, user_id: str, delays=REEMBED_RETRY_DELAYS_S) -> None:
@@ -561,24 +609,20 @@ async def ingest_note(
             )
         
         if status == "completed":
-            asyncio.create_task(_recompute_communities(user_id))
+            await _schedule_community_recompute(user_id, result.get("note_id"))
             await _enqueue_note_ingested_event(
                 user_id,
                 result.get("note_id"),
                 request.title or result.get("note_title") or "",
                 result.get("concepts", []) or [],
             )
-        _schedule_reembed_if_needed(result, user_id)
+        await _schedule_reembed_if_needed(result, user_id)
 
         if status == "completed" or (status == "awaiting_review" and result.get("note_id")):
-             # Trigger Lazy Quiz Scanner in background
+             # Trigger durable Lazy Quiz Scanner
              note_id = result.get("note_id")
              if note_id:
-                 asyncio.create_task(scanner_agent.scan_and_save(
-                     request.content, 
-                     note_id, 
-                     user_id
-                 ))
+                 await _schedule_quiz_scan(user_id, note_id, request.content)
         
         return IngestResponse(
             note_id=result.get("note_id"),
@@ -699,7 +743,7 @@ async def ingest_url(
              raise HTTPException(status_code=400, detail=result["error"])
              
         ingestion_res = result.get("ingestion_result", {})
-        _schedule_reembed_if_needed(ingestion_res, user_id)
+        await _schedule_reembed_if_needed(ingestion_res, user_id)
         if ingestion_res.get("note_id") and ingestion_res.get("status", "completed") == "completed":
             await _enqueue_note_ingested_event(
                 user_id,
@@ -856,7 +900,7 @@ async def approve_and_resume(
         )
         
         status = result.get("status", "completed")
-        _schedule_reembed_if_needed(result, user_id)
+        await _schedule_reembed_if_needed(result, user_id)
         if status == "completed" and result.get("note_id"):
             await _enqueue_note_ingested_event(
                 user_id,
@@ -1004,13 +1048,9 @@ Return the consolidated note as clean markdown."""
             skip_review=True,
         ))
 
-        # Trigger Lazy Quiz Scanner in background
+        # Trigger Lazy Quiz Scanner durably on agent_jobs
         if result.get("note_id"):
-             asyncio.create_task(scanner_agent.scan_and_save(
-                 consolidated, 
-                 result.get("note_id"), 
-                 user_id
-             ))
+            await _schedule_quiz_scan(user_id, result.get("note_id"), consolidated)
 
         return IngestResponse(
             note_id=result.get("note_id"),

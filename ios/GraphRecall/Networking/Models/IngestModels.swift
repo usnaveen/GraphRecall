@@ -48,9 +48,10 @@ struct IngestResponse: Codable, Sendable {
     let nextAction: String
     let threadId: String
     let error: String?
+    let warnings: [String]
 
     enum CodingKeys: String, CodingKey {
-        case status, error
+        case status, error, warnings
         case noteId = "note_id"
         case conceptIds = "concept_ids"
         case flashcardIds = "flashcard_ids"
@@ -70,6 +71,7 @@ struct IngestResponse: Codable, Sendable {
         nextAction = try c.decodeIfPresent(String.self, forKey: .nextAction) ?? "none"
         threadId = try c.decodeIfPresent(String.self, forKey: .threadId) ?? ""
         error = try c.decodeIfPresent(String.self, forKey: .error)
+        warnings = try c.decodeIfPresent([String].self, forKey: .warnings) ?? []
     }
 }
 

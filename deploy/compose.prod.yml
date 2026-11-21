@@ -97,6 +97,12 @@ services:
     command: ["python", "-m", "backend.agent_v2.worker"]
     stop_grace_period: 60s       # SIGTERM: finish or release the current job within its lease
     mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "test $(( $(date +%s) - $(stat -c %Y /tmp/worker.alive) )) -lt 120"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       migrate: { condition: service_completed_successfully }
       neo4j: { condition: service_healthy }

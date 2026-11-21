@@ -41,8 +41,12 @@
 	<string>$(GOOGLE_IOS_CLIENT_ID)</string>
 	<key>GIDServerClientID</key>
 	<string>$(GOOGLE_SERVER_CLIENT_ID)</string>
+	<key>GRAPIBaseURL</key>
+	<string>$(GR_API_BASE_URL)</string>
 	<key>GRDevServerHost</key>
 	<string>$(GR_DEV_SERVER_HOST)</string>
+	<key>GRPrivacyPolicyURL</key>
+	<string>$(GR_PRIVACY_POLICY_URL)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

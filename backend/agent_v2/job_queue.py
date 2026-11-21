@@ -184,6 +184,25 @@ class PostgresJobQueue:
             {"job_id": job_id},
         )
 
+    async def release(self, job_id: str, worker_id: str) -> bool:
+        """Release an in-flight lease back to pending on graceful shutdown."""
+        rows = await self._pg.execute_query(
+            """
+            UPDATE agent_jobs
+            SET status = 'pending',
+                locked_at = NULL,
+                locked_by = NULL,
+                attempts = GREATEST(attempts - 1, 0),
+                updated_at = NOW()
+            WHERE id = CAST(:job_id AS uuid)
+              AND status = 'running'
+              AND locked_by = :worker_id
+            RETURNING id
+            """,
+            {"job_id": job_id, "worker_id": worker_id},
+        )
+        return bool(rows)
+
     async def fail(
         self,
         job_id: str,
@@ -477,6 +496,23 @@ class InMemoryJobQueue:
                     "updated_at": self._clock(),
                 }
             )
+
+    async def release(self, job_id: str, worker_id: str) -> bool:
+        """Release an in-flight lease back to pending if still owned by worker_id."""
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status != "running" or job.locked_by != worker_id:
+                return False
+            self._jobs[job_id] = job.model_copy(
+                update={
+                    "status": "pending",
+                    "locked_at": None,
+                    "locked_by": None,
+                    "attempts": max(job.attempts - 1, 0),
+                    "updated_at": self._clock(),
+                }
+            )
+            return True
 
     async def fail(
         self,
