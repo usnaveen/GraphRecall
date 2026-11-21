@@ -20,6 +20,8 @@ Backups go nightly to Cloudflare R2, and a CI restore drill runs every week. Cho
 2. A domain, with an `A` record for `api.<domain>` pointing at the server.
 3. Two Cloudflare R2 buckets: `graphrecall-uploads` and `graphrecall-backups`. Add a **14-day lifecycle rule** on the backups bucket, and create access keys.
 4. GitHub repository secrets `DEPLOY_HOST` and `DEPLOY_SSH_KEY`, and a `production` environment (add yourself as required reviewer, so each deploy waits for your approval).
+5. **Sign in with Apple** (Apple Developer account): enable the capability on the App ID `com.usnaveen.graphrecall`, then create a key with "Sign in with Apple" under Certificates, IDs & Profiles > Keys. Put its Key ID, your Team ID and the `.p8` contents in `APPLE_KEY_ID`, `APPLE_TEAM_ID` and `APPLE_PRIVATE_KEY`. Without them, account deletion can't revoke Apple tokens (App Store guideline 5.1.1(v)), and the API refuses to start with Apple sign-in on.
+6. `SESSION_SECRET`: `openssl rand -base64 48`. It signs session tokens; never rotate it casually (see `env.prod.example`).
 
 **Then run:**
 
@@ -52,6 +54,11 @@ The API refuses to start with unsafe or missing settings (`backend/config/produc
 - **What runs:** `backup.sh` at 03:00 UTC (`/etc/cron.d/graphrecall-backup`). It takes an online `pg_dump -Fc`, then an offline `neo4j-admin database dump`, which pauses Neo4j for well under a minute. It writes SHA-256 checksums and uploads to `r2://graphrecall-backups/backups/<stamp>/`.
 - **Retention:** the R2 lifecycle rule (14 days).
 - **Proof that restores work:** `.github/workflows/restore-drill.yml` runs every Monday and on every change to `deploy/`. It seeds data, backs up, destroys the data, restores, and fails unless every row, node and relationship came back.
+
+## Auth model
+- Clients sign in with Apple (`POST /auth/apple`) or Google (`POST /auth/session/google`) and get a 1-hour access token plus a 60-day rotating refresh token (`backend/auth/sessions.py`). Google ID tokens are still accepted as bearers, for older builds.
+- **Sign everyone out:** `DELETE FROM auth_refresh_tokens;`. Access tokens die within the hour; rotate `SESSION_SECRET` to end them immediately.
+- **Sign one user out:** `UPDATE auth_refresh_tokens SET revoked_at = NOW() WHERE user_id = '<uuid>';`
 
 ## Incidents
 
