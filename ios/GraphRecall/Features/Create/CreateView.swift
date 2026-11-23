@@ -400,11 +400,18 @@ final class CreateViewModel {
             parts.append(warning)
         }
         successMessage = parts.joined(separator: " · ")
+        let importDetail: String
+        if response.conceptIds.isEmpty && response.flashcardIds.isEmpty,
+           let warning = response.warnings.first, !warning.isEmpty {
+            importDetail = warning
+        } else {
+            importDetail = "\(response.conceptIds.count) concepts · \(response.flashcardIds.count) cards"
+        }
         RecentImportsStore.shared.add(RecentImport(
             title: title,
             kind: mode.title,
             status: response.status,
-            detail: "\(response.conceptIds.count) concepts · \(response.flashcardIds.count) cards"
+            detail: importDetail
         ))
         if !response.flashcardIds.isEmpty {
             NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)

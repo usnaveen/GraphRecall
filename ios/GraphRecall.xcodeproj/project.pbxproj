@@ -75,6 +75,7 @@
 		D25475139FE09E6F3E4317F9 /* AgentInsightModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EAFB110B6E18FDCB56BE905 /* AgentInsightModels.swift */; };
 		D2A05657AAACF954D3E49D31 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30114AD9B85E20BDC976757 /* ContentView.swift */; };
 		D6C1E3C34FF1FB23F0940C77 /* CreateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D5550930146E10280F9D9BE /* CreateView.swift */; };
+		DE3519E84062D1D1B0F61BB5 /* AppAuthKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223CAC8AAC786C90C685698D /* AppAuthKeychain.swift */; };
 		E04164430170B0C25D25C35E /* GRSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */; };
 		E11AA42201F79DF141DBA3E3 /* APIClient+Revamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68CC963AAC899E05A3CBEE45 /* APIClient+Revamp.swift */; };
 		EA5FC5039AD04B880380A280 /* RevampModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE98EE67ED9EA987C8C7BF9B /* RevampModels.swift */; };
@@ -135,6 +136,7 @@
 		0F488B9751BD5542CD868BEE /* GraphRecallShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GraphRecallShare.entitlements; sourceTree = "<group>"; };
 		1EAC19540B0FC26CF2901971 /* GraphLinksSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphLinksSheet.swift; sourceTree = "<group>"; };
 		20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphNotePanel.swift; sourceTree = "<group>"; };
+		223CAC8AAC786C90C685698D /* AppAuthKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAuthKeychain.swift; sourceTree = "<group>"; };
 		25717B008D78F115654FA98B /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
 		25FEC977B2A9130C876E1D4F /* GRDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRDictation.swift; sourceTree = "<group>"; };
 		2843D7F6A870BAFAC6EEF06D /* ConceptDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptDetailView.swift; sourceTree = "<group>"; };
@@ -302,6 +304,7 @@
 				938F31619C9D22F04EF0EE69 /* APIClient+Profile.swift */,
 				68CC963AAC899E05A3CBEE45 /* APIClient+Revamp.swift */,
 				4D60F0755297C074FCE2F88D /* APIConfig.swift */,
+				223CAC8AAC786C90C685698D /* AppAuthKeychain.swift */,
 				EBBF1E0AE919AF0E9556C29C /* AuthSession.swift */,
 				DB0A25E9DDEB6FA4EA9F3A30 /* ChatSSEClient.swift */,
 			);
@@ -681,6 +684,7 @@
 				6101AF7D0815012D1D0AFC96 /* APIConfig.swift in Sources */,
 				D25475139FE09E6F3E4317F9 /* AgentInsightModels.swift in Sources */,
 				654FECEEC7D9E3B199F5D8F9 /* AgentInsightsSheet.swift in Sources */,
+				DE3519E84062D1D1B0F61BB5 /* AppAuthKeychain.swift in Sources */,
 				12D4BFAF0592D4677EDD85B3 /* AppRouter.swift in Sources */,
 				17EF10D95152450277DAFDC0 /* AuthModels.swift in Sources */,
 				9B6EE52772CAB0FBA3DA7934 /* AuthSession.swift in Sources */,

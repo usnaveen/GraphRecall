@@ -19,13 +19,13 @@ if [[ -n "${BACKUP_DEST:-}" ]]; then
   [[ "$ID" == latest ]] && ID="$(ls -1 "$BACKUP_DEST" | sort | tail -1)"
   cp "$BACKUP_DEST/$ID"/* "$WORK/"
 else
-  : "${R2_ENDPOINT:?}" "${R2_BUCKET:?}" "${R2_ACCESS_KEY_ID:?}" "${R2_SECRET_ACCESS_KEY:?}"
-  AWS=(docker run --rm -v "$WORK:/b" -e AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" -e AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+  : "${BACKUP_R2_ENDPOINT:?}" "${BACKUP_R2_BUCKET:?}" "${BACKUP_R2_ACCESS_KEY_ID:?}" "${BACKUP_R2_SECRET_ACCESS_KEY:?}"
+  AWS=(docker run --rm -v "$WORK:/b" -e AWS_ACCESS_KEY_ID="$BACKUP_R2_ACCESS_KEY_ID" -e AWS_SECRET_ACCESS_KEY="$BACKUP_R2_SECRET_ACCESS_KEY"
        -e AWS_DEFAULT_REGION=auto amazon/aws-cli)
   if [[ "$ID" == latest ]]; then
-    ID="$("${AWS[@]}" s3 ls "s3://$R2_BUCKET/backups/" --endpoint-url "$R2_ENDPOINT" | awk '{print $2}' | tr -d / | sort | tail -1)"
+    ID="$("${AWS[@]}" s3 ls "s3://$BACKUP_R2_BUCKET/backups/" --endpoint-url "$BACKUP_R2_ENDPOINT" | awk '{print $2}' | tr -d / | sort | tail -1)"
   fi
-  "${AWS[@]}" s3 cp "s3://$R2_BUCKET/backups/$ID/" /b --recursive --endpoint-url "$R2_ENDPOINT"
+  "${AWS[@]}" s3 cp "s3://$BACKUP_R2_BUCKET/backups/$ID/" /b --recursive --endpoint-url "$BACKUP_R2_ENDPOINT"
 fi
 
 ( cd "$WORK" && sha256sum -c SHA256SUMS )

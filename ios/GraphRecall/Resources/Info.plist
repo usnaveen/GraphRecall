@@ -43,6 +43,8 @@
 	<string>$(GOOGLE_SERVER_CLIENT_ID)</string>
 	<key>GRAPIBaseURL</key>
 	<string>$(GR_API_BASE_URL)</string>
+	<key>GRAppIdentifierPrefix</key>
+	<string>$(AppIdentifierPrefix)</string>
 	<key>GRDevServerHost</key>
 	<string>$(GR_DEV_SERVER_HOST)</string>
 	<key>GRPrivacyPolicyURL</key>

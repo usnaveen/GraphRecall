@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// State shared between the app, the Today widget and the share extension through the App Group.
 enum GRShared {
@@ -12,33 +13,124 @@ enum GRShared {
     static var containerURL: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)
     }
+
+    /// Resolves `<TeamID>.` from `Info.plist` (`GRAppIdentifierPrefix = $(AppIdentifierPrefix)`),
+    /// returning nil for unsigned ad-hoc Simulator builds so callers can omit `kSecAttrAccessGroup`.
+    static var appIdentifierPrefix: String? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "GRAppIdentifierPrefix") as? String else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("$(") else { return nil }
+        return trimmed.hasSuffix(".") ? trimmed : "\(trimmed)."
+    }
 }
 
 /// Auth/endpoint snapshot shared with `GraphRecallShare` so direct background uploads authenticate cleanly.
+/// Only the short-lived `access_token` is placed in the shared Keychain group (`refresh_token` stays
+/// app-only in `AppAuthKeychain` so extension processes can never race refresh rotation).
 enum GRSharedAuth {
     private static let apiBaseKey = "shared.auth.apiBaseURL"
-    private static let tokenKey = "shared.auth.bearerToken"
+    private static let legacyTokenKey = "shared.auth.bearerToken"
+    private static let service = "com.usnaveen.graphrecall.shared.auth"
+    private static let account = "access_token"
+
+    private static var sharedAccessGroup: String? {
+        GRShared.appIdentifierPrefix.map { "\($0)\(GRShared.appGroup)" }
+    }
 
     static var apiBaseURL: String? {
         GRShared.defaults.string(forKey: apiBaseKey)
     }
 
     static var bearerToken: String? {
-        GRShared.defaults.string(forKey: tokenKey)
+        // Purge any legacy plaintext token left in App Group UserDefaults.
+        GRShared.defaults.removeObject(forKey: legacyTokenKey)
+        return readToken()
     }
 
     static func sync(apiBaseURL: String, bearerToken: String?) {
         GRShared.defaults.set(apiBaseURL, forKey: apiBaseKey)
+        GRShared.defaults.removeObject(forKey: legacyTokenKey)
         if let bearerToken, !bearerToken.isEmpty {
-            GRShared.defaults.set(bearerToken, forKey: tokenKey)
+            writeToken(bearerToken)
         } else {
-            GRShared.defaults.removeObject(forKey: tokenKey)
+            deleteToken()
         }
     }
 
     static func clear() {
         GRShared.defaults.removeObject(forKey: apiBaseKey)
-        GRShared.defaults.removeObject(forKey: tokenKey)
+        GRShared.defaults.removeObject(forKey: legacyTokenKey)
+        deleteToken()
+    }
+
+    private static func baseQuery(withAccessGroup: Bool) -> [String: Any] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        if withAccessGroup, let group = sharedAccessGroup {
+            query[kSecAttrAccessGroup as String] = group
+        }
+        return query
+    }
+
+    private static func readToken() -> String? {
+        if sharedAccessGroup != nil {
+            let result = copyMatching(query: baseQuery(withAccessGroup: true))
+            if result.status == errSecSuccess {
+                return result.token
+            }
+            if result.status != errSecMissingEntitlement {
+                return nil
+            }
+        }
+        let fallback = copyMatching(query: baseQuery(withAccessGroup: false))
+        return fallback.status == errSecSuccess ? fallback.token : nil
+    }
+
+    private static func copyMatching(query: [String: Any]) -> (status: OSStatus, token: String?) {
+        var q = query
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(q as CFDictionary, &item)
+        guard status == errSecSuccess,
+              let data = item as? Data,
+              let token = String(data: data, encoding: .utf8),
+              !token.isEmpty else {
+            return (status, nil)
+        }
+        return (status, token)
+    }
+
+    private static func writeToken(_ token: String) {
+        guard let data = token.data(using: .utf8) else { return }
+        if sharedAccessGroup != nil {
+            let status = upsertToken(data: data, withAccessGroup: true)
+            if status != errSecMissingEntitlement {
+                return
+            }
+        }
+        _ = upsertToken(data: data, withAccessGroup: false)
+    }
+
+    private static func upsertToken(data: Data, withAccessGroup: Bool) -> OSStatus {
+        let query = baseQuery(withAccessGroup: withAccessGroup)
+        SecItemDelete(query as CFDictionary)
+        var addQuery = query
+        addQuery[kSecValueData as String] = data
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        return SecItemAdd(addQuery as CFDictionary, nil)
+    }
+
+    private static func deleteToken() {
+        if sharedAccessGroup != nil {
+            SecItemDelete(baseQuery(withAccessGroup: true) as CFDictionary)
+        }
+        SecItemDelete(baseQuery(withAccessGroup: false) as CFDictionary)
     }
 }
 

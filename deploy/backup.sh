@@ -2,7 +2,7 @@
 # Nightly backup: Postgres (online, pg_dump custom format) + Neo4j (offline dump: Neo4j Community can
 # only dump a stopped database, so Neo4j pauses for the dump, typically well under a minute).
 #
-#   deploy/backup.sh                     # upload to R2 (needs R2_* in /opt/graphrecall/.env)
+#   deploy/backup.sh                     # upload to R2 (needs BACKUP_R2_* in /opt/graphrecall/.env)
 #   BACKUP_DEST=/tmp/drill deploy/backup.sh   # local folder instead (used by the CI restore drill)
 #
 # Retention: set a 14-day lifecycle rule on the R2 bucket (see RUNBOOK.md); local mode keeps the
@@ -40,9 +40,9 @@ if [[ -n "${BACKUP_DEST:-}" ]]; then
   done
   echo "backup $STAMP written to $BACKUP_DEST/$STAMP"
 else
-  : "${R2_ENDPOINT:?}" "${R2_BUCKET:?}" "${R2_ACCESS_KEY_ID:?}" "${R2_SECRET_ACCESS_KEY:?}"
+  : "${BACKUP_R2_ENDPOINT:?}" "${BACKUP_R2_BUCKET:?}" "${BACKUP_R2_ACCESS_KEY_ID:?}" "${BACKUP_R2_SECRET_ACCESS_KEY:?}"
   docker run --rm -v "$WORK:/b:ro" \
-    -e AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" -e AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" -e AWS_DEFAULT_REGION=auto \
-    amazon/aws-cli s3 cp /b "s3://$R2_BUCKET/backups/$STAMP/" --recursive --endpoint-url "$R2_ENDPOINT"
-  echo "backup $STAMP uploaded to r2://$R2_BUCKET/backups/$STAMP/"
+    -e AWS_ACCESS_KEY_ID="$BACKUP_R2_ACCESS_KEY_ID" -e AWS_SECRET_ACCESS_KEY="$BACKUP_R2_SECRET_ACCESS_KEY" -e AWS_DEFAULT_REGION=auto \
+    amazon/aws-cli s3 cp /b "s3://$BACKUP_R2_BUCKET/backups/$STAMP/" --recursive --endpoint-url "$BACKUP_R2_ENDPOINT"
+  echo "backup $STAMP uploaded to r2://$BACKUP_R2_BUCKET/backups/$STAMP/"
 fi

@@ -21,13 +21,27 @@ actor ChatSSEClient {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
+                    let usedToken = await APIClient.shared.prepareFreshToken()
                     let request = try await APIClient.shared.chatStreamURLRequest(
                         message: message,
                         conversationId: conversationId,
                         sourceIds: sourceIds,
-                        userId: userId
+                        userId: userId,
+                        bearerToken: usedToken
                     )
-                    let (bytes, response) = try await session.bytes(for: request)
+                    var (bytes, response) = try await session.bytes(for: request)
+                    if let http = response as? HTTPURLResponse, http.statusCode == 401,
+                       let refreshedToken = await APIClient.shared.refreshTokenAfter401(failedToken: usedToken),
+                       !refreshedToken.isEmpty {
+                        let retryRequest = try await APIClient.shared.chatStreamURLRequest(
+                            message: message,
+                            conversationId: conversationId,
+                            sourceIds: sourceIds,
+                            userId: userId,
+                            bearerToken: refreshedToken
+                        )
+                        (bytes, response) = try await session.bytes(for: retryRequest)
+                    }
                     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                         var body = ""
                         for try await line in bytes.lines {

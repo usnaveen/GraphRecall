@@ -89,10 +89,17 @@ final class ShareInboxDrainer {
         }
 
         if let code = statusCode, !(200..<300).contains(code) {
+            if code == 401 {
+                // Extension never holds or rotates refresh_token: mark `.pending` on 401 so the main
+                // app refreshes once (avoiding reuse-detection revocation) and re-drains cleanly.
+                GRShareInbox.update(id: itemId, status: .pending, error: nil)
+                Task { await self.drainIfNeeded() }
+                return
+            }
             let bodyText = String(data: data, encoding: .utf8) ?? ""
             let msg = APIError.userFacing(APIError.http(code, bodyText), resource: "shared link")
             GRShareInbox.update(id: itemId, status: .failed, error: msg)
-            showToast(message: "Couldn’t ingest shared link", detail: msg, tone: .warning)
+            showToast(message: "Couldn’t import link", detail: msg, tone: .warning)
             return
         }
 
@@ -134,7 +141,13 @@ final class ShareInboxDrainer {
         } catch {
             let msg = APIError.userFacing(error, resource: "shared link")
             GRShareInbox.update(id: item.id, status: .failed, error: msg)
-            showToast(message: "Shared import paused", detail: msg, tone: .warning)
+            let headline: String
+            if case let APIError.http(code, _) = error, (400..<500).contains(code) {
+                headline = "Couldn’t import link"
+            } else {
+                headline = "Shared import paused"
+            }
+            showToast(message: headline, detail: msg, tone: .warning)
         }
         revision += 1
     }
@@ -157,17 +170,21 @@ final class ShareInboxDrainer {
 
         let conceptCount = response?.conceptIds.count ?? 0
         let cardCount = response?.flashcardIds.count ?? 0
+        let summaryDetail = warnings.first ?? "\(conceptCount) concepts · \(cardCount) cards"
         RecentImportsStore.shared.add(RecentImport(
             title: title,
             kind: "Share",
             status: response?.status ?? "completed",
-            detail: warnings.first ?? "\(conceptCount) concepts · \(cardCount) cards"
+            detail: summaryDetail
         ))
         if cardCount > 0 {
             NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
         }
 
-        if let warning = warnings.first, !warning.isEmpty {
+        if response?.statusReason == "completed_duplicate" {
+            let dupDetail = warnings.first(where: { !$0.isEmpty }) ?? "already in your library: this link was imported before"
+            showToast(message: "Already in your library", detail: dupDetail, tone: .warning)
+        } else if let warning = warnings.first, !warning.isEmpty {
             showToast(message: title, detail: warning, tone: .warning)
         } else {
             showToast(message: "Saved \(title)", detail: "Added to your knowledge graph", tone: .accent)

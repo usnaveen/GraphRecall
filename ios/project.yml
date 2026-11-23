@@ -40,6 +40,11 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.usnaveen.graphrecall
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.usnaveen.graphrecall
+          - $(AppIdentifierPrefix)group.com.usnaveen.graphrecall
+        com.apple.developer.applesignin:
+          - Default
     settings:
       base:
         PRODUCT_NAME: GraphRecall
@@ -58,6 +63,7 @@ targets:
           NSAllowsLocalNetworking: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        GRAppIdentifierPrefix: $(AppIdentifierPrefix)
         GRDevServerHost: $(GR_DEV_SERVER_HOST)
         GRAPIBaseURL: $(GR_API_BASE_URL)
         GRPrivacyPolicyURL: $(GR_PRIVACY_POLICY_URL)
@@ -108,6 +114,9 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.usnaveen.graphrecall
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.usnaveen.graphrecall.share
+          - $(AppIdentifierPrefix)group.com.usnaveen.graphrecall
     settings:
       base:
         PRODUCT_NAME: GraphRecallShare
@@ -119,6 +128,7 @@ targets:
       path: GraphRecallShare/Info.plist
       properties:
         CFBundleDisplayName: GraphRecall
+        GRAppIdentifierPrefix: $(AppIdentifierPrefix)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController

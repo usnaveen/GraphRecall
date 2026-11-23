@@ -93,13 +93,29 @@ struct ContentView: View {
             router.tab = .feed
         }
         .task {
-            await AuthSession.shared.restore()
-            // Tabs may have loaded before the token was restored.
-            if AuthSession.shared.isSignedIn {
-                NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
-            }
             #if DEBUG
-            if let seedURL = ProcessInfo.processInfo.environment["GR_SEED_SHARE_URL"]?
+            let env = ProcessInfo.processInfo.environment
+            if env["GR_RESET_AUTH"] == "1" {
+                await AuthSession.shared.resetForTesting()
+            }
+            if env["GR_RESET_SHARE_INBOX"] == "1" {
+                GRShareInbox.clear()
+                RecentImportsStore.shared.clear()
+            }
+            #endif
+            await AuthSession.shared.restore()
+            #if DEBUG
+            if let seedAccess = env["GR_SEED_ACCESS_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               let seedRefresh = env["GR_SEED_REFRESH_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !seedAccess.isEmpty, !seedRefresh.isEmpty {
+                let expiresIn = env["GR_SEED_EXPIRES_IN"].flatMap(Int.init) ?? 3600
+                await AuthSession.shared.seedSessionForTesting(
+                    accessToken: seedAccess,
+                    refreshToken: seedRefresh,
+                    expiresIn: expiresIn
+                )
+            }
+            if let seedURL = env["GR_SEED_SHARE_URL"]?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
                !seedURL.isEmpty {
                 let normalized = GRShareURLNormalizer.extractURL(from: seedURL) ?? seedURL
@@ -108,6 +124,10 @@ struct ContentView: View {
                 }
             }
             #endif
+            // Tabs may have loaded before the token was restored or seeded.
+            if AuthSession.shared.isSignedIn {
+                NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+            }
             await ShareInboxDrainer.shared.drainIfNeeded()
         }
         .onOpenURL { url in

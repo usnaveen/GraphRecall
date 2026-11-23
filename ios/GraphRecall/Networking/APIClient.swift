@@ -37,6 +37,28 @@ enum APIError: Error, LocalizedError {
         return .http(http.statusCode, text)
     }
 
+    /// Extracts readable `detail` text from FastAPI JSON error responses.
+    static func extractDetail(from body: String) -> String? {
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBody.isEmpty,
+              let data = trimmedBody.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        if let detail = obj["detail"] as? String {
+            let clean = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            return clean.isEmpty ? nil : String(clean.prefix(280))
+        }
+        if let items = obj["detail"] as? [[String: Any]] {
+            let messages = items.compactMap { ($0["msg"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !messages.isEmpty {
+                return String(messages.joined(separator: "; ").prefix(280))
+            }
+        }
+        return nil
+    }
+
     /// Short, UI-safe copy — never dump HTML / huge bodies into empty states.
     static func userFacing(_ error: Error, resource: String) -> String {
         if case let APIError.rateLimited(retryAfter, detail) = error {
@@ -52,12 +74,11 @@ enum APIError: Error, LocalizedError {
             return "Too many requests. Please try again shortly."
         }
 
-        let raw = error.localizedDescription
-        let lower = raw.lowercased()
-        let isHTML = lower.contains("<html") || lower.contains("<!doctype")
-        let tooLong = raw.count > 180
-
-        if case let APIError.http(code, _) = error {
+        if case let APIError.http(code, body) = error {
+            if [400, 409, 422].contains(code) || (code == 401 && resource == "account"),
+               let detail = extractDetail(from: body) {
+                return detail
+            }
             switch code {
             case 401, 403: return "Sign in to load your \(resource)."
             case 404: return "\(resource.capitalized) API not found (404)."
@@ -66,6 +87,11 @@ enum APIError: Error, LocalizedError {
             default: break
             }
         }
+
+        let raw = error.localizedDescription
+        let lower = raw.lowercased()
+        let isHTML = lower.contains("<html") || lower.contains("<!doctype")
+        let tooLong = raw.count > 180
 
         if isHTML || tooLong {
             if lower.contains("404") { return "\(resource.capitalized) API not found (404)." }
@@ -84,11 +110,18 @@ struct EmptyJSON: Decodable {}
 actor APIClient {
     static let shared = APIClient()
 
+    typealias TokenProvider = @Sendable (_ forceRefresh: Bool, _ failedToken: String?) async -> String?
+
     private let session: URLSession
     private var accessToken: String?
+    private var tokenProvider: TokenProvider?
 
     init(session: URLSession = .shared) {
         self.session = session
+    }
+
+    func setTokenProvider(_ provider: TokenProvider?) {
+        tokenProvider = provider
     }
 
     func setAccessToken(_ token: String?) {
@@ -98,9 +131,46 @@ actor APIClient {
 
     func getAccessToken() -> String? { accessToken }
 
+    /// Resolves the bearer token for an upcoming request, refreshing proactively if near expiry.
+    func prepareFreshToken() async -> String? {
+        if let provider = tokenProvider,
+           let provided = await provider(false, nil),
+           !provided.isEmpty {
+            return provided
+        }
+        return accessToken
+    }
+
+    /// Requests a single-flight session refresh after receiving HTTP 401.
+    func refreshTokenAfter401(failedToken: String?) async -> String? {
+        guard let provider = tokenProvider else { return nil }
+        return await provider(true, failedToken)
+    }
+
     // MARK: - Auth
     func loginWithGoogle(idToken: String) async throws -> AuthResponse {
         try await post("/auth/google", body: GoogleAuthRequest(idToken: idToken), auth: false)
+    }
+
+    func fetchAppleNonce() async throws -> AppleNonceResponse {
+        try await send("/auth/apple/nonce", method: "POST", body: Data("{}".utf8), auth: false)
+    }
+
+    func loginWithApple(_ body: AppleAuthRequest) async throws -> AuthSessionResponse {
+        try await post("/auth/apple", body: body, auth: false)
+    }
+
+    func exchangeGoogleSession(idToken: String) async throws -> AuthSessionResponse {
+        try await post("/auth/session/google", body: GoogleSessionRequest(idToken: idToken), auth: false)
+    }
+
+    func refreshSession(refreshToken: String) async throws -> AuthSessionResponse {
+        try await post("/auth/refresh", body: RefreshTokenRequest(refreshToken: refreshToken), auth: false)
+    }
+
+    func logoutSession(refreshToken: String) async throws {
+        let data = try JSONEncoder().encode(RefreshTokenRequest(refreshToken: refreshToken))
+        try await sendNoContent("/auth/logout", method: "POST", body: data, auth: false)
     }
 
     // MARK: - Feed / SM-2
@@ -324,7 +394,8 @@ actor APIClient {
         message: String,
         conversationId: String?,
         sourceIds: [String]? = nil,
-        userId: String = ChatIdentity.stubUserId
+        userId: String = ChatIdentity.stubUserId,
+        bearerToken: String? = nil
     ) throws -> URLRequest {
         guard let url = URL(string: "/api/chat/stream", relativeTo: APIConfig.baseURL)?.absoluteURL else {
             throw APIError.invalidURL
@@ -333,8 +404,9 @@ actor APIClient {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        if let accessToken {
-            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let token = bearerToken ?? accessToken
+        if let token, !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         req.httpBody = try JSONEncoder().encode(
             ChatStreamRequest(message: message, conversationId: conversationId, userId: userId, sourceIds: sourceIds)
@@ -404,30 +476,15 @@ actor APIClient {
         }
         components.queryItems = query
         guard let url = components.url else { throw APIError.invalidURL }
-        var req = URLRequest(url: url)
-        req.httpMethod = "GET"
-        req.timeoutInterval = APIConfig.defaultTimeout
-        if let accessToken {
-            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        }
-        do {
-            let (data, response) = try await session.data(for: req)
-            guard let http = response as? HTTPURLResponse else {
-                throw APIError.http(-1, "No HTTP response")
+        return try await executeDecoded({ token in
+            var req = URLRequest(url: url)
+            req.httpMethod = "GET"
+            req.timeoutInterval = APIConfig.defaultTimeout
+            if let token, !token.isEmpty {
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
-            guard (200..<300).contains(http.statusCode) else {
-                throw APIError.fromHTTPResponse(http, data: data)
-            }
-            do {
-                return try makeDecoder().decode(T.self, from: data)
-            } catch {
-                throw APIError.decoding(error)
-            }
-        } catch let err as APIError {
-            throw err
-        } catch {
-            throw APIError.transport(error)
-        }
+            return req
+        }, auth: true)
     }
 
     private func postMultipart<T: Decodable>(
@@ -460,32 +517,17 @@ actor APIClient {
         body.append("\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.timeoutInterval = timeout ?? APIConfig.defaultTimeout
-        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        req.httpBody = body
-        if auth, let accessToken {
-            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        }
-        do {
-            let (data, response) = try await session.data(for: req)
-            guard let http = response as? HTTPURLResponse else {
-                throw APIError.http(-1, "No HTTP response")
+        return try await executeDecoded({ token in
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = timeout ?? APIConfig.defaultTimeout
+            req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            req.httpBody = body
+            if auth, let token, !token.isEmpty {
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
-            guard (200..<300).contains(http.statusCode) else {
-                throw APIError.fromHTTPResponse(http, data: data)
-            }
-            do {
-                return try makeDecoder().decode(T.self, from: data)
-            } catch {
-                throw APIError.decoding(error)
-            }
-        } catch let err as APIError {
-            throw err
-        } catch {
-            throw APIError.transport(error)
-        }
+            return req
+        }, auth: auth)
     }
 
     private func makeDecoder() -> JSONDecoder {
@@ -516,7 +558,6 @@ actor APIClient {
         return try await send(path, method: "POST", body: data, auth: auth, timeout: timeout)
     }
 
-
     func postQuery<T: Decodable>(_ path: String, query: [URLQueryItem], auth: Bool = true) async throws -> T {
         guard let base = URL(string: path, relativeTo: APIConfig.baseURL)?.absoluteURL else {
             throw APIError.invalidURL
@@ -526,30 +567,15 @@ actor APIClient {
         }
         components.queryItems = query
         guard let url = components.url else { throw APIError.invalidURL }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.timeoutInterval = APIConfig.defaultTimeout
-        if auth, let accessToken {
-            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        }
-        do {
-            let (data, response) = try await session.data(for: req)
-            guard let http = response as? HTTPURLResponse else {
-                throw APIError.http(-1, "No HTTP response")
+        return try await executeDecoded({ token in
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = APIConfig.defaultTimeout
+            if auth, let token, !token.isEmpty {
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
-            guard (200..<300).contains(http.statusCode) else {
-                throw APIError.fromHTTPResponse(http, data: data)
-            }
-            do {
-                return try makeDecoder().decode(T.self, from: data)
-            } catch {
-                throw APIError.decoding(error)
-            }
-        } catch let err as APIError {
-            throw err
-        } catch {
-            throw APIError.transport(error)
-        }
+            return req
+        }, auth: auth)
     }
 
     func send<T: Decodable>(
@@ -559,6 +585,30 @@ actor APIClient {
         auth: Bool = true,
         timeout: TimeInterval? = nil
     ) async throws -> T {
+        try await executeDecoded({ token in
+            try buildJSONRequest(path: path, method: method, body: body, token: auth ? token : nil, timeout: timeout)
+        }, auth: auth)
+    }
+
+    func sendNoContent(
+        _ path: String,
+        method: String,
+        body: Data?,
+        auth: Bool = true,
+        timeout: TimeInterval? = nil
+    ) async throws {
+        _ = try await executeData({ token in
+            try buildJSONRequest(path: path, method: method, body: body, token: auth ? token : nil, timeout: timeout)
+        }, auth: auth)
+    }
+
+    private func buildJSONRequest(
+        path: String,
+        method: String,
+        body: Data?,
+        token: String?,
+        timeout: TimeInterval?
+    ) throws -> URLRequest {
         guard let url = URL(string: path, relativeTo: APIConfig.baseURL)?.absoluteURL else {
             throw APIError.invalidURL
         }
@@ -569,24 +619,58 @@ actor APIClient {
             req.httpBody = body
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        if auth, let accessToken {
-            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        if let token, !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        return req
+    }
+
+    private func executeDecoded<T: Decodable>(
+        _ buildRequest: (String?) throws -> URLRequest,
+        auth: Bool
+    ) async throws -> T {
+        let (data, _) = try await executeData(buildRequest, auth: auth)
         do {
-            let (data, response) = try await session.data(for: req)
-            guard let http = response as? HTTPURLResponse else {
+            return try makeDecoder().decode(T.self, from: data)
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    private func executeData(
+        _ buildRequest: (String?) throws -> URLRequest,
+        auth: Bool
+    ) async throws -> (Data, HTTPURLResponse) {
+        let initialToken: String? = auth ? await prepareFreshToken() : nil
+        let firstReq = try buildRequest(initialToken)
+        let (firstData, firstResponse) = try await performDataTask(for: firstReq)
+        guard let firstHTTP = firstResponse as? HTTPURLResponse else {
+            throw APIError.http(-1, "No HTTP response")
+        }
+
+        if firstHTTP.statusCode == 401, auth,
+           let refreshedToken = await refreshTokenAfter401(failedToken: initialToken),
+           !refreshedToken.isEmpty {
+            let retryReq = try buildRequest(refreshedToken)
+            let (retryData, retryResponse) = try await performDataTask(for: retryReq)
+            guard let retryHTTP = retryResponse as? HTTPURLResponse else {
                 throw APIError.http(-1, "No HTTP response")
             }
-            guard (200..<300).contains(http.statusCode) else {
-                throw APIError.fromHTTPResponse(http, data: data)
+            guard (200..<300).contains(retryHTTP.statusCode) else {
+                throw APIError.fromHTTPResponse(retryHTTP, data: retryData)
             }
-            do {
-                return try makeDecoder().decode(T.self, from: data)
-            } catch {
-                throw APIError.decoding(error)
-            }
-        } catch let err as APIError {
-            throw err
+            return (retryData, retryHTTP)
+        }
+
+        guard (200..<300).contains(firstHTTP.statusCode) else {
+            throw APIError.fromHTTPResponse(firstHTTP, data: firstData)
+        }
+        return (firstData, firstHTTP)
+    }
+
+    private func performDataTask(for request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
         } catch {
             throw APIError.transport(error)
         }

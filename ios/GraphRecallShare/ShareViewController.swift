@@ -109,6 +109,9 @@ final class ShareModel: ObservableObject {
         let isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be")
         guard !isYouTube else { return false }
 
+        // Only read the shared Keychain access_token here; refresh_token stays app-only so extension
+        // uploads never race token rotation (RFC 6819). Any 401 is marked `.pending` in ShareInboxDrainer
+        // so the main app refreshes once and drains the item cleanly.
         guard let baseString = GRSharedAuth.apiBaseURL,
               let baseURL = URL(string: baseString),
               let token = GRSharedAuth.bearerToken,

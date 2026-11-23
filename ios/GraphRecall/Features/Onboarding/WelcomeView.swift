@@ -46,6 +46,23 @@ struct WelcomeView: View {
                 }
                 .padding(.vertical, 8)
 
+                Button {
+                    Task {
+                        await auth.signInWithApple()
+                        if auth.isSignedIn { onFinish() }
+                    }
+                } label: {
+                    Label(auth.isWorking ? "Signing in…" : "Continue with Apple", systemImage: "apple.logo")
+                }
+                .buttonSizing(.flexible)
+                .controlSize(.large)
+                .buttonBorderShape(.capsule)
+                .buttonStyle(.glassProminent)
+                .tint(.white)
+                .foregroundStyle(.black)
+                .disabled(auth.isWorking)
+                .accessibilityIdentifier("welcome.appleSignIn")
+
                 if auth.isGoogleConfigured {
                     Button {
                         Task {
@@ -55,20 +72,15 @@ struct WelcomeView: View {
                     } label: {
                         Label(auth.isWorking ? "Signing in…" : "Continue with Google", systemImage: "person.crop.circle.badge.checkmark")
                     }
-                    .grButton(.primary)
+                    .grButton(.secondary)
                     .disabled(auth.isWorking)
+                }
 
-                    if let error = auth.lastError {
-                        Text(error)
-                            .font(GRType.caption)
-                            .foregroundStyle(GRColor.amber)
-                            .multilineTextAlignment(.center)
-                    }
-                } else {
-                    Button(action: onFinish) {
-                        Label("Get started", systemImage: "arrow.right")
-                    }
-                    .grButton(.primary)
+                if let error = auth.lastError {
+                    Text(error)
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.amber)
+                        .multilineTextAlignment(.center)
                 }
 
                 Button {
@@ -81,7 +93,7 @@ struct WelcomeView: View {
                 }
                 .grButton(auth.isGoogleConfigured ? .ghost : .secondary)
 
-                Text(auth.isGoogleConfigured ? "Your graph syncs to your Google account." : "You can sign in later from Profile → Settings.")
+                Text("Your graph syncs across your devices.")
                     .font(GRType.micro)
                     .foregroundStyle(GRColor.textTertiary)
             }

@@ -1,12 +1,56 @@
 import Foundation
 
 /// Body for `POST /auth/google` (`backend/routers/auth.py` → `GoogleAuthRequest.token`).
-struct GoogleAuthRequest: Codable {
+struct GoogleAuthRequest: Codable, Sendable {
     let idToken: String
     enum CodingKeys: String, CodingKey { case idToken = "token" }
 }
 
-struct AuthUser: Codable, Identifiable {
+/// Body for `POST /auth/session/google` (`GoogleSessionRequest.id_token`).
+struct GoogleSessionRequest: Encodable, Sendable {
+    let idToken: String
+    enum CodingKeys: String, CodingKey { case idToken = "id_token" }
+}
+
+/// Response for `POST /auth/apple/nonce`.
+struct AppleNonceResponse: Decodable, Sendable {
+    let nonce: String
+    let expiresIn: Int
+
+    enum CodingKeys: String, CodingKey {
+        case nonce
+        case expiresIn = "expires_in"
+    }
+}
+
+/// Optional first-time full name passed to `POST /auth/apple`.
+struct AppleFullNamePayload: Encodable, Sendable {
+    let given: String?
+    let family: String?
+}
+
+/// Body for `POST /auth/apple`.
+struct AppleAuthRequest: Encodable, Sendable {
+    let identityToken: String
+    let nonce: String
+    let authorizationCode: String?
+    let fullName: AppleFullNamePayload?
+
+    enum CodingKeys: String, CodingKey {
+        case identityToken = "identity_token"
+        case nonce
+        case authorizationCode = "authorization_code"
+        case fullName = "full_name"
+    }
+}
+
+/// Body for `POST /auth/refresh` and `POST /auth/logout`.
+struct RefreshTokenRequest: Encodable, Sendable {
+    let refreshToken: String
+    enum CodingKeys: String, CodingKey { case refreshToken = "refresh_token" }
+}
+
+struct AuthUser: Codable, Identifiable, Sendable, Equatable {
     let id: String
     let email: String?
     let name: String?
@@ -39,9 +83,25 @@ struct AuthUser: Codable, Identifiable {
     }
 }
 
-/// `/auth/google` returns `{status, user, token}` — the token echoes the Google ID token,
-/// which stays the bearer for later calls.
-struct AuthResponse: Codable {
+/// Session response returned by `/auth/apple`, `/auth/session/google`, and `/auth/refresh`.
+struct AuthSessionResponse: Decodable, Sendable {
+    let accessToken: String
+    let refreshToken: String
+    let tokenType: String
+    let expiresIn: Int
+    let user: AuthUser
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+        case tokenType = "token_type"
+        case expiresIn = "expires_in"
+        case user
+    }
+}
+
+/// Legacy `/auth/google` response shape `{status, user, token}`.
+struct AuthResponse: Codable, Sendable {
     let accessToken: String?
     let user: AuthUser?
 

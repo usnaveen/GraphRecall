@@ -30,16 +30,17 @@ jobs:
       neo4j:
         image: neo4j:5
         env:
-          NEO4J_AUTH: neo4j/ci-password
+          NEO4J_AUTH: neo4j/graphrecall-dev
         ports: ["7687:7687"]
         options: >-
           --health-cmd "wget -qO- http://localhost:7474 || exit 1" --health-interval 10s --health-timeout 5s --health-retries 30
     env:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/graphrecall
+      TEST_POSTGRES_URL: postgresql://ci:ci@localhost:5432/grtest
       MIGTEST_PG_ADMIN_URL: postgresql+asyncpg://ci:ci@localhost:5432/postgres
       NEO4J_URI: bolt://localhost:7687
       NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ci-password
+      NEO4J_PASSWORD: graphrecall-dev
       ENVIRONMENT: development
     steps:
       - uses: actions/checkout@v4
@@ -55,6 +56,8 @@ jobs:
         run: |
           python -m backend.db.migrate
           python -m backend.db.migrate --status
+      - name: Create empty test database (grtest)
+        run: PGPASSWORD=ci psql -h localhost -U ci -d graphrecall -c "CREATE DATABASE grtest"
       - name: Tests
         run: python -m pytest backend/tests -q
       - name: Production config refuses unsafe settings

@@ -129,7 +129,7 @@ struct SettingsView: View {
                             Button {
                                 confirmPurge = true
                             } label: {
-                                SettingsRow(title: "Delete all my data", subtitle: canUseAccount ? "Notes, concepts, cards and chats" : "Sign in with Google first", systemImage: "trash.fill", tone: .danger, titleColor: GRColor.danger) {
+                                SettingsRow(title: "Delete all my data", subtitle: canUseAccount ? "Notes, concepts, cards and chats" : "Sign in first", systemImage: "trash.fill", tone: .danger, titleColor: GRColor.danger) {
                                     if isPurging { ProgressView().tint(GRColor.danger) }
                                 }
                             }
@@ -139,7 +139,7 @@ struct SettingsView: View {
                             Button {
                                 confirmDeleteAccount = true
                             } label: {
-                                SettingsRow(title: "Delete account", subtitle: canUseAccount ? "Permanently deletes your account and data" : "Sign in with Google first", systemImage: "person.crop.circle.badge.xmark", tone: .danger, titleColor: GRColor.danger) {
+                                SettingsRow(title: "Delete account", subtitle: canUseAccount ? "Permanently deletes your account and data" : "Sign in first", systemImage: "person.crop.circle.badge.xmark", tone: .danger, titleColor: GRColor.danger) {
                                     if isDeletingAccount { ProgressView().tint(GRColor.danger) }
                                 }
                             }
@@ -233,10 +233,10 @@ struct SettingsView: View {
         .onChange(of: newCardsPerDay) { _, _ in scheduleStudySync() }
     }
 
-    /// Server-backed actions need a real Google session; the demo token is local-only.
+    /// Server-backed actions need a real Apple/Google/dev session; the demo token is local-only.
     private var canUseAccount: Bool {
         switch auth.state {
-        case .google, .localDev: return true
+        case .apple, .google, .localDev: return true
         case .signedOut, .demo: return false
         }
     }
@@ -279,12 +279,28 @@ struct SettingsView: View {
                     .grButton(.secondary, compact: true)
                 } else {
                     Button {
-                        Task { await auth.signInWithGoogle() }
+                        Task { await auth.signInWithApple() }
                     } label: {
-                        Label(auth.isWorking ? "Signing in…" : "Continue with Google", systemImage: "person.crop.circle.badge.checkmark")
+                        Label(auth.isWorking ? "Signing in…" : "Continue with Apple", systemImage: "apple.logo")
                     }
-                    .grButton(.primary, compact: true)
+                    .buttonSizing(.flexible)
+                    .controlSize(.regular)
+                    .buttonBorderShape(.capsule)
+                    .buttonStyle(.glassProminent)
+                    .tint(.white)
+                    .foregroundStyle(.black)
                     .disabled(auth.isWorking)
+                    .accessibilityIdentifier("settings.appleSignIn")
+
+                    if auth.isGoogleConfigured {
+                        Button {
+                            Task { await auth.signInWithGoogle() }
+                        } label: {
+                            Label(auth.isWorking ? "Signing in…" : "Continue with Google", systemImage: "person.crop.circle.badge.checkmark")
+                        }
+                        .grButton(.primary, compact: true)
+                        .disabled(auth.isWorking)
+                    }
 
                     Button {
                         Task {
@@ -295,12 +311,6 @@ struct SettingsView: View {
                         Text("Use demo session")
                     }
                     .grButton(.ghost, compact: true)
-
-                    if !auth.isGoogleConfigured {
-                        Text("Google Sign-In needs your client IDs — see ios/Config/Google.local.xcconfig.example.")
-                            .font(GRType.micro)
-                            .foregroundStyle(GRColor.textTertiary)
-                    }
                 }
             }
         }
@@ -313,7 +323,7 @@ struct SettingsView: View {
             guard !Task.isCancelled else { return }
             NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
             guard canUseAccount else {
-                message = "Saved on this device — sign in with Google to sync it to your account."
+                message = "Saved on this device — sign in to sync it to your account."
                 return
             }
             do {
@@ -380,7 +390,7 @@ struct SettingsView: View {
             RecentImportsStore.shared.clear()
             GRShareInbox.clear()
             GRSharedAuth.clear()
-            await auth.signOut()
+            await auth.signOut(revokeOnServer: false)
             GRHaptics.warning()
             dismiss()
         } catch {
