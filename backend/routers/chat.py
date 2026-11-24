@@ -821,6 +821,11 @@ async def delete_conversation(
 # POST /api/agent-bridge/requests with {question, conversation_id, context} and show a
 # pending bubble that resolves via GET /api/agent-bridge/requests/{id}/stream. Answers
 # arrive asynchronously (minutes). Optionally let the chat graph offer this as a tool.
+# SECURITY: agent answers and agent-curated cards are untrusted (they may quote emails or
+# web pages containing prompt injections). If they are ever added to this model's context
+# (history, RAG, "explain this card"), wrap them with
+# backend.agent_bridge.untrusted.agent_answer_for_prompt / wrap_untrusted first.
+# Not wired yet: today agent text is only shown to the user, never fed to the chat model.
 @router.post("/stream")
 async def stream_chat(
     request: ChatRequest,

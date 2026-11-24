@@ -8,6 +8,7 @@ from typing import Optional
 
 from backend.agent_bridge.keys import (
     AgentPrincipal,
+    KeyConfigError,
     hashes_match,
     key_row_is_active,
     parse_key_prefix,
@@ -23,8 +24,13 @@ async def authenticate_agent_key(repo: BridgeRepository, token: Optional[str]) -
     if prefix is None:
         return None
     row = await repo.get_key_by_prefix(prefix)
-    if not row or not hashes_match(row["key_hash"], token.strip()):
+    if not row:
         return None
+    try:
+        if not hashes_match(row["key_hash"], token.strip()):
+            return None
+    except KeyConfigError:
+        return None  # fail closed: misconfigured server authenticates nobody
     if not key_row_is_active(row):
         return None
     try:
