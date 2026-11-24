@@ -15,6 +15,14 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 USER_TABLES = (r"(notes|chunks|flashcards|quizzes|chat_conversations|chat_messages|user_uploads|saved_responses|"
                r"proficiency_scores|study_sessions|propositions|quiz_candidates|generated_content|communities)")
 
+# Every directory that runs queries. agents/, graphs/ and db/ were added on 2026-11-24 after a review
+# found unscoped concept lookups there that the routers/services-only scan had missed.
+SCANNED_DIRS = ("routers", "services", "agents", "graphs", "db", "agent_v2", "mcp")
+
+# The owner must be *bound to a parameter* (user_id = :x, {user_id: $x}, CAST(:x ...)). The old check
+# accepted any mention of "user_id", so a self-join like `ps.user_id = n.user_id` passed with no filter.
+OWNER_BOUND = re.compile(r"(user_id|\buid)\s*(=|:|IN)\s*(CAST\(\s*|ANY\(\s*)?[:$]\w+", re.I)
+
 # (file, start of the normalised query): reason it is safe. Keep reasons short and specific.
 REVIEWED = {
     ("routers/notes.py", "SELECT id, title, content_text, resource_type, source_url, created_at FROM notes"):
@@ -44,22 +52,47 @@ REVIEWED = {
         "community ids come from the user's own communities",
     ("services/feed_service.py", "UPDATE quiz_candidates SET status = 'generated' WHERE id = :id"):
         "candidate ids come from a select filtered by user_id",
+    ("routers/graph3d.py", "MATCH (c:Concept) {} RETURN c as concept"):
+        "where_clauses list always starts with c.user_id = $user_id",
+    ("routers/uploads.py", "SELECT id, user_id, upload_type, file_url"):
+        "where_clauses list always starts with user_id = :user_id",
+    ("services/ingestion/reembed.py", "UPDATE chunks SET embedding = CAST(:e AS vector) WHERE id = CAST(:id AS uuid)"):
+        "chunk ids come from _MISSING_SQL, filtered by n.user_id",
 }
+
+# Graph modules whose LLM tools take a topic but no user context. They are unreachable today (no
+# router, service or worker imports them); test_unscoped_graphs_stay_unreachable keeps it that way.
+UNREACHABLE = ("graphs/content_graph.py", "graphs/quiz_graph.py", "graphs/research_graph.py")
 
 
 def unfiltered_queries():
     out = []
-    for p in sorted(list((ROOT / "routers").glob("*.py")) + list((ROOT / "services").rglob("*.py"))):
+    files = []
+    for d in SCANNED_DIRS:
+        files += list((ROOT / d).rglob("*.py"))
+    for p in sorted(files):
         try:
             tree = ast.parse(p.read_text())
         except SyntaxError:
             continue
+        # f-strings: judge the literal text of the whole f-string, not each fragment, and skip the
+        # fragments themselves (otherwise `MATCH ... {where}` splits away its user_id filter).
+        fstring_parts = set()
+        texts = []
         for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                s = node.value
+            if isinstance(node, ast.JoinedStr):
+                parts = [v for v in node.values if isinstance(v, ast.Constant) and isinstance(v.value, str)]
+                fstring_parts.update(id(v) for v in parts)
+                texts.append((node, " {} ".join(v.value for v in parts)))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in fstring_parts:
+                texts.append((node, node.value))
+        for node, s in texts:
+            if True:
                 sql = re.search(r"\b(SELECT|UPDATE|DELETE)\b", s) and re.search(rf"\b(FROM|UPDATE|JOIN)\s+{USER_TABLES}\b", s)
-                cypher = re.search(r"\bMATCH\b", s) and re.search(r"\{\s*id:\s*\$", s)
-                if (sql or cypher) and "user_id" not in s and "uid" not in s:
+                cypher = re.search(r"\bMATCH\b", s) and (
+                    re.search(r"\{\s*id:\s*\$", s) or re.search(r":(Concept|NoteSource)\b", s))
+                if (sql or cypher) and not OWNER_BOUND.search(s):
                     out.append((str(p.relative_to(ROOT)), " ".join(s.split()), node.lineno))
     return out
 
@@ -67,6 +100,34 @@ def unfiltered_queries():
 def test_every_user_data_query_filters_by_owner_or_is_reviewed():
     unreviewed = []
     for f, q, line in unfiltered_queries():
+        if f in UNREACHABLE:
+            continue
         if not any(f == rf and q.startswith(rq) for rf, rq in REVIEWED):
             unreviewed.append(f"{f}:{line}  {q[:110]}")
     assert not unreviewed, "queries on user data without an owner filter:\n" + "\n".join(unreviewed)
+
+
+def test_unscoped_graphs_stay_unreachable():
+    """content/quiz/research graphs query concepts and notes with no user filter. Wiring one into a
+    request path must come with user scoping; until then nothing reachable may import them, by
+    module path or by any name they export through backend.graphs."""
+    modules = [pathlib.Path(u).stem for u in UNREACHABLE] + ["supervisor_graph"]
+    exported = {"quiz_graph", "run_quiz_generation", "research_agent", "run_research", "get_research_history",
+                "content_graph", "run_content_generation", "supervisor_graph"}
+    offenders = []
+    files = [ROOT / "main.py"]
+    for d in ("routers", "services", "agents", "agent_v2", "mcp"):
+        files += list((ROOT / d).rglob("*.py"))
+    for p in files:
+        tree = ast.parse(p.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                names = {a.name for a in node.names}
+                if node.module == "backend.graphs" and names & exported:
+                    offenders.append(f"{p.relative_to(ROOT)} imports {sorted(names & exported)} from backend.graphs")
+                if any(node.module == f"backend.graphs.{m}" for m in modules):
+                    offenders.append(f"{p.relative_to(ROOT)} imports {node.module}")
+            elif isinstance(node, ast.Import):
+                offenders += [f"{p.relative_to(ROOT)} imports {a.name}" for a in node.names
+                              if any(a.name == f"backend.graphs.{m}" for m in modules)]
+    assert not offenders, "\n".join(offenders)

@@ -66,6 +66,10 @@ async def create_upload(
                 file_data, file.filename or "upload", file.content_type or "application/octet-stream", user_id
             )
         elif file_url:
+            # An external link is fine, but a URL into our bucket must be under the caller's own
+            # prefix: otherwise deleting this upload would delete someone else's file (GR-SEC-02).
+            if get_storage_service().is_other_users_object(file_url, user_id):
+                raise HTTPException(status_code=400, detail="file_url must be one of your own uploads")
             resolved_url = file_url
         else:
             raise HTTPException(status_code=400, detail="Either 'file' or 'file_url' must be provided")
@@ -406,7 +410,7 @@ async def delete_upload(
         if file_url:
             try:
                 storage = get_storage_service()
-                await storage.delete_file(file_url)
+                await storage.delete_file(file_url, owner_id=user_id)
             except Exception as e:
                 logger.warning(
                     "Uploads: Failed to delete file from storage",

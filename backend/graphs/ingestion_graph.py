@@ -21,6 +21,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Literal
 
 import structlog
+
+from backend.graphs.thread_ids import ingest_thread_id, thread_belongs_to
 from backend.config.llm import get_chat_model
 from backend.telemetry import record as record_timing
 from langgraph.graph import StateGraph, START, END
@@ -2025,7 +2027,9 @@ async def run_ingestion(
     Returns:
         Dict with note_id, concept_ids, term_card_ids, thread_id
     """
-    thread_id = thread_id or str(uuid.uuid4())
+    thread_id = thread_id or ingest_thread_id(user_id)
+    if not thread_belongs_to(thread_id, user_id):
+        raise ValueError("ingestion thread does not belong to this user")
     config = {"configurable": {"thread_id": thread_id}}
 
     initial_state: IngestionState = {

@@ -20,6 +20,8 @@ import uuid
 import asyncio
 import zipfile
 import structlog
+
+from backend.graphs.thread_ids import ingest_thread_id, thread_belongs_to
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from backend.auth.middleware import get_current_user
@@ -670,7 +672,7 @@ async def ingest_processed_zip(
         if not zip_bytes:
             raise HTTPException(status_code=400, detail="Uploaded zip file is empty")
 
-        thread_id = str(uuid.uuid4())
+        thread_id = ingest_thread_id(user_id)
         _zip_ingest_owners[thread_id] = user_id
         _zip_ingest_events[thread_id] = []
         _zip_ingest_results.pop(thread_id, None)
@@ -796,8 +798,10 @@ async def get_status(
     - error: Failed with error
     - not_found: Thread ID not found
     """
+    user_id = str(current_user["id"])
+    if not thread_belongs_to(thread_id, user_id):
+        raise HTTPException(status_code=404, detail="Thread not found")
     try:
-        user_id = str(current_user["id"])
         result = await get_ingestion_status(thread_id, user_id=user_id)
         
         return StatusResponse(
@@ -831,8 +835,7 @@ async def get_processed_zip_events(
     exposing raw infrastructure logs.
     """
     user_id = str(current_user["id"])
-    owner = _zip_ingest_owners.get(thread_id)
-    if owner and owner != user_id:
+    if not thread_belongs_to(thread_id, user_id):
         raise HTTPException(status_code=404, detail="Thread not found")
 
     status_payload = await get_ingestion_status(thread_id, user_id=user_id)
@@ -897,8 +900,10 @@ async def approve_and_resume(
         cancelled=request.cancelled,
     )
     
+    user_id = str(current_user["id"])
+    if not thread_belongs_to(thread_id, user_id):
+        raise HTTPException(status_code=404, detail="Thread not found")
     try:
-        user_id = str(current_user["id"])
         result = await resume_ingestion(
             thread_id=thread_id,
             user_approved_concepts=request.approved_concepts,

@@ -71,6 +71,7 @@ class WebResearchAgent:
     async def check_resources_sufficient(
         self,
         topic_name: str,
+        user_id: str,
         min_resources: int = 3,
     ) -> tuple[bool, list[dict]]:
         """
@@ -84,21 +85,21 @@ class WebResearchAgent:
             notes_query = """
             SELECT n.id, n.title, n.content_text, n.resource_type
             FROM notes n
-            JOIN proficiency_scores ps ON ps.user_id = n.user_id
-            WHERE n.content_text ILIKE :topic_pattern
+            WHERE n.user_id = CAST(:user_id AS uuid)
+              AND n.content_text ILIKE :topic_pattern
             LIMIT 10
             """
             
             notes = await self.pg_client.execute_query(
                 notes_query,
-                {"topic_pattern": f"%{topic_name}%"},
+                {"topic_pattern": f"%{topic_name}%", "user_id": str(user_id)},
             )
             
             # Get concepts from Neo4j
             concepts_query = """
-            MATCH (c:Concept)
+            MATCH (c:Concept {user_id: $user_id})
             WHERE toLower(c.name) CONTAINS toLower($topic)
-            OPTIONAL MATCH (n:NoteSource)-[:EXPLAINS]->(c)
+            OPTIONAL MATCH (n:NoteSource {user_id: $user_id})-[:EXPLAINS]->(c)
             RETURN c.id as concept_id, c.name as name, 
                    collect(n.id) as linked_notes
             LIMIT 5
@@ -106,7 +107,7 @@ class WebResearchAgent:
             
             concepts = await self.neo4j_client.execute_query(
                 concepts_query,
-                {"topic": topic_name},
+                {"topic": topic_name, "user_id": str(user_id)},
             )
             
             total_resources = len(notes) + len(concepts)
@@ -326,7 +327,7 @@ Ensure all strings are properly escaped, especially double quotes inside the con
         logger.info("research_topic", topic=topic, user_id=user_id, force=force)
         
         # Check existing resources
-        is_sufficient, existing = await self.check_resources_sufficient(topic)
+        is_sufficient, existing = await self.check_resources_sufficient(topic, user_id)
         
         if is_sufficient and not force:
             return {

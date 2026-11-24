@@ -311,8 +311,8 @@ async def get_saved_items(
         if concept_ids:
             try:
                 result = await neo4j_client.execute_query(
-                    "MATCH (c:Concept) WHERE c.id IN $ids RETURN c.id as id, c.name as name",
-                    {"ids": concept_ids},
+                    "MATCH (c:Concept {user_id: $user_id}) WHERE c.id IN $ids RETURN c.id as id, c.name as name",
+                    {"ids": concept_ids, "user_id": user_id},
                 )
                 for row in result:
                     concept_map[row["id"]] = row["name"]
@@ -392,8 +392,8 @@ async def get_quiz_history(
 
         concept_map = {}
         if concept_ids:
-            query = "MATCH (c:Concept) WHERE c.id IN $ids RETURN c.id as id, c.name as name"
-            result = await neo4j_client.execute_query(query, {"ids": concept_ids})
+            query = "MATCH (c:Concept {user_id: $user_id}) WHERE c.id IN $ids RETURN c.id as id, c.name as name"
+            result = await neo4j_client.execute_query(query, {"ids": concept_ids, "user_id": user_id})
             for row in result:
                 concept_map[row["id"]] = row["name"]
 
@@ -610,8 +610,9 @@ async def generate_topic_quiz_stream(
             concept_def = ""
             try:
                 concept_res = await neo4j_client.execute_query(
-                    "MATCH (c:Concept) WHERE toLower(c.name) = toLower($name) RETURN c.id as id, c.definition as def LIMIT 1",
-                    {"name": topic_name},
+                    "MATCH (c:Concept {user_id: $user_id}) WHERE toLower(c.name) = toLower($name) "
+                    "RETURN c.id as id, c.definition as def LIMIT 1",
+                    {"name": topic_name, "user_id": user_id},
                 )
                 if concept_res:
                     concept_id = concept_res[0]["id"]
@@ -898,9 +899,9 @@ async def get_resources_for_concept(
         
         # Get concepts from Neo4j
         concepts_query = """
-        MATCH (c:Concept)
+        MATCH (c:Concept {user_id: $user_id})
         WHERE toLower(c.name) CONTAINS toLower($name)
-        OPTIONAL MATCH (n:NoteSource)-[:EXPLAINS]->(c)
+        OPTIONAL MATCH (n:NoteSource {user_id: $user_id})-[:EXPLAINS]->(c)
         RETURN c.id as id, c.name as name, c.definition as definition,
                c.domain as domain, collect(n.id) as linked_notes
         LIMIT 10
@@ -908,7 +909,7 @@ async def get_resources_for_concept(
         
         concepts = await neo4j_client.execute_query(
             concepts_query,
-            {"name": concept_name}
+            {"name": concept_name, "user_id": user_id}
         )
         
         for concept in concepts:

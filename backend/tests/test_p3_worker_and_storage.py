@@ -184,7 +184,8 @@ async def test_storage_service_r2_pdf_and_prod_fail_fast(monkeypatch, tmp_path):
     url = await storage.upload_file(b"%PDF-1.4...", "notes.pdf", "application/pdf", "u1")
     assert url.startswith("https://cdn.example.com/uploads/u1/")
     assert mock_s3.put_object.call_count == 1
-    deleted = await storage.delete_file(url)
+    assert await storage.delete_file(url, owner_id="u2") is False  # not u2's file
+    deleted = await storage.delete_file(url, owner_id="u1")
     assert deleted is True
     assert mock_s3.delete_object.call_count == 1
 
@@ -208,7 +209,8 @@ async def test_storage_service_r2_pdf_and_prod_fail_fast(monkeypatch, tmp_path):
     assert dev_storage.is_configured() is False
     local_url = await dev_storage.upload_file(b"png", "a.png", "image/png", "u1")
     assert local_url.startswith("file://")
-    assert await dev_storage.delete_file(local_url) is True
+    assert await dev_storage.delete_file(local_url, owner_id="u2") is False
+    assert await dev_storage.delete_file(local_url, owner_id="u1") is True
 
     monkeypatch.setenv("ENVIRONMENT", "production")
     with pytest.raises(RuntimeError, match="production"):
