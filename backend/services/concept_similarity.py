@@ -53,15 +53,19 @@ DEFAULT_MIN_MARGIN = 0.02
 # median up and hides the others behind it.
 _BASELINE_POOL = 25
 
-# The vector index cannot filter by user inside the CALL, so over-fetch and
-# filter after. Multiplier covers a graph shared by a handful of users.
+# Fallback over-fetch multiplier when running on Neo4j <2025.x without in-index filtering.
 _OVERFETCH = 5
+_FALLBACK_OVERFETCH_MULT = 10
+_FALLBACK_OVERFETCH_MIN = 250
 
 
 async def ensure_vector_index() -> bool:
-    """Create the concept vector index if it is missing. Safe to call repeatedly."""
+    """Create (or upgrade) the concept vector index with user_id in-index pre-filtering."""
     neo4j = await get_neo4j_client()
     dims = get_embedding_dims()
+    if hasattr(neo4j, "ensure_concept_vector_index"):
+        return await neo4j.ensure_concept_vector_index(CONCEPT_VECTOR_INDEX, dims)
+
     try:
         await neo4j.execute_query(
             f"""
@@ -76,9 +80,70 @@ async def ensure_vector_index() -> bool:
         )
         return True
     except Exception as e:
-        # An older Neo4j without vector indexes should degrade, not crash the app.
         logger.warning("ConceptSimilarity: vector index unavailable", error=str(e))
         return False
+
+
+async def _query_concept_candidates(
+    neo4j,
+    user_id: str,
+    embedding: list[float],
+    pool_size: int,
+    min_score: float,
+) -> list[dict]:
+    """Query Neo4j concept vector index using native Cypher 25 pre-filtering when available."""
+    filtered_cypher = f"""
+        CYPHER 25
+        MATCH (c:Concept)
+        SEARCH c IN (
+          VECTOR INDEX `{CONCEPT_VECTOR_INDEX}`
+          FOR $embedding
+          WHERE c.user_id = $user_id
+          LIMIT $k
+        )
+        SCORE AS score
+        WHERE score >= $min_score
+        RETURN c.id AS id, c.name AS name, c.definition AS definition,
+               c.domain AS domain, score
+        ORDER BY score DESC
+    """
+    filtered_params = {
+        "k": pool_size,
+        "embedding": embedding,
+        "user_id": user_id,
+        "min_score": min_score,
+    }
+
+    try:
+        return await neo4j.execute_query(filtered_cypher, filtered_params)
+    except Exception as err:
+        msg = str(err)
+        if any(code in msg for code in ("22ND3", "51N63", "additional property", "not ready")):
+            try:
+                if await ensure_vector_index():
+                    return await neo4j.execute_query(filtered_cypher, filtered_params)
+            except Exception as retry_err:
+                logger.debug("ConceptSimilarity: Cypher 25 retry failed, falling back", error=str(retry_err))
+        else:
+            logger.debug("ConceptSimilarity: Cypher 25 SEARCH unavailable, falling back", error=msg)
+
+    fallback_k = max(pool_size * _FALLBACK_OVERFETCH_MULT, _FALLBACK_OVERFETCH_MIN)
+    return await neo4j.execute_query(
+        f"""
+        CALL db.index.vector.queryNodes('{CONCEPT_VECTOR_INDEX}', $k, $embedding)
+        YIELD node, score
+        WHERE node.user_id = $user_id AND score >= $min_score
+        RETURN node.id AS id, node.name AS name, node.definition AS definition,
+               node.domain AS domain, score
+        ORDER BY score DESC
+        """,
+        {
+            "k": fallback_k,
+            "embedding": embedding,
+            "user_id": user_id,
+            "min_score": min_score,
+        },
+    )
 
 
 async def similar_to_embedding(
@@ -106,22 +171,7 @@ async def similar_to_embedding(
     # caller only wants the top few.
     pool_size = max(limit * _OVERFETCH, _BASELINE_POOL)
     try:
-        rows = await neo4j.execute_query(
-            f"""
-            CALL db.index.vector.queryNodes('{CONCEPT_VECTOR_INDEX}', $k, $embedding)
-            YIELD node, score
-            WHERE node.user_id = $user_id AND score >= $min_score
-            RETURN node.id AS id, node.name AS name, node.definition AS definition,
-                   node.domain AS domain, score
-            ORDER BY score DESC
-            """,
-            {
-                "k": pool_size,
-                "embedding": embedding,
-                "user_id": user_id,
-                "min_score": min_score,
-            },
-        )
+        rows = await _query_concept_candidates(neo4j, user_id, embedding, pool_size, min_score)
     except Exception as e:
         logger.warning("ConceptSimilarity: vector query failed", error=str(e))
         return []

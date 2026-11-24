@@ -131,18 +131,8 @@ class Neo4jClient:
             # Indexes for common lookups
             "CREATE INDEX concept_name IF NOT EXISTS FOR (c:Concept) ON (c.name)",
             "CREATE INDEX concept_domain IF NOT EXISTS FOR (c:Concept) ON (c.domain)",
+            "CREATE INDEX concept_user_id IF NOT EXISTS FOR (c:Concept) ON (c.user_id)",
             "CREATE INDEX note_source_note_id IF NOT EXISTS FOR (n:NoteSource) ON (n.note_id)",
-            # Vector index over concept embeddings: relatedness follows meaning,
-            # so a new paper connects to what it is about, not to what it happens
-            # to share a word with.
-            f"""
-            CREATE VECTOR INDEX concept_embedding IF NOT EXISTS
-            FOR (c:Concept) ON (c.embedding)
-            OPTIONS {{ indexConfig: {{
-                `vector.dimensions`: {int(get_embedding_dims())},
-                `vector.similarity_function`: 'cosine'
-            }} }}
-            """,
         ]
 
         async with self._driver.session() as session:
@@ -153,7 +143,94 @@ class Neo4jClient:
                     # Constraints might already exist
                     logger.debug("Schema query result", query=query[:50], info=str(e))
 
+        await self.ensure_concept_vector_index(dims=get_embedding_dims())
         logger.info("Neo4j schema initialized")
+
+    async def ensure_concept_vector_index(
+        self,
+        index_name: str = "concept_embedding",
+        dims: Optional[int] = None,
+    ) -> bool:
+        """Ensure the Concept vector index exists with user_id in-index pre-filtering."""
+        if not self._driver:
+            await self.initialize()
+
+        if dims is None:
+            from backend.config.llm import get_embedding_dims
+            dims = get_embedding_dims()
+
+        async with self._driver.session() as session:
+            try:
+                existing_res = await session.run(
+                    "SHOW VECTOR INDEXES YIELD name, properties, state WHERE name = $name RETURN name, properties, state",
+                    {"name": index_name},
+                )
+                existing = await existing_res.data()
+            except Exception:
+                existing = []
+
+            if existing and "user_id" in (existing[0].get("properties") or []):
+                if existing[0].get("state") != "ONLINE":
+                    await (await session.run("CALL db.awaitIndex($name, 30)", {"name": index_name})).consume()
+                return True
+
+            supports_cypher_25 = False
+            try:
+                comp_res = await session.run("CALL dbms.components() YIELD name, versions RETURN name, versions")
+                for row in await comp_res.data():
+                    if row.get("name") == "Cypher" and "25" in [str(v) for v in (row.get("versions") or [])]:
+                        supports_cypher_25 = True
+                        break
+            except Exception:
+                supports_cypher_25 = False
+
+            if existing and not supports_cypher_25:
+                return True
+
+            if existing:
+                # Upgrade legacy unfiltered index to support Cypher 25 `WHERE c.user_id = $user_id` pre-filters.
+                try:
+                    await (await session.run(f"DROP INDEX `{index_name}` IF EXISTS")).consume()
+                except Exception as e:
+                    logger.debug("Could not drop legacy vector index", index=index_name, info=str(e))
+
+            if supports_cypher_25:
+                try:
+                    await (await session.run(
+                        f"""
+                        CYPHER 25
+                        CREATE VECTOR INDEX `{index_name}` IF NOT EXISTS
+                        FOR (c:Concept) ON (c.embedding)
+                        WITH [c.user_id]
+                        OPTIONS {{ indexConfig: {{
+                            `vector.dimensions`: {int(dims)},
+                            `vector.similarity_function`: 'cosine'
+                        }} }}
+                        """
+                    )).consume()
+                    await (await session.run("CALL db.awaitIndex($name, 30)", {"name": index_name})).consume()
+                    return True
+                except Exception as filtered_err:
+                    logger.debug(
+                        "Cypher 25 filtered vector index unavailable, falling back",
+                        error=str(filtered_err),
+                    )
+
+            try:
+                await (await session.run(
+                    f"""
+                    CREATE VECTOR INDEX `{index_name}` IF NOT EXISTS
+                    FOR (c:Concept) ON (c.embedding)
+                    OPTIONS {{ indexConfig: {{
+                        `vector.dimensions`: {int(dims)},
+                        `vector.similarity_function`: 'cosine'
+                    }} }}
+                    """
+                )).consume()
+                return True
+            except Exception as legacy_err:
+                logger.warning("Concept vector index unavailable", error=str(legacy_err))
+                return False
 
     async def find_seed_concepts(
         self,
