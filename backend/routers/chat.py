@@ -5,6 +5,8 @@ import uuid
 from typing import Optional
 
 import structlog
+
+from backend.graphs.thread_ids import chat_thread_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -56,12 +58,22 @@ async def chat(
     Include conversation_history for multi-turn conversations.
     """
     try:
-        # Use existing conversation ID as thread_id for multi-turn persistence
-        thread_id = request.conversation_id or str(uuid.uuid4())
+        user_id = str(current_user["id"])
+        # Multi-turn: the conversation must be the caller's own (GR-SEC-03), and its checkpoint
+        # thread lives in the caller's namespace, so another user's id can't load their history.
+        if request.conversation_id:
+            pg_client = await get_postgres_client()
+            owned = await pg_client.execute_query(
+                "SELECT id FROM chat_conversations WHERE id = :id AND user_id = :user_id",
+                {"id": request.conversation_id, "user_id": user_id},
+            )
+            if not owned:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+        thread_id = chat_thread_id(user_id, request.conversation_id)
 
         # Execute the graph
         result = await run_chat(
-            user_id=str(current_user["id"]),
+            user_id=user_id,
             message=request.message,
             thread_id=thread_id,
         )
@@ -72,6 +84,8 @@ async def chat(
             related_concepts=result["related_concepts"]
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Chat: Error processing message", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -92,7 +106,7 @@ async def quick_chat(
         result = await run_chat(
             user_id=str(current_user["id"]),
             message=request.message,
-            thread_id=str(uuid.uuid4())
+            thread_id=chat_thread_id(str(current_user["id"]))
         )
         
         return ChatResponse(
@@ -356,7 +370,7 @@ async def add_message_to_conversation(
         result = await run_chat(
             user_id=user_id,
             message=message,
-            thread_id=conversation_id  # Use conversation_id as thread_id for persistence
+            thread_id=chat_thread_id(user_id, conversation_id),
         )
         
         response_text = result["response"]
@@ -800,10 +814,18 @@ async def delete_conversation(
         user_id = str(current_user["id"])
         pg_client = await get_postgres_client()
         
-        await pg_client.execute_update(
-            "DELETE FROM chat_conversations WHERE id = :id AND user_id = :user_id",
+        deleted = await pg_client.execute_query(
+            "DELETE FROM chat_conversations WHERE id = :id AND user_id = :user_id RETURNING id",
             {"id": conversation_id, "user_id": user_id}
         )
+        if deleted:
+            # The checkpoint thread holds the full message history and retrieved note text too.
+            try:
+                from backend.graphs.checkpointer import get_checkpointer
+
+                await get_checkpointer().adelete_thread(chat_thread_id(user_id, conversation_id))
+            except Exception as e:  # noqa: BLE001  (best effort; account deletion sweeps the rest)
+                logger.warning("Chat: checkpoint thread not deleted", error=str(e))
         
         return {"status": "deleted", "conversation_id": conversation_id}
         
@@ -860,7 +882,7 @@ async def stream_chat(
             if not conversation_id:
                 raise RuntimeError("Failed to create conversation")
 
-            thread_id = conversation_id or str(uuid.uuid4())
+            thread_id = chat_thread_id(user_id, conversation_id)
             config = {"configurable": {"thread_id": thread_id}}
 
             # Save user message immediately

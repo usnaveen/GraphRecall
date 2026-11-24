@@ -16,6 +16,8 @@ import os
 from typing import Annotated, Literal, Optional
 
 import structlog
+
+from backend.graphs.thread_ids import chat_thread_id
 from langchain_core.messages import (
     SystemMessage,
     HumanMessage,
@@ -878,7 +880,7 @@ async def run_chat(
     """
     import uuid
     
-    thread_id = thread_id or str(uuid.uuid4())
+    thread_id = thread_id or chat_thread_id(user_id)
     config = {"configurable": {"thread_id": thread_id}}
     
     initial_state: ChatState = {
