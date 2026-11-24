@@ -33,13 +33,27 @@ struct FeedContentCard: View {
 
             Divider().overlay(GRColor.stroke)
 
-            FeedDifficultySlider(graded: model.grades[item.id]) { difficulty in
-                Task {
-                    await model.grade(item, difficulty: difficulty)
-                    onGraded()
+            if item.isAgentCurated {
+                // Agent cards are reading suggestions, not SM-2 cards: no toughness slider.
+                // TODO(agent-bridge-ios): POST a seen/dismiss interaction once the backend has one.
+                HStack {
+                    Text("Suggested by your agent \u{00B7} approved by you")
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.textTertiary)
+                    Spacer(minLength: 0)
+                    GRChip(title: "Done", systemImage: "checkmark", style: .outline, compact: true) {
+                        onGraded()
+                    }
                 }
+            } else {
+                FeedDifficultySlider(graded: model.grades[item.id]) { difficulty in
+                    Task {
+                        await model.grade(item, difficulty: difficulty)
+                        onGraded()
+                    }
+                }
+                .id(item.id) // a fresh slider per card
             }
-            .id(item.id) // a fresh slider per card
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

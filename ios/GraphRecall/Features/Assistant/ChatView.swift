@@ -3,6 +3,9 @@ import UIKit
 
 struct ChatView: View {
     @State private var model = ChatViewModel()
+    /// Agent bridge: "Ask my agent" hand-offs (hidden unless `AgentBridgeCapability.isAvailable`).
+    @State private var agentAsk = AgentAskStore()
+    private let agentBridge = AgentBridgeCapability.shared
     @State private var dictation = GRDictation()
     @State private var openSource: ChatSourceRef?
     /// Whether the conversation is scrolled to (or near) the latest message.
@@ -53,6 +56,8 @@ struct ChatView: View {
         .task {
             await model.onAppear()
             consumeRouter()
+            await agentBridge.refresh()
+            if agentBridge.isAvailable { agentAsk.restore() }
         }
         .onChange(of: router.pendingAssistantPrompt) { _, _ in consumeRouter() }
         .onChange(of: router.pendingConversationId) { _, _ in consumeRouter() }
@@ -200,6 +205,9 @@ struct ChatView: View {
                     ForEach(model.messages) { message in
                         messageBubble(message)
                             .id(message.id)
+                    }
+                    if agentBridge.isAvailable {
+                        AgentAskSection(store: agentAsk)
                     }
                     Color.clear
                         .frame(height: 1)
@@ -446,6 +454,13 @@ struct ChatView: View {
             }
             .disabled(busy || saved)
 
+            if agentBridge.isAvailable, let question = userQuestion(before: message) {
+                GRChip(title: "Ask my agent", systemImage: "sparkles", style: .tinted(.cyan), compact: true) {
+                    handOffToAgent(question)
+                }
+                .accessibilityIdentifier("chat.askAgent")
+            }
+
             Spacer(minLength: 0)
 
             if busy {
@@ -540,6 +555,25 @@ struct ChatView: View {
                 .padding(.leading, inputFocused ? 2 : 14)
                 .padding(.vertical, 11)
 
+            if agentBridge.isAvailable && model.canSend {
+                // Sends the typed question to the user's agent instead of the in-app assistant.
+                Button {
+                    let text = model.input
+                    model.input = ""
+                    dictation.stop()
+                    GRHaptics.tap()
+                    handOffToAgent(text)
+                } label: {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(GRColor.accentCyan)
+                        .frame(width: 36, height: 36)
+                }
+                .accessibilityLabel("Ask my agent")
+                .accessibilityIdentifier("chat.composer.askAgent")
+                .transition(.scale.combined(with: .opacity))
+            }
+
             Button {
                 Task { await toggleDictation() }
             } label: {
@@ -593,6 +627,23 @@ struct ChatView: View {
         .padding(.bottom, router.isKeyboardVisible ? 8 : 10)
         .animation(.easeOut(duration: 0.18), value: inputFocused)
         .animation(.easeOut(duration: 0.18), value: model.isStreaming)
+    }
+
+    // MARK: - Agent bridge
+
+    /// The user message the given assistant answer replied to.
+    private func userQuestion(before message: ChatMessageUI) -> String? {
+        guard let idx = model.messages.firstIndex(where: { $0.id == message.id }) else { return nil }
+        return model.messages[..<idx].last(where: { $0.role == .user })?.content
+    }
+
+    private func handOffToAgent(_ question: String) {
+        var context: [String: String] = ["source": "ios_chat"]
+        if let topic = model.focusTopic { context["topic"] = topic }
+        // TODO(agent-bridge-ios): include scoped note ids / related concept ids once the agent
+        // side reads them (keep it small: the server caps context at 8 KB).
+        agentAsk.ask(question, conversationId: model.conversationId, context: context)
+        model.showBanner("Sent to your agent")
     }
 
     private func toggleDictation() async {
