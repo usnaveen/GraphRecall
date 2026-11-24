@@ -1,39 +1,350 @@
-"""
-Hybrid Retrieval Service: Vector + Keyword + Graph
+"""Hybrid Retrieval Service: chunk-level Vector + Postgres FTS + Graph RRF.
 
-Combines three retrieval strategies with Reciprocal Rank Fusion (RRF)
-to produce the best context for RAG responses.
-
-1. Vector Search — pgvector cosine similarity on child chunks
-2. Keyword Search — ILIKE fallback for exact term matches
-3. Graph Search — Neo4j k-hop traversal for relationship context
+Combines three retrieval signals in the shared `chunk_id` ID space using Reciprocal Rank Fusion (RRF),
+deduplicates by `parent_chunk_id`, and extracts child-centered context windows instead of blind prefix cuts.
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 import structlog
-from backend.db.postgres_client import get_postgres_client
+
 from backend.db.neo4j_client import get_neo4j_client
+from backend.db.postgres_client import get_postgres_client
 from backend.services.ingestion.embedding_service import EmbeddingService
 
 logger = structlog.get_logger()
 
-# RRF constant (standard value from literature)
 RRF_K = 60
+_UNSET: Any = object()
+
+
+def _parse_images(raw: Any) -> list[Any]:
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str):
+        try:
+            decoded = json.loads(raw)
+            return decoded if isinstance(decoded, list) else []
+        except Exception:
+            return []
+    return []
+
+
+def reciprocal_rank_fusion(
+    ranked_lists: list[tuple[str, float, list[dict[str, Any]]]],
+    *,
+    k: int = RRF_K,
+) -> list[dict[str, Any]]:
+    """Fuse multiple chunk-ID ranked lists with weighted Reciprocal Rank Fusion."""
+    scores: dict[str, float] = {}
+    items: dict[str, dict[str, Any]] = {}
+    sources_by_key: dict[str, list[str]] = {}
+
+    for source_name, weight, result_list in ranked_lists:
+        if not result_list or weight <= 0:
+            continue
+        seen_in_list: set[str] = set()
+        for item in result_list:
+            chunk_id = item.get("id")
+            if not chunk_id:
+                continue
+            key = str(chunk_id)
+            if key in seen_in_list:
+                continue
+            rank = len(seen_in_list)
+            seen_in_list.add(key)
+
+            scores[key] = scores.get(key, 0.0) + float(weight) / float(k + rank + 1)
+            matched = sources_by_key.setdefault(key, [])
+            if source_name not in matched:
+                matched.append(source_name)
+
+            copied = dict(item)
+            existing = items.get(key)
+            if existing is None:
+                items[key] = copied
+            else:
+                # Preserve highest vector similarity / parent content / page spans when merging legs.
+                if float(copied.get("similarity") or 0.0) > float(existing.get("similarity") or 0.0):
+                    existing["similarity"] = copied["similarity"]
+                for field in ("parent_content", "child_content", "content", "title", "note_id", "parent_chunk_id"):
+                    if not existing.get(field) and copied.get(field):
+                        existing[field] = copied[field]
+                if not existing.get("images") and copied.get("images"):
+                    existing["images"] = copied["images"]
+
+    ranked_keys = sorted(
+        scores.keys(),
+        key=lambda key: (scores[key], float(items[key].get("similarity") or 0.0)),
+        reverse=True,
+    )
+
+    fused: list[dict[str, Any]] = []
+    for key in ranked_keys:
+        row = items[key]
+        row["_rrf_score"] = round(scores[key], 6)
+        row["_matched_by"] = list(sources_by_key.get(key, []))
+        row["_source"] = "+".join(row["_matched_by"])
+        if not row.get("content"):
+            row["content"] = row.get("parent_content") or row.get("child_content") or ""
+        fused.append(row)
+    return fused
+
+
+def dedupe_by_parent(candidates: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
+    """Keep at most one highest-ranked child chunk per `parent_chunk_id`."""
+    if limit <= 0:
+        return []
+    kept: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+
+    for item in candidates:
+        parent_key = str(item.get("parent_chunk_id") or item.get("id") or "")
+        if not parent_key:
+            continue
+        if parent_key not in kept:
+            copied = dict(item)
+            copied["_matched_by"] = list(item.get("_matched_by") or ([item["_source"]] if item.get("_source") else []))
+            kept[parent_key] = copied
+            order.append(parent_key)
+        else:
+            existing = kept[parent_key]
+            existing_sources = existing.setdefault("_matched_by", [])
+            for src in item.get("_matched_by") or []:
+                if src not in existing_sources:
+                    existing_sources.append(src)
+            existing["_source"] = "+".join(existing_sources)
+            if not existing.get("images") and item.get("images"):
+                existing["images"] = item["images"]
+
+    return [kept[key] for key in order[:limit]]
+
+
+def _trim_to_word_boundary(text: str, *, trim_left: bool, trim_right: bool) -> str:
+    out = text
+    if trim_left:
+        first_space = out.find(" ")
+        if 0 < first_space < 40:
+            out = out[first_space + 1 :]
+        out = "…" + out.lstrip()
+    if trim_right:
+        last_space = out.rfind(" ")
+        if last_space > len(out) - 40 and last_space > 0:
+            out = out[:last_space]
+        out = out.rstrip() + "…"
+    return out
+
+
+def extract_child_centered_window(
+    parent_text: str,
+    child_text: str,
+    *,
+    window_chars: int = 1200,
+    radius_chars: int = 450,
+) -> str:
+    """Return a window from `parent_text` guaranteed to keep the matched `child_text` intact."""
+    parent = (parent_text or "").strip()
+    child = (child_text or "").strip()
+
+    if not parent:
+        return child[:window_chars] if len(child) > window_chars else child
+    if len(parent) <= window_chars:
+        return parent
+    if not child:
+        return _trim_to_word_boundary(parent[:window_chars], trim_left=False, trim_right=True)
+
+    pos = parent.find(child)
+    match_len = len(child)
+    if pos < 0:
+        anchor = child[: min(80, len(child))]
+        pos = parent.find(anchor)
+        match_len = len(child) if pos >= 0 else 0
+
+    if pos < 0:
+        # Child wasn't verbatim inside parent (e.g. legacy prefix/normalization): guarantee child is shown.
+        if len(child) + 20 >= window_chars:
+            return child[:window_chars]
+        prefix_budget = max(0, window_chars - len(child) - 5)
+        prefix = parent[:prefix_budget].rstrip()
+        return f"{child}\n… {prefix}…" if prefix else child
+
+    end = min(len(parent), pos + match_len)
+    if (end - pos) >= window_chars:
+        # Matched child alone exceeds window: start right at the matched child.
+        return _trim_to_word_boundary(
+            parent[pos : pos + window_chars],
+            trim_left=pos > 0,
+            trim_right=(pos + window_chars) < len(parent),
+        )
+
+    win_start = max(0, pos - radius_chars)
+    win_end = min(len(parent), end + radius_chars)
+
+    if (win_end - win_start) > window_chars:
+        # Center surplus budget symmetrically around the matched child while keeping [pos, end] intact.
+        slack = max(0, window_chars - (end - pos))
+        win_start = max(0, pos - slack // 2)
+        win_end = min(len(parent), win_start + window_chars)
+        if (win_end - win_start) < window_chars and win_start > 0:
+            win_start = max(0, win_end - window_chars)
+    elif (win_end - win_start) < window_chars:
+        missing = window_chars - (win_end - win_start)
+        add_left = min(win_start, missing // 2)
+        win_start -= add_left
+        add_right = min(len(parent) - win_end, missing - add_left)
+        win_end += add_right
+        if (win_end - win_start) < window_chars and win_start > 0:
+            win_start = max(0, win_end - window_chars)
+
+    snippet = parent[win_start:win_end]
+    return _trim_to_word_boundary(
+        snippet,
+        trim_left=win_start > 0,
+        trim_right=win_end < len(parent),
+    )
+
+
+def pack_context_chunks(
+    chunks: list[dict[str, Any]],
+    *,
+    max_chars: int = 6000,
+    per_chunk_window: int = 1200,
+) -> list[dict[str, Any]]:
+    """Attach `window_content` via `extract_child_centered_window` and enforce total char budget."""
+    if not chunks or max_chars <= 0:
+        return []
+
+    packed: list[dict[str, Any]] = []
+    used_chars = 0
+    for item in chunks:
+        parent_text = item.get("parent_content") or item.get("content") or ""
+        child_text = item.get("child_content") or ""
+        window = extract_child_centered_window(parent_text, child_text, window_chars=per_chunk_window)
+        if not window:
+            continue
+
+        remaining = max_chars - used_chars
+        if packed and len(window) > remaining:
+            if remaining < 240:
+                break
+            window = extract_child_centered_window(parent_text, child_text, window_chars=remaining)
+        elif not packed and len(window) > max_chars:
+            window = extract_child_centered_window(parent_text, child_text, window_chars=max_chars)
+
+        enriched = dict(item)
+        enriched["window_content"] = window
+        packed.append(enriched)
+        used_chars += len(window)
+        if used_chars >= max_chars:
+            break
+
+    return packed
 
 
 class RetrievalService:
-    """
-    Hybrid Retrieval Service (Vector + Keyword + Graph).
+    """Hybrid chunk-level retrieval combining Vector + Postgres FTS + Graph RRF."""
 
-    Uses Reciprocal Rank Fusion to merge results from multiple strategies
-    into a single ranked list.
-    """
+    def __init__(self, embedding_service: Optional[EmbeddingService] = None) -> None:
+        self._embedding_service = embedding_service
 
-    def __init__(self):
-        self.embedding_service = EmbeddingService()
+    @property
+    def embedding_service(self) -> EmbeddingService:
+        if self._embedding_service is None:
+            self._embedding_service = EmbeddingService()
+        return self._embedding_service
+
+    async def hybrid_search(
+        self,
+        query: str,
+        user_id: str,
+        *,
+        query_embedding: Any = _UNSET,
+        seed_concept_ids: Optional[list[str]] = None,
+        focused_source_ids: Optional[list[str]] = None,
+        limit: int = 5,
+        candidate_k: int = 20,
+        pg_client: Any = None,
+        neo4j_client: Any = None,
+    ) -> dict[str, Any]:
+        """Run Vector + Postgres FTS + Graph chunk legs concurrently and fuse with RRF."""
+        clean_query = (query or "").strip()
+        if not clean_query:
+            return {"chunks": [], "stats": {"vector": 0, "keyword": 0, "graph": 0, "fused": 0, "deduped": 0}}
+
+        pg = pg_client or await get_postgres_client()
+
+        resolved_embedding: Optional[list[float]]
+        if query_embedding is _UNSET:
+            resolved_embedding = await self.embedding_service.embed_query(clean_query) or None
+        else:
+            resolved_embedding = query_embedding
+
+        tasks: list[tuple[str, float, Any]] = []
+        if resolved_embedding:
+            tasks.append((
+                "vector",
+                1.0,
+                self._vector_search(
+                    clean_query,
+                    user_id,
+                    limit=candidate_k,
+                    query_embedding=resolved_embedding,
+                    focused_source_ids=focused_source_ids,
+                    pg_client=pg,
+                ),
+            ))
+        tasks.append((
+            "keyword",
+            0.85,
+            self._keyword_search(
+                clean_query,
+                user_id,
+                limit=candidate_k,
+                focused_source_ids=focused_source_ids,
+                pg_client=pg,
+            ),
+        ))
+        if seed_concept_ids:
+            tasks.append((
+                "graph",
+                0.65,
+                self._graph_chunk_search(
+                    user_id=user_id,
+                    seed_concept_ids=seed_concept_ids,
+                    query_embedding=resolved_embedding,
+                    focused_source_ids=focused_source_ids,
+                    limit=min(candidate_k, 15),
+                    pg_client=pg,
+                    neo4j_client=neo4j_client,
+                ),
+            ))
+
+        raw_results = await asyncio.gather(*(coro for _, _, coro in tasks), return_exceptions=True)
+
+        ranked_lists: list[tuple[str, float, list[dict[str, Any]]]] = []
+        counts = {"vector": 0, "keyword": 0, "graph": 0}
+        for (name, weight, _), outcome in zip(tasks, raw_results):
+            if isinstance(outcome, Exception):
+                logger.warning("hybrid_search: leg failed", leg=name, error=str(outcome))
+                continue
+            rows = list(outcome or [])
+            counts[name] = len(rows)
+            if rows:
+                ranked_lists.append((name, weight, rows))
+
+        fused = reciprocal_rank_fusion(ranked_lists, k=RRF_K)
+        deduped = dedupe_by_parent(fused, limit=limit)
+        stats = {
+            **counts,
+            "fused": len(fused),
+            "deduped": len(deduped),
+        }
+        logger.info("hybrid_search: Complete", **stats, scoped=bool(focused_source_ids))
+        return {"chunks": deduped, "stats": stats}
 
     async def search(
         self,
@@ -42,273 +353,296 @@ class RetrievalService:
         limit: int = 5,
         include_graph: bool = True,
     ) -> List[Dict[str, Any]]:
-        """
-        Perform hybrid search combining vector, keyword, and graph retrieval.
+        """Backwards-compatible hybrid search wrapper returning fused, deduped chunks."""
+        seed_ids: Optional[list[str]] = None
+        if include_graph and (query or "").strip():
+            try:
+                neo4j = await get_neo4j_client()
+                terms = [w for w in query.split() if len(w) >= 2][:6]
+                seeds = await neo4j.find_seed_concepts(user_id=user_id, terms=terms)
+                seed_ids = [s["id"] for s in seeds if s.get("id")]
+            except Exception as e:
+                logger.warning("hybrid_search: graph seed lookup failed", error=str(e))
 
-        Args:
-            query: Natural language query
-            user_id: User ID for scoping
-            limit: Max results to return
-            include_graph: Whether to include graph context
-
-        Returns:
-            List of results sorted by fused relevance score
-        """
-        logger.info("hybrid_search: Starting", query=query[:80], user_id=user_id)
-
-        # Run all retrieval strategies in parallel
-        tasks = [
-            self._vector_search(query, user_id, limit=limit * 2),
-            self._keyword_search(query, user_id, limit=limit),
-        ]
-        if include_graph:
-            tasks.append(self._graph_search(query, user_id, limit=limit))
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        vector_results = results[0] if not isinstance(results[0], Exception) else []
-        keyword_results = results[1] if not isinstance(results[1], Exception) else []
-        graph_results = results[2] if len(results) > 2 and not isinstance(results[2], Exception) else []
-
-        # Merge with Reciprocal Rank Fusion
-        fused = self._reciprocal_rank_fusion(
-            vector_results, keyword_results, graph_results
+        out = await self.hybrid_search(
+            query=query,
+            user_id=user_id,
+            seed_concept_ids=seed_ids,
+            limit=limit,
         )
-
-        logger.info(
-            "hybrid_search: Complete",
-            vector=len(vector_results),
-            keyword=len(keyword_results),
-            graph=len(graph_results),
-            fused=len(fused),
-        )
-
-        return fused[:limit]
-
-    # =========================================================================
-    # Strategy 1: Vector Search (pgvector cosine similarity)
-    # =========================================================================
+        return out["chunks"]
 
     async def _vector_search(
-        self, query: str, user_id: str, limit: int = 10
+        self,
+        query: str,
+        user_id: str,
+        limit: int = 20,
+        *,
+        query_embedding: Optional[list[float]] = None,
+        focused_source_ids: Optional[list[str]] = None,
+        pg_client: Any = None,
     ) -> List[Dict[str, Any]]:
-        """Semantic vector search on child chunks with parent context."""
-        query_embedding = await self.embedding_service.embed_query(query)
-        if not query_embedding:
+        """Semantic vector search on child chunks with parent join."""
+        emb = query_embedding if query_embedding is not None else await self.embedding_service.embed_query(query)
+        if not emb:
             return []
 
-        pg_client = await get_postgres_client()
-        embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
+        pg = pg_client or await get_postgres_client()
+        embedding_literal = "[" + ",".join(str(x) for x in emb) + "]"
 
-        rows = await pg_client.execute_query(
-            """
-            SELECT
-                c.id,
-                c.content as child_content,
-                c.chunk_index,
-                p.content as parent_content,
-                c.source_location,
-                c.page_start,
-                c.page_end,
-                c.note_id,
-                c.images,
-                n.title as note_title,
-                1 - (c.embedding <=> cast(:embedding as vector)) as similarity
-            FROM chunks c
-            LEFT JOIN chunks p ON c.parent_chunk_id = p.id
-            JOIN notes n ON c.note_id = n.id
-            WHERE c.chunk_level = 'child'
-              AND c.embedding IS NOT NULL
-              AND n.user_id = :user_id
-            ORDER BY c.embedding <=> cast(:embedding as vector)
-            LIMIT :limit
-            """,
-            {"embedding": embedding_literal, "user_id": user_id, "limit": limit},
-        )
+        if focused_source_ids:
+            rows = await pg.execute_query(
+                """
+                SELECT
+                    c.id,
+                    c.parent_chunk_id,
+                    c.content AS child_content,
+                    c.chunk_index,
+                    p.content AS parent_content,
+                    p.images,
+                    c.source_location,
+                    c.page_start,
+                    c.page_end,
+                    c.note_id,
+                    n.title,
+                    1 - (c.embedding <=> cast(:embedding as vector)) AS similarity
+                FROM chunks c
+                LEFT JOIN chunks p ON c.parent_chunk_id = p.id
+                JOIN notes n ON c.note_id = n.id
+                WHERE c.chunk_level = 'child'
+                  AND c.embedding IS NOT NULL
+                  AND n.user_id = :user_id
+                  AND n.id = ANY(:source_ids)
+                ORDER BY c.embedding <=> cast(:embedding as vector)
+                LIMIT :limit
+                """,
+                {
+                    "embedding": embedding_literal,
+                    "user_id": user_id,
+                    "source_ids": focused_source_ids,
+                    "limit": limit,
+                },
+            )
+        else:
+            rows = await pg.execute_query(
+                """
+                SELECT
+                    c.id,
+                    c.parent_chunk_id,
+                    c.content AS child_content,
+                    c.chunk_index,
+                    p.content AS parent_content,
+                    p.images,
+                    c.source_location,
+                    c.page_start,
+                    c.page_end,
+                    c.note_id,
+                    n.title,
+                    1 - (c.embedding <=> cast(:embedding as vector)) AS similarity
+                FROM chunks c
+                LEFT JOIN chunks p ON c.parent_chunk_id = p.id
+                JOIN notes n ON c.note_id = n.id
+                WHERE c.chunk_level = 'child'
+                  AND c.embedding IS NOT NULL
+                  AND n.user_id = :user_id
+                ORDER BY c.embedding <=> cast(:embedding as vector)
+                LIMIT :limit
+                """,
+                {"embedding": embedding_literal, "user_id": user_id, "limit": limit},
+            )
 
-        results = []
+        results: list[dict[str, Any]] = []
         for row in rows or []:
             r = dict(row)
             r["_source"] = "vector"
-            r["_score"] = float(r.get("similarity", 0))
-            # Prefer parent content for richer context
+            r["_score"] = float(r.get("similarity") or 0.0)
             r["content"] = r.get("parent_content") or r.get("child_content", "")
-            # Parse images
-            images = r.get("images")
-            if isinstance(images, str):
-                try:
-                    r["images"] = json.loads(images)
-                except Exception:
-                    r["images"] = []
+            r["images"] = _parse_images(r.get("images"))
             results.append(r)
-
         return results
 
-    # =========================================================================
-    # Strategy 2: Keyword Search (ILIKE fallback)
-    # =========================================================================
-
     async def _keyword_search(
-        self, query: str, user_id: str, limit: int = 5
+        self,
+        query: str,
+        user_id: str,
+        limit: int = 20,
+        *,
+        focused_source_ids: Optional[list[str]] = None,
+        pg_client: Any = None,
     ) -> List[Dict[str, Any]]:
-        """Keyword-based fallback for exact term matches."""
-        pg_client = await get_postgres_client()
-
-        # Extract first 3 significant words for keyword matching
-        words = [w for w in query.split() if len(w) > 3][:3]
-        if not words:
+        """Postgres full-text lexical search over child chunks (`content_tsv` + GIN index)."""
+        clean_query = (query or "").strip()
+        if not clean_query:
             return []
 
-        # Build OR pattern for multiple keywords
-        patterns = [f"%{w}%" for w in words]
+        pg = pg_client or await get_postgres_client()
+        scoped_clause = "AND n.id = ANY(:source_ids)" if focused_source_ids else ""
+        base_params: dict[str, Any] = {"user_id": user_id, "query": clean_query, "limit": limit}
+        if focused_source_ids:
+            base_params["source_ids"] = focused_source_ids
 
-        rows = await pg_client.execute_query(
-            """
+        sql_indexed = f"""
             SELECT
                 c.id,
-                c.content as child_content,
-                p.content as parent_content,
+                c.parent_chunk_id,
+                c.content AS child_content,
+                c.chunk_index,
+                p.content AS parent_content,
+                p.images,
                 c.page_start,
                 c.page_end,
                 c.note_id,
-                c.images,
-                n.title as note_title
+                n.title,
+                ts_rank_cd(c.content_tsv, websearch_to_tsquery('english', :query), 32) AS bm25_score
             FROM chunks c
             LEFT JOIN chunks p ON c.parent_chunk_id = p.id
             JOIN notes n ON c.note_id = n.id
             WHERE n.user_id = :user_id
               AND c.chunk_level = 'child'
-              AND (c.content ILIKE :p1 OR c.content ILIKE :p2 OR c.content ILIKE :p3)
-            ORDER BY n.updated_at DESC
+              {scoped_clause}
+              AND c.content_tsv @@ websearch_to_tsquery('english', :query)
+            ORDER BY bm25_score DESC, n.updated_at DESC
             LIMIT :limit
-            """,
-            {
-                "user_id": user_id,
-                "p1": patterns[0] if len(patterns) > 0 else "%%",
-                "p2": patterns[1] if len(patterns) > 1 else "%%",
-                "p3": patterns[2] if len(patterns) > 2 else "%%",
-                "limit": limit,
-            },
-        )
+        """
+        sql_fallback = f"""
+            SELECT
+                c.id,
+                c.parent_chunk_id,
+                c.content AS child_content,
+                c.chunk_index,
+                p.content AS parent_content,
+                p.images,
+                c.page_start,
+                c.page_end,
+                c.note_id,
+                n.title,
+                ts_rank_cd(to_tsvector('english', coalesce(c.content, '')), plainto_tsquery('english', :query), 32) AS bm25_score
+            FROM chunks c
+            LEFT JOIN chunks p ON c.parent_chunk_id = p.id
+            JOIN notes n ON c.note_id = n.id
+            WHERE n.user_id = :user_id
+              AND c.chunk_level = 'child'
+              {scoped_clause}
+              AND to_tsvector('english', coalesce(c.content, '')) @@ plainto_tsquery('english', :query)
+            ORDER BY bm25_score DESC, n.updated_at DESC
+            LIMIT :limit
+        """
 
-        results = []
+        try:
+            rows = await pg.execute_query(sql_indexed, base_params)
+        except Exception:
+            rows = await pg.execute_query(sql_fallback, base_params)
+
+        results: list[dict[str, Any]] = []
         for row in rows or []:
             r = dict(row)
             r["_source"] = "keyword"
-            r["_score"] = 0.5  # Fixed score for keyword matches
+            r["_score"] = float(r.get("bm25_score") or 0.0)
             r["content"] = r.get("parent_content") or r.get("child_content", "")
-            images = r.get("images")
-            if isinstance(images, str):
-                try:
-                    r["images"] = json.loads(images)
-                except Exception:
-                    r["images"] = []
+            r["images"] = _parse_images(r.get("images"))
             results.append(r)
-
         return results
 
-    # =========================================================================
-    # Strategy 3: Graph Search (Neo4j k-hop traversal)
-    # =========================================================================
-
-    async def _graph_search(
-        self, query: str, user_id: str, limit: int = 5
+    async def _graph_chunk_search(
+        self,
+        *,
+        user_id: str,
+        seed_concept_ids: list[str],
+        query_embedding: Optional[list[float]] = None,
+        focused_source_ids: Optional[list[str]] = None,
+        limit: int = 15,
+        pg_client: Any = None,
+        neo4j_client: Any = None,
     ) -> List[Dict[str, Any]]:
-        """Graph-based retrieval: find concepts matching query, then traverse."""
-        try:
-            neo4j = await get_neo4j_client()
-
-            # Find seed concepts matching the query
-            seeds = await neo4j.execute_query(
-                """
-                MATCH (c:Concept)
-                WHERE c.user_id = $user_id
-                  AND (toLower(c.name) CONTAINS toLower($query)
-                       OR toLower(c.definition) CONTAINS toLower($query))
-                RETURN c.id as id, c.name as name, c.definition as definition,
-                       c.domain as domain
-                ORDER BY size(c.name) ASC
-                LIMIT 5
-                """,
-                {"user_id": user_id, "query": query},
-            )
-
-            if not seeds:
-                return []
-
-            # Expand 1-hop from seed concepts
-            seed_ids = [s["id"] for s in seeds if s.get("id")]
-            neighbors = await neo4j.execute_query(
-                """
-                MATCH (c:Concept)-[r]-(related:Concept)
-                WHERE c.id IN $ids AND related.user_id = $user_id
-                RETURN DISTINCT related.id as id, related.name as name,
-                       related.definition as definition, related.domain as domain,
-                       type(r) as rel_type, c.name as via_concept
-                LIMIT $limit
-                """,
-                {"ids": seed_ids, "user_id": user_id, "limit": limit * 2},
-            )
-
-            # Combine seeds + neighbors as graph results
-            results = []
-            seen_ids = set()
-            for concept in seeds + (neighbors or []):
-                cid = concept.get("id")
-                if cid in seen_ids:
-                    continue
-                seen_ids.add(cid)
-                results.append({
-                    "id": cid,
-                    "content": f"{concept.get('name', '')}: {concept.get('definition', '')}",
-                    "note_title": f"[Graph] {concept.get('domain', 'General')}",
-                    "_source": "graph",
-                    "_score": 0.7 if concept in seeds else 0.4,
-                    "concept_name": concept.get("name"),
-                    "concept_domain": concept.get("domain"),
-                })
-
-            return results[:limit]
-
-        except Exception as e:
-            logger.warning("graph_search: Failed", error=str(e))
+        """Map seed concepts via `(:NoteSource)-[:EXPLAINS]->(:Concept)` to child chunks."""
+        if not seed_concept_ids:
             return []
 
-    # =========================================================================
-    # Reciprocal Rank Fusion (RRF)
-    # =========================================================================
+        neo4j = neo4j_client or await get_neo4j_client()
+        note_rows = await neo4j.execute_query(
+            """
+            MATCH (n:NoteSource {user_id: $user_id})-[:EXPLAINS]->(c:Concept {user_id: $user_id})
+            WHERE c.id IN $concept_ids
+            RETURN n.id AS note_id, count(DISTINCT c) AS concept_hits
+            ORDER BY concept_hits DESC
+            LIMIT 10
+            """,
+            {"user_id": user_id, "concept_ids": seed_concept_ids},
+        )
+        note_hits: dict[str, int] = {
+            str(r["note_id"]): int(r.get("concept_hits") or 1)
+            for r in (note_rows or [])
+            if r.get("note_id")
+        }
+        if focused_source_ids:
+            allowed_notes = {str(nid) for nid in focused_source_ids}
+            note_hits = {nid: hits for nid, hits in note_hits.items() if nid in allowed_notes}
+        if not note_hits:
+            return []
 
-    def _reciprocal_rank_fusion(
-        self,
-        *result_lists: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """
-        Merge multiple ranked lists using Reciprocal Rank Fusion.
+        note_ids = list(note_hits.keys())
+        pg = pg_client or await get_postgres_client()
+        params: dict[str, Any] = {"user_id": user_id, "note_ids": note_ids, "limit": limit}
 
-        RRF score = sum(1 / (k + rank_i)) across all lists where item appears.
-        This is the standard industry approach for hybrid search fusion.
-        """
-        scores: Dict[str, float] = {}
-        items: Dict[str, Dict] = {}
+        if query_embedding:
+            params["embedding"] = "[" + ",".join(str(x) for x in query_embedding) + "]"
+            sql = """
+                SELECT
+                    c.id,
+                    c.parent_chunk_id,
+                    c.content AS child_content,
+                    c.chunk_index,
+                    p.content AS parent_content,
+                    p.images,
+                    c.page_start,
+                    c.page_end,
+                    c.note_id,
+                    n.title,
+                    1 - (c.embedding <=> cast(:embedding as vector)) AS similarity
+                FROM chunks c
+                LEFT JOIN chunks p ON c.parent_chunk_id = p.id
+                JOIN notes n ON c.note_id = n.id
+                WHERE n.user_id = :user_id
+                  AND n.id = ANY(:note_ids)
+                  AND c.chunk_level = 'child'
+                  AND c.embedding IS NOT NULL
+                ORDER BY c.embedding <=> cast(:embedding as vector)
+                LIMIT :limit
+            """
+        else:
+            sql = """
+                SELECT
+                    c.id,
+                    c.parent_chunk_id,
+                    c.content AS child_content,
+                    c.chunk_index,
+                    p.content AS parent_content,
+                    p.images,
+                    c.page_start,
+                    c.page_end,
+                    c.note_id,
+                    n.title,
+                    0.5 AS similarity
+                FROM chunks c
+                LEFT JOIN chunks p ON c.parent_chunk_id = p.id
+                JOIN notes n ON c.note_id = n.id
+                WHERE n.user_id = :user_id
+                  AND n.id = ANY(:note_ids)
+                  AND c.chunk_level = 'child'
+                ORDER BY c.chunk_index ASC
+                LIMIT :limit
+            """
 
-        for result_list in result_lists:
-            for rank, item in enumerate(result_list):
-                # Use chunk ID as key, fall back to content hash
-                key = str(item.get("id", hash(item.get("content", ""))))
-                rrf_score = 1.0 / (RRF_K + rank + 1)
-                scores[key] = scores.get(key, 0.0) + rrf_score
+        rows = await pg.execute_query(sql, params)
+        results: list[dict[str, Any]] = []
+        for row in rows or []:
+            r = dict(row)
+            r["_source"] = "graph"
+            r["_score"] = float(r.get("similarity") or 0.0) + 0.05 * note_hits.get(str(r.get("note_id")), 0)
+            r["content"] = r.get("parent_content") or r.get("child_content", "")
+            r["images"] = _parse_images(r.get("images"))
+            results.append(r)
 
-                # Keep the best version of each item (highest original score)
-                if key not in items or item.get("_score", 0) > items[key].get("_score", 0):
-                    items[key] = item
-
-        # Sort by fused RRF score
-        ranked_keys = sorted(scores.keys(), key=lambda k: scores[k], reverse=True)
-
-        results = []
-        for key in ranked_keys:
-            item = items[key]
-            item["_rrf_score"] = scores[key]
-            results.append(item)
-
+        if query_embedding is None:
+            results.sort(key=lambda item: item["_score"], reverse=True)
         return results

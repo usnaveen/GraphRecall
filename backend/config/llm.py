@@ -33,22 +33,41 @@ DEFAULT_EMBEDDING_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "models/gemini-emb
 DEFAULT_EMBEDDING_DIMS = 768  # MRL: 768 dims = 99.74% quality of 3072, 75% less storage
 
 
-@lru_cache(maxsize=8)
+DEFAULT_CHAT_TIMEOUT_S = float(os.getenv("LLM_CHAT_TIMEOUT_S", "25"))
+DEFAULT_FAST_TIMEOUT_S = float(os.getenv("LLM_FAST_TIMEOUT_S", "10"))
+DEFAULT_CHAT_MAX_TOKENS = int(os.getenv("LLM_CHAT_MAX_TOKENS", "2048"))
+DEFAULT_FAST_MAX_TOKENS = int(os.getenv("LLM_FAST_MAX_TOKENS", "1024"))
+
+
+@lru_cache(maxsize=16)
 def get_chat_model(
     model: Optional[str] = None,
     temperature: float = 0.3,
     json_mode: bool = False,
+    timeout: Optional[float] = None,
+    max_output_tokens: Optional[int] = None,
 ) -> ChatGoogleGenerativeAI:
     """Get a cached chat model instance.
 
     Args:
-        model: Model name (defaults to gemini-2.5-flash)
+        model: Model name (defaults to gemini-3.6-flash)
         temperature: Creativity (0.0 = deterministic, 1.0 = creative)
         json_mode: If True, enables JSON output mode
+        timeout: Per-call HTTP timeout in seconds (defaults to LLM_CHAT_TIMEOUT_S=25)
+        max_output_tokens: Output token cap (defaults to LLM_CHAT_MAX_TOKENS=2048)
     """
     model_name = model or DEFAULT_CHAT_MODEL
+    resolved_timeout = timeout if timeout is not None else DEFAULT_CHAT_TIMEOUT_S
+    resolved_max_tokens = max_output_tokens if max_output_tokens is not None else DEFAULT_CHAT_MAX_TOKENS
 
-    logger.debug("Creating chat model", model=model_name, temperature=temperature, json_mode=json_mode)
+    logger.debug(
+        "Creating chat model",
+        model=model_name,
+        temperature=temperature,
+        json_mode=json_mode,
+        timeout=resolved_timeout,
+        max_output_tokens=resolved_max_tokens,
+    )
 
     # Build kwargs - only pass generation_config for json_mode to avoid
     # conflicting with the direct temperature parameter
@@ -58,8 +77,6 @@ def get_chat_model(
             "generation_config": {"response_mime_type": "application/json"}
         }
 
-
-    
     # Langchain's Google GenAI integration supports a 'max_retries' param
     # which handles 5xx errors automatically
     return ChatGoogleGenerativeAI(
@@ -67,9 +84,9 @@ def get_chat_model(
         google_api_key=os.getenv("GOOGLE_API_KEY"),
         temperature=temperature,
         convert_system_message_to_human=True,
-        # Callers wrap these in their own tenacity retries; 6 retries here multiplied
-        # every failure into a burst that tripped Gemini's per-minute quota.
         max_retries=2,
+        timeout=resolved_timeout,
+        max_output_tokens=resolved_max_tokens,
         # Latency, time-to-first-token and token usage for every call (GET /api/debug/latency).
         callbacks=[LLM_TIMING_CALLBACK],
         **kwargs,
@@ -79,27 +96,32 @@ def get_chat_model(
 def get_reasoning_model(
     temperature: float = 0.2,
     json_mode: bool = False,
+    timeout: Optional[float] = None,
+    max_output_tokens: Optional[int] = None,
 ) -> ChatGoogleGenerativeAI:
-    """Get a model for complex reasoning tasks.
-
-    Uses gemini-2.5-flash which has built-in thinking/reasoning capabilities.
-    """
+    """Get a model for complex reasoning tasks."""
     return get_chat_model(
         model=DEFAULT_REASONING_MODEL,
         temperature=temperature,
         json_mode=json_mode,
+        timeout=timeout,
+        max_output_tokens=max_output_tokens,
     )
 
 
 def get_fast_model(
     temperature: float = 0.3,
     json_mode: bool = False,
+    timeout: Optional[float] = None,
+    max_output_tokens: Optional[int] = None,
 ) -> ChatGoogleGenerativeAI:
     """Get the fastest/cheapest model for simple tasks."""
     return get_chat_model(
         model=DEFAULT_FAST_MODEL,
         temperature=temperature,
         json_mode=json_mode,
+        timeout=timeout if timeout is not None else DEFAULT_FAST_TIMEOUT_S,
+        max_output_tokens=max_output_tokens if max_output_tokens is not None else DEFAULT_FAST_MAX_TOKENS,
     )
 
 
