@@ -79,7 +79,7 @@ async def delete_user_data(user_id: str, *, delete_account: bool, pg=None, neo4j
             storage = get_storage_service()
         for url in dict.fromkeys(urls):
             try:
-                if await storage.delete_file(url):
+                if await storage.delete_file(url, owner_id=user_id):
                     deleted_files += 1
             except Exception as e:  # noqa: BLE001
                 logger.warning("account deletion: file not deleted", error=str(e))

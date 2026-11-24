@@ -17,9 +17,13 @@ class FakeStorage:
     def __init__(self):
         self.deleted = []
 
-    async def delete_file(self, url):
+    async def delete_file(self, url, *, owner_id):
         self.deleted.append(url)
         return True
+
+    async def delete_user_prefix(self, owner_id):
+        self.prefixes = getattr(self, "prefixes", []) + [owner_id]
+        return 0
 
 
 @pytest.fixture

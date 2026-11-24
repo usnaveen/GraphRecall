@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import posixpath
+import shutil
 import os
 from pathlib import Path
 import time
@@ -154,12 +156,33 @@ class StorageService:
         logger.info("Storage: File uploaded", key=key, size=len(file_data), content_type=content_type)
         return self._public_url_for_key(key)
 
-    async def delete_file(self, file_url: str) -> bool:
-        """Delete file from R2/S3 or dev local fallback by its URL."""
+    @staticmethod
+    def owner_prefix(owner_id: str) -> str:
+        return f"uploads/{owner_id}/"
+
+    def owned_key(self, file_url: str, owner_id: str) -> Optional[str]:
+        """The object key for `file_url` if it is one of `owner_id`'s objects, else None.
+
+        Every object we write lives under uploads/{user_id}/ (_build_key). A URL that maps to any
+        other key, or that uses `..` to climb out of the prefix, is not this user's to delete.
+        """
+        key = self._url_to_key(file_url)
+        if not key or not owner_id:
+            return None
+        if posixpath.normpath(key) != key or "/../" in f"/{key}/":
+            return None
+        return key if key.startswith(self.owner_prefix(owner_id)) else None
+
+    def is_other_users_object(self, file_url: str, owner_id: str) -> bool:
+        """True when the URL points into our bucket but outside `owner_id`'s prefix."""
+        return self._url_to_key(file_url) is not None and self.owned_key(file_url, owner_id) is None
+
+    async def delete_file(self, file_url: str, *, owner_id: str) -> bool:
+        """Delete one of `owner_id`'s files by URL. Refuses (returns False) for anyone else's object."""
         if file_url.startswith("file://") and not _is_production():
-            local_root = self.local_fallback_dir.resolve()
+            owner_root = (self.local_fallback_dir / self.owner_prefix(owner_id)).resolve()
             target = Path(file_url[len("file://") :]).resolve()
-            if target != local_root and local_root in target.parents:
+            if owner_root in target.parents:
                 def _unlink_local() -> bool:
                     if target.exists():
                         target.unlink()
@@ -172,9 +195,9 @@ class StorageService:
         if self.s3_client is None:
             return False
 
-        key = self._url_to_key(file_url)
+        key = self.owned_key(file_url, owner_id)
         if not key:
-            logger.warning("Storage: Could not extract key from URL", file_url=file_url)
+            logger.warning("Storage: refusing to delete an object outside the owner's prefix")
             return False
 
         try:
@@ -188,6 +211,40 @@ class StorageService:
         except ClientError as e:
             logger.error("Storage: Failed to delete file", key=key, error=str(e))
             return False
+
+    async def delete_user_prefix(self, owner_id: str) -> int:
+        """Delete every object under uploads/{owner_id}/, including ones no row references any more
+        (failed ingests, replaced files). Used by account deletion. Returns the number deleted."""
+        if not owner_id:
+            return 0
+        prefix = self.owner_prefix(owner_id)
+        if self.s3_client is None:
+            if _is_production():
+                return 0
+            root = (self.local_fallback_dir / prefix).resolve()
+            if not root.exists() or self.local_fallback_dir.resolve() not in root.parents:
+                return 0
+
+            def _rm_local() -> int:
+                files = [p for p in root.rglob("*") if p.is_file()]
+                shutil.rmtree(root, ignore_errors=True)
+                return len(files)
+
+            return await asyncio.to_thread(_rm_local)
+
+        def _rm_s3() -> int:
+            deleted = 0
+            paginator = self.s3_client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=self.bucket_name, Prefix=prefix):
+                keys = [{"Key": o["Key"]} for o in page.get("Contents", []) if o["Key"].startswith(prefix)]
+                if keys:
+                    self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={"Objects": keys, "Quiet": True})
+                    deleted += len(keys)
+            return deleted
+
+        n = await asyncio.to_thread(_rm_s3)
+        logger.info("Storage: user prefix deleted", objects=n)
+        return n
 
     def _url_to_key(self, url: str) -> Optional[str]:
         """Extract object key from an R2/S3 public or path-style URL."""
