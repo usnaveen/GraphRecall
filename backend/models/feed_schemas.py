@@ -313,7 +313,7 @@ class ChatRequest(BaseModel):
     """Request for chat endpoint."""
 
     user_id: str
-    message: str
+    message: str = Field(..., min_length=1, max_length=8000)
     conversation_history: list[ChatMessage] = Field(default_factory=list)
     include_sources: bool = True
     max_context_concepts: int = Field(default=10, le=20)
