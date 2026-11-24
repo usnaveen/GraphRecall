@@ -108,7 +108,8 @@ final class FeedViewModel {
             let userStats = try? await APIClient.shared.fetchStats()
             let due = try? await APIClient.shared.dueCount()
 
-            let merged = Self.merge(server: feed.items, dump: dumpItems)
+            // Types this build can't render (FeedItemType.unknown) are hidden, not shown blank.
+            let merged = Self.merge(server: feed.items.filter { $0.itemType != .unknown }, dump: dumpItems)
             isDemoMode = false
 
             // NAV-24: empty live feed → seed rich demo cards (never blank Simulator).
@@ -138,7 +139,7 @@ final class FeedViewModel {
             isOffline = true
             errorMessage = APIError.userFacing(error, resource: "feed")
             if let cached = await OfflineReviewStore.shared.cachedFeed(), !cached.items.isEmpty {
-                items = Self.merge(server: cached.items, dump: dumpItems)
+                items = Self.merge(server: cached.items.filter { $0.itemType != .unknown }, dump: dumpItems)
                 completedToday = cached.completedToday
                 dailyGoal = cached.dailyGoal
                 streak = cached.streakDays
@@ -299,6 +300,8 @@ final class FeedViewModel {
     /// SM-2 result when the review reached the backend.
     @discardableResult
     func submitGrade(for item: FeedItem, difficulty: ReviewDifficulty, responseTimeMs: Int? = nil) async -> ReviewSubmitResult? {
+        // Agent-curated cards (`agent:<uuid>`) are not SM-2 items; `/api/feed/review` would reject them.
+        if item.isAgentCurated || item.itemType == .unknown { return nil }
         let itemType = item.itemType.rawValue
         gradedSinceLoad += 1
         defer { publishWidgetSnapshot() }

@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var message: String?
     @State private var confirmPurge = false
     @State private var isPurging = false
+    @State private var agentBridge = AgentBridgeCapability.shared
 
     var body: some View {
         NavigationStack {
@@ -106,6 +107,33 @@ struct SettingsView: View {
                                 Toggle("", isOn: $reviewImports)
                                     .labelsHidden()
                                     .tint(GRColor.accent)
+                            }
+                        }
+
+                        SettingsGroup(title: "Agent") {
+                            SettingsRow(
+                                title: "Connect an agent",
+                                subtitle: agentBridgeSubtitle,
+                                systemImage: "sparkles",
+                                tone: .cyan
+                            ) {
+                                Toggle("", isOn: $agentBridge.locallyEnabled)
+                                    .labelsHidden()
+                                    .tint(GRColor.accent)
+                                    .accessibilityIdentifier("settings.agentBridge.toggle")
+                            }
+                            if agentBridge.isAvailable {
+                                SettingsDivider()
+                                NavigationLink {
+                                    AgentKeysView()
+                                } label: {
+                                    SettingsRow(title: "Agent keys", subtitle: "Create, review and revoke access", systemImage: "key.fill", tone: .amber) {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(GRColor.textTertiary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
 
@@ -197,6 +225,16 @@ struct SettingsView: View {
         }
         .onChange(of: dailyGoal) { _, _ in scheduleStudySync() }
         .onChange(of: newCardsPerDay) { _, _ in scheduleStudySync() }
+    }
+
+    private var agentBridgeSubtitle: String {
+        guard agentBridge.locallyEnabled else { return "Let an agent like Grok Bot curate your feed and answer questions" }
+        switch agentBridge.serverState {
+        case .enabled: return "On \u{00B7} suggestions wait for your approval"
+        case .disabled: return "This server doesn\u{2019}t have the agent bridge turned on"
+        case .unreachable: return "Couldn\u{2019}t reach the server"
+        case .unknown: return canUseAccount ? "Checking\u{2026}" : "Sign in with Google first"
+        }
     }
 
     /// Server-backed actions need a real Google session; the demo token is local-only.
