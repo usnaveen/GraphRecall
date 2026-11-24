@@ -72,8 +72,10 @@ extension APIClient {
     /// GET `/api/agent-bridge/requests?status=a,b&limit=`
     func agentRequests(statuses: [AgentRequestStatus]? = nil, limit: Int = 20) async throws -> [AgentRequest] {
         var query = [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 100)))]
-        if let statuses, !statuses.isEmpty {
-            query.append(URLQueryItem(name: "status", value: statuses.map(\.rawValue).joined(separator: ",")))
+        // The server 400s on unknown statuses, so never send `.unknown`.
+        let wire = (statuses ?? []).filter { $0 != .unknown }.map(\.rawValue)
+        if !wire.isEmpty {
+            query.append(URLQueryItem(name: "status", value: wire.joined(separator: ",")))
         }
         let response: AgentRequestsResponse = try await get("/api/agent-bridge/requests", query: query)
         return response.requests
@@ -88,6 +90,18 @@ extension APIClient {
     }
     // TODO(agent-bridge-ios): consume GET /requests/{id}/stream (SSE) via ChatSSEClient instead
     // of polling once the server pushes status changes (LISTEN/NOTIFY); polling is fine for v1.
+
+    // MARK: Audit
+
+    /// GET `/api/agent-bridge/audit?limit=` — metadata only (tool names, ids, counts).
+    /// TODO(agent-bridge-ios): surface as "Activity" under Settings → Agent keys.
+    func agentAudit(limit: Int = 100) async throws -> [AgentAuditEvent] {
+        let response: AgentAuditResponse = try await get(
+            "/api/agent-bridge/audit",
+            query: [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 500)))]
+        )
+        return response.events
+    }
 
     // MARK: Keys
 

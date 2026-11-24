@@ -111,3 +111,111 @@ final class AgentBridgeURLTests: XCTestCase {
         store.dismiss(store.tracked[0].id)
     }
 }
+
+/// Contract checks against PR #3 @ cadf9c8 (ISO timestamps, 400/409/429/503 copy, swept statuses).
+final class AgentBridgeContractTests: XCTestCase {
+    func testISODatesFromSerializationDecode() throws {
+        for raw in ["2026-11-24T06:11:10.751395+00:00", "2026-11-24T06:11:10+00:00",
+                    "2026-11-24T06:11:10Z", "2026-11-24T11:41:10.751+05:30", "2026-11-24"] {
+            XCTAssertNotNil(AgentBridgeDate.parse(raw), raw)
+        }
+        let a = AgentBridgeDate.parse("2026-11-24T06:11:10.751395+00:00")!
+        let b = AgentBridgeDate.parse("2026-11-24 06:11:10.751395+00:00")!   // legacy fallback
+        XCTAssertEqual(a.timeIntervalSince1970, b.timeIntervalSince1970, accuracy: 0.001)
+        XCTAssertEqual(AgentBridgeDate.parse("2026-11-24T11:41:10+05:30")!.timeIntervalSince1970,
+                       AgentBridgeDate.parse("2026-11-24T06:11:10Z")!.timeIntervalSince1970, accuracy: 0.001)
+    }
+
+    func testFeedItemRowDecodes() throws {
+        let json = #"""
+        {"item":{"id":"8596a94b-80bc-4377-b240-14f9960e25fa","user_id":"u","key_id":"k","status":"approved",
+         "item_kind":"article","title":"Attention paper","summary":"s","body_json":{},
+         "source_url":"https://example.com/paper","source_kind":"web","reason":"exam","concept_ids":["cA1"],
+         "target_date":"2026-11-24","dedupe_key":"x","idempotency_key":null,
+         "created_at":"2026-11-24T06:11:06.123456+00:00","reviewed_at":"2026-11-24T06:11:07+00:00"}}
+        """#.data(using: .utf8)!
+        let item = try JSONDecoder().decode(AgentFeedItemEnvelope.self, from: json).item
+        XCTAssertEqual(item.status, .approved)
+        XCTAssertNotNil(item.target)
+        XCTAssertNotNil(AgentBridgeDate.parse(item.createdAt))
+    }
+
+    func testAuditDecodes() throws {
+        let json = #"{"events":[{"id":"1","user_id":"u","key_id":null,"actor":"agent","action":"tool_call","tool":"propose_feed_items","target_id":null,"details":{"created":2},"created_at":"2026-11-24T06:11:06+00:00"}]}"#.data(using: .utf8)!
+        let ev = try JSONDecoder().decode(AgentAuditResponse.self, from: json).events[0]
+        XCTAssertEqual(ev.tool, "propose_feed_items")
+        XCTAssertNotNil(ev.created)
+    }
+
+    private func http(_ code: Int, _ detail: String) -> Error {
+        APIError.http(code, #"{"detail":"\#(detail)"}"#)
+    }
+
+    func testFriendlyCopy() {
+        let rate = AgentBridgeErrorCopy.message(http(429, "Too many questions for your agent; try later"), action: .ask)
+        XCTAssertTrue(rate.contains("10 minutes"), rate)
+        XCTAssertTrue(AgentBridgeErrorCopy.isRateLimited(http(429, "x")))
+        XCTAssertTrue(AgentBridgeErrorCopy.message(http(409, "Invalid transition"), action: .approve).contains("Already handled"))
+        XCTAssertTrue(AgentBridgeErrorCopy.message(http(409, "Too many active agent keys"), action: .createKey).contains("5 active keys"))
+        XCTAssertTrue(AgentBridgeErrorCopy.message(http(503, "Agent keys are not configured on this server"), action: .createKey).contains("aren\u{2019}t set up"))
+        XCTAssertTrue(AgentBridgeErrorCopy.message(http(409, "Daily cap of 50 pending suggestions reached"), action: .approve).contains("limit"))
+        XCTAssertFalse(AgentBridgeErrorCopy.message(http(400, "request_id must be a UUID"), action: .load).contains("UUID"))
+        XCTAssertTrue(AgentBridgeErrorCopy.isConversationNotFound(http(404, "Conversation not found")))
+        XCTAssertFalse(AgentBridgeErrorCopy.isConversationNotFound(http(404, "Request not found")))
+    }
+
+    @MainActor
+    func testSweptStatusesUseServerReason() async {
+        let expired = AgentRequest(id: "1", status: .expired, question: "q", error: "Expired before an agent answered")
+        XCTAssertEqual(AgentAskStore.phase(for: expired), .failed("Expired before an agent answered"))
+        let failed = AgentRequest(id: "2", status: .failed, question: "q", error: "No agent finished it after 3 attempts")
+        XCTAssertEqual(AgentAskStore.phase(for: failed), .failed("No agent finished it after 3 attempts"))
+    }
+
+    @MainActor
+    func testRateLimitedAskShowsFriendlyCopyAndRetries() async throws {
+        final class Counter: @unchecked Sendable { var n = 0 }
+        let calls = Counter()
+        let transport = AgentAskTransport(
+            create: { q, _, _ in
+                calls.n += 1
+                if calls.n == 1 { throw APIError.http(429, #"{"detail":"Too many questions"}"#) }
+                return AgentRequest(id: "s1", status: .answered, question: q, answerText: "ok")
+            },
+            fetch: { id in AgentRequest(id: id, status: .answered, question: "q", answerText: "ok") },
+            cancel: { id in AgentRequest(id: id, status: .cancelled, question: "q") }
+        )
+        let store = AgentAskStore(transport: transport, clientTimeout: 5)
+        store.ask("hello", conversationId: nil)
+        for _ in 0..<20 { if case .sendFailed = store.tracked[0].phase { break }; try await Task.sleep(for: .milliseconds(50)) }
+        guard case let .sendFailed(msg) = store.tracked[0].phase else { return XCTFail("expected sendFailed") }
+        XCTAssertTrue(msg.contains("10 minutes"))
+        store.retrySend(store.tracked[0].id)
+        for _ in 0..<40 where store.tracked[0].phase != .answered { try await Task.sleep(for: .milliseconds(100)) }
+        XCTAssertEqual(store.tracked[0].phase, .answered)
+        XCTAssertEqual(calls.n, 2)
+        store.stopAll()
+    }
+
+    @MainActor
+    func testConversationNotFoundRetriesWithoutConversation() async throws {
+        final class Seen: @unchecked Sendable { var convs: [String?] = [] }
+        let seen = Seen()
+        let transport = AgentAskTransport(
+            create: { q, conv, _ in
+                seen.convs.append(conv)
+                if conv != nil { throw APIError.http(404, #"{"detail":"Conversation not found"}"#) }
+                return AgentRequest(id: "s2", status: .queued, question: q)
+            },
+            fetch: { id in AgentRequest(id: id, status: .answered, question: "q", answerText: "ok") },
+            cancel: { id in AgentRequest(id: id, status: .cancelled, question: "q") }
+        )
+        let store = AgentAskStore(transport: transport, clientTimeout: 10)
+        store.ask("hi", conversationId: "11111111-1111-1111-1111-111111111111")
+        for _ in 0..<20 where store.tracked[0].serverId == nil { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(store.tracked[0].serverId, "s2")
+        XCTAssertEqual(seen.convs.count, 2)
+        XCTAssertNil(seen.convs[1] ?? nil)
+        store.stopAll()
+    }
+}

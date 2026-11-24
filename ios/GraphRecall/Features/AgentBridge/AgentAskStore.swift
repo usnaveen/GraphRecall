@@ -60,10 +60,28 @@ final class AgentAskStore {
         guard !text.isEmpty else { return }
         let localId = UUID().uuidString
         tracked.append(Tracked(id: localId, question: text, phase: .sending, startedAt: Date()))
+        send(localId, text: text, conversationId: conversationId, context: context)
+    }
+
+    /// Retry a hand-off whose POST failed (e.g. after a 429).
+    func retrySend(_ localId: String) {
+        guard let t = tracked.first(where: { $0.id == localId }), t.serverId == nil else { return }
+        update(localId) { $0.phase = .sending; $0.startedAt = Date() }
+        send(localId, text: t.question, conversationId: nil, context: [:])
+    }
+
+    private func send(_ localId: String, text: String, conversationId: String?, context: [String: String]) {
+        pollTasks[localId]?.cancel()
         pollTasks[localId] = Task { [weak self] in
             guard let self else { return }
             do {
-                let req = try await self.transport.create(text, conversationId, context)
+                let req: AgentRequest
+                do {
+                    req = try await self.transport.create(text, conversationId, context)
+                } catch where conversationId != nil && AgentBridgeErrorCopy.isConversationNotFound(error) {
+                    // Chat not persisted server-side yet (or not ours): hand off without linking it.
+                    req = try await self.transport.create(text, nil, context)
+                }
                 self.update(localId) {
                     $0.serverId = req.id
                     $0.request = req
@@ -72,7 +90,7 @@ final class AgentAskStore {
                 self.remember(req.id)
                 await self.poll(localId)
             } catch {
-                self.update(localId) { $0.phase = .sendFailed(APIError.userFacing(error, resource: "agent")) }
+                self.update(localId) { $0.phase = .sendFailed(AgentBridgeErrorCopy.message(error, action: .ask)) }
             }
         }
     }
@@ -187,7 +205,8 @@ final class AgentAskStore {
         case .answered: return .answered
         case .failed: return .failed(req.error ?? "Your agent couldn\u{2019}t answer this one.")
         case .cancelled: return .failed("Cancelled")
-        case .expired: return .failed(AgentRequestStatus.expired.label)
+        // Since cadf9c8 the server sweeps stale rows and fills `error` with the reason.
+        case .expired: return .failed(req.error ?? AgentRequestStatus.expired.label)
         case .queued, .claimed, .unknown:
             if let exp = req.expiry, exp <= now { return .failed(AgentRequestStatus.expired.label) }
             return .waiting

@@ -82,9 +82,13 @@ final class AgentInboxViewModel {
             showToast(approve ? "Added to your feed" : "Dismissed")
             if filter == .pending { AgentBridgeCapability.shared.setPendingCount(items.count) }
             if approve { NotificationCenter.default.post(name: .grFeedShouldReload, object: nil) }
+        } catch where AgentBridgeErrorCopy.statusCode(error) == 409 || AgentBridgeErrorCopy.statusCode(error) == 404 {
+            // Already approved/dismissed (or gone): keep it out of the list and resync.
+            showToast(AgentBridgeErrorCopy.message(error, action: approve ? .approve : .reject))
+            await load()
         } catch {
             items = snapshot
-            errorMessage = APIError.userFacing(error, resource: "agent suggestions")
+            errorMessage = AgentBridgeErrorCopy.message(error, action: approve ? .approve : .reject)
         }
     }
 

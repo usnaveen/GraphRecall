@@ -39,21 +39,28 @@ Every new view has a `#Preview` that uses `AgentBridgeMocks`, so no network is n
 - **Feed types.** Unknown `item_type` values now decode to `FeedItemType.unknown` and are filtered out of the feed. They are no longer silently turned into blank Term Cards. The lenient `FeedItemType.parse` still maps local chat and dump cards to flashcards.
 - **Grading.** Agent cards never call `/api/feed/review`, because `agent:<uuid>` is not an SM-2 item.
 
-### Backend behaviour the client works around (tracked in the PR #3 review)
+### Contract with PR #3 @ `cadf9c8` (merged into this branch)
 
-- **Questions that never finish.** Questions can stay `queued` or `claimed` forever. The backend has no sweeper for passed `expires_at` or for exhausted `attempts`. The client:
-  - stops polling after 15 minutes and shows **Check again** and **Cancel**;
-  - treats a non-terminal request past `expires_at` as expired;
-  - handles `failed`, `expired` and `cancelled`;
-  - decodes any future status as `.unknown`.
-- **Timestamps.** Bridge rows serialize datetimes as Python `str()` values like `2026-11-24 06:11:07.650030+00:00`, which the shared ISO-8601 decoder rejects. The bridge models keep these as strings and parse them with `AgentBridgeDate.parse`.
-- **Citation URLs.** These are not validated server-side (`Citation.url`), so the client gate is the only defense right now.
+| Backend change | iOS handling |
+|---|---|
+| Timestamps are ISO 8601 with `T` and an offset; `target_date` is `yyyy-MM-dd` | `AgentBridgeDate.parse` tries ISO first: fractional seconds of any length, `Z` or `±hh:mm`. It still accepts the old `str(datetime)` form as a fallback. Mocks now use ISO. |
+| Malformed ids → **400**; an unknown `status=` filter → 400 | Ids are percent-encoded strictly. `.unknown` is never sent as a status filter. A 400 shows generic copy ("update the app"). |
+| `conversation_id` must be a UUID the user owns → 400 or **404** | `AgentAskStore` retries once without `conversation_id` when it gets "Conversation not found". |
+| `POST /requests` hourly quota → **429** (`Retry-After: 600`) | The bubble says "…try again in about 10 minutes" and shows a **Try again** chip (`retrySend`). |
+| Daily caps, such as 50 pending suggestions per day (enforced on the agent side, over MCP) | Any error whose detail mentions a daily cap or limit shows "Your agent hit today's limit". |
+| Approving or rejecting an already-handled item → **409** | The inbox shows a toast ("Already handled…") and reloads instead of erroring. |
+| `POST /keys` with no pepper configured → **503**; 5 active keys → 409 | Friendly copy in Agent keys. |
+| The server sweeps stale questions to `expired` or `failed` and puts the reason in `error` | Both show the server's reason. The 15-minute client timeout and the treat-past-`expires_at`-as-expired check remain as fallbacks. |
+| New `GET /audit` | Model and client method `agentAudit()` are done; the UI is a TODO. |
+| Citation URLs are validated server-side | The client gate (`AgentBridgeURL.safe`) still applies, as defense in depth. |
+
+All error copy lives in `AgentBridgeErrorCopy` (`AgentBridgeModels.swift`).
 
 ## Verification so far
 
 - **No Xcode build or Simulator run yet.** The box is Linux, so nothing here has been compiled for iOS.
 - **Syntax check.** `swiftc -parse -swift-version 6` (Swift 6.0.3 on Linux) passes on all 17 new or changed Swift files.
-- **Unit tests on Linux.** The networking, model and `AgentAskStore` files were type-checked and tested on Linux with a throwaway SwiftPM package (Foundation, Observation and XCTest), using a `FoundationNetworking` shim. All 10 tests in `AgentBridgeURLTests` pass. SwiftUI files cannot be type-checked on Linux.
+- **Unit tests on Linux.** The networking, model and `AgentAskStore` files were type-checked and tested on Linux with a throwaway SwiftPM package (Foundation, Observation and XCTest), using a `FoundationNetworking` shim. All **17** tests pass: 10 in `AgentBridgeURLTests`, plus 7 in `AgentBridgeContractTests` covering ISO and legacy dates, the feed-item and audit payloads, error copy for 400/409/429/503 and the daily cap, swept statuses, retry after a 429, and retry without a conversation after a 404. SwiftUI files cannot be type-checked on Linux.
 - **Xcode project.** `project.pbxproj` was edited by hand to add the 8 app sources and a `Features/AgentBridge` group, then checked with the `pbxproj` Python parser. Running `xcodegen` from `project.yml` also picks them up, because sources are folder-based.
 
 ## TODO (next coding agent)
@@ -68,7 +75,8 @@ Every new view has a `#Preview` that uses `AgentBridgeMocks`, so no network is n
 4. **Replace polling with SSE.** Use `GET /requests/{id}/stream` through `ChatSSEClient`, or push notifications when an answer lands (backend TODO in `tools.submit_answer`).
 5. **Show agent answers in chat history.** They currently live only in `AgentAskStore`, are restored by id from UserDefaults, and are not scoped to a conversation.
 6. **Offer "Ask my agent" automatically.** When the in-app assistant can't answer well, offer the hand-off (backend chat-graph TODO).
-7. **Use a real capability flag.** Replace the `/keys` probe with something like a `features.agent_bridge` field on `/auth/profile` or `/health`.
-8. **Add more previews and features.** Inbox empty and error states, a digest header card (`schedule_daily_digest`), and an optional "auto-approve from this key" setting.
-9. **Accessibility pass.** Dynamic Type at the largest sizes, VoiceOver order in the answer bubble, and UI tests that use the `agent.*` and `chat.askAgent` identifiers.
-10. **Show the MCP endpoint correctly.** The keys sheet shows `<base>/mcp/agent`. Confirm whether the deployed mount needs the trailing slash (`/mcp/agent/`), which is what Bot 2's end-to-end test used.
+7. **Add an Activity screen** for `GET /audit` under Agent keys.
+8. **Use a real capability flag.** Replace the `/keys` probe with something like a `features.agent_bridge` field on `/auth/profile` or `/health`.
+9. **Add more previews and features.** Inbox empty and error states, a digest header card (`schedule_daily_digest`), and an optional "auto-approve from this key" setting.
+10. **Accessibility pass.** Dynamic Type at the largest sizes, VoiceOver order in the answer bubble, and UI tests that use the `agent.*` and `chat.askAgent` identifiers.
+11. **Show the MCP endpoint correctly.** The keys sheet shows `<base>/mcp/agent`. Confirm whether the deployed mount needs the trailing slash (`/mcp/agent/`), which is what Bot 2's end-to-end test used.

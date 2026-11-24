@@ -54,10 +54,8 @@ final class AgentKeysViewModel {
             revealedSecret = created
             errorMessage = nil
             await load()
-        } catch APIError.http(409, _) {
-            errorMessage = "You already have 5 active keys. Revoke one first."
         } catch {
-            errorMessage = APIError.userFacing(error, resource: "agent keys")
+            errorMessage = AgentBridgeErrorCopy.message(error, action: .createKey)
         }
     }
 
@@ -70,7 +68,7 @@ final class AgentKeysViewModel {
             try await APIClient.shared.revokeAgentKey(id: key.id)
             await load()
         } catch {
-            errorMessage = APIError.userFacing(error, resource: "agent keys")
+            errorMessage = AgentBridgeErrorCopy.message(error, action: .revokeKey)
         }
     }
 }
