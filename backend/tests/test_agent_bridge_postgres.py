@@ -18,7 +18,8 @@ import pytest
 DB_URL = os.environ.get("AGENT_BRIDGE_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DB_URL, reason="AGENT_BRIDGE_TEST_DATABASE_URL not set")
 
-MIGRATION = Path(__file__).resolve().parents[1] / "db" / "migrations" / "015_agent_bridge.sql"
+MIGRATIONS = [Path(__file__).resolve().parents[1] / "db" / "migrations" / name
+              for name in ("015_agent_bridge.sql", "016_agent_bridge_audit.sql")]
 
 
 @pytest.fixture
@@ -55,11 +56,14 @@ async def pg():
         await s.execute(text(
             "CREATE TABLE users (id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), "
             "email VARCHAR(255) UNIQUE NOT NULL, settings_json JSONB DEFAULT '{}'::jsonb)"))
-        for stmt in client._split_sql_statements(MIGRATION.read_text()):
-            await s.execute(text(stmt))
-        # Re-running the migration must be a no-op (it runs on every boot).
-        for stmt in client._split_sql_statements(MIGRATION.read_text()):
-            await s.execute(text(stmt))
+        await s.execute(text(
+            "CREATE TABLE chat_conversations (id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), "
+            "user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE)"))
+        # Twice: migrations run on every boot, so re-running must be a no-op.
+        for _ in range(2):
+            for mig in MIGRATIONS:
+                for stmt in client._split_sql_statements(mig.read_text()):
+                    await s.execute(text(stmt))
     try:
         yield client
     finally:
@@ -147,3 +151,94 @@ async def test_concurrent_claim_is_atomic_and_lease_expires(pg):
     q2 = await repo.enqueue_request(ua, "q2")
     assert await repo.cancel_request(ub, q2["id"]) is None
     assert (await repo.cancel_request(ua, q2["id"]))["status"] == "cancelled"
+
+
+async def test_terminal_states_sweep_and_malformed_ids(pg):
+    from backend.agent_bridge.repository import PostgresBridgeRepository
+
+    repo = PostgresBridgeRepository(pg)
+    ua, ub = await _user(pg, "a@x"), await _user(pg, "b@x")
+    k, _ = await repo.create_key(ua, "bot", ["bridge:answer"])
+    late = await repo.enqueue_request(ua, "late")
+    hard = await repo.enqueue_request(ua, "hard")
+    other = await repo.enqueue_request(ub, "b's")
+    await pg.execute_update("UPDATE agent_requests SET expires_at = NOW() - INTERVAL '1 second' "
+                            "WHERE id IN (CAST(:a AS UUID), CAST(:b AS UUID))",
+                            {"a": late["id"], "b": other["id"]})
+    for _ in range(3):
+        c = await repo.claim_request(ua, k["id"], request_id=hard["id"])
+        assert c
+        await pg.execute_update("UPDATE agent_requests SET lease_expires_at = NOW() - "
+                                "INTERVAL '1 second' WHERE id = CAST(:id AS UUID)", {"id": hard["id"]})
+    # Lazy sweep is user-scoped: B's expired row is untouched until the global job runs.
+    assert (await repo.get_request(ua, late["id"]))["status"] == "expired"
+    h = await repo.get_request(ua, hard["id"])
+    assert h["status"] == "failed" and h["claim_token"] is None and "3 attempts" in h["error"]
+    raw = await pg.execute_query("SELECT status FROM agent_requests WHERE id = CAST(:id AS UUID)",
+                                 {"id": other["id"]})
+    assert raw[0]["status"] == "queued"
+    from backend.agent_bridge.jobs import sweep_stale_requests
+
+    assert await sweep_stale_requests(repo) == {"expired": 1, "failed": 0}
+    assert (await repo.get_request(ub, other["id"]))["status"] == "expired"
+    assert await repo.list_requests(ua, statuses=["queued", "claimed"]) == []
+
+    for bad in ("nope", "1; drop table agent_requests", ""):
+        assert await repo.get_request(ua, bad) is None
+        assert await repo.cancel_request(ua, bad) is None
+        assert await repo.claim_request(ua, k["id"], request_id=bad) is None
+        assert await repo.complete_request(ua, late["id"], bad, answer_text="x") is None
+        assert await repo.set_feed_item_status(ua, bad, "approved") is None
+        assert await repo.conversation_owned(ua, bad) is False
+
+
+async def test_feed_state_machine_batch_atomicity_cap_audit(pg):
+    from backend.agent_bridge.limits import PostgresRateLimiter
+    from backend.agent_bridge.repository import (
+        InvalidTransitionError,
+        LimitExceededError,
+        PostgresBridgeRepository,
+    )
+
+    repo = PostgresBridgeRepository(pg)
+    ua, ub = await _user(pg, "a@x"), await _user(pg, "b@x")
+    rows = await repo.insert_feed_items(ua, [_feed(source_url="https://e.com/1"),
+                                             _feed(source_url="https://e.com/2"),
+                                             _feed(source_url="https://e.com/1")])
+    assert [c for _, c in rows] == [True, True, False] and rows[0][0]["id"] == rows[2][0]["id"]
+
+    # Cap: 2 pending already; a batch of 2 new with cap 3 is rejected as a whole.
+    with pytest.raises(LimitExceededError):
+        await repo.insert_feed_items(ua, [_feed(source_url="https://e.com/3"),
+                                          _feed(source_url="https://e.com/4")],
+                                     max_pending_today=3)
+    # A failing statement mid-batch rolls the batch back too (bad source_kind -> CHECK).
+    with pytest.raises(Exception):
+        await repo.insert_feed_items(ua, [_feed(source_url="https://e.com/5"),
+                                          _feed(source_url="https://e.com/6", source_kind="??")])
+    assert len(await repo.list_feed_items(ua, status=None)) == 2
+
+    a_id, b_id = rows[0][0]["id"], rows[1][0]["id"]
+    assert (await repo.set_feed_item_status(ua, a_id, "rejected"))["status"] == "rejected"
+    with pytest.raises(InvalidTransitionError):
+        await repo.set_feed_item_status(ua, a_id, "approved")
+    assert (await repo.set_feed_item_status(ua, b_id, "approved"))["status"] == "approved"
+    again = await repo.set_feed_item_status(ua, b_id, "approved")
+    assert again["status"] == "approved"
+    assert await repo.set_feed_item_status(ub, b_id, "rejected") is None
+
+    conv = await pg.execute_query("INSERT INTO chat_conversations (user_id) "
+                                  "VALUES (CAST(:u AS UUID)) RETURNING id", {"u": ua})
+    cid = str(conv[0]["id"])
+    assert await repo.conversation_owned(ua, cid) and not await repo.conversation_owned(ub, cid)
+
+    await repo.audit(ua, "tool_call", actor="agent", key_id=None, tool="search_concepts",
+                     target_id="not-a-uuid", details={"concepts_count": 2})
+    ev = await repo.list_audit(ua)
+    assert ev[0]["tool"] == "search_concepts" and ev[0]["details"] == {"concepts_count": 2}
+    assert await repo.list_audit(ub) == []
+
+    lim1, lim2 = PostgresRateLimiter(pg), PostgresRateLimiter(pg)
+    results = await asyncio.gather(*[(lim1 if i % 2 else lim2).hit("t", 5, 3600)
+                                     for i in range(8)])
+    assert sum(results) == 5

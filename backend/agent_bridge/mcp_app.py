@@ -19,11 +19,15 @@ import contextlib
 import contextvars
 import inspect
 import json
+import os
 from typing import Any, Callable, Optional
 
 import structlog
 
-from backend.agent_bridge.auth import SlidingWindowLimiter, authenticate_agent_key
+from backend.agent_bridge import bridge_enabled, limits
+from backend.agent_bridge.auth import authenticate_agent_key
+from backend.agent_bridge.limits import RateLimiter
+from backend.agent_bridge.serialization import to_jsonable
 from backend.agent_bridge.keys import AgentPrincipal
 from backend.agent_bridge.tools import TOOLS, BridgeServices, call_tool
 
@@ -69,7 +73,7 @@ def build_lowlevel_server(services_factory: ServicesFactory) -> Any:
         else:
             services = await services_factory()
             result = await call_tool(name, principal, services, args or {})
-        text = json.dumps(result, default=str)
+        text = json.dumps(to_jsonable(result))
         return result, [types.TextContent(type="text", text=text)]
 
     if "on_call_tool" in inspect.signature(Server.__init__).parameters:  # mcp 2.x
@@ -102,20 +106,69 @@ def build_lowlevel_server(services_factory: ServicesFactory) -> Any:
     return server  # pragma: no cover
 
 
+DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*", "[::1]:*"]
+
+
+def _split_env(name: str) -> list[str]:
+    return [h.strip() for h in os.environ.get(name, "").split(",") if h.strip()]
+
+
+def allowed_hosts_from_env() -> list[str]:
+    """``AGENT_BRIDGE_ALLOWED_HOSTS`` (comma list, ``host`` or ``host:*``) plus Render's
+    ``RENDER_EXTERNAL_HOSTNAME`` when present, plus localhost for dev."""
+    hosts = list(DEFAULT_ALLOWED_HOSTS) + _split_env("AGENT_BRIDGE_ALLOWED_HOSTS")
+    render = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+    if render:
+        hosts.append(render)
+    return hosts
+
+
+def allowed_origins_from_env() -> list[str]:
+    return _split_env("AGENT_BRIDGE_ALLOWED_ORIGINS")
+
+
+def host_allowed(host: Optional[str], allowed: list[str]) -> bool:
+    if not host:
+        return False
+    host = host.strip().lower()
+    for pat in allowed:
+        pat = pat.lower()
+        if pat == host:
+            return True
+        if pat.endswith(":*") and host.rsplit(":", 1)[0] == pat[:-2] and ":" in host:
+            return True
+    return False
+
+
 class AgentBridgeMCPApp:
-    """ASGI app: bearer-key auth + rate limit in front of the MCP session manager."""
+    """ASGI app: host/origin allowlist (DNS-rebinding guard) + bearer-key auth + rate limit
+    in front of the MCP session manager."""
 
     def __init__(self, services_factory: ServicesFactory,
-                 limiter: Optional[SlidingWindowLimiter] = None):
+                 limiter: Optional[RateLimiter] = None,
+                 allowed_hosts: Optional[list[str]] = None,
+                 allowed_origins: Optional[list[str]] = None):
         from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
         self.services_factory = services_factory
-        self.limiter = limiter or SlidingWindowLimiter()
+        self.limiter = limiter  # None -> use services.limiter
+        self.allowed_hosts = allowed_hosts if allowed_hosts is not None else allowed_hosts_from_env()
+        self.allowed_origins = (allowed_origins if allowed_origins is not None
+                                else allowed_origins_from_env())
         self.server = build_lowlevel_server(services_factory)
-        # TODO(agent-bridge): configure TransportSecuritySettings (allowed hosts/origins)
-        # for the public deployment hostname.
+        kwargs: dict[str, Any] = {}
+        try:  # SDK-level DNS-rebinding protection too (same lists), when available
+            from mcp.server.transport_security import TransportSecuritySettings
+
+            kwargs["security_settings"] = TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=self.allowed_hosts,
+                allowed_origins=self.allowed_origins,
+            )
+        except ImportError:  # pragma: no cover - very old SDKs
+            pass
         self.session_manager = StreamableHTTPSessionManager(
-            app=self.server, stateless=True, json_response=True
+            app=self.server, stateless=True, json_response=True, **kwargs
         )
 
     @contextlib.asynccontextmanager
@@ -123,11 +176,26 @@ class AgentBridgeMCPApp:
         async with self.session_manager.run():
             yield
 
+    def _check_host_origin(self, scope: dict) -> Optional[str]:
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1")
+                   for k, v in scope.get("headers", [])}
+        if not host_allowed(headers.get("host"), self.allowed_hosts):
+            return "host_not_allowed"
+        origin = headers.get("origin")
+        # Server-side MCP clients send no Origin; browsers always do -> must be allowlisted.
+        if origin is not None and origin not in self.allowed_origins:
+            return "origin_not_allowed"
+        return None
+
     async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
         if scope["type"] == "lifespan":  # standalone uvicorn
             await self._lifespan(receive, send)
             return
         if scope["type"] != "http":
+            return
+        denied = self._check_host_origin(scope)
+        if denied:
+            await _json(send, 421 if denied == "host_not_allowed" else 403, {"error": denied})
             return
         token = None
         for k, v in scope.get("headers", []):
@@ -141,7 +209,8 @@ class AgentBridgeMCPApp:
             await _json(send, 401, {"error": "invalid_or_missing_agent_key"},
                         extra=[(b"www-authenticate", b'Bearer realm="graphrecall-agent"')])
             return
-        if not self.limiter.allow(principal.key_id):
+        limiter = self.limiter or services.limiter
+        if not await limiter.hit(f"mcp:key:{principal.key_id}", limits.mcp_calls_per_min(), 60):
             await _json(send, 429, {"error": "rate_limited"}, extra=[(b"retry-after", b"60")])
             return
         scope.setdefault("state", {})["agent_principal"] = principal
@@ -174,6 +243,7 @@ async def _json(send: Callable, status: int, body: dict, extra: Optional[list] =
 async def default_services() -> BridgeServices:
     """Production wiring: shared Postgres/Neo4j clients used by the rest of the API."""
     from backend.agent_bridge.knowledge import KnowledgeService
+    from backend.agent_bridge.limits import limiter_from_env
     from backend.agent_bridge.repository import PostgresBridgeRepository
     from backend.agent_bridge.webhook import notifier_from_env
     from backend.db.neo4j_client import get_neo4j_client
@@ -189,10 +259,10 @@ async def default_services() -> BridgeServices:
     pg = await get_postgres_client()
     return BridgeServices(repo=PostgresBridgeRepository(pg),
                           knowledge=KnowledgeService(pg, _LazyNeo4j()),
-                          notifier=notifier_from_env())
+                          notifier=notifier_from_env(), limiter=limiter_from_env(pg))
 
 
-def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - manual entrypoint
+def main(argv: Optional[list[str]] = None) -> int:
     import argparse
 
     import uvicorn
@@ -206,8 +276,15 @@ def main(argv: Optional[list[str]] = None) -> int:  # pragma: no cover - manual 
         print(json.dumps([{"name": s.name, "scope": s.scope, "description": s.description}
                           for s in TOOLS.values()], indent=2))
         return 0
-    uvicorn.run(AgentBridgeMCPApp(default_services), host=a.host, port=a.port)
-    return 0
+    if not bridge_enabled():
+        print("Refusing to start: set AGENT_BRIDGE_ENABLED=1 to serve the agent-bridge MCP app.",
+              file=__import__("sys").stderr)
+        return 2
+    from backend.agent_bridge.keys import check_key_config
+
+    check_key_config()
+    uvicorn.run(AgentBridgeMCPApp(default_services), host=a.host, port=a.port)  # pragma: no cover
+    return 0  # pragma: no cover
 
 
 if __name__ == "__main__":  # pragma: no cover

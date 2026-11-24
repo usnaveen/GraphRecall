@@ -91,13 +91,20 @@ async def get_feed(
             parsed_types is None or FeedItemType.AGENT_CURATED in parsed_types
         ):
             try:
-                from backend.agent_bridge.feed_integration import agent_feed_items
+                from backend.agent_bridge.feed_integration import (
+                    agent_feed_items,
+                    filter_by_domains,
+                    merge_into_feed,
+                )
                 from backend.agent_bridge.repository import PostgresBridgeRepository
 
                 curated = await agent_feed_items(
                     PostgresBridgeRepository(pg_client), request.user_id, limit=5
                 )
-                response.items = curated + response.items
+                curated = await filter_by_domains(
+                    neo4j_client, request.user_id, curated, parsed_domains
+                )
+                response.items = merge_into_feed(curated, response.items, max_items)
             except Exception as e:  # never break the core feed
                 logger.warning("Feed: agent-curated items skipped", error=str(e))
         
