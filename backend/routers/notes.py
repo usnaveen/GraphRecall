@@ -66,9 +66,30 @@ async def list_notes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def delete_note_graph(neo4j, note_id: str, user_id: str) -> int:
+CONCEPT_ROW_TABLES = ("flashcards", "quizzes", "proficiency_scores", "generated_content", "study_sessions")
+
+
+async def delete_concept_rows(pg, user_id: str, concept_ids: list[str]) -> int:
+    """Delete the user's study rows for concepts that no longer exist (cards and quizzes generated
+    from the deleted note's text, scores and review history). Only tables that have both columns."""
+    if not concept_ids:
+        return 0
+    rows = await pg.execute_query(
+        "SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' "
+        "AND column_name IN ('user_id', 'concept_id') AND table_name = ANY(:t) "
+        "GROUP BY table_name HAVING count(*) = 2", {"t": list(CONCEPT_ROW_TABLES)})
+    deleted = 0
+    for t in sorted(r["table_name"] for r in rows):
+        res = await pg.execute_query(
+            f"DELETE FROM {t} WHERE user_id = CAST(:u AS uuid) AND concept_id = ANY(:ids) RETURNING 1 AS x",
+            {"u": user_id, "ids": concept_ids})
+        deleted += len(res)
+    return deleted
+
+
+async def delete_note_graph(neo4j, note_id: str, user_id: str) -> list[str]:
     """Delete the note's NoteSource and every Concept that no other note of this user explains.
-    Returns the number of concepts deleted."""
+    Returns the ids of the deleted concepts."""
     rows = await neo4j.execute_query(
         """
         MATCH (n:NoteSource {id: $note_id, user_id: $user_id})
@@ -77,13 +98,14 @@ async def delete_note_graph(neo4j, note_id: str, user_id: str) -> int:
             MATCH (other:NoteSource {user_id: $user_id})-[:EXPLAINS]->(c) WHERE other.id <> $note_id
         }
         WITH n, collect(DISTINCT c) AS orphans
+        WITH n, orphans, [c IN orphans | c.id] AS ids
         FOREACH (c IN orphans | DETACH DELETE c)
         DETACH DELETE n
-        RETURN size(orphans) AS concepts
+        RETURN ids
         """,
         {"note_id": note_id, "user_id": user_id},
     )
-    return int(rows[0]["concepts"]) if rows else 0
+    return [i for i in (rows[0]["ids"] if rows else []) if i]
 
 
 @router.delete("/{note_id}")
@@ -126,7 +148,8 @@ async def delete_note(
         # definitions are derived from its text), then the NoteSource node itself.
         try:
             neo4j = await get_neo4j_client()
-            await delete_note_graph(neo4j, note_id, user_id)
+            removed = await delete_note_graph(neo4j, note_id, user_id)
+            await delete_concept_rows(pg_client, user_id, removed)
         except Exception as e:
             logger.warning("Notes: Failed to delete note graph", error=str(e))
 

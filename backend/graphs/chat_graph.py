@@ -17,7 +17,7 @@ from typing import Annotated, Literal, Optional
 
 import structlog
 
-from backend.graphs.thread_ids import chat_thread_id
+from backend.graphs.thread_ids import chat_thread_id, thread_belongs_to
 from langchain_core.messages import (
     SystemMessage,
     HumanMessage,
@@ -881,6 +881,9 @@ async def run_chat(
     import uuid
     
     thread_id = thread_id or chat_thread_id(user_id)
+    if not thread_belongs_to(thread_id, user_id):
+        # Checkpoints are keyed by thread id alone: never load a thread outside the caller's namespace.
+        raise ValueError("chat thread does not belong to this user")
     config = {"configurable": {"thread_id": thread_id}}
     
     initial_state: ChatState = {

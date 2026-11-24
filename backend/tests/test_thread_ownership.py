@@ -89,3 +89,16 @@ async def test_cannot_read_or_resume_another_users_ingestion(endpoint, monkeypat
             await ingest_v2.approve_and_resume(thread, ingest_v2.ResumeRequest(approved_concepts=[]),
                                                current_user={"id": b})
     assert e.value.status_code == 404
+
+
+async def test_graph_entry_points_refuse_foreign_threads():
+    from backend.graphs.chat_graph import run_chat
+    from backend.graphs.ingestion_graph import run_ingestion
+
+    a, b = str(uuid.uuid4()), str(uuid.uuid4())
+    with pytest.raises(ValueError):
+        await run_chat(user_id=b, message="hi", thread_id=chat_thread_id(a, "c1"))
+    with pytest.raises(ValueError):
+        await run_chat(user_id=b, message="hi", thread_id="some-bare-id")
+    with pytest.raises(ValueError):
+        await run_ingestion(content="x", user_id=b, thread_id=ingest_thread_id(a))

@@ -140,12 +140,32 @@ async def test_note_deletion_removes_only_its_orphan_concepts(stores):
                (theirs:Concept {id: 'theirs-' + $n1, user_id: $other, name: 'only in note 1'})
         """, {"n1": n1, "n2": n2, "u": u, "other": other})
     try:
-        assert await delete_note_graph(neo, n1, u) == 1
+        assert await delete_note_graph(neo, n1, u) == [f"only-{n1}"]
         ids = {r["id"] for r in await neo.execute_query(
             "MATCH (n) WHERE n.user_id IN [$u, $o] RETURN n.id AS id", {"u": u, "o": other})}
         assert ids == {n2, f"shared-{n1}", f"theirs-{n1}"}
     finally:
         await neo.execute_query("MATCH (n) WHERE n.user_id IN [$u, $o] DETACH DELETE n", {"u": u, "o": other})
+
+
+async def test_note_deletion_removes_study_rows_of_deleted_concepts(stores):
+    from backend.routers.notes import delete_concept_rows
+
+    pg, neo = stores
+    a, b = await _make_user(pg, neo, "ra"), await _make_user(pg, neo, "rb")
+    try:
+        for uid in (a, b):
+            for cid in ("gone", "kept"):
+                await pg.execute_update(
+                    "INSERT INTO flashcards (user_id, concept_id, front_content, back_content) "
+                    "VALUES (CAST(:u AS uuid), :c, 'q', 'a')", {"u": uid, "c": cid})
+        assert await delete_concept_rows(pg, a, ["gone"]) == 1
+        left = {(str(r["user_id"]), r["concept_id"]) for r in await pg.execute_query(
+            "SELECT user_id, concept_id FROM flashcards WHERE user_id IN (CAST(:a AS uuid), CAST(:b AS uuid))",
+            {"a": a, "b": b})}
+        assert left == {(a, "kept"), (b, "gone"), (b, "kept")}
+    finally:
+        await neo.execute_query("MATCH (n) WHERE n.user_id IN [$a, $b] DETACH DELETE n", {"a": a, "b": b})
 
 
 async def test_purge_keeps_the_account(stores):

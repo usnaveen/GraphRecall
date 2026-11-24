@@ -109,14 +109,25 @@ def test_every_user_data_query_filters_by_owner_or_is_reviewed():
 
 def test_unscoped_graphs_stay_unreachable():
     """content/quiz/research graphs query concepts and notes with no user filter. Wiring one into a
-    request path must come with user scoping; until then nothing reachable may import them."""
-    names = [pathlib.Path(u).stem for u in UNREACHABLE] + ["supervisor_graph"]
+    request path must come with user scoping; until then nothing reachable may import them, by
+    module path or by any name they export through backend.graphs."""
+    modules = [pathlib.Path(u).stem for u in UNREACHABLE] + ["supervisor_graph"]
+    exported = {"quiz_graph", "run_quiz_generation", "research_agent", "run_research", "get_research_history",
+                "content_graph", "run_content_generation", "supervisor_graph"}
     offenders = []
-    for d in ("routers", "services", "agent_v2", "mcp"):
-        for p in (ROOT / d).rglob("*.py"):
-            text = p.read_text()
-            offenders += [f"{p.relative_to(ROOT)} imports {n}" for n in names
-                          if re.search(rf"graphs(\.|\s+import\s+.*\b){n}\b", text)]
-    main = (ROOT / "main.py").read_text()
-    offenders += [f"main.py imports {n}" for n in names if n in main]
+    files = [ROOT / "main.py"]
+    for d in ("routers", "services", "agents", "agent_v2", "mcp"):
+        files += list((ROOT / d).rglob("*.py"))
+    for p in files:
+        tree = ast.parse(p.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                names = {a.name for a in node.names}
+                if node.module == "backend.graphs" and names & exported:
+                    offenders.append(f"{p.relative_to(ROOT)} imports {sorted(names & exported)} from backend.graphs")
+                if any(node.module == f"backend.graphs.{m}" for m in modules):
+                    offenders.append(f"{p.relative_to(ROOT)} imports {node.module}")
+            elif isinstance(node, ast.Import):
+                offenders += [f"{p.relative_to(ROOT)} imports {a.name}" for a in node.names
+                              if any(a.name == f"backend.graphs.{m}" for m in modules)]
     assert not offenders, "\n".join(offenders)
