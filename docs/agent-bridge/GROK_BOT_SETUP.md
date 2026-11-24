@@ -8,15 +8,21 @@ was changed by this branch.
 | Env | Required | Purpose |
 |---|---|---|
 | `AGENT_BRIDGE_ENABLED=1` | yes | Mounts `/mcp/agent/` and `/api/agent-bridge/*`; adds agent cards to `/api/feed` |
-| `AGENT_KEY_PEPPER` | strongly recommended | Secret mixed into key hashes. Changing it invalidates all keys |
-| `AGENT_BRIDGE_WEBHOOK_URL` | optional | Where to POST `agent_request.created` events |
-| `AGENT_BRIDGE_WEBHOOK_SECRET` | with URL | HMAC secret for `X-GraphRecall-Signature` |
+| `AGENT_KEY_PEPPER` | **yes in production** | Secret mixed into key hashes. With `ENVIRONMENT=production` and no pepper, the app refuses to start and key auth fails closed; in dev it only warns. Changing it invalidates all keys |
+| `AGENT_BRIDGE_ALLOWED_HOSTS` | if not on Render | Comma-separated Host allowlist (`host` or `host:*`). Localhost and `RENDER_EXTERNAL_HOSTNAME` are always allowed; other hosts get 421 |
+| `AGENT_BRIDGE_ALLOWED_ORIGINS` | optional | Browser Origins allowed (a missing Origin is fine for server-to-server MCP); others get 403 |
+| `AGENT_BRIDGE_RATE_LIMIT_BACKEND` | optional | `memory`, `postgres` or `redis` (default: redis if `REDIS_URL` is set, postgres in production, else memory) |
+| `AGENT_BRIDGE_MCP_CALLS_PER_MIN` / `_ENQUEUE_PER_HOUR` / `_PROPOSALS_PER_KEY_PER_DAY` / `_MAX_PENDING_PER_DAY` | optional | Limits (defaults 120 / 20 / 100 / 50) |
+| `AGENT_BRIDGE_WEBHOOK_URL` | optional | Where to POST `agent_request.created` events (in the background, up to 3 attempts) |
+| `AGENT_BRIDGE_WEBHOOK_SECRET` | with URL | HMAC secret. Headers: `X-GraphRecall-Event-Id`, `X-GraphRecall-Timestamp`, `X-GraphRecall-Signature: t=…,id=…,v1=…`. Receivers must dedupe on the event id (`verify_webhook` + `ReplayGuard`) |
 
-Migration `backend/db/migrations/015_agent_bridge.sql` runs automatically on boot
-(like every file in that folder).
+Migrations `015_agent_bridge.sql` and `016_agent_bridge_audit.sql` (in
+`backend/db/migrations/`) run automatically on boot, like every file in that folder.
+Schedule `python -m backend.agent_bridge.jobs` (for example every 5 minutes) to expire
+stale questions; TODO(agent-bridge).
 
-Standalone alternative (local dev): `python -m backend.agent_bridge.mcp_app --port 8100`
-serves the same MCP app at `http://127.0.0.1:8100/`.
+Standalone alternative (local dev): `AGENT_BRIDGE_ENABLED=1 python -m backend.agent_bridge.mcp_app --port 8100`
+serves the same MCP app at `http://127.0.0.1:8100/`. It refuses to start without the flag.
 
 ## 2. Create an agent key (app)
 
