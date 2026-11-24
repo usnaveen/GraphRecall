@@ -60,6 +60,22 @@ The API refuses to start with unsafe or missing settings (`backend/config/produc
 - **Sign everyone out:** `DELETE FROM auth_refresh_tokens;`. Access tokens die within the hour; rotate `SESSION_SECRET` to end them immediately.
 - **Sign one user out:** `UPDATE auth_refresh_tokens SET revoked_at = NOW() WHERE user_id = '<uuid>';`
 
+## Account deletion: what is removed, and what isn't
+
+`DELETE /api/users/me` (App Store guideline 5.1.1(v)) runs `services/account_deletion.py`:
+
+| Store | What happens |
+|---|---|
+| Postgres | The `users` row, and every user-owned table, which cascades from it |
+| Neo4j | Every node with the user's `user_id` (concepts, note sources, graphs) |
+| R2 | Every object under `uploads/{user_id}/`, including ones no row references any more |
+| LangGraph checkpoints | Every `chat:{user_id}:*` and `ingest:{user_id}:*` thread: full chat history, retrieved note text, ingestion state |
+| Sign in with Apple | The Apple authorization is revoked (when the `.p8` key is configured) |
+| **Backups** | **Not rewritten.** Nightly dumps in R2 keep deleted data until the 14-day lifecycle rule expires them. The privacy policy must say so. |
+| Third parties | Text already sent to Gemini (and topics sent to Tavily) is governed by their retention terms. Use the paid Gemini tier, which doesn't train on prompts. |
+
+Deleting a single note also deletes its chunk images and every concept that only that note explained. Deleting a conversation also deletes its checkpoint thread.
+
 ## Incidents
 
 - **API won't start:** `docker compose … logs api`. Most often it's a refused production setting (the log lists them) or a pending migration (run `migrate`).

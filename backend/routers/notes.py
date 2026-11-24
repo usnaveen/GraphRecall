@@ -1,6 +1,8 @@
 """Notes Router - List and delete user notes."""
 
 import structlog
+
+from backend.services.storage_service import get_storage_service
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.auth.middleware import get_current_user
@@ -64,6 +66,26 @@ async def list_notes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def delete_note_graph(neo4j, note_id: str, user_id: str) -> int:
+    """Delete the note's NoteSource and every Concept that no other note of this user explains.
+    Returns the number of concepts deleted."""
+    rows = await neo4j.execute_query(
+        """
+        MATCH (n:NoteSource {id: $note_id, user_id: $user_id})
+        OPTIONAL MATCH (n)-[:EXPLAINS]->(c:Concept {user_id: $user_id})
+        WHERE NOT EXISTS {
+            MATCH (other:NoteSource {user_id: $user_id})-[:EXPLAINS]->(c) WHERE other.id <> $note_id
+        }
+        WITH n, collect(DISTINCT c) AS orphans
+        FOREACH (c IN orphans | DETACH DELETE c)
+        DETACH DELETE n
+        RETURN size(orphans) AS concepts
+        """,
+        {"note_id": note_id, "user_id": user_id},
+    )
+    return int(rows[0]["concepts"]) if rows else 0
+
+
 @router.delete("/{note_id}")
 async def delete_note(
     note_id: str,
@@ -82,23 +104,39 @@ async def delete_note(
         if not result:
             raise HTTPException(status_code=404, detail="Note not found")
 
+        # Images stored for this note's chunks (collected before the cascade removes the chunks).
+        image_urls: list[str] = []
+        try:
+            from backend.services.account_deletion import _image_urls
+
+            for r in await pg_client.execute_query(
+                    "SELECT c.images FROM chunks c JOIN notes n ON n.id = c.note_id "
+                    "WHERE n.id = :note_id AND n.user_id = :user_id AND c.images IS NOT NULL",
+                    {"note_id": note_id, "user_id": user_id}):
+                image_urls += _image_urls(r.get("images"))
+        except Exception as e:
+            logger.warning("Notes: could not collect note images", error=str(e))
+
         await pg_client.execute_update(
             "DELETE FROM notes WHERE id = :note_id AND user_id = :user_id",
             {"note_id": note_id, "user_id": user_id},
         )
 
-        # Best-effort: remove note source node from Neo4j
+        # Best-effort graph cleanup: concepts extracted only from this note go with it (their
+        # definitions are derived from its text), then the NoteSource node itself.
         try:
             neo4j = await get_neo4j_client()
-            await neo4j.execute_query(
-                """
-                MATCH (n:NoteSource {id: $note_id, user_id: $user_id})
-                DETACH DELETE n
-                """,
-                {"note_id": note_id, "user_id": user_id},
-            )
+            await delete_note_graph(neo4j, note_id, user_id)
         except Exception as e:
-            logger.warning("Notes: Failed to delete NoteSource", error=str(e))
+            logger.warning("Notes: Failed to delete note graph", error=str(e))
+
+        if image_urls:
+            try:
+                storage = get_storage_service()
+                for url in dict.fromkeys(image_urls):
+                    await storage.delete_file(url, owner_id=user_id)
+            except Exception as e:
+                logger.warning("Notes: note images not deleted", error=str(e))
 
         return {"status": "deleted", "note_id": note_id}
     except HTTPException:

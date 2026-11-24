@@ -63,6 +63,7 @@
 		B9F72CD6D433BE39DA5BB103 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 08EF6500A115E505F0EB5B7A /* Assets.xcassets */; };
 		C007D729D392D72926FD645A /* ShareIngestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E2ABA3A6A6F055C1E2DBFB /* ShareIngestTests.swift */; };
 		C10AC60200AD71AD6029EAE5 /* GRSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FEA2B5B0AD31451D1D93D9 /* GRSharedStore.swift */; };
+		C1353BE2E14261F05AADC20C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 8F15B362DA0B9D4C1BB37157 /* PrivacyInfo.xcprivacy */; };
 		C25E93AFF53FB438B794FDA5 /* GraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6B4BB4C9768BAB47A1235D /* GraphView.swift */; };
 		C4B385FAC417B230BA949476 /* graph3d.html in Resources */ = {isa = PBXBuildFile; fileRef = AB2B223947F7FA737F47CF8A /* graph3d.html */; };
 		C5F0D1B3DEC5DFE60289B31A /* GraphQuizSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECBEB72ED744FC19DA09627 /* GraphQuizSheet.swift */; };
@@ -178,6 +179,7 @@
 		875510C0D234FE41ADC3D372 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		877AC1570FFB645C19F03AF7 /* ConceptDumpModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptDumpModels.swift; sourceTree = "<group>"; };
 		8D48E55D5893DADFCFF6D6D3 /* graph3d.bundle.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = graph3d.bundle.js; sourceTree = "<group>"; };
+		8F15B362DA0B9D4C1BB37157 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		8FF54DECE7F455EA0BB8D0F0 /* ReviewFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewFlowUITests.swift; sourceTree = "<group>"; };
 		918AF04DEE0A56DF92A9342A /* GRComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRComponents.swift; sourceTree = "<group>"; };
 		92A9D922C8E72D898E3EEBEC /* FeedDifficultySlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedDifficultySlider.swift; sourceTree = "<group>"; };
@@ -233,6 +235,7 @@
 			children = (
 				0F488B9751BD5542CD868BEE /* GraphRecallShare.entitlements */,
 				936B3B76850E86829C95B881 /* Info.plist */,
+				8F15B362DA0B9D4C1BB37157 /* PrivacyInfo.xcprivacy */,
 				875510C0D234FE41ADC3D372 /* ShareViewController.swift */,
 			);
 			path = GraphRecallShare;
@@ -552,6 +555,7 @@
 			buildConfigurationList = BD18743FA85B5E224F10662E /* Build configuration list for PBXNativeTarget "GraphRecallShare" */;
 			buildPhases = (
 				69C3864F9E6DEA78D8486DE8 /* Sources */,
+				9CAFBF5C7E615DCF0FF705D4 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -639,6 +643,14 @@
 				0883574602D26A55941A37F7 /* PrivacyInfo.xcprivacy in Resources */,
 				C9003B32FDF8C0501E09980C /* graph3d.bundle.js in Resources */,
 				C4B385FAC417B230BA949476 /* graph3d.html in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9CAFBF5C7E615DCF0FF705D4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C1353BE2E14261F05AADC20C /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
