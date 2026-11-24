@@ -59,3 +59,43 @@ async def agent_feed_items(repo: BridgeRepository, user_id: str,
     # TODO(agent-bridge): hide items the user already opened/dismissed (needs an
     # interaction column or reuse of the like/save tables).
     return [to_feed_item(r) for r in rows[:limit]]
+
+
+async def filter_by_domains(neo4j_client, user_id: str, items: list[FeedItem],
+                            domains: Optional[list[str]]) -> list[FeedItem]:
+    """Respect the feed's ``domains`` (topic) filter: keep only agent cards tagged with at
+    least one of the user's concepts in those domains. Untagged cards are dropped when a
+    filter is active (we can't tell which topic they belong to)."""
+    if not domains:
+        return items
+    cids = sorted({c for it in items for c in (it.content.get("concept_ids") or [])})
+    if not cids:
+        return []
+    rows = await neo4j_client.execute_query(
+        """
+        MATCH (c:Concept) WHERE c.id IN $ids AND c.user_id = $user_id
+        RETURN c
+        """,
+        {"ids": cids, "user_id": user_id},
+    )
+    wanted = set(domains)
+    in_scope = {r["c"]["id"] for r in rows if r.get("c") and r["c"].get("domain") in wanted}
+    out = []
+    for it in items:
+        tagged = [c for c in it.content.get("concept_ids") or [] if c in in_scope]
+        if tagged:
+            if it.concept_id not in in_scope:
+                it.concept_id = tagged[0]
+            out.append(it)
+    return out
+
+
+def merge_into_feed(curated: list[FeedItem], items: list, max_items: int,
+                    max_curated: int = 5) -> list:
+    """Prepend curated cards without exceeding the caller's ``max_items``. At most
+    ``max_curated`` cards and never more than half the page when the page has room for
+    ordinary items too."""
+    if max_items <= 0:
+        return []
+    cap = min(max_curated, max_items if max_items < 2 else max(1, max_items // 2))
+    return (curated[:cap] + list(items))[:max_items]

@@ -29,6 +29,40 @@ DEFAULT_REQUEST_TTL = timedelta(days=2)
 FEED_STATUSES = {"pending", "approved", "rejected", "expired"}
 REQUEST_TERMINAL = {"answered", "failed", "cancelled", "expired"}
 
+# Feed-item state machine: target status -> statuses it may be reached from.
+# Same-state transitions are allowed (idempotent approve/reject). A rejected card can
+# never be approved later; an approved card may still be hidden (rejected) by the user.
+FEED_TRANSITIONS: dict[str, set[str]] = {
+    "approved": {"pending", "approved"},
+    "rejected": {"pending", "approved", "rejected"},
+    "expired": {"pending", "expired"},
+    "pending": set(),
+}
+
+EXPIRED_ERROR = "Deadline passed before the agent answered"
+EXHAUSTED_ERROR = "Agent did not answer after {n} attempts"
+
+
+class LimitExceededError(Exception):
+    def __init__(self, message: str, limit: int):
+        super().__init__(message)
+        self.limit = limit
+
+
+class InvalidTransitionError(Exception):
+    def __init__(self, current: str, target: str):
+        super().__init__(f"Cannot change feed item from '{current}' to '{target}'")
+        self.current = current
+        self.target = target
+
+
+def is_uuid(value: Any) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -58,9 +92,30 @@ class BridgeRepository(ABC):
 
     # ---- feed -----------------------------------------------------------
     @abstractmethod
+    async def insert_feed_items(
+        self, user_id: str, items: list[dict], max_pending_today: Optional[int] = None
+    ) -> list[tuple[dict, bool]]:
+        """Insert a batch atomically (all or nothing, one transaction). Each item is
+        inserted or resolved to the existing row (idempotency_key or
+        (dedupe_key, target_date)). Returns [(row, created)]. Raises
+        :class:`LimitExceededError` - and writes nothing - if the batch would push the
+        user's pending items created today past ``max_pending_today``."""
+
     async def insert_feed_item(self, user_id: str, item: dict) -> tuple[dict, bool]:
-        """Insert or return existing (idempotency_key or (dedupe_key, target_date)).
-        Returns (row, created)."""
+        return (await self.insert_feed_items(user_id, [item]))[0]
+
+    # ---- audit / misc -----------------------------------------------------
+    @abstractmethod
+    async def audit(self, user_id: str, action: str, *, actor: str, key_id: Optional[str] = None,
+                    tool: Optional[str] = None, target_id: Optional[str] = None,
+                    details: Optional[dict] = None) -> None:
+        """Append to agent_audit_log. Metadata only (names, ids, counts) - no content."""
+
+    @abstractmethod
+    async def list_audit(self, user_id: str, limit: int = 100) -> list[dict]: ...
+
+    @abstractmethod
+    async def conversation_owned(self, user_id: str, conversation_id: str) -> bool: ...
 
     @abstractmethod
     async def list_feed_items(
@@ -74,7 +129,9 @@ class BridgeRepository(ABC):
     @abstractmethod
     async def set_feed_item_status(
         self, user_id: str, item_id: str, status: str
-    ) -> Optional[dict]: ...
+    ) -> Optional[dict]:
+        """Returns the row, None if not found/not owned; raises
+        :class:`InvalidTransitionError` if ``FEED_TRANSITIONS`` forbids the change."""
 
     @abstractmethod
     async def owned_feed_item_ids(self, user_id: str, item_ids: list[str]) -> set[str]: ...
@@ -118,6 +175,20 @@ class BridgeRepository(ABC):
     ) -> Optional[dict]:
         """Atomically claim one claimable request (queued, or claimed with an expired
         lease). Returns the row incl. a fresh ``claim_token``, or None."""
+
+    @abstractmethod
+    async def sweep_requests(
+        self, user_id: Optional[str] = None, max_attempts: int = DEFAULT_MAX_ATTEMPTS
+    ) -> dict:
+        """Move stale requests to terminal states and return counts
+        ``{"expired": n, "failed": m}``:
+
+        * past ``expires_at`` while queued (or claimed with a lapsed lease) -> ``expired``
+        * claimed, lease lapsed and ``attempts >= max_attempts`` -> ``failed``
+
+        Called lazily (scoped to one user) from get/list/claim, and globally
+        (``user_id=None``) from :func:`backend.agent_bridge.jobs.sweep_stale_requests`.
+        """
 
     @abstractmethod
     async def complete_request(
@@ -224,54 +295,74 @@ class PostgresBridgeRepository(BridgeRepository):
         )
 
     # ---- feed -----------------------------------------------------------
-    async def insert_feed_item(self, user_id, item):
-        params = {
-            "user_id": user_id,
-            "key_id": item.get("key_id"),
-            "item_kind": item["item_kind"],
-            "title": item["title"],
-            "summary": item["summary"],
-            "body_json": json.dumps(item.get("body_json") or {}),
-            "source_url": item.get("source_url"),
-            "source_kind": item["source_kind"],
-            "reason": item["reason"],
-            "concept_ids": item.get("concept_ids") or [],
-            "target_date": item["target_date"],
-            "dedupe_key": item["dedupe_key"],
-            "idempotency_key": item.get("idempotency_key"),
-        }
-        rows = await self.pg.execute_query(
-            """
-            INSERT INTO agent_feed_items (
-                user_id, key_id, status, item_kind, title, summary, body_json, source_url,
-                source_kind, reason, concept_ids, target_date, dedupe_key, idempotency_key)
-            VALUES (
-                CAST(:user_id AS UUID), CAST(:key_id AS UUID), 'pending', :item_kind, :title,
-                :summary, CAST(:body_json AS JSONB), :source_url, :source_kind, :reason,
-                CAST(:concept_ids AS TEXT[]), :target_date, :dedupe_key,
-                CAST(:idempotency_key AS VARCHAR))
-            ON CONFLICT DO NOTHING
-            RETURNING *
-            """,
-            params,
-        )
-        if rows:
-            return _row(rows[0]), True
-        existing = await self.pg.execute_query(
-            """
-            SELECT * FROM agent_feed_items
-            WHERE user_id = CAST(:user_id AS UUID)
-              AND ((CAST(:idempotency_key AS VARCHAR) IS NOT NULL
-                    AND idempotency_key = CAST(:idempotency_key AS VARCHAR))
-                   OR (dedupe_key = :dedupe_key AND target_date = :target_date))
-            ORDER BY created_at ASC
-            LIMIT 1
-            """,
-            params,
-        )
-        if not existing:  # pragma: no cover - would mean a conflict on another user's row
-            raise RuntimeError("Feed item conflict but no owned row found")
-        return _row(existing[0]), False
+    _INSERT_FEED_SQL = """
+        INSERT INTO agent_feed_items (
+            user_id, key_id, status, item_kind, title, summary, body_json, source_url,
+            source_kind, reason, concept_ids, target_date, dedupe_key, idempotency_key)
+        VALUES (
+            CAST(:user_id AS UUID), CAST(:key_id AS UUID), 'pending', :item_kind, :title,
+            :summary, CAST(:body_json AS JSONB), :source_url, :source_kind, :reason,
+            CAST(:concept_ids AS TEXT[]), :target_date, :dedupe_key,
+            CAST(:idempotency_key AS VARCHAR))
+        ON CONFLICT DO NOTHING
+        RETURNING *
+    """
+    _EXISTING_FEED_SQL = """
+        SELECT * FROM agent_feed_items
+        WHERE user_id = CAST(:user_id AS UUID)
+          AND ((CAST(:idempotency_key AS VARCHAR) IS NOT NULL
+                AND idempotency_key = CAST(:idempotency_key AS VARCHAR))
+               OR (dedupe_key = :dedupe_key AND target_date = :target_date))
+        ORDER BY created_at ASC
+        LIMIT 1
+    """
+
+    async def insert_feed_items(self, user_id, items, max_pending_today=None):
+        from sqlalchemy import text
+
+        results: list[tuple[dict, bool]] = []
+        # One transaction: PostgresClient.session() commits on success and rolls back on
+        # any exception, so a failing item (or the cap) leaves no partial batch behind.
+        async with self.pg.session() as session:
+            # Serialise concurrent batches for the same user so the cap check is exact.
+            await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:u))"),
+                                  {"u": f"agent_feed:{user_id}"})
+            for item in items:
+                params = {
+                    "user_id": user_id,
+                    "key_id": item.get("key_id"),
+                    "item_kind": item["item_kind"],
+                    "title": item["title"],
+                    "summary": item["summary"],
+                    "body_json": json.dumps(item.get("body_json") or {}),
+                    "source_url": item.get("source_url"),
+                    "source_kind": item["source_kind"],
+                    "reason": item["reason"],
+                    "concept_ids": item.get("concept_ids") or [],
+                    "target_date": item["target_date"],
+                    "dedupe_key": item["dedupe_key"],
+                    "idempotency_key": item.get("idempotency_key"),
+                }
+                res = await session.execute(text(self._INSERT_FEED_SQL), params)
+                row = res.mappings().first()
+                if row is not None:
+                    results.append((_row(dict(row)), True))
+                    continue
+                res = await session.execute(text(self._EXISTING_FEED_SQL), params)
+                row = res.mappings().first()
+                if row is None:  # pragma: no cover - conflict on a row we cannot see
+                    raise RuntimeError("Feed item conflict but no owned row found")
+                results.append((_row(dict(row)), False))
+            if max_pending_today is not None:
+                res = await session.execute(text(
+                    "SELECT COUNT(*) FROM agent_feed_items WHERE user_id = CAST(:u AS UUID) "
+                    "AND status = 'pending' AND created_at >= date_trunc('day', NOW())"),
+                    {"u": user_id})
+                if int(res.scalar() or 0) > max_pending_today:
+                    raise LimitExceededError(
+                        f"Daily cap of {max_pending_today} pending agent items reached",
+                        max_pending_today)
+        return results
 
     async def list_feed_items(self, user_id, status=None, target_date=None, limit=50):
         rows = await self.pg.execute_query(
@@ -290,17 +381,33 @@ class PostgresBridgeRepository(BridgeRepository):
     async def set_feed_item_status(self, user_id, item_id, status):
         if status not in FEED_STATUSES:
             raise ValueError(f"invalid status {status}")
+        if not is_uuid(item_id):
+            return None
         rows = await self.pg.execute_query(
             """
-            UPDATE agent_feed_items SET status = :status, reviewed_at = NOW()
+            UPDATE agent_feed_items SET
+                reviewed_at = CASE WHEN status = :status THEN reviewed_at ELSE NOW() END,
+                status = :status
             WHERE id = CAST(:id AS UUID) AND user_id = CAST(:user_id AS UUID)
+              AND status = ANY(CAST(:allowed AS TEXT[]))
             RETURNING *
             """,
-            {"id": item_id, "user_id": user_id, "status": status},
+            {"id": item_id, "user_id": user_id, "status": status,
+             "allowed": sorted(FEED_TRANSITIONS[status])},
         )
-        return _row(rows[0]) if rows else None
+        if rows:
+            return _row(rows[0])
+        cur = await self.pg.execute_query(
+            "SELECT status FROM agent_feed_items WHERE id = CAST(:id AS UUID) "
+            "AND user_id = CAST(:user_id AS UUID)",
+            {"id": item_id, "user_id": user_id},
+        )
+        if not cur:
+            return None
+        raise InvalidTransitionError(cur[0]["status"], status)
 
     async def owned_feed_item_ids(self, user_id, item_ids):
+        item_ids = [i for i in item_ids if is_uuid(i)]
         if not item_ids:
             return set()
         rows = await self.pg.execute_query(
@@ -366,6 +473,9 @@ class PostgresBridgeRepository(BridgeRepository):
         return _row(rows[0])
 
     async def get_request(self, user_id, request_id):
+        if not is_uuid(request_id):
+            return None
+        await self.sweep_requests(user_id)
         rows = await self.pg.execute_query(
             "SELECT * FROM agent_requests WHERE id = CAST(:id AS UUID) "
             "AND user_id = CAST(:user_id AS UUID)",
@@ -374,12 +484,12 @@ class PostgresBridgeRepository(BridgeRepository):
         return _row(rows[0]) if rows else None
 
     async def list_requests(self, user_id, statuses=None, limit=20):
+        await self.sweep_requests(user_id)
         rows = await self.pg.execute_query(
             """
             SELECT * FROM agent_requests
             WHERE user_id = CAST(:user_id AS UUID)
               AND (CAST(:statuses AS TEXT[]) IS NULL OR status = ANY(CAST(:statuses AS TEXT[])))
-              AND (expires_at IS NULL OR expires_at > NOW() OR status IN ('answered','failed'))
             ORDER BY created_at ASC
             LIMIT :limit
             """,
@@ -388,6 +498,8 @@ class PostgresBridgeRepository(BridgeRepository):
         return [_row(r) for r in rows]
 
     async def cancel_request(self, user_id, request_id):
+        if not is_uuid(request_id):
+            return None
         rows = await self.pg.execute_query(
             """
             UPDATE agent_requests SET status = 'cancelled', claim_token = NULL
@@ -401,6 +513,9 @@ class PostgresBridgeRepository(BridgeRepository):
 
     async def claim_request(self, user_id, key_id, request_id=None,
                             lease_seconds=DEFAULT_LEASE_SECONDS, max_attempts=DEFAULT_MAX_ATTEMPTS):
+        if request_id is not None and not is_uuid(request_id):
+            return None
+        await self.sweep_requests(user_id, max_attempts=max_attempts)
         # Single statement: the sub-select locks the candidate row with
         # FOR UPDATE SKIP LOCKED, so two concurrent claimers can never both win.
         rows = await self.pg.execute_query(
@@ -438,6 +553,8 @@ class PostgresBridgeRepository(BridgeRepository):
 
     async def complete_request(self, user_id, request_id, claim_token, *, answer_text=None,
                                answer_json=None, error=None):
+        if not (is_uuid(request_id) and is_uuid(claim_token)):
+            return None
         status = "failed" if error else "answered"
         rows = await self.pg.execute_query(
             """
@@ -462,6 +579,68 @@ class PostgresBridgeRepository(BridgeRepository):
         )
         return _row(rows[0]) if rows else None
 
+    async def audit(self, user_id, action, *, actor, key_id=None, tool=None, target_id=None,
+                    details=None):
+        await self.pg.execute_update(
+            """
+            INSERT INTO agent_audit_log (user_id, key_id, actor, action, tool, target_id, details)
+            VALUES (CAST(:user_id AS UUID), CAST(:key_id AS UUID), :actor, :action, :tool,
+                    CAST(:target_id AS UUID), CAST(:details AS JSONB))
+            """,
+            {"user_id": user_id, "key_id": key_id if is_uuid(key_id) else None, "actor": actor,
+             "action": action, "tool": tool,
+             "target_id": target_id if is_uuid(target_id) else None,
+             "details": json.dumps(details or {}, default=str)},
+        )
+
+    async def list_audit(self, user_id, limit=100):
+        rows = await self.pg.execute_query(
+            "SELECT * FROM agent_audit_log WHERE user_id = CAST(:user_id AS UUID) "
+            "ORDER BY created_at DESC LIMIT :limit",
+            {"user_id": user_id, "limit": limit},
+        )
+        return [_row(r) for r in rows]
+
+    async def conversation_owned(self, user_id, conversation_id):
+        if not is_uuid(conversation_id):
+            return False
+        rows = await self.pg.execute_query(
+            "SELECT 1 FROM chat_conversations WHERE id = CAST(:id AS UUID) "
+            "AND user_id = CAST(:user_id AS UUID)",
+            {"id": conversation_id, "user_id": user_id},
+        )
+        return bool(rows)
+
+    async def sweep_requests(self, user_id=None, max_attempts=DEFAULT_MAX_ATTEMPTS):
+        rows = await self.pg.execute_query(
+            """
+            WITH expired AS (
+                UPDATE agent_requests SET
+                    status = 'expired', claim_token = NULL, lease_expires_at = NULL,
+                    error = COALESCE(error, :expired_error)
+                WHERE (CAST(:user_id AS UUID) IS NULL OR user_id = CAST(:user_id AS UUID))
+                  AND expires_at <= NOW()
+                  AND (status = 'queued' OR (status = 'claimed' AND lease_expires_at < NOW()))
+                RETURNING id
+            ), exhausted AS (
+                UPDATE agent_requests SET
+                    status = 'failed', claim_token = NULL, lease_expires_at = NULL,
+                    answered_at = NOW(), error = COALESCE(error, :exhausted_error)
+                WHERE (CAST(:user_id AS UUID) IS NULL OR user_id = CAST(:user_id AS UUID))
+                  AND status = 'claimed' AND lease_expires_at < NOW()
+                  AND attempts >= :max_attempts
+                  AND (expires_at IS NULL OR expires_at > NOW())
+                RETURNING id
+            )
+            SELECT (SELECT COUNT(*) FROM expired) AS expired,
+                   (SELECT COUNT(*) FROM exhausted) AS failed
+            """,
+            {"user_id": user_id, "max_attempts": max_attempts, "expired_error": EXPIRED_ERROR,
+             "exhausted_error": EXHAUSTED_ERROR.format(n=max_attempts)},
+        )
+        r = rows[0] if rows else {"expired": 0, "failed": 0}
+        return {"expired": int(r["expired"]), "failed": int(r["failed"])}
+
 
 # ============================================================================
 # In-memory (tests / demos)
@@ -474,6 +653,8 @@ class InMemoryBridgeRepository(BridgeRepository):
         self.feed: dict[str, dict] = {}
         self.digests: dict[tuple[str, date], dict] = {}
         self.requests: dict[str, dict] = {}
+        self.audit_log: list[dict] = []
+        self.conversations: set[tuple[str, str]] = set()  # (user_id, conversation_id)
         self._lock = asyncio.Lock()
 
     @staticmethod
@@ -511,25 +692,60 @@ class InMemoryBridgeRepository(BridgeRepository):
         if key_id in self.keys:
             self.keys[key_id]["last_used_at"] = _now()
 
-    async def insert_feed_item(self, user_id, item):
+    async def insert_feed_items(self, user_id, items, max_pending_today=None):
         async with self._lock:
-            for r in self.feed.values():
-                if r["user_id"] != user_id:
+            staged: dict[str, dict] = {}
+            results: list[tuple[dict, bool]] = []
+            for item in items:
+                found = None
+                for r in list(self.feed.values()) + list(staged.values()):
+                    if r["user_id"] != user_id:
+                        continue
+                    if item.get("idempotency_key") and r.get("idempotency_key") == item["idempotency_key"]:
+                        found = r
+                        break
+                    if r["dedupe_key"] == item["dedupe_key"] and r["target_date"] == item["target_date"]:
+                        found = r
+                        break
+                if found is not None:
+                    results.append((dict(found), False))
                     continue
-                if item.get("idempotency_key") and r.get("idempotency_key") == item["idempotency_key"]:
-                    return dict(r), False
-                if r["dedupe_key"] == item["dedupe_key"] and r["target_date"] == item["target_date"]:
-                    return dict(r), False
-            row = {
-                "id": str(uuid.uuid4()), "user_id": user_id, "status": "pending",
-                "created_at": _now(), "reviewed_at": None,
-                "body_json": item.get("body_json") or {}, "concept_ids": item.get("concept_ids") or [],
-                **{k: item.get(k) for k in (
-                    "key_id", "item_kind", "title", "summary", "source_url", "source_kind",
-                    "reason", "target_date", "dedupe_key", "idempotency_key")},
-            }
-            self.feed[row["id"]] = row
-            return dict(row), True
+                row = {
+                    "id": str(uuid.uuid4()), "user_id": user_id, "status": "pending",
+                    "created_at": _now(), "reviewed_at": None,
+                    "body_json": item.get("body_json") or {},
+                    "concept_ids": item.get("concept_ids") or [],
+                    **{k: item.get(k) for k in (
+                        "key_id", "item_kind", "title", "summary", "source_url", "source_kind",
+                        "reason", "target_date", "dedupe_key", "idempotency_key")},
+                }
+                staged[row["id"]] = row
+                results.append((dict(row), True))
+            if max_pending_today is not None:
+                today = _now().date()
+                pending = sum(1 for r in list(self.feed.values()) + list(staged.values())
+                              if r["user_id"] == user_id and r["status"] == "pending"
+                              and r["created_at"].date() == today)
+                if pending > max_pending_today:
+                    raise LimitExceededError(
+                        f"Daily cap of {max_pending_today} pending agent items reached",
+                        max_pending_today)
+            self.feed.update(staged)  # commit
+            return results
+
+    async def audit(self, user_id, action, *, actor, key_id=None, tool=None, target_id=None,
+                    details=None):
+        self.audit_log.append({"id": str(uuid.uuid4()), "user_id": user_id, "key_id": key_id,
+                               "actor": actor, "action": action, "tool": tool,
+                               "target_id": target_id, "details": dict(details or {}),
+                               "created_at": _now()})
+
+    async def list_audit(self, user_id, limit=100):
+        rows = [dict(r) for r in self.audit_log if r["user_id"] == user_id]
+        return list(reversed(rows))[:limit]
+
+    async def conversation_owned(self, user_id, conversation_id):
+        return (user_id, str(conversation_id)) in self.conversations
 
     async def list_feed_items(self, user_id, status=None, target_date=None, limit=50):
         rows = [
@@ -547,8 +763,11 @@ class InMemoryBridgeRepository(BridgeRepository):
         r = self.feed.get(item_id)
         if not r or r["user_id"] != user_id:
             return None
-        r["status"] = status
-        r["reviewed_at"] = _now()
+        if r["status"] not in FEED_TRANSITIONS[status]:
+            raise InvalidTransitionError(r["status"], status)
+        if r["status"] != status:
+            r["status"] = status
+            r["reviewed_at"] = _now()
         return dict(r)
 
     async def owned_feed_item_ids(self, user_id, item_ids):
@@ -589,17 +808,16 @@ class InMemoryBridgeRepository(BridgeRepository):
         return dict(row)
 
     async def get_request(self, user_id, request_id):
+        await self.sweep_requests(user_id)
         r = self.requests.get(request_id)
         return dict(r) if r and r["user_id"] == user_id else None
 
     async def list_requests(self, user_id, statuses=None, limit=20):
-        now = _now()
+        await self.sweep_requests(user_id)
         rows = [
             dict(r) for r in self.requests.values()
             if r["user_id"] == user_id
             and (statuses is None or r["status"] in statuses)
-            and (r["expires_at"] is None or r["expires_at"] > now
-                 or r["status"] in ("answered", "failed"))
         ]
         rows.sort(key=lambda r: r["created_at"])
         return rows[:limit]
@@ -615,6 +833,7 @@ class InMemoryBridgeRepository(BridgeRepository):
 
     async def claim_request(self, user_id, key_id, request_id=None,
                             lease_seconds=DEFAULT_LEASE_SECONDS, max_attempts=DEFAULT_MAX_ATTEMPTS):
+        await self.sweep_requests(user_id, max_attempts=max_attempts)
         async with self._lock:
             now = _now()
             candidates = sorted(
@@ -653,3 +872,23 @@ class InMemoryBridgeRepository(BridgeRepository):
                 answer_json=answer_json, error=error, answered_at=_now(), lease_expires_at=None,
             )
             return dict(r)
+
+    async def sweep_requests(self, user_id=None, max_attempts=DEFAULT_MAX_ATTEMPTS):
+        counts = {"expired": 0, "failed": 0}
+        async with self._lock:
+            now = _now()
+            for r in self.requests.values():
+                if user_id is not None and r["user_id"] != user_id:
+                    continue
+                lapsed = r["status"] == "claimed" and r["lease_expires_at"] < now
+                past_deadline = r["expires_at"] is not None and r["expires_at"] <= now
+                if past_deadline and (r["status"] == "queued" or lapsed):
+                    r.update(status="expired", claim_token=None, lease_expires_at=None,
+                             error=r["error"] or EXPIRED_ERROR)
+                    counts["expired"] += 1
+                elif lapsed and r["attempts"] >= max_attempts:
+                    r.update(status="failed", claim_token=None, lease_expires_at=None,
+                             answered_at=now,
+                             error=r["error"] or EXHAUSTED_ERROR.format(n=max_attempts))
+                    counts["failed"] += 1
+        return counts

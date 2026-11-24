@@ -41,9 +41,38 @@ def validate_scopes(scopes: Iterable[str]) -> list[str]:
     return out
 
 
+class KeyConfigError(RuntimeError):
+    """Agent keys cannot be issued or verified safely (e.g. missing pepper in prod)."""
+
+
+_warned_no_pepper = False
+
+
+def is_production() -> bool:
+    # Same convention as backend/graphs/checkpointer.py and routers/ingest_v2.py.
+    return os.getenv("ENVIRONMENT", "development") == "production"
+
+
 def _pepper() -> str:
-    # TODO(agent-bridge): require AGENT_KEY_PEPPER in production (fail closed) once deployed.
-    return os.environ.get("AGENT_KEY_PEPPER", "")
+    """Secret mixed into key hashes. Fails closed in production when unset."""
+    global _warned_no_pepper
+    pepper = os.environ.get("AGENT_KEY_PEPPER", "")
+    if pepper:
+        return pepper
+    if is_production():
+        raise KeyConfigError("AGENT_KEY_PEPPER must be set when ENVIRONMENT=production")
+    if not _warned_no_pepper:
+        _warned_no_pepper = True
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "AGENT_KEY_PEPPER is not set; agent key hashes are unpeppered (dev only)")
+    return ""
+
+
+def check_key_config() -> None:
+    """Call at startup when the bridge is enabled; raises KeyConfigError in prod."""
+    _pepper()
 
 
 def hash_key(full_key: str) -> str:

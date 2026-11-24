@@ -100,9 +100,15 @@ Approved cards appear in `GET /api/feed` as `item_type: "agent_curated"` with
 - **Revocation.** `DELETE /keys/{id}` takes effect on the next request, because keys are
   checked on every HTTP call. The MCP transport is stateless, so no long-lived session
   outlives a revoked key.
-- **Rate limits.** A per-key sliding window (120 calls/min, in-process) guards MCP. It
-  returns `429` with `Retry-After`. TODO: a shared store for multi-worker deployments,
-  plus a per-user enqueue quota.
+- **Rate limits and quotas** (`limits.py`, pluggable; Postgres/Redis shared backend, in-memory
+  fallback). MCP calls are limited per key (120/min, `429` + `Retry-After`). Enqueues are
+  limited per user (20/h). Proposals are limited per key (100/day). New pending cards are
+  capped per user (50/day), checked inside the insert transaction.
+- **Host/Origin allowlist** against DNS rebinding: a foreign `Host` gets 421 and a foreign
+  `Origin` gets 403. The SDK's `TransportSecuritySettings` is set too.
+- **Audit log.** `agent_audit_log` records tool calls, key create and revoke,
+  approve/reject, enqueues and answer submissions. It stores metadata only (ids and
+  counts, never text) and is visible to the user at `GET /api/agent-bridge/audit`.
 - **No raw email stored.** `propose_feed_items` accepts a curated `summary` (≤ 2000
   chars), a `reason` and a source **link**. The agent is instructed never to paste email
   bodies. GraphRecall stores no mailbox content and makes no calls to Gmail or Substack.
@@ -112,8 +118,18 @@ Approved cards appear in `GET /api/feed` as `item_type: "agent_curated"` with
 - **Minimal outbound data.** Knowledge tools return names, domains, mastery and short
   (≤ 280 chars) definitions. Note bodies and chat transcripts are never exposed. The
   webhook payload carries only ids; the question text is fetched over MCP with the key.
-- **Signed webhooks.** `X-GraphRecall-Signature: t=…,v1=HMAC_SHA256(secret, "t.body")`
-  with a 5-minute replay window.
+- **Signed webhooks.** Each event carries a unique `X-GraphRecall-Event-Id` and an
+  `X-GraphRecall-Timestamp`. `X-GraphRecall-Signature: t=…,id=…,v1=HMAC_SHA256(secret,
+  "t.id.body")` binds both, with a 5-minute window. Delivery is retried, so receivers
+  **must dedupe on the event id**; `verify_webhook()` + `ReplayGuard` does this.
+- **Agent text is untrusted (prompt injection).** Answers, card titles and summaries are
+  written by an outside agent that reads email and the web, so they may carry injected
+  instructions or markup.
+  - Clients render them as **plain text**: no HTML, and no auto-linking beyond the
+    validated `source_url` and citation URLs, which must be http(s).
+  - Before such text reaches GraphRecall's own chat model, it is wrapped with
+    `untrusted.wrap_untrusted()`, which delimits it as data and neutralises forged markers.
+  - The model must never follow instructions found inside it.
 
 ## Example flows
 
