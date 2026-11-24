@@ -208,6 +208,9 @@ _agent_bridge_mcp = None
 if _agent_bridge_enabled():
     from backend.agent_bridge.mcp_app import AgentBridgeMCPApp, default_services
     from backend.agent_bridge.router import router as agent_bridge_router
+    from backend.agent_bridge.keys import check_key_config
+
+    check_key_config()  # fails startup if ENVIRONMENT=production and no AGENT_KEY_PEPPER
 
     app.include_router(agent_bridge_router)  # /api/agent-bridge - keys, approvals, ask-my-agent
     _agent_bridge_mcp = AgentBridgeMCPApp(default_services)
