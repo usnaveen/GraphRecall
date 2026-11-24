@@ -29,6 +29,7 @@ struct AgentAskSection: View {
                 tracked: t,
                 clientTimeoutMinutes: Int(store.clientTimeout / 60),
                 onRefresh: { store.refresh(t.id) },
+                onRetrySend: { store.retrySend(t.id) },
                 onCancel: { store.cancel(t.id) },
                 onDismiss: { store.dismiss(t.id) }
             )
@@ -41,6 +42,7 @@ struct AgentAnswerBubble: View {
     let tracked: AgentAskStore.Tracked
     var clientTimeoutMinutes = 15
     var onRefresh: () -> Void = {}
+    var onRetrySend: () -> Void = {}
     var onCancel: () -> Void = {}
     var onDismiss: () -> Void = {}
 
@@ -141,7 +143,9 @@ struct AgentAnswerBubble: View {
                 }
                 // TODO(agent-bridge-ios): "Make cards" from an agent answer via the existing
                 // chat create-card flow (ChatViewModel.createCard) once answers live in history.
-            case .failed, .sendFailed:
+            case .sendFailed:
+                GRChip(title: "Try again", systemImage: "arrow.clockwise", style: .outline, compact: true, action: onRetrySend)
+            case .failed:
                 EmptyView()
             }
             Spacer(minLength: 0)

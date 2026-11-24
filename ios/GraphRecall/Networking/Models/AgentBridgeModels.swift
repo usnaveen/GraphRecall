@@ -6,11 +6,11 @@ import Foundation
 // Every route lives under `/api/agent-bridge` and only exists when the server runs with
 // `AGENT_BRIDGE_ENABLED=1`; otherwise they 404 (see `AgentBridgeCapability`).
 //
-// Timestamps: the bridge router serialises rows with `json.dumps(default=str)`, so datetimes
-// arrive as `"2026-11-24 06:00:00.123456+00:00"` (space, not `T`), which the shared
-// ISO-8601 decoder in `APIClient` rejects. These models therefore keep timestamps as raw
-// strings and parse them with `AgentBridgeDate.parse`.
-// TODO(agent-bridge-ios): switch to `Date` once the backend returns ISO-8601 (pydantic models).
+// Timestamps: since PR #3 @ cadf9c8 the bridge returns ISO 8601 with `T` and an offset
+// (`2026-11-24T06:11:10.751395+00:00`, `target_date` as `2026-11-24`). They are kept as raw
+// strings and parsed by `AgentBridgeDate.parse`, which handles ISO first (with or without
+// fractional seconds, any digit count, `Z` or offset) and still accepts the old Python
+// `str(datetime)` form as a fallback for older servers / cached rows.
 
 enum AgentBridgeDate {
     // Formatters are configured once and only read afterwards.
@@ -472,7 +472,7 @@ enum AgentBridgeMocks {
             sourceKind: .substack,
             conceptIds: ["c-attention"],
             targetDate: "2026-11-25",
-            createdAt: "2026-11-24 22:10:04.120000+00:00"
+            createdAt: "2026-11-24T22:10:04.120000+00:00"
         ),
         AgentFeedItem(
             id: "mock-agent-2",
@@ -519,8 +519,8 @@ enum AgentBridgeMocks {
         id: "mock-req-1",
         status: .answered,
         question: "How does LoRA rank affect what the adapter can learn?",
-        createdAt: "2026-11-24 10:02:11.000000+00:00",
-        answeredAt: "2026-11-24 10:06:40.000000+00:00",
+        createdAt: "2026-11-24T10:02:11.000000+00:00",
+        answeredAt: "2026-11-24T10:06:40.000000+00:00",
         answerText: "**Short version:** rank caps the dimension of the update ΔW = BA. Low rank (4–8) is enough for style/format shifts; new factual or domain knowledge usually needs higher rank or full fine-tuning.\n\nYou already know *matrix rank* well (mastery 0.82), so think of it as the number of independent directions the adapter can move the weights in. [This link is stripped](javascript:alert(1)); [this one stays](https://arxiv.org/abs/2106.09685).",
         answerJson: AgentAnswerExtras(citations: [
             AgentCitation(title: "LoRA paper (Hu et al.)", url: "https://arxiv.org/abs/2106.09685"),
@@ -531,7 +531,7 @@ enum AgentBridgeMocks {
     static let researching = AgentRequest(
         id: "mock-req-2", status: .claimed,
         question: "Compare GraphRAG community summaries with RAPTOR trees.",
-        createdAt: "2026-11-24 10:12:00+00:00"
+        createdAt: "2026-11-24T10:12:00+00:00"
     )
 
     static let failed = AgentRequest(
@@ -543,12 +543,103 @@ enum AgentBridgeMocks {
     static let keys: [AgentKey] = [
         AgentKey(id: "k1", name: "Grok Bot", keyPrefix: "grk_ab12cd34",
                  scopes: AgentScope.allCases.map(\.rawValue),
-                 createdAt: "2026-11-20 08:00:00+00:00",
-                 lastUsedAt: "2026-11-24 02:30:00+00:00",
-                 expiresAt: "2027-02-18 08:00:00+00:00"),
+                 createdAt: "2026-11-20T08:00:00+00:00",
+                 lastUsedAt: "2026-11-24T02:30:00+00:00",
+                 expiresAt: "2027-02-18T08:00:00+00:00"),
         AgentKey(id: "k2", name: "Old laptop script", keyPrefix: "grk_99ff0011",
                  scopes: ["read:knowledge"],
-                 createdAt: "2026-09-01 08:00:00+00:00",
-                 revokedAt: "2026-10-01 08:00:00+00:00"),
+                 createdAt: "2026-09-01T08:00:00+00:00",
+                 revokedAt: "2026-10-01T08:00:00+00:00"),
     ]
+}
+
+// MARK: - Errors (PR #3 @ cadf9c8 status codes)
+
+/// Friendly copy for agent-bridge failures. Server bodies are FastAPI `{"detail": "..."}`.
+///
+/// | code | where | meaning |
+/// |---|---|---|
+/// | 400 | any id route, `status=` filter | malformed UUID / unknown status |
+/// | 404 | any | not found / not yours / bridge disabled; `conversation_id` not owned on POST /requests |
+/// | 409 | approve/reject | invalid transition (already handled) · POST /keys: 5 active keys |
+/// | 413 | POST /requests | context > 8 KB |
+/// | 429 | POST /requests | per-user hourly quota (`Retry-After: 600`) |
+/// | 503 | POST /keys | server has no `AGENT_KEY_PEPPER` (fails closed) |
+enum AgentBridgeAction: Sendable {
+    case ask, approve, reject, createKey, revokeKey, load
+}
+
+enum AgentBridgeErrorCopy {
+    /// `detail` from a FastAPI error body, if any.
+    static func detail(_ error: Error) -> String? {
+        guard case let APIError.http(_, body) = error,
+              let data = body.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return obj["detail"] as? String
+    }
+
+    static func statusCode(_ error: Error) -> Int? {
+        if case let APIError.http(code, _) = error { return code }
+        return nil
+    }
+
+    static func isRateLimited(_ error: Error) -> Bool { statusCode(error) == 429 }
+
+    /// True for the "conversation not found" 404 on POST /requests (retry without it).
+    static func isConversationNotFound(_ error: Error) -> Bool {
+        statusCode(error) == 404 && (detail(error)?.localizedCaseInsensitiveContains("conversation") ?? false)
+    }
+
+    static func message(_ error: Error, action: AgentBridgeAction) -> String {
+        let detail = detail(error)?.lowercased() ?? ""
+        switch (statusCode(error), action) {
+        case (429, _):
+            return "You\u{2019}ve sent your agent a lot of questions this hour. Try again in about 10 minutes."
+        case (_, _) where detail.contains("daily") && (detail.contains("cap") || detail.contains("limit")):
+            return "Your agent hit today\u{2019}s limit. It can send more tomorrow."
+        case (409, .approve), (409, .reject):
+            return "Already handled \u{2014} this suggestion was approved or dismissed elsewhere."
+        case (409, .createKey):
+            return "You already have 5 active keys. Revoke one first."
+        case (503, .createKey):
+            return "Agent keys aren\u{2019}t set up on this server yet."
+        case (413, .ask):
+            return "That question has too much attached context. Try a shorter one."
+        case (400, _):
+            return "GraphRecall couldn\u{2019}t read that request. Update the app and try again."
+        case (404, .ask):
+            return "Your agent isn\u{2019}t available on this server."
+        case (404, _):
+            return "That item no longer exists."
+        default:
+            return APIError.userFacing(error, resource: "agent")
+        }
+    }
+}
+
+// MARK: - Audit log (GET /api/agent-bridge/audit)
+
+/// Metadata-only record of what an agent (or the user) did through the bridge.
+struct AgentAuditEvent: Decodable, Sendable, Identifiable, Hashable {
+    let id: String
+    let actor: String
+    let action: String
+    let tool: String?
+    let keyId: String?
+    let targetId: String?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, actor, action, tool
+        case keyId = "key_id"
+        case targetId = "target_id"
+        case createdAt = "created_at"
+    }
+
+    var created: Date? { AgentBridgeDate.parse(createdAt) }
+}
+
+struct AgentAuditResponse: Decodable, Sendable {
+    let events: [AgentAuditEvent]
 }
