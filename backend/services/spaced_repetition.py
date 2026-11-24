@@ -894,8 +894,8 @@ class SpacedRepetitionService:
             if all_concept_ids and neo4j_client:
                 try:
                     neo_result = await neo4j_client.execute_query(
-                        "MATCH (c:Concept) WHERE c.id IN $ids RETURN c.id as id, c.name as name",
-                        {"ids": list(all_concept_ids)},
+                        "MATCH (c:Concept {user_id: $user_id}) WHERE c.id IN $ids RETURN c.id as id, c.name as name",
+                        {"ids": list(all_concept_ids), "user_id": user_id},
                     )
                     for row in neo_result:
                         concept_name_map[row["id"]] = row["name"]

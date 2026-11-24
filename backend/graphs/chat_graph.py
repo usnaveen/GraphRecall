@@ -3,7 +3,7 @@ LangGraph Chat Workflow
 
 Modern LangGraph implementation for GraphRAG chat with:
 - MessagesState pattern with add_messages reducer
-- ToolNode for graph and notes search
+- Deterministic, user-scoped retrieval in get_context_node (no LLM tool calls)
 - Proper LangChain message types (System/Human/AI)
 - Checkpoint persistence for conversation memory
 
@@ -23,13 +23,11 @@ from langchain_core.messages import (
     BaseMessage,
 )
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.tools import tool
 from backend.config.llm import get_fast_model, get_chat_model, get_embeddings, get_embedding_dims
 from backend.telemetry import elapsed_ms, now, record
 import asyncio
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, tools_condition
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
@@ -77,173 +75,9 @@ class ChatState(TypedDict, total=False):
 
 
 
-# ============================================================================
-# Tool Definitions (@tool decorator pattern)
-# ============================================================================
-
-
-@tool
-async def search_knowledge_graph(query: str, entities: list[str] = None) -> str:
-    """
-    Search the user's knowledge graph for concepts and relationships.
-    
-    Args:
-        query: Natural language search query
-        entities: Optional list of specific concept names to look up
-    
-    Returns:
-        Formatted string with concepts and relationships found
-    """
-    logger.info("search_knowledge_graph: Searching", query=query, entities=entities)
-    
-    try:
-        neo4j = await get_neo4j_client()
-        
-        if entities:
-            # Direct lookup by entity names
-            concepts = []
-            for entity in entities[:5]:  # Limit to 5
-                result = await neo4j.execute_query(
-                    """
-                    MATCH (c:Concept)
-                    WHERE toLower(c.name) CONTAINS toLower($name)
-                    RETURN c.id as id, c.name as name, c.definition as definition, 
-                           c.domain as domain
-                    LIMIT 3
-                    """,
-                    {"name": entity}
-                )
-                concepts.extend(result)
-            
-            if not concepts:
-                return "No matching concepts found in your knowledge graph."
-            
-            # Get relationships between found concepts
-            concept_ids = [c["id"] for c in concepts if c.get("id")]
-            relationships = []
-            
-            if concept_ids:
-                rel_result = await neo4j.execute_query(
-                    """
-                    MATCH (c1:Concept)-[r]->(c2:Concept)
-                    WHERE c1.id IN $ids OR c2.id IN $ids
-                    RETURN c1.name as from_name, type(r) as rel_type, c2.name as to_name
-                    LIMIT 10
-                    """,
-                    {"ids": concept_ids}
-                )
-                relationships = rel_result
-            
-            # Format response
-            output = "## Concepts Found:\n"
-            for c in concepts:
-                output += f"- **{c['name']}**: {c.get('definition', 'No definition')}\n"
-            
-            if relationships:
-                output += "\n## Relationships:\n"
-                for r in relationships:
-                    output += f"- {r['from_name']} → {r['rel_type']} → {r['to_name']}\n"
-            
-            return output
-        
-        else:
-            # Broad search using query keywords
-            result = await neo4j.execute_query(
-                """
-                MATCH (c:Concept)
-                WHERE toLower(c.name) CONTAINS toLower($query)
-                   OR toLower(c.definition) CONTAINS toLower($query)
-                RETURN c.id as id, c.name as name, c.definition as definition
-                LIMIT 5
-                """,
-                {"query": query}
-            )
-            
-            if not result:
-                return f"No concepts found matching '{query}'."
-            
-            output = "## Matching Concepts:\n"
-            for c in result:
-                output += f"- **{c['name']}**: {c.get('definition', '')}\n"
-            
-            return output
-            
-    except Exception as e:
-        logger.error("search_knowledge_graph: Failed", error=str(e))
-        return f"Error searching knowledge graph: {str(e)}"
-
-
-@tool
-async def search_notes(query: str, user_id: str = "default") -> str:
-    """
-    Search the user's notes using semantic similarity.
-    
-    Args:
-        query: Natural language search query
-        user_id: User ID to filter notes
-    
-    Returns:
-        Formatted string with relevant note excerpts
-    """
-    logger.info("search_notes: Searching", query=query, user_id=user_id)
-    
-    try:
-        pg_client = await get_postgres_client()
-
-        # Try vector similarity search on chunks first
-        try:
-            embeddings_model = get_embeddings()
-            query_embedding = await embeddings_model.aembed_query(query, output_dimensionality=get_embedding_dims())
-            embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
-
-            result = await pg_client.execute_query(
-                """
-                SELECT c.id, n.title, c.content, c.page_start, c.page_end,
-                       1 - (c.embedding <=> cast(:embedding as vector)) as similarity
-                FROM chunks c
-                JOIN notes n ON c.note_id = n.id
-                WHERE n.user_id = :user_id
-                  AND c.chunk_level = 'child'
-                  AND c.embedding IS NOT NULL
-                ORDER BY c.embedding <=> cast(:embedding as vector)
-                LIMIT 5
-                """,
-                {"user_id": user_id, "embedding": embedding_literal}
-            )
-        except Exception:
-            # Fallback to keyword search if vector search fails
-            result = await pg_client.execute_query(
-                """
-                SELECT id, title, content_text as content, created_at
-                FROM notes
-                WHERE user_id = :user_id
-                  AND (title ILIKE :search_pattern OR content_text ILIKE :search_pattern)
-                ORDER BY created_at DESC
-                LIMIT 5
-                """,
-                {"user_id": user_id, "search_pattern": f"%{query}%"}
-            )
-
-        if not result:
-            return f"No notes found matching '{query}'."
-
-        output = "## Relevant Notes:\n\n"
-        for note in result:
-            title = note.get("title", "Untitled")
-            content = note.get("content", "")[:300]
-            similarity = note.get("similarity")
-            sim_tag = f" (relevance: {similarity:.2f})" if similarity else ""
-            output += f"### {title}{sim_tag}\n{content}...\n\n"
-
-        return output
-
-    except Exception as e:
-        logger.error("search_notes: Failed", error=str(e))
-        return f"Error searching notes: {str(e)}"
-
-
-# Define tools list for ToolNode
-chat_tools = [search_knowledge_graph, search_notes]
+# The @tool search functions that used to live here were removed (security review GR-SEC-01):
+# they never ran (no ToolNode is wired) and queried notes/concepts without a user_id filter,
+# taking user_id as an LLM-controlled argument. Retrieval is done by get_context_node instead.
 
 
 # ============================================================================
@@ -995,8 +829,7 @@ def create_chat_graph():
     builder.add_node("get_context", get_context_node)
     builder.add_node("generate_response", generate_response_node)
     
-    # Optional: Add ToolNode for tool-based execution
-    # builder.add_node("tools", ToolNode(chat_tools))
+    # No ToolNode: chat retrieval is deterministic (get_context_node), scoped to the user.
     
     # Define edges
     builder.add_edge(START, "analyze_query")
