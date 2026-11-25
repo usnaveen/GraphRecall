@@ -1695,7 +1695,10 @@ async def generate_flashcards_node(state: IngestionState) -> dict:
     then LLM cloze cards. Structure cards still land when the LLM step fails or is out of quota."""
     structure_ids: list[str] = []
     concepts = state.get("user_approved_concepts") or state.get("extracted_concepts", [])
-    if concepts:
+    # Only the user's own notes (typed, scanned, dictated): books, articles and transcripts have
+    # "Label: text" lines that are not things the user chose to remember.
+    is_note = (state.get("resource_type") or "notes") in {"notes", "note"}
+    if concepts and is_note:
         try:
             from backend.services.structure_cards import save_structure_cards
 

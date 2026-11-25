@@ -1,4 +1,4 @@
--- Migration 022: LeetCode-style problems and attempts for pattern/pseudocode/mistake recall.
+-- Migration 025: LeetCode-style problems and attempts for pattern/pseudocode/mistake recall.
 CREATE TABLE IF NOT EXISTS coding_problems (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

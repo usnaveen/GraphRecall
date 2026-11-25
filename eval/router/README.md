@@ -25,7 +25,7 @@ already computes.
 | `llm` | Gemini (previous behaviour) | every message |
 
 If Gemini fails (quota, timeout), the classifier's guess is used instead of falling back to `general`.
-Every decision goes to `intent_decisions` (migration 020): query, chosen intent, source, model intent and
+Every decision goes to `intent_decisions` (migration 023): query, chosen intent, source, model intent and
 confidence, LLM intent when called, entities, latency. Deleted with the user's data.
 
 ## Data

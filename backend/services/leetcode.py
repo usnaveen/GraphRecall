@@ -108,16 +108,25 @@ async def upsert_graph(neo4j, user_id: str, problem: dict) -> tuple[str, Optiona
     if problem.get("key_insight"):
         parts.append(f"Key insight: {problem['key_insight'].strip()}")
     definition = " ".join(parts)
+    # Reuse a concept the user already has under this name (any capitalisation) and never overwrite
+    # its definition: "LRU Cache" from a note keeps the note's definition.
     rows = await neo4j.execute_query(
-        """
-        MERGE (c:Concept {name: $name, user_id: $user_id})
-        ON CREATE SET c.id = $id, c.domain = $graph, c.confidence = 1.0, c.complexity_score = 5.0,
-                      c.source = 'leetcode', c.created_at = datetime()
-        SET c.definition = $definition, c.updated_at = datetime()
-        RETURN c.id AS id
-        """,
-        {"name": title, "user_id": user_id, "id": str(uuid.uuid4()), "graph": GRAPH, "definition": definition},
+        "MATCH (c:Concept {user_id: $user_id}) WHERE toLower(c.name) = toLower($name) "
+        "SET c.definition = CASE WHEN c.source = 'leetcode' THEN $definition ELSE coalesce(c.definition, $definition) END, "
+        "c.updated_at = datetime() "
+        "RETURN c.id AS id ORDER BY coalesce(c.confidence, 0) DESC LIMIT 1",
+        {"name": title, "user_id": user_id, "definition": definition},
     )
+    if not rows:
+        new_id = str(uuid.uuid4())
+        await neo4j.execute_query(
+            """
+            CREATE (c:Concept {id: $id, user_id: $user_id, name: $name, domain: $graph, definition: $definition,
+                               confidence: 1.0, complexity_score: 5.0, source: 'leetcode', created_at: datetime()})
+            """,
+            {"name": title, "user_id": user_id, "id": new_id, "graph": GRAPH, "definition": definition},
+        )
+        rows = [{"id": new_id}]
     problem_id = str(rows[0]["id"])
     pattern_id = None
     if pattern:

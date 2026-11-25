@@ -1,4 +1,4 @@
--- Migration 020: log every chat routing decision so a small intent classifier can be trained and audited.
+-- Migration 023: log every chat routing decision so a small intent classifier can be trained and audited.
 -- One row per analysed chat message. `source` says who decided: the LLM, the trained model, or the
 -- trained model in shadow mode (LLM decided, model's guess recorded alongside for comparison).
 CREATE TABLE IF NOT EXISTS intent_decisions (

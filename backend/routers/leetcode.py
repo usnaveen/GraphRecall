@@ -100,7 +100,9 @@ async def upsert_problem(body: ProblemIn, current_user: dict = Depends(get_curre
         {"c": concept_id, "pc": pattern_id, "p": problem["id"]},
     )
     problem.update(concept_id=concept_id, pattern_concept_id=pattern_id)
-    await lc.ensure_scheduled(pg, user_id, [concept_id, pattern_id])
+    # Only the problem is scheduled. The pattern concept stays unscheduled unless the user studies it
+    # from notes: scheduling it with no cards would make the feed worker spend LLM quota on it.
+    await lc.ensure_scheduled(pg, user_id, [concept_id])
     card_ids = await lc.rebuild_cards(pg, user_id, problem, await _attempts(pg, user_id, problem["id"]))
     return {**_ser(problem), "card_ids": card_ids}
 

@@ -88,7 +88,8 @@ def test_chat_request_rejects_oversized_message() -> None:
 
 
 @pytest.mark.asyncio
-async def test_analyze_query_parallel_embed_and_greeting_fastpath() -> None:
+async def test_analyze_query_parallel_embed_and_greeting_fastpath(monkeypatch) -> None:
+    monkeypatch.setenv("CHAT_INTENT_ROUTER", "llm")  # this test is about the LLM path
     cg._QUERY_EMBED_CACHE.clear()
     embed_started = asyncio.Event()
     embed_calls = 0

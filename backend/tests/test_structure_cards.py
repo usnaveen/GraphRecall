@@ -65,3 +65,18 @@ def test_pick_concept_id():
     assert pick_concept_id("Types of supervised learning", concepts, "fb") == "c1"
     assert pick_concept_id("Overfitting", concepts, "fb") == "c2"
     assert pick_concept_id("Causes of WW1", concepts, "fb") == "fb"
+
+
+def test_generic_terms_get_heading_context_or_are_dropped():
+    text = "## Breadth-First Search\nBehavior: moves layer by layer like ripples\nTime Complexity: O(V + E) for adjacency lists\n"
+    fronts = [c.front for c in extract_structure_cards(text)]
+    assert fronts == ["Breadth-First Search · Behavior: [___]", "Breadth-First Search · Time Complexity: [___]"]
+    assert extract_structure_cards("Pros: even distribution of the data") == []
+
+
+def test_transcripts_dates_and_times_are_not_definitions():
+    text = ("User: can you explain how attention works in detail\n"
+            "Assistant: attention weighs every token against the others\n"
+            "John C. Petersen (November 2, 1842: July 10, 1887) was an American butcher\n"
+            "10:30 standup with the whole team today\n")
+    assert extract_structure_cards(text) == []

@@ -17,8 +17,9 @@ from backend.services.intent_router.routing import ROUTE_GROUP
 ART = Path(im.__file__).parent / "artifacts"
 
 
-def test_artifact_matches_sklearn_probabilities():
-    """The numpy re-implementation reproduces the sklearn pipeline's probabilities (fixture from train.py)."""
+def test_artifact_reproduces_recorded_probabilities():
+    """Regression check against probabilities recorded at training time. train.py itself asserts the
+    numpy runtime matches sklearn (< 1e-6) before writing the artifact and this fixture."""
     clf = im.IntentClassifier.load(ART / "intent_tfidf_lr.json")
     fixture = json.loads((ART / "parity_fixture.json").read_text())
     assert fixture

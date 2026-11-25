@@ -1,4 +1,4 @@
--- Migration 021: "show me this later" captures. A thought, link or dictated note that should come
+-- Migration 024: "show me this later" captures. A thought, link or dictated note that should come
 -- back in the feed at a chosen time instead of being studied now.
 CREATE TABLE IF NOT EXISTS later_items (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

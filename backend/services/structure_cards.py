@@ -32,7 +32,15 @@ _DEF = re.compile(
     r"^\s*(?:[-*+•]\s+)?(?:\*\*|__)?(?P<term>[A-Za-z0-9][^:=\n]{0,60}?)(?:\*\*|__)?\s*"
     r"(?::|\s[-–—=]\s|\s?=\s?)\s*(?P<def>\S.*\S)\s*$"
 )
-_NOT_TERM = re.compile(r"^(note|eg|e\.g|ie|i\.e|example|examples|see|source|ref|tip|todo|q|a|answer|question)$", re.I)
+_NOT_TERM = re.compile(
+    r"^(note|notes|eg|e\.g|ie|i\.e|example|examples|see|source|ref|tip|todo|q|a|answer|question|"
+    r"user|assistant|human|ai|system|bot|me|you|speaker|host|guest|interviewer|transcript|date|time|"
+    r"edit|update|warning|important|nb)$", re.I)
+# Terms too generic to recall without saying what they belong to.
+_GENERIC = re.compile(r"^(pros|cons|advantages|disadvantages|behaviou?r|time complexity|space complexity|"
+                      r"complexity|data structure|use cases?|uses|idea|intuition|summary|definition|"
+                      r"formula|steps|example|output|input|result|goal|purpose|how it works)$", re.I)
+MAX_LEAD_CHARS = 80
 
 
 @dataclass
@@ -59,7 +67,7 @@ def _lead_for(lines: list[str], start: int) -> Optional[str]:
     line = lines[j]
     h = _HEADING.match(line)
     if h:
-        return _clean(h.group(1))
+        return re.sub(r"^\d{1,2}[.)]\s+", "", _clean(h.group(1)))
     s = line.strip()
     if not _BULLET.match(line) and s.endswith(":") and len(s.split()) <= 14:
         return _clean(s[:-1])
@@ -76,6 +84,8 @@ def _definition(line: str) -> Optional[tuple[str, str]]:
     words = term.split()
     if not words or len(words) > MAX_TERM_WORDS or _NOT_TERM.match(term.rstrip(".")):
         return None
+    if term.count("(") != term.count(")") or not re.search(r"[A-Za-z]{2}", term):
+        return None  # "Petersen (November 2, 1842: ..." or "10:30 standup"
     if len(definition.split()) < MIN_DEF_WORDS or definition.endswith(":"):
         return None
     if re.match(r"^(https?|www)\b", definition) or term.lower().startswith(("http", "www")):
@@ -88,9 +98,13 @@ def extract_structure_cards(text: str, max_cards: int = MAX_CARDS) -> list[Struc
     cards: list[StructureCard] = []
     seen: set[str] = set()
     in_code = False
+    heading: Optional[str] = None
     i = 0
     while i < len(lines) and len(cards) < max_cards:
         line = lines[i]
+        h = _HEADING.match(line)
+        if h and not in_code:
+            heading = re.sub(r"^\d{1,2}[.)]\s+", "", _clean(h.group(1)))  # "2. Range Based Sharding"
         if line.strip().startswith("```"):
             in_code = not in_code
             i += 1
@@ -115,6 +129,8 @@ def extract_structure_cards(text: str, max_cards: int = MAX_CARDS) -> list[Struc
                 else:
                     break
             lead = _lead_for(lines, start)
+            if lead and len(lead) > MAX_LEAD_CHARS:
+                lead = lead[:MAX_LEAD_CHARS].rsplit(" ", 1)[0] + "…"
             items = [it for it in items if it and len(it) <= MAX_ITEM_CHARS]
             defs = [_definition(f"- {it}") for it in items]
             if lead and MIN_LIST_ITEMS <= len(items) <= MAX_LIST_ITEMS:
@@ -131,22 +147,29 @@ def extract_structure_cards(text: str, max_cards: int = MAX_CARDS) -> list[Struc
             # Bullets shaped like "Term: definition" also make definition cards.
             for d in defs:
                 if d and len(cards) < max_cards:
-                    _add_definition(cards, seen, *d)
+                    _add_definition(cards, seen, *d, context=lead or heading)
             continue
 
         d = _definition(line)
         if d:
-            _add_definition(cards, seen, *d)
+            _add_definition(cards, seen, *d, context=heading)
         i += 1
     return cards
 
 
-def _add_definition(cards: list[StructureCard], seen: set[str], term: str, definition: str) -> None:
-    key = f"def:{term.lower()}"
+def _add_definition(cards: list[StructureCard], seen: set[str], term: str, definition: str,
+                    context: Optional[str] = None) -> None:
+    """Generic terms ("Pros", "Time Complexity") only make sense with their heading: "BFS · Pros"."""
+    generic = bool(_GENERIC.match(term))
+    if generic and not context:
+        return
+    label = f"{context} · {term}" if generic else term
+    key = f"def:{label.lower()}"
     if key in seen:
         return
     seen.add(key)
-    cards.append(StructureCard("definition", f"{term}: {BLANK}", definition, term))
+    anchor = context if generic and context else term
+    cards.append(StructureCard("definition", f"{label}: {BLANK}", definition, anchor))
 
 
 def pick_concept_id(anchor: str, concepts: list[dict], fallback: Optional[str]) -> Optional[str]:
