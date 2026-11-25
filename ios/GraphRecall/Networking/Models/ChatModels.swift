@@ -111,6 +111,8 @@ struct ChatMessageUI: Identifiable, Hashable {
 enum ChatSSEEvent: Equatable {
     case status(String)
     case chunk(String)
+    /// The server cleaned the answer after streaming (e.g. removed an invalid citation): show this instead.
+    case replace(String)
     case done(DonePayload)
     case error(String)
     case unknown

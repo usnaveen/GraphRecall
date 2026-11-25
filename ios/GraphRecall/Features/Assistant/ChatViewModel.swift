@@ -345,6 +345,8 @@ final class ChatViewModel {
                 $0.content += chunk
                 $0.status = statusLine
             }
+        case .replace(let text):
+            if !text.isEmpty { updateAssistant(assistantId) { $0.content = text } }
         case .done(let payload):
             if let cid = payload.conversationId {
                 conversationId = cid

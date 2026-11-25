@@ -34,6 +34,26 @@ class QuickChatRequest(BaseModel):
     user_id: str
 
 
+
+def finalize_stream_text(streamed: str, final: str) -> tuple[list[dict], str]:
+    """Events to send after the token stream, and the text to save.
+
+    - nothing was streamed (cache hit, quiz short-circuit): send the final text as one chunk;
+    - the final text continues the stream (figures appended): send only the tail;
+    - the final text differs (invalid citations removed after streaming): send one "replace" event,
+      so the client shows and the database stores the same cleaned text.
+    """
+    if not final:
+        return [], streamed
+    if not streamed:
+        return [{"type": "chunk", "content": final}], final
+    if final == streamed:
+        return [], streamed
+    if final.startswith(streamed):
+        tail = final[len(streamed):]
+        return ([{"type": "chunk", "content": tail}] if tail.strip() else []), final
+    return [{"type": "replace", "content": final}], final
+
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -968,19 +988,12 @@ async def stream_chat(
             if final_messages:
                 last_msg = final_messages[-1]
                 final_content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
-                # Cache hits or short-circuit nodes (e.g. quiz) produce final_content with no streamed tokens.
-                if not full_content and final_content:
-                    if not first_token_logged:
-                        first_token_logged = True
-                        record("chat.first_token_after_auth", elapsed_ms(stream_start))
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': final_content})}\n\n"
-                    full_content = final_content
-                # If the final content has more than what was streamed, send the extra
-                elif len(final_content) > len(full_content) and full_content:
-                    extra_content = final_content[len(full_content):]
-                    if extra_content.strip():
-                        yield f"data: {json.dumps({'type': 'chunk', 'content': extra_content})}\n\n"
-                        full_content = final_content
+                if not full_content and final_content and not first_token_logged:
+                    first_token_logged = True
+                    record("chat.first_token_after_auth", elapsed_ms(stream_start))
+                events, full_content = finalize_stream_text(full_content, final_content)
+                for ev in events:
+                    yield f"data: {json.dumps(ev)}\n\n"
 
             # Fix: Ensure UUIDs are strings for JSON serialization
             def json_safe(obj):

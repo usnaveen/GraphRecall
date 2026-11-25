@@ -28,11 +28,30 @@ _RETRYABLE_MSG_MARKERS: tuple[str, ...] = (
     "service unavailable",
 )
 
-# Match bracketed citation groups like [1], [G1], [1, 2], [1, G2] ONLY when NOT immediately followed by '('.
+# Bracketed citation groups like [1], [G1], [1, 2], [1, G2]: not followed by '(' (a markdown link) and
+# not glued to an identifier or another bracket (array indexing: nums[0], dp[i][9], f(x)[2]).
+# Group 1 is the single space before it, removed together with an invalid citation.
 _BRACKET_CITATION_RE = re.compile(
-    r"\[(\s*(?:G?\d+)(?:\s*,\s*G?\d+)*\s*)\](?!\()",
+    r"([ \t]?)(?<![\w\)])\[(\s*(?:G?\d+)(?:\s*,\s*G?\d+)*\s*)\](?!\()",
     re.IGNORECASE,
 )
+_BRACKET_GROUP_RE = re.compile(r"\[[^\[\]]*\]$")
+
+
+def _is_indexing_chain(text: str, start: int) -> bool:
+    """True when the bracket at ``start`` continues a chain glued to an identifier (``dp[10][9]``)
+    rather than a run of citations after a space (``see [1][2]``)."""
+    i = start
+    while i > 0 and text[i - 1] == "]":
+        m = _BRACKET_GROUP_RE.search(text[:i])
+        if not m:
+            return False
+        i = m.start()
+    return i > 0 and (text[i - 1].isalnum() or text[i - 1] in "_)")
+
+
+# Code is never rewritten: fenced blocks and inline code spans.
+_CODE_SEGMENT_RE = re.compile(r"(```[\s\S]*?(?:```|$)|`[^`\n]+`)")
 
 
 @dataclass(slots=True)
@@ -227,8 +246,12 @@ def verify_citations(
     invalid_refs: list[str] = []
 
     def _replace_match(match: re.Match[str]) -> str:
-        raw_inner = match.group(1)
+        lead, raw_inner = match.group(1), match.group(2)
+        if not lead and _is_indexing_chain(match.string, match.start(2) - 1):
+            return match.group(0)
         parts = [p.strip() for p in raw_inner.split(",") if p.strip()]
+        if any(p == "0" or (p.isdigit() and len(p) > 3) for p in parts):
+            return match.group(0)  # citations are 1-based and small: [0] or [2024] is not one
         kept_parts: list[str] = []
 
         for part in parts:
@@ -252,16 +275,13 @@ def verify_citations(
                     invalid_refs.append(str(idx))
 
         if not kept_parts:
-            return ""
-        return "[" + ", ".join(kept_parts) + "]"
+            return ""  # drop the citation and the one space before it; nothing else is rewritten
+        return lead + "[" + ", ".join(kept_parts) + "]"
 
-    cleaned = _BRACKET_CITATION_RE.sub(_replace_match, answer_text)
-    if invalid_refs:
-        # Collapse horizontal whitespace introduced by stripped citations without collapsing newlines.
-        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-        cleaned = re.sub(r"[ \t]+([.,;:!?])", r"\1", cleaned)
-        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
-        cleaned = cleaned.strip()
+    # Only prose is audited: code segments (odd indices after the split) pass through untouched.
+    segments = _CODE_SEGMENT_RE.split(answer_text)
+    cleaned = "".join(seg if i % 2 else _BRACKET_CITATION_RE.sub(_replace_match, seg)
+                      for i, seg in enumerate(segments))
 
     total = len(valid_refs) + len(invalid_refs)
     grounded_ratio = (len(valid_refs) / total) if total > 0 else 1.0

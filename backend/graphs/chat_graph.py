@@ -217,6 +217,32 @@ def get_response_cache() -> CorpusVersionedResponseCache:
     return _RESPONSE_CACHE
 
 
+async def _notes_fingerprint(user_id: str) -> Optional[str]:
+    """Count and last change of the user's notes, read from the database, so ingestion or deletion by
+    any process (API worker, ingest script) is seen. None when unavailable."""
+    try:
+        pg = await get_postgres_client()
+        rows = await pg.execute_query(
+            "SELECT count(*) AS n, coalesce(extract(epoch FROM max(greatest(created_at, updated_at))), 0) AS t "
+            "FROM notes WHERE user_id = CAST(:u AS uuid)", {"u": str(user_id)})
+        n, t = (int(rows[0]["n"]), int(float(rows[0]["t"]))) if rows else (0, 0)
+        return f"{n}.{t}"
+    except Exception as e:  # noqa: BLE001
+        logger.warning("chat_graph: corpus fingerprint unavailable; skipping response cache", error=str(e))
+        return None
+
+
+async def _cache_partition(user_id: str) -> str:
+    """Cache partition = user + notes fingerprint + explicit version counter. A changed fingerprint
+    (note added or deleted anywhere) or a bump moves the user's cached answers out of reach, so a
+    deleted note's text is never served from cache. "" disables the cache for this turn."""
+    fingerprint = await _notes_fingerprint(user_id)
+    if fingerprint is None:
+        return ""
+    counter = await get_response_cache().get_corpus_version(str(user_id))
+    return f"{user_id}:{fingerprint}:c{counter}"
+
+
 async def bump_user_corpus_version(user_id: str) -> int:
     """Invalidate a user's cached RAG responses by bumping their corpus version."""
     return await get_response_cache().bump_corpus_version(str(user_id))
@@ -881,9 +907,12 @@ async def generate_response_node(state: ChatState) -> dict:
     if query_embedding is None and can_use_l2:
         query_embedding = await _EMBED_CACHE.get(current_query)
 
+    cache_partition = await _cache_partition(str(user_id)) if can_use_l2 else ""
+    if not cache_partition:
+        can_use_l2 = False
     if can_use_l2 and query_embedding:
         cached_payload = await get_response_cache().get(
-            user_id=str(user_id),
+            user_id=cache_partition,
             query=current_query,
             intent=intent,
             query_embedding=query_embedding,
@@ -1087,7 +1116,7 @@ async def generate_response_node(state: ChatState) -> dict:
             and response_content.strip()
         ):
             await get_response_cache().set(
-                user_id=str(user_id),
+                user_id=cache_partition,
                 query=current_query,
                 intent=intent,
                 response={

@@ -192,9 +192,10 @@ async def digest_later(
 
     user_id = str(current_user["id"])
     pg = await get_postgres_client()
+    # Not marked done here: the worker marks it done once the article is actually ingested, so a
+    # failed digest leaves the item in the Later list instead of making it disappear.
     rows = await pg.execute_query(
-        f"UPDATE later_items SET done_at = now() WHERE id::text = :id AND user_id = CAST(:u AS uuid) "
-        f"AND done_at IS NULL RETURNING {_COLS}",
+        f"SELECT {_COLS} FROM later_items WHERE id::text = :id AND user_id = CAST(:u AS uuid) AND done_at IS NULL",
         {"id": item_id, "u": user_id},
     )
     if not rows:

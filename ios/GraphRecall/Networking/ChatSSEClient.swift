@@ -125,6 +125,8 @@ actor ChatSSEClient {
             return .status((obj["content"] as? String) ?? "Working…")
         case "chunk":
             return .chunk((obj["content"] as? String) ?? "")
+        case "replace":
+            return .replace((obj["content"] as? String) ?? "")
         case "error":
             return .error((obj["error"] as? String) ?? "Stream error")
         case "done":

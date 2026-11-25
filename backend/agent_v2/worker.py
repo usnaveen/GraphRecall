@@ -436,6 +436,46 @@ async def handle_community_recompute(
     )
 
 
+async def handle_article_digest(job: AgentJob, *, runs: RunLogger) -> None:
+    """"Digest this" from the Later list or an agent pick: ingest the article as a normal note, so it
+    produces concepts, cards and quizzes. Uses the text the client sent, else fetches the link through
+    the SSRF-guarded extractor. Marks the Later item done only after ingestion succeeds."""
+    started = time.perf_counter()
+    payload = dict(job.payload or {})
+    title = (payload.get("title") or "").strip() or None
+    text = (payload.get("text") or "").strip()
+    url = (payload.get("source_url") or "").strip() or None
+    try:
+        if len(text) < 200 and url:
+            from backend.services.ingestion.article_extract import extract_article, fetch_html, render_note
+
+            html, final_url = await fetch_html(url)
+            article = extract_article(html, final_url)
+            text = render_note(article)
+            title = title or getattr(article, "title", None)
+        if len(text) < 50:
+            raise ValueError("nothing to digest: no article text and no fetchable link")
+        from backend.graphs.ingestion_graph import run_ingestion
+
+        result = await run_ingestion(content=text, title=title or url, user_id=job.user_id,
+                                     skip_review=True, resource_type="article")
+        item_id = payload.get("item_id")
+        if item_id:
+            from backend.db.postgres_client import get_postgres_client
+
+            pg = await get_postgres_client()
+            await pg.execute_update(
+                "UPDATE later_items SET done_at = now(), note_id = CAST(:n AS uuid) "
+                "WHERE id::text = :id AND user_id = CAST(:u AS uuid)",
+                {"n": result.get("note_id"), "id": str(item_id), "u": job.user_id},
+            )
+    except Exception as exc:
+        await _record_failed_run(runs, job, started, "article.digest", exc)
+        raise
+    await _record_skipped_run(runs, job, started, {"tool": "article.digest", "note_id": result.get("note_id"),
+                                                    "concepts": len(result.get("concept_ids") or [])})
+
+
 async def handle_embeddings_retry(
     job: AgentJob,
     *,
@@ -742,6 +782,11 @@ async def build_default_worker() -> AgentWorker:
     worker.register("embeddings.retry", _on_embeddings_retry)
     worker.register("quiz.scan", _on_quiz_scan)
     worker.register("feed.buffer_ensure", _on_feed_buffer_ensure)
+
+    async def _on_article_digest(job: AgentJob) -> None:
+        await handle_article_digest(job, runs=runs)
+
+    worker.register("article.digest", _on_article_digest)
     return worker
 
 

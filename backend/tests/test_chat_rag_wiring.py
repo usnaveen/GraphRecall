@@ -338,7 +338,13 @@ async def test_generate_response_l2_cache_hit_invalidation_and_grounding() -> No
         }],
     }
 
-    with patch.object(cg, "get_chat_model", return_value=FakeLLM()):
+    fingerprint = {"value": "3.1700000000"}
+
+    async def fake_fingerprint(_user_id):
+        return fingerprint["value"]
+
+    with patch.object(cg, "get_chat_model", return_value=FakeLLM()), \
+         patch.object(cg, "_notes_fingerprint", side_effect=fake_fingerprint):
         # 1. First call: misses L2, calls LLM, strips [9] and [G9], preserves [1], [G1], and markdown link, caches.
         res1 = await cg.generate_response_node(state)
         assert len(llm_calls) == 1
@@ -375,6 +381,13 @@ async def test_generate_response_l2_cache_hit_invalidation_and_grounding() -> No
         res4 = await cg.generate_response_node(state)
         assert len(llm_calls) == 3
         assert res4["metadata"]["cache_hit"] is False
+
+        # 5. A note added or deleted anywhere (fingerprint changes) also invalidates: no stale sources.
+        assert (await cg.generate_response_node(state))["metadata"]["cache_hit"] is True
+        fingerprint["value"] = "2.1700000900"
+        res5 = await cg.generate_response_node(state)
+        assert len(llm_calls) == 4
+        assert res5["metadata"]["cache_hit"] is False
 
 
 @pytest.mark.asyncio

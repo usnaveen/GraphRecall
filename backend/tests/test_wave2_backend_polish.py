@@ -280,10 +280,54 @@ def test_later_item_digest_checks_ownership_and_marks_done(monkeypatch):
     assert body["queued_job_id"] == "job-item-99"
     assert body["card_count"] >= 1
 
-    update_sql, update_params = executed[-1]
-    assert "done_at = now()" in update_sql
-    assert "user_id = CAST(:u AS uuid)" in update_sql
-    assert update_params == {"id": "item-owned", "u": "owner-1"}
+    lookup_sql, lookup_params = executed[-1]
+    # Ownership is checked, but the item is NOT marked done at enqueue: the worker does that only after
+    # the article is actually ingested (a failed digest must not make the item disappear).
+    assert "done_at = now()" not in lookup_sql
+    assert "user_id = CAST(:u AS uuid)" in lookup_sql
+    assert lookup_params == {"id": "item-owned", "u": "owner-1"}
+
+
+async def test_article_digest_worker_ingests_then_marks_item_done(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+
+    from backend.agent_v2 import worker as w
+
+    ingested, updates = {}, []
+
+    async def fake_run_ingestion(**kw):
+        ingested.update(kw)
+        return {"note_id": "11111111-1111-1111-1111-111111111111", "concept_ids": ["a", "b"]}
+
+    class PG:
+        async def execute_update(self, q, p):
+            updates.append((q, p))
+
+    job = SimpleNamespace(id="j1", user_id="owner-1", job_type="article.digest",
+                          payload={"title": "Attention", "text": "x" * 300, "item_id": "item-9"})
+    with patch("backend.graphs.ingestion_graph.run_ingestion", side_effect=fake_run_ingestion), \
+         patch("backend.db.postgres_client.get_postgres_client", AsyncMock(return_value=PG())), \
+         patch.object(w, "_record_skipped_run", AsyncMock()):
+        await w.handle_article_digest(job, runs=None)
+    assert ingested["user_id"] == "owner-1" and ingested["resource_type"] == "article"
+    assert updates and "done_at = now()" in updates[0][0] and updates[0][1]["id"] == "item-9"
+
+
+async def test_article_digest_worker_failure_leaves_item_open(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+
+    import pytest as _pytest
+
+    from backend.agent_v2 import worker as w
+
+    job = SimpleNamespace(id="j2", user_id="owner-1", job_type="article.digest",
+                          payload={"title": "t", "text": "short", "item_id": "item-9"})
+    with patch.object(w, "_record_failed_run", AsyncMock()) as failed:
+        with _pytest.raises(ValueError):
+            await w.handle_article_digest(job, runs=None)
+    failed.assert_awaited()
 
 
 # ---------------------------------------------------------------------------

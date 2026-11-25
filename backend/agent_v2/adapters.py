@@ -232,8 +232,8 @@ class PostgresMemoryFacade:
                 SELECT concept_id, score
                 FROM proficiency_scores
                 WHERE user_id = CAST(:user_id AS uuid)
-                  AND (next_review_due IS NULL OR next_review_due <= NOW())
-                ORDER BY score ASC, COALESCE(next_review_due, created_at) ASC
+                  AND next_review_due IS NOT NULL AND next_review_due <= NOW()  -- same rule as the feed
+                ORDER BY score ASC, next_review_due ASC
                 LIMIT :lim
                 """,
                 {"user_id": user_id, "lim": limit},

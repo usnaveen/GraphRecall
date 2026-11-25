@@ -308,3 +308,29 @@ def test_circuit_breaker_half_open_limits_concurrent_probes() -> None:
         assert breaker.state == "closed"
 
     asyncio.run(scenario())
+
+
+# --- citation audit must never corrupt code (review of 97a5503) ------------------------------
+
+def test_verify_citations_leaves_code_and_indexing_alone():
+    from backend.services.grounding_guard import verify_citations
+
+    answer = (
+        "Two-sum keeps a map of complements [1] and a bad cite [9].\n\n"
+        "```python\n"
+        "def two_sum(nums, target):\n"
+        "    seen = {}\n"
+        "    for i, x in enumerate(nums):\n"
+        "        if target - x in seen:\n"
+        "            return [seen[target - x], i]\n"
+        "        seen[x] = i\n"
+        "    return [0, 1]\n"
+        "```\n"
+        "Inline `dp[10] = dp[9] + dp[8]` stays, and so does nums[0] or grid[2][9] in prose."
+    )
+    audit = verify_citations(answer, valid_chunk_indices={1, 2})
+    assert audit.invalid_refs == ["9"] and audit.valid_refs == ["1"]
+    assert "a bad cite." in audit.cleaned_text
+    for kept in ("        seen[x] = i\n", "    return [0, 1]\n", "`dp[10] = dp[9] + dp[8]`", "nums[0]",
+                 "return [seen[target - x], i]", "grid[2][9]"):
+        assert kept in audit.cleaned_text, kept
