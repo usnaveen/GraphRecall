@@ -36,6 +36,7 @@ extension FeedItemType {
         case .codeChallenge: return "chevron.left.forwardslash.chevron.right"
         case .diagram: return "point.3.connected.trianglepath.dotted"
         case .screenshot, .infographic: return "photo"
+        case .territory: return "map.fill"
         }
     }
 
@@ -43,7 +44,7 @@ extension FeedItemType {
         switch self {
         case .flashcard, .showcase: return .accent
         case .mcq, .diagram: return .purple
-        case .fillBlank, .codeChallenge: return .cyan
+        case .fillBlank, .codeChallenge, .territory: return .cyan
         case .screenshot, .infographic: return .coral
         }
     }

@@ -9,6 +9,7 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
     case screenshot
     case showcase
     case codeChallenge = "code_challenge"
+    case territory
 
     /// Accept backend wire values *and* web CardType aliases (`quiz`, `fillblank`, etc.).
     init(from decoder: Decoder) throws {
@@ -26,6 +27,7 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         case "screenshot": return .screenshot
         case "showcase", "concept_showcase": return .showcase
         case "code_challenge": return .codeChallenge
+        case "territory": return .territory
         default: return .flashcard
         }
     }
@@ -40,6 +42,7 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         case .screenshot: return "Screenshot"
         case .showcase: return "Concept Showcase"
         case .codeChallenge: return "Code Challenge"
+        case .territory: return "Map the Territory"
         }
     }
 
@@ -47,7 +50,7 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         switch self {
         case .flashcard, .showcase: return "accent"
         case .mcq: return "accent"
-        case .fillBlank, .codeChallenge: return "cyan"
+        case .fillBlank, .codeChallenge, .territory: return "cyan"
         case .diagram: return "purple"
         case .screenshot, .infographic: return "coral"
         }

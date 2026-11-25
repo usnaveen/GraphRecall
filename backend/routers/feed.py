@@ -131,6 +131,8 @@ async def _add_territory_card(response, request, neo4j_client) -> None:
         from backend.services import territory as tt
 
         options = await tt.territories(neo4j_client, request.user_id, limit=12)
+        if request.domains:
+            options = [t for t in options if t.get("domain") in request.domains]
         if not options:
             return
         in_feed = {i.concept_id for i in response.items if i.concept_id}
@@ -206,6 +208,13 @@ async def record_review(
         )
 
         updated_data = await sr_service.record_review(review)
+        try:
+            from backend.services.knowledge_map import REVIEW_SIGNAL, add_evidence
+
+            await add_evidence(pg_client, user_id, kind="review", signal=REVIEW_SIGNAL[difficulty.value],
+                               concept_id=target, source_id=item_id, detail={"item_type": item_type})
+        except Exception as e:  # noqa: BLE001 - the review itself is already recorded
+            logger.warning("Feed: review evidence not recorded", error=str(e))
 
         return {
             "status": "recorded",

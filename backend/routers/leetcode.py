@@ -96,8 +96,9 @@ async def upsert_problem(body: ProblemIn, current_user: dict = Depends(get_curre
     neo = await get_neo4j_client()
     concept_id, pattern_id = await lc.upsert_graph(neo, user_id, problem)
     await pg.execute_update(
-        "UPDATE coding_problems SET concept_id = :c, pattern_concept_id = :pc WHERE id = CAST(:p AS uuid)",
-        {"c": concept_id, "pc": pattern_id, "p": problem["id"]},
+        "UPDATE coding_problems SET concept_id = :c, pattern_concept_id = :pc "
+        "WHERE id = CAST(:p AS uuid) AND user_id = CAST(:u AS uuid)",
+        {"c": concept_id, "pc": pattern_id, "p": problem["id"], "u": user_id},
     )
     problem.update(concept_id=concept_id, pattern_concept_id=pattern_id)
     # Only the problem is scheduled. The pattern concept stays unscheduled unless the user studies it

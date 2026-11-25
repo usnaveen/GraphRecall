@@ -9,6 +9,10 @@ enum ProfileNavRoute: Hashable {
     case saved
     case leetcode
     case later
+    case knowledgeMap
+    case resume
+    case education
+    case projects
 }
 
 struct ProfileView: View {
@@ -31,6 +35,7 @@ struct ProfileView: View {
     @State private var savedCount = 0
     @State private var leetcodeCount = 0
     @State private var laterCount = 0
+    @State private var knowledge: KnowledgeSummary?
     @State private var domainMastery: [DomainMastery] = []
     @State private var path = NavigationPath()
 
@@ -62,6 +67,7 @@ struct ProfileView: View {
 
                         Group {
                             identityCard
+                            youSection
                             todayCard
                             dueChips
                             weeklyInsights
@@ -93,6 +99,10 @@ struct ProfileView: View {
                 case .saved: SavedItemsListView()
                 case .leetcode: LeetCodeListView()
                 case .later: LaterListView()
+                case .knowledgeMap: KnowledgeMapView()
+                case .resume: ResumeView()
+                case .education: EducationView()
+                case .projects: ProjectsView()
                 }
             }
             .navigationBarHidden(true)
@@ -428,6 +438,65 @@ struct ProfileView: View {
         }
     }
 
+    // MARK: - You
+
+    /// The knowledge map at a glance, plus the pages that feed it.
+    private var youSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button { path.append(ProfileNavRoute.knowledgeMap) } label: {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label("Your knowledge map", systemImage: "point.3.filled.connected.trianglepath.dotted")
+                            .font(GRType.headline).foregroundStyle(GRColor.textPrimary)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(GRColor.textTertiary)
+                    }
+                    if let k = knowledge, k.total > 0 {
+                        KnowledgeStatusBar(counts: Dictionary(uniqueKeysWithValues: KnowledgeStatus.allCases.map { ($0, k.count($0)) }))
+                        HStack(spacing: 12) {
+                            ForEach(KnowledgeStatus.allCases) { s in
+                                HStack(spacing: 4) {
+                                    KnowledgeStatusDot(status: s, size: 7)
+                                    Text("\(k.count(s)) \(s.shortTitle.lowercased())").font(GRType.micro).foregroundStyle(GRColor.textSecondary)
+                                }
+                            }
+                        }
+                    } else {
+                        Text("Strong, shaky, studied and new: see what you know and on what evidence.")
+                            .font(GRType.caption).foregroundStyle(GRColor.textSecondary)
+                    }
+                }
+                .padding(16)
+                .grGlassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profile.knowledgeMap")
+
+            HStack(spacing: 10) {
+                youTile("Resume", icon: "doc.text.magnifyingglass", tone: .accent, route: .resume)
+                youTile("Education", icon: "graduationcap.fill", tone: .purple, route: .education)
+                youTile("Projects", icon: "hammer.fill", tone: .amber, route: .projects)
+                youTile("LeetCode", icon: "chevron.left.forwardslash.chevron.right", tone: .cyan, route: .leetcode)
+            }
+        }
+    }
+
+    private func youTile(_ title: String, icon: String, tone: GRTone, route: ProfileNavRoute) -> some View {
+        Button { path.append(route) } label: {
+            VStack(spacing: 6) {
+                GRIconTile(systemImage: icon, tone: tone, size: 36)
+                Text(title).font(GRType.micro).foregroundStyle(GRColor.textSecondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .grGlassEffect(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
     // MARK: - Library
 
     private var libraryGrid: some View {
@@ -489,7 +558,9 @@ struct ProfileView: View {
         async let scheduleTask: Void = loadSchedule()
         async let countsTask: Void = loadNestedCounts()
         async let graphTask: Void = loadGraphInsights()
+        async let knowledgeTask = try? APIClient.shared.knowledgeSummary()
         _ = await (statsTask, scheduleTask, countsTask, graphTask)
+        knowledge = await knowledgeTask
     }
 
     @MainActor

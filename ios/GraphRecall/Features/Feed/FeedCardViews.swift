@@ -41,6 +41,9 @@ struct FeedTypedCard: View {
                 diagramBody
             case .screenshot, .infographic:
                 mediaBody
+            case .territory:
+                TerritoryCardBody(item: item)
+                    .id(item.id)
             }
         }
     }
@@ -69,7 +72,7 @@ struct FeedTypedCard: View {
 
     private var typeColor: Color {
         switch item.itemType {
-        case .fillBlank, .codeChallenge: return GRColor.accentCyan
+        case .fillBlank, .codeChallenge, .territory: return GRColor.accentCyan
         case .screenshot, .infographic: return Color(red: 1, green: 0.42, blue: 0.42)
         case .diagram: return Color(red: 0.61, green: 0.35, blue: 0.71)
         default: return GRColor.accent

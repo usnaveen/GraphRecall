@@ -66,3 +66,16 @@ def test_match_concept_is_conservative():
     assert match_concept("RNNs", cs)["name"] == "Recurrent Neural Network"
     assert match_concept("python", cs)["name"] == "Python"           # not the handbook
     assert match_concept("Kubernetes", cs) is None
+
+
+def test_recent_failure_blocks_strong_even_with_strong_self_rating():
+    ev = [Evidence("self_rating", 0.85, 0.6, NOW), Evidence("course", 0.85, 0.8, NOW),
+          Evidence("quiz", 0.2, 0.3, NOW - timedelta(days=3))]
+    status, m, _, _ = score(ev, in_graph=True, self_rating=4, now=NOW)
+    assert m >= 0.7 and status == "shaky"
+
+
+def test_match_concept_does_not_conflate_numbers_or_widen_single_words():
+    cs = _concepts("Python Decorators", "Phase 2 Trial")
+    assert match_concept("Python", cs) is None
+    assert match_concept("Phase 1 Trial", cs) is None

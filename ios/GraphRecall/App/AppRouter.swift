@@ -72,6 +72,18 @@ final class AppRouter {
         case "later":
             pendingProfileRoute = .later
             select(.profile)
+        case "knowledge":
+            pendingProfileRoute = .knowledgeMap
+            select(.profile)
+        case "resume":
+            pendingProfileRoute = .resume
+            select(.profile)
+        case "education":
+            pendingProfileRoute = .education
+            select(.profile)
+        case "projects":
+            pendingProfileRoute = .projects
+            select(.profile)
         default:
             break
         }

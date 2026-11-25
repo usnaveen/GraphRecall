@@ -74,11 +74,15 @@ def match_concept(name: str, concepts: list[dict]) -> Optional[dict]:
         if acro:
             return min(acro, key=lambda c: len(c["name"]))
     words = set(key.split())
-    near = [c for c in concepts if words and words <= c["_words"] and len(c["_words"]) <= len(words) + 1]
+    slack = 0 if len(words) == 1 else 1  # "Python" must not become "Python Decorators"
+    near = [c for c in concepts if words and words <= c["_words"] and len(c["_words"]) <= len(words) + slack]
     if near:
         return min(near, key=lambda c: len(c["name"]))
     best, best_r = None, 0.0
+    digits = re.findall(r"\d+", key)
     for c in concepts:
+        if re.findall(r"\d+", c["_key"]) != digits:  # "phase 1 trial" is not "phase 2 trial"
+            continue
         r = SequenceMatcher(None, key, c["_key"]).ratio()
         if r > best_r:
             best, best_r = c, r
@@ -168,8 +172,12 @@ def score(evidence: list[Evidence], *, in_graph: bool, self_rating: Optional[int
     basis = ("tested" if tested else "coursework" if non_self else
              "self-reported" if "self_rating" in kinds else
              "studied" if "note" in kinds else "claimed")
-    if mastery >= 0.7 and (tested or non_self >= 0.6 or (self_rating or 0) >= 3):
+    # A recent failed test outranks claims: no "strong" within 14 days of failing it (Neon's memo, sec. 3).
+    recent_fail = any(e.kind in TESTED_KINDS and e.signal <= 0.3 and e.at and (now - e.at).days < 14 for e in ev)
+    if mastery >= 0.7 and not recent_fail and (tested or non_self >= 0.6 or (self_rating or 0) >= 3):
         status = "strong"
+    elif recent_fail:
+        status = "shaky"
     elif tested or self_rating is not None:
         status = "shaky" if mastery < 0.7 else "seen"
     else:
@@ -222,9 +230,10 @@ async def _load_state(pg, user_id: str, concept_ids: list[str], keys: list[str])
     for r in rows or []:
         e = Evidence(r["kind"], float(r["signal"]), float(r["weight"]), _aware(r["created_at"]),
                      r.get("detail") if isinstance(r.get("detail"), dict) else {})
-        if r.get("concept_id"):
+        if r.get("concept_id") and r["concept_id"] in set(concept_ids):
             by_concept.setdefault(r["concept_id"], []).append(e)
         elif r.get("skill_key"):
+            # Concept deleted or renamed, or a skill outside the graph: the name still carries it.
             by_key.setdefault(r["skill_key"], []).append(e)
     reviews: dict[str, dict] = {}
     if concept_ids:
@@ -257,13 +266,14 @@ def _review_evidence(state: Optional[dict]) -> list[Evidence]:
 # --------------------------------------------------------------------------- public API
 
 async def assess(user_id: str, names: Iterable[str], *, pg=None, neo4j=None,
-                 concepts: Optional[list[dict]] = None) -> list[Assessment]:
+                 concepts: Optional[list[dict]] = None, max_names: Optional[int] = 200) -> list[Assessment]:
     from backend.db.neo4j_client import get_neo4j_client
     from backend.db.postgres_client import get_postgres_client
 
     pg = pg or await get_postgres_client()
     neo4j = neo4j or await get_neo4j_client()
-    names = [n.strip() for n in names if n and n.strip()][:200]
+    names = [n.strip() for n in names if n and skill_key(n)]
+    names = list(dict.fromkeys(names))[:max_names] if max_names else list(dict.fromkeys(names))
     concepts = concepts if concepts is not None else await _user_concepts(neo4j, user_id)
     matched = {n: match_concept(n, concepts) for n in names}
     keys = list({skill_key(n) for n in names})
@@ -289,7 +299,9 @@ async def assess(user_id: str, names: Iterable[str], *, pg=None, neo4j=None,
         skill = skills.get(key) or {}
         ev: list[Evidence] = list(by_key.get(key, []))
         if c:
-            ev += by_concept.get(c["id"], []) + _review_evidence(reviews.get(c["id"]))
+            ev += by_concept.get(c["id"], [])
+            if not any(e.kind == "review" for e in ev):  # per-review evidence supersedes the SR snapshot
+                ev += _review_evidence(reviews.get(c["id"]))
             ev.append(Evidence("note", 0.35, DEFAULT_WEIGHT["note"]))  # it's in your graph: you studied it
         rating = skill.get("self_rating")
         status, mastery, conf, basis = score(ev, in_graph=bool(c), self_rating=rating,
@@ -315,6 +327,8 @@ async def add_evidence(pg, user_id: str, *, kind: str, signal: float, concept_id
                        source_id: Optional[str] = None, detail: Optional[dict] = None) -> None:
     key = skill_key(skill_name) if skill_name else None
     if not concept_id and not key:
+        return
+    if key == "":
         return
     await pg.execute_update(
         "INSERT INTO knowledge_evidence (user_id, concept_id, skill_key, skill_name, kind, signal, weight, "
@@ -357,8 +371,14 @@ async def rate_skill(user_id: str, name: str, level: int, *, pg=None, neo4j=None
     concept = match_concept(name, await _user_concepts(neo4j, user_id))
     cid = concept["id"] if concept else None
     await upsert_skill(pg, user_id, name, source="user", concept_id=cid, self_rating=level)
+    # A new answer replaces the old one rather than averaging with it.
+    await pg.execute_update(
+        "DELETE FROM knowledge_evidence WHERE user_id = CAST(:u AS uuid) AND kind = 'self_rating' "
+        "AND (skill_key = :k OR (CAST(:c AS varchar) IS NOT NULL AND concept_id = CAST(:c AS varchar)))",
+        {"u": user_id, "k": skill_key(name), "c": cid},
+    )
     await add_evidence(pg, user_id, kind="self_rating", signal=SELF_LEVEL_SIGNAL[level], concept_id=cid,
-                       skill_name=None if cid else name, detail={"level": level})
+                       skill_name=name, detail={"level": level})
     return (await assess(user_id, [name], pg=pg, neo4j=neo4j))[0]
 
 
@@ -377,6 +397,7 @@ async def record_territory_evidence(user_id: str, concept_id: str, grade) -> Non
 
 
 LEETCODE_SIGNAL = {"solved": 0.8, "hint": 0.5, "failed": 0.25}
+REVIEW_SIGNAL = {"again": 0.1, "hard": 0.5, "good": 0.8, "easy": 0.95}
 
 
 async def record_leetcode_evidence(pg, user_id: str, *, concept_id: Optional[str], pattern_concept_id: Optional[str],
@@ -389,7 +410,7 @@ async def record_leetcode_evidence(pg, user_id: str, *, concept_id: Optional[str
                            source_id=attempt_id)
 
 
-async def summary(user_id: str, *, pg=None, neo4j=None, limit: int = 400) -> dict:
+async def summary(user_id: str, *, pg=None, neo4j=None, limit: int = 2000) -> dict:
     """Every concept in the graph plus every tracked skill, assessed, grouped by status and domain."""
     from backend.db.neo4j_client import get_neo4j_client
     from backend.db.postgres_client import get_postgres_client
@@ -401,7 +422,7 @@ async def summary(user_id: str, *, pg=None, neo4j=None, limit: int = 400) -> dic
         "SELECT skill_name FROM user_skills WHERE user_id = CAST(:u AS uuid)", {"u": user_id})
     names = [c["name"] for c in concepts[:limit]] + [r["skill_name"] for r in skill_rows or []]
     names = list(dict.fromkeys(names))
-    results = await assess(user_id, names, pg=pg, neo4j=neo4j, concepts=concepts)
+    results = await assess(user_id, names, pg=pg, neo4j=neo4j, concepts=concepts, max_names=None)
     counts = {s: 0 for s in STATUSES}
     domains: dict[str, dict[str, int]] = {}
     for a in results:
