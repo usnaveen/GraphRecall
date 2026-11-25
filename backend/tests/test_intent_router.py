@@ -90,7 +90,8 @@ async def test_model_mode_skips_llm_when_confident(monkeypatch):
          patch.object(ir, "log_decision", side_effect=lambda **kw: logged.append(kw)):
         out = await cg.analyze_query_node({"messages": [HumanMessage(content="quiz me on binary search")],
                                            "user_id": "u1"})
-    assert out == {"intent": "quiz", "entities": ["binary search"], "router_source": "model"}
+    assert out == {"intent": "quiz", "entities": ["binary search"], "router_source": "model",
+                   "retrieval_query": "quiz me on binary search"}
     llm.with_structured_output.return_value.ainvoke.assert_not_called()
     assert logged[0]["source"] == "model" and logged[0]["model_intent"] == "quiz"
 
@@ -105,7 +106,8 @@ async def test_model_mode_falls_back_when_unsure(monkeypatch):
     with a, b, c, patch.object(ir, "mentioned_concepts", AsyncMock(return_value=[])), \
          patch.object(ir, "log_decision", side_effect=lambda **kw: logged.append(kw)):
         out = await cg.analyze_query_node({"messages": [HumanMessage(content="BFS vs DFS")], "user_id": "u1"})
-    assert out == {"intent": "compare", "entities": ["BFS", "DFS"], "router_source": "fallback"}
+    assert out == {"intent": "compare", "entities": ["BFS", "DFS"], "router_source": "fallback",
+                   "retrieval_query": "BFS vs DFS"}
     assert logged[0]["llm_intent"] == "compare" and logged[0]["model_intent"] is not None
 
 
@@ -142,7 +144,8 @@ async def test_shadow_mode_lets_llm_decide(monkeypatch):
     with a, b, c, patch.object(ir, "log_decision", side_effect=lambda **kw: logged.append(kw)):
         out = await cg.analyze_query_node({"messages": [HumanMessage(content="what did I write about Raft")],
                                            "user_id": "u1"})
-    assert out == {"intent": "find", "entities": ["Raft"], "router_source": "llm"}
+    assert out == {"intent": "find", "entities": ["Raft"], "router_source": "llm",
+                   "retrieval_query": "what did I write about Raft"}
     assert logged[0]["source"] == "llm" and logged[0]["model_intent"] is not None
 
 

@@ -121,7 +121,8 @@ async def test_analyze_query_parallel_embed_and_greeting_fastpath(monkeypatch) -
         assert embed_calls == 0
 
         analyzed = await cg.analyze_query_node({"messages": [HumanMessage(content="Explain HNSW iterative scan")]})
-        assert analyzed == {"intent": "explain", "entities": ["HNSW"], "router_source": "llm"}
+        assert analyzed == {"intent": "explain", "entities": ["HNSW"], "router_source": "llm",
+                            "retrieval_query": "Explain HNSW iterative scan"}
         assert llm_calls == 1
         assert embed_calls == 1
 

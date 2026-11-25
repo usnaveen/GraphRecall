@@ -75,6 +75,7 @@ class ChatState(TypedDict, total=False):
     intent: str
     entities: list[str]
     router_source: str  # greeting | model | llm | fallback
+    retrieval_query: str  # this turn's question, anchored to the previous turn when it's a follow-up
     
     # Retrieved context
     graph_context: dict
@@ -213,7 +214,16 @@ async def analyze_query_node(state: ChatState) -> dict:
 
     logger.info("analyze_query_node: Analyzing", query=query[:100])
 
-    embed_task = asyncio.create_task(_embed_query_cached(query))
+    # Follow-ups ("what are its limitations?") retrieve on the previous turn's topic too.
+    from backend.services.query_rewrite import contextualize
+
+    earlier = [m.content for m in messages[:-1] if isinstance(m, HumanMessage) and isinstance(m.content, str)]
+    retrieval_query = contextualize(query, earlier[-1] if earlier else None, state.get("entities") or [])
+    if retrieval_query != query:
+        record("chat.followup_rewrite", 0.0)
+        logger.info("analyze_query_node: follow-up anchored", retrieval_query=retrieval_query[:160])
+
+    embed_task = asyncio.create_task(_embed_query_cached(retrieval_query))
     mode = intent_router.router_mode()
     pred = intent_router.classify(query) if mode != "llm" else None
     model_fields = {
@@ -225,7 +235,7 @@ async def analyze_query_node(state: ChatState) -> dict:
     # Trained-router path: no LLM call when the classifier is confident. Entities come from the
     # user's own concept names found in the message; get_context_node adds vector seeds.
     if mode == "model" and pred is not None:
-        entities = await intent_router.mentioned_concepts(user_id, query)
+        entities = await intent_router.mentioned_concepts(user_id, retrieval_query)
         threshold = intent_router.threshold_for(
             pred.intent, intent_router.confidence_threshold(intent_router.default_threshold()))
         quiz_without_topic = pred.intent == "quiz" and not entities and len(query.split()) > 3
@@ -240,7 +250,8 @@ async def analyze_query_node(state: ChatState) -> dict:
                         confidence=round(pred.confidence, 3), entities=entities)
             intent_router.log_decision(user_id=user_id, query=query, intent=pred.intent, source="model",
                                        entities=entities, latency_ms=latency, **model_fields)
-            return {"intent": pred.intent, "entities": entities, "router_source": "model"}
+            return {"intent": pred.intent, "entities": entities, "router_source": "model",
+                    "retrieval_query": retrieval_query}
 
     llm = get_fast_model(temperature=0)
 
@@ -267,7 +278,8 @@ async def analyze_query_node(state: ChatState) -> dict:
     ])
 
     source = "fallback" if mode == "model" else "llm"
-    result_payload = {"intent": "general", "entities": [], "router_source": source}
+    result_payload = {"intent": "general", "entities": [], "router_source": source,
+                      "retrieval_query": retrieval_query}
     llm_intent = None
     try:
         structured_llm = llm.with_structured_output(QueryAnalysis)
@@ -285,13 +297,15 @@ async def analyze_query_node(state: ChatState) -> dict:
             "intent": response.intent,
             "entities": response.entities,
             "router_source": source,
+            "retrieval_query": retrieval_query,
         }
     except Exception as e:
         logger.error("analyze_query_node: Failed", error=str(e))
         # LLM unavailable (quota, timeout): a low-confidence model guess beats "general".
         if pred is not None:
             entities = await intent_router.mentioned_concepts(user_id, query)
-            result_payload = {"intent": pred.intent, "entities": entities, "router_source": "model"}
+            result_payload = {"intent": pred.intent, "entities": entities, "router_source": "model",
+                              "retrieval_query": retrieval_query}
     finally:
         # Ensure parallel embedding completes/caches cleanly before get_context_node starts.
         try:
@@ -319,6 +333,7 @@ async def get_context_node(state: ChatState) -> dict:
 
     last_message = messages[-1] if messages else None
     query = last_message.content if last_message and hasattr(last_message, "content") else ""
+    query = state.get("retrieval_query") or query  # anchored for follow-ups (analyze_query_node)
 
     logger.info(
         "get_context_node: Retrieving context",
