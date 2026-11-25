@@ -44,6 +44,7 @@ from backend.services.retrieval_service import (
     RetrievalService,
     extract_child_centered_window,
     pack_context_chunks,
+    run_vector_sql,
 )
 
 logger = structlog.get_logger()
@@ -533,7 +534,8 @@ async def get_context_node(state: ChatState) -> dict:
             if intent == "show_images" and query_embedding:
                 try:
                     embedding_literal = "[" + ",".join(str(x) for x in query_embedding) + "]"
-                    image_chunks_result = await pg_client.execute_query(
+                    image_chunks_result = await run_vector_sql(
+                        pg_client,
                         """
                         SELECT DISTINCT ON (p.id) p.id, p.id AS parent_chunk_id, p.content, p.images,
                                p.chunk_index, p.page_start, p.page_end,
@@ -543,7 +545,8 @@ async def get_context_node(state: ChatState) -> dict:
                         FROM chunks p
                         JOIN chunks c ON c.parent_chunk_id = p.id
                         JOIN notes n ON p.note_id = n.id
-                        WHERE n.user_id = :user_id
+                        WHERE c.user_id = CAST(:user_id AS uuid)
+                          AND n.user_id = CAST(:user_id AS uuid)
                           AND p.chunk_level = 'parent'
                           AND p.images IS NOT NULL
                           AND p.images != '[]'

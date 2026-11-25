@@ -160,6 +160,31 @@ class PostgresClient:
                 return [dict(row._mapping) for row in result.fetchall()]
             return []
 
+    async def execute_vector_query(
+        self,
+        query: str,
+        params: Optional[dict] = None,
+        *,
+        iterative_scan: str = "relaxed_order",
+        ef_search: Optional[int] = None,
+    ) -> list:
+        """Execute a filtered pgvector HNSW query with transaction-local iterative scan."""
+        async with self.session() as session:
+            if iterative_scan in ("relaxed_order", "strict_order"):
+                # Savepoint prevents GUC error on older pgvector (<0.8) from aborting the transaction.
+                await session.execute(text("SAVEPOINT sp_hnsw_scan"))
+                try:
+                    await session.execute(text(f"SET LOCAL hnsw.iterative_scan = {iterative_scan}"))
+                    if ef_search is not None and int(ef_search) > 0:
+                        await session.execute(text(f"SET LOCAL hnsw.ef_search = {int(ef_search)}"))
+                    await session.execute(text("RELEASE SAVEPOINT sp_hnsw_scan"))
+                except Exception:
+                    await session.execute(text("ROLLBACK TO SAVEPOINT sp_hnsw_scan"))
+            result = await session.execute(text(query), params or {})
+            if result.returns_rows:
+                return [dict(row._mapping) for row in result.fetchall()]
+            return []
+
     async def execute_insert(self, query: str, params: Optional[dict] = None) -> Optional[str]:
         """Execute an insert query and return the inserted ID (if RETURNING clause present)."""
         async with self.session() as session:

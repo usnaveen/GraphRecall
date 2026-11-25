@@ -488,6 +488,8 @@ async def save_chunks_node(state: IngestionState) -> dict:
 
     note_id = state.get("note_id")
     thread_id = state.get("thread_id")
+    raw_user_id = state.get("user_id")
+    chunk_user_id = str(raw_user_id) if _looks_like_uuid(raw_user_id) else None
     if not note_id:
         return {"error": "missing_note_id"}
 
@@ -508,6 +510,7 @@ async def save_chunks_node(state: IngestionState) -> dict:
                 {
                     "id": parent_id,
                     "note_id": note_id,
+                    "user_id": chunk_user_id,
                     "content": parent_group["parent_content"],
                     "index": parent_group["parent_index"],
                     "images": json.dumps(parent_group.get("images", [])),
@@ -529,6 +532,7 @@ async def save_chunks_node(state: IngestionState) -> dict:
                 row = {
                     "id": child_id,
                     "note_id": note_id,
+                    "user_id": chunk_user_id,
                     "parent_id": parent_id,
                     "content": child_text,
                     "index": i,
@@ -581,8 +585,8 @@ async def save_chunks_node(state: IngestionState) -> dict:
                     await session.execute(
                         text(
                             """
-                            INSERT INTO chunks (id, note_id, content, chunk_level, chunk_index, page_start, page_end, images, created_at)
-                            VALUES (:id, :note_id, :content, 'parent', :index, :page_start, :page_end, :images, :created_at)
+                            INSERT INTO chunks (id, note_id, user_id, content, chunk_level, chunk_index, page_start, page_end, images, created_at)
+                            VALUES (:id, :note_id, CAST(:user_id AS uuid), :content, 'parent', :index, :page_start, :page_end, :images, :created_at)
                             ON CONFLICT (id) DO NOTHING
                             """
                         ),
@@ -597,8 +601,8 @@ async def save_chunks_node(state: IngestionState) -> dict:
                     await session.execute(
                         text(
                             """
-                            INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, embedding, created_at)
-                            VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :page_start, :page_end, cast(:embedding as vector), :created_at)
+                            INSERT INTO chunks (id, note_id, user_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, embedding, created_at)
+                            VALUES (:id, :note_id, CAST(:user_id AS uuid), :parent_id, :content, 'child', :index, :page_start, :page_end, cast(:embedding as vector), :created_at)
                             ON CONFLICT (id) DO NOTHING
                             """
                         ),
@@ -613,8 +617,8 @@ async def save_chunks_node(state: IngestionState) -> dict:
                     await session.execute(
                         text(
                             """
-                            INSERT INTO chunks (id, note_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, created_at)
-                            VALUES (:id, :note_id, :parent_id, :content, 'child', :index, :page_start, :page_end, :created_at)
+                            INSERT INTO chunks (id, note_id, user_id, parent_chunk_id, content, chunk_level, chunk_index, page_start, page_end, created_at)
+                            VALUES (:id, :note_id, CAST(:user_id AS uuid), :parent_id, :content, 'child', :index, :page_start, :page_end, :created_at)
                             ON CONFLICT (id) DO NOTHING
                             """
                         ),

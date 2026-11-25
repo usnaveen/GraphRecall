@@ -34,6 +34,19 @@ def _parse_images(raw: Any) -> list[Any]:
     return []
 
 
+async def run_vector_sql(
+    pg: Any,
+    sql: str,
+    params: dict[str, Any],
+    *,
+    ef_search: Optional[int] = None,
+) -> list:
+    """Execute a pgvector HNSW query with iterative scan when backed by PostgresClient."""
+    if hasattr(pg, "execute_vector_query"):
+        return await pg.execute_vector_query(sql, params, ef_search=ef_search)
+    return await pg.execute_query(sql, params)
+
+
 def reciprocal_rank_fusion(
     ranked_lists: list[tuple[str, float, list[dict[str, Any]]]],
     *,
@@ -382,74 +395,44 @@ class RetrievalService:
         focused_source_ids: Optional[list[str]] = None,
         pg_client: Any = None,
     ) -> List[Dict[str, Any]]:
-        """Semantic vector search on child chunks with parent join."""
+        """Semantic vector search on child chunks using chunks.user_id + HNSW iterative scan."""
         emb = query_embedding if query_embedding is not None else await self.embedding_service.embed_query(query)
         if not emb:
             return []
 
         pg = pg_client or await get_postgres_client()
         embedding_literal = "[" + ",".join(str(x) for x in emb) + "]"
-
+        scoped_clause = "AND n.id = ANY(:source_ids)" if focused_source_ids else ""
+        params: dict[str, Any] = {"embedding": embedding_literal, "user_id": user_id, "limit": limit}
         if focused_source_ids:
-            rows = await pg.execute_query(
-                """
-                SELECT
-                    c.id,
-                    c.parent_chunk_id,
-                    c.content AS child_content,
-                    c.chunk_index,
-                    p.content AS parent_content,
-                    p.images,
-                    c.source_location,
-                    c.page_start,
-                    c.page_end,
-                    c.note_id,
-                    n.title,
-                    1 - (c.embedding <=> cast(:embedding as vector)) AS similarity
-                FROM chunks c
-                LEFT JOIN chunks p ON c.parent_chunk_id = p.id
-                JOIN notes n ON c.note_id = n.id
-                WHERE c.chunk_level = 'child'
-                  AND c.embedding IS NOT NULL
-                  AND n.user_id = :user_id
-                  AND n.id = ANY(:source_ids)
-                ORDER BY c.embedding <=> cast(:embedding as vector)
-                LIMIT :limit
-                """,
-                {
-                    "embedding": embedding_literal,
-                    "user_id": user_id,
-                    "source_ids": focused_source_ids,
-                    "limit": limit,
-                },
-            )
-        else:
-            rows = await pg.execute_query(
-                """
-                SELECT
-                    c.id,
-                    c.parent_chunk_id,
-                    c.content AS child_content,
-                    c.chunk_index,
-                    p.content AS parent_content,
-                    p.images,
-                    c.source_location,
-                    c.page_start,
-                    c.page_end,
-                    c.note_id,
-                    n.title,
-                    1 - (c.embedding <=> cast(:embedding as vector)) AS similarity
-                FROM chunks c
-                LEFT JOIN chunks p ON c.parent_chunk_id = p.id
-                JOIN notes n ON c.note_id = n.id
-                WHERE c.chunk_level = 'child'
-                  AND c.embedding IS NOT NULL
-                  AND n.user_id = :user_id
-                ORDER BY c.embedding <=> cast(:embedding as vector)
-                LIMIT :limit
-                """,
-                {"embedding": embedding_literal, "user_id": user_id, "limit": limit},
-            )
+            params["source_ids"] = focused_source_ids
+
+        sql = f"""
+            SELECT
+                c.id,
+                c.parent_chunk_id,
+                c.content AS child_content,
+                c.chunk_index,
+                p.content AS parent_content,
+                p.images,
+                c.source_location,
+                c.page_start,
+                c.page_end,
+                c.note_id,
+                n.title,
+                1 - (c.embedding <=> cast(:embedding as vector)) AS similarity
+            FROM chunks c
+            LEFT JOIN chunks p ON c.parent_chunk_id = p.id
+            JOIN notes n ON c.note_id = n.id
+            WHERE c.user_id = CAST(:user_id AS uuid)
+              AND n.user_id = CAST(:user_id AS uuid)
+              AND c.chunk_level = 'child'
+              AND c.embedding IS NOT NULL
+              {scoped_clause}
+            ORDER BY c.embedding <=> cast(:embedding as vector)
+            LIMIT :limit
+        """
+        rows = await run_vector_sql(pg, sql, params)
 
         results: list[dict[str, Any]] = []
         for row in rows or []:
@@ -497,7 +480,8 @@ class RetrievalService:
             FROM chunks c
             LEFT JOIN chunks p ON c.parent_chunk_id = p.id
             JOIN notes n ON c.note_id = n.id
-            WHERE n.user_id = :user_id
+            WHERE c.user_id = CAST(:user_id AS uuid)
+              AND n.user_id = CAST(:user_id AS uuid)
               AND c.chunk_level = 'child'
               {scoped_clause}
               AND c.content_tsv @@ websearch_to_tsquery('english', :query)
@@ -520,7 +504,8 @@ class RetrievalService:
             FROM chunks c
             LEFT JOIN chunks p ON c.parent_chunk_id = p.id
             JOIN notes n ON c.note_id = n.id
-            WHERE n.user_id = :user_id
+            WHERE c.user_id = CAST(:user_id AS uuid)
+              AND n.user_id = CAST(:user_id AS uuid)
               AND c.chunk_level = 'child'
               {scoped_clause}
               AND to_tsvector('english', coalesce(c.content, '')) @@ plainto_tsquery('english', :query)
@@ -602,13 +587,15 @@ class RetrievalService:
                 FROM chunks c
                 LEFT JOIN chunks p ON c.parent_chunk_id = p.id
                 JOIN notes n ON c.note_id = n.id
-                WHERE n.user_id = :user_id
+                WHERE c.user_id = CAST(:user_id AS uuid)
+                  AND n.user_id = CAST(:user_id AS uuid)
                   AND n.id = ANY(:note_ids)
                   AND c.chunk_level = 'child'
                   AND c.embedding IS NOT NULL
                 ORDER BY c.embedding <=> cast(:embedding as vector)
                 LIMIT :limit
             """
+            rows = await run_vector_sql(pg, sql, params)
         else:
             sql = """
                 SELECT
@@ -626,14 +613,14 @@ class RetrievalService:
                 FROM chunks c
                 LEFT JOIN chunks p ON c.parent_chunk_id = p.id
                 JOIN notes n ON c.note_id = n.id
-                WHERE n.user_id = :user_id
+                WHERE c.user_id = CAST(:user_id AS uuid)
+                  AND n.user_id = CAST(:user_id AS uuid)
                   AND n.id = ANY(:note_ids)
                   AND c.chunk_level = 'child'
                 ORDER BY c.chunk_index ASC
                 LIMIT :limit
             """
-
-        rows = await pg.execute_query(sql, params)
+            rows = await pg.execute_query(sql, params)
         results: list[dict[str, Any]] = []
         for row in rows or []:
             r = dict(row)
