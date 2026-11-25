@@ -159,7 +159,7 @@ struct ProfileView: View {
                     Text(identityName)
                         .font(GRType.headline)
                         .foregroundStyle(GRColor.textPrimary)
-                    Text(tokenPresent ? "Session active · reviews sync" : "Not signed in · open Settings to sign in")
+                    Text(AuthSession.shared.isSignedIn ? AuthSession.shared.statusLabel : "Not signed in · open Settings to sign in")
                         .font(GRType.caption)
                         .foregroundStyle(GRColor.textSecondary)
                     HStack(spacing: 6) {
