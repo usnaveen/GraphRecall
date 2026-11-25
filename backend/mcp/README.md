@@ -1,5 +1,11 @@
 # GraphRecall MCP server (NAV-28)
 
+> **Looking for the remote, per-user MCP server for an always-on agent (Grok Bot)?**
+> See `backend/agent_bridge/` and `docs/agent-bridge/PROPOSAL.md`. That server uses
+> streamable HTTP + scoped agent keys and talks to the DB directly with per-user
+> filtering; this NAV-28 server is a local stdio adapter that forwards a user JWT to the
+> FastAPI routes. Both now support `mcp` SDK 1.x and 2.x.
+
 Thin **HTTP adapters** from MCP tools → existing FastAPI routes. No business-logic fork; no FastAPI app import (avoids circular imports).
 
 ## Auth

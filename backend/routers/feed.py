@@ -11,6 +11,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from backend.agent_bridge import bridge_enabled
 from backend.auth.middleware import get_current_user
 from backend.agent_v2.enqueue import enqueue_durable_job
 from backend.agent_v2.protocols import FeedBufferEnsurePayload
@@ -100,6 +101,28 @@ async def get_feed(
         )
         
         response = await feed_service.get_feed(request)
+
+        # Agent bridge: prepend approved, agent-curated items (off unless enabled).
+        if bridge_enabled() and (
+            parsed_types is None or FeedItemType.AGENT_CURATED in parsed_types
+        ):
+            try:
+                from backend.agent_bridge.feed_integration import (
+                    agent_feed_items,
+                    filter_by_domains,
+                    merge_into_feed,
+                )
+                from backend.agent_bridge.repository import PostgresBridgeRepository
+
+                curated = await agent_feed_items(
+                    PostgresBridgeRepository(pg_client), request.user_id, limit=5
+                )
+                curated = await filter_by_domains(
+                    neo4j_client, request.user_id, curated, parsed_domains
+                )
+                response.items = merge_into_feed(curated, response.items, max_items)
+            except Exception as e:  # never break the core feed
+                logger.warning("Feed: agent-curated items skipped", error=str(e))
         
         # Inject Daily Goal & Trigger Durable Pre-gen Buffer
         response.daily_goal = await feed_service.get_daily_goal(request.user_id)
