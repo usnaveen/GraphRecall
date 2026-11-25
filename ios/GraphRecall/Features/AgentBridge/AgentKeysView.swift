@@ -202,7 +202,9 @@ struct AgentKeyCreateSheet: View {
     let model: AgentKeysViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var name = "Grok Bot"
-    @State private var scopes: Set<AgentScope> = Set(AgentScope.allCases)
+    // Least privilege by default: reading the knowledge map only. Writing to the feed or answering
+    // hand-off questions is opt-in per key.
+    @State private var scopes: Set<AgentScope> = [.readKnowledge]
     @State private var expiresInDays = 90
     @State private var copied = false
 

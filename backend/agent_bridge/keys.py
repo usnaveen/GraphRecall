@@ -24,7 +24,8 @@ SCOPE_BRIDGE_ANSWER = "bridge:answer"
 ALL_SCOPES: frozenset[str] = frozenset(
     {SCOPE_READ_KNOWLEDGE, SCOPE_WRITE_FEED, SCOPE_BRIDGE_ANSWER}
 )
-DEFAULT_SCOPES: tuple[str, ...] = (SCOPE_READ_KNOWLEDGE, SCOPE_WRITE_FEED, SCOPE_BRIDGE_ANSWER)
+# Least privilege: a new key can only read the knowledge map unless the user turns on more.
+DEFAULT_SCOPES: tuple[str, ...] = (SCOPE_READ_KNOWLEDGE,)
 
 
 class InvalidScopeError(ValueError):

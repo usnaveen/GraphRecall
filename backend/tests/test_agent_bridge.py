@@ -482,7 +482,10 @@ async def test_rest_keys_approvals_and_ask_agent(services, repo):
     ta = httpx.AsyncClient(transport=httpx.ASGITransport(app=app_a), base_url="http://t")
     tb = httpx.AsyncClient(transport=httpx.ASGITransport(app=app_b), base_url="http://t")
     async with ta, tb:
-        r = await ta.post("/api/agent-bridge/keys", json={"name": "Grok Bot"})
+        default = await ta.post("/api/agent-bridge/keys", json={"name": "Read-only"})
+        assert default.json()["key"]["scopes"] == ["read:knowledge"]  # least privilege by default
+        r = await ta.post("/api/agent-bridge/keys", json={
+            "name": "Grok Bot", "scopes": ["read:knowledge", "write:feed", "bridge:answer"]})
         assert r.status_code == 201
         body = r.json()
         assert body["api_key"].startswith("grk_") and "key_hash" not in body["key"]

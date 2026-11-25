@@ -8,6 +8,22 @@
 
 Thin **HTTP adapters** from MCP tools → existing FastAPI routes. No business-logic fork; no FastAPI app import (avoids circular imports).
 
+## Security: use the scoped server for agents
+
+This stdio adapter forwards **your full login token**, so the agent can do anything you can
+(delete notes, change your profile). Use it only for your own local development. To give an
+agent access, create a key in the app (Settings → Agent → Agent keys); new keys default to
+`read:knowledge` only. Point the agent at the remote server instead:
+
+```json
+{"mcpServers": {"graphrecall": {"type": "http", "url": "https://<your-api-host>/mcp/agent/",
+  "headers": {"Authorization": "Bearer grk_..."}}}}
+```
+
+Keys are per user, hashed at rest, scoped, expiring and revocable; every call is audited.
+OAuth 2.1 (needed for claude.ai and ChatGPT connectors) is the planned next step; see
+`interview-prep/graphrecall-build/MODEL-OPTIONS.md` section 4.
+
 ## Auth
 
 | Env | Default | Purpose |
