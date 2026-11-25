@@ -97,6 +97,21 @@ class ProfileArgs(_Args):
     limit: int = Field(10, ge=1, le=50, description="Max weak/strong concepts to return")
 
 
+class AssessArgs(_Args):
+    names: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(..., min_length=1, max_length=100)
+    track_unknown: bool = Field(False, description="Queue unexposed names so the app asks the user (needs write:feed)")
+
+
+class BlueprintArgs(_Args):
+    pass
+
+
+class LaterArgs(_Args):
+    text: str = Field(..., min_length=1, max_length=1000)
+    url: Optional[str] = Field(None, max_length=2000)
+    when: Optional[str] = Field(None, max_length=60, description="e.g. 'tomorrow', 'this weekend', 'in 3 days'")
+
+
 class SearchArgs(_Args):
     query: str = Field(..., min_length=1, max_length=200)
     limit: int = Field(10, ge=1, le=50)
@@ -208,6 +223,55 @@ _iso = iso
 
 async def _profile(p: AgentPrincipal, s: BridgeServices, a: ProfileArgs) -> dict:
     return await s.knowledge.get_knowledge_profile(p.user_id, limit=a.limit)
+
+
+async def _assess(p: AgentPrincipal, s: BridgeServices, a: AssessArgs) -> dict:
+    from backend.services import knowledge_map as km
+
+    if a.track_unknown:
+        require_scope(p, SCOPE_WRITE_FEED)
+    results = await km.assess(p.user_id, a.names, pg=s.knowledge.pg, neo4j=s.knowledge.neo4j, max_names=100)
+    if a.track_unknown:
+        for r in results:
+            if r.status == "unexposed" and r.self_rating is None:
+                await km.upsert_skill(s.knowledge.pg, p.user_id, r.name, source="agent")
+    keep = ("name", "status", "mastery", "confidence", "basis", "concept_name", "domain", "evidence")
+    return {"results": [{k: v for k, v in r.as_dict().items() if k in keep} for r in results],
+            "legend": {"strong": "tested well, or backed by coursework/projects/self-rating",
+                       "shaky": "struggled when tested, or self-rated low",
+                       "seen": "studied or claimed, never tested",
+                       "unexposed": "no evidence the user has met this"}}
+
+
+async def _blueprint(p: AgentPrincipal, s: BridgeServices, a: BlueprintArgs) -> dict:
+    from backend.services import knowledge_map as km
+
+    pg = s.knowledge.pg
+    profile = await pg.execute_query(
+        "SELECT headline, education_status, institution, program, graduation_year, goals FROM user_profile "
+        "WHERE user_id = CAST(:u AS uuid)", {"u": p.user_id})
+    courses = await pg.execute_query(
+        "SELECT code, name, term, grade, topics FROM user_courses WHERE user_id = CAST(:u AS uuid)", {"u": p.user_id})
+    projects = await pg.execute_query(
+        "SELECT name, summary, skills, started, ended FROM user_projects WHERE user_id = CAST(:u AS uuid)",
+        {"u": p.user_id})
+    knowledge = await km.summary(p.user_id, pg=pg, neo4j=s.knowledge.neo4j)
+    knowledge.pop("items", None)
+    return to_jsonable({"profile": dict(profile[0]) if profile else {}, "courses": [dict(c) for c in courses or []],
+                        "projects": [dict(x) for x in projects or []], "knowledge": knowledge})
+
+
+async def _later(p: AgentPrincipal, s: BridgeServices, a: LaterArgs) -> dict:
+    from backend.services.later import parse_later
+
+    if a.url and not is_safe_http_url(a.url):
+        raise ToolError("invalid_arguments", "url must be a public http(s) URL")
+    parsed = parse_later(a.text, when=a.when)
+    rows = await s.knowledge.pg.execute_query(
+        "INSERT INTO later_items (user_id, text, url, source, when_phrase, show_at) VALUES "
+        "(CAST(:u AS uuid), :t, :url, 'agent', :ph, :at) RETURNING id::text AS id, show_at",
+        {"u": p.user_id, "t": parsed.text or a.url or a.text, "url": a.url, "ph": parsed.phrase, "at": parsed.show_at})
+    return {"ok": True, "id": rows[0]["id"], "show_at": iso(rows[0]["show_at"])}
 
 
 async def _search(p: AgentPrincipal, s: BridgeServices, a: SearchArgs) -> dict:
@@ -371,6 +435,18 @@ TOOLS: dict[str, ToolSpec] = {t.name: t for t in [
     ToolSpec("get_knowledge_profile", SCOPE_READ_KNOWLEDGE,
              "Summary of the user's knowledge: domains with average mastery, weakest and "
              "strongest concepts, and how many reviews are due.", ProfileArgs, _profile),
+    ToolSpec("assess_concepts", SCOPE_READ_KNOWLEDGE,
+             "Before teaching, check what the user already knows. Pass concept or skill names (e.g. a "
+             "paper's prerequisites). Each returns strong / shaky / seen (studied, untested) / unexposed, "
+             "with mastery 0-1, confidence and the evidence kinds behind it. Skip what they know, slow down "
+             "on shaky items, introduce unexposed ones from scratch.", AssessArgs, _assess),
+    ToolSpec("get_capability_blueprint", SCOPE_READ_KNOWLEDGE,
+             "The user's education, courses with grades and topics, projects with skills, and a knowledge "
+             "summary by status and domain. Never includes resume text or note bodies.", BlueprintArgs, _blueprint),
+    ToolSpec("suggest_for_later", SCOPE_WRITE_FEED,
+             "Queue an article, paper or topic in the user's 'Later' list so it returns in their feed at a "
+             "chosen time ('tomorrow', 'this weekend', 'in 3 days'). Labelled as from their agent.",
+             LaterArgs, _later),
     ToolSpec("search_concepts", SCOPE_READ_KNOWLEDGE,
              "Find the user's concepts by name/definition substring, with mastery (0-1).",
              SearchArgs, _search),

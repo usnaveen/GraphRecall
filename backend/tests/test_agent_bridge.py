@@ -515,3 +515,16 @@ async def test_rest_keys_approvals_and_ask_agent(services, repo):
 
         assert (await ta.delete(f"/api/agent-bridge/keys/{body['key']['id']}")).status_code == 200
         assert await authenticate_agent_key(repo, body["api_key"]) is None
+
+
+# --- knowledge-map tools (feat/knowledge-map) -------------------------------------------------
+
+def test_knowledge_map_tools_registered_with_scopes():
+    from backend.agent_bridge.keys import SCOPE_READ_KNOWLEDGE, SCOPE_WRITE_FEED
+    from backend.agent_bridge.tools import TOOLS
+
+    assert TOOLS["assess_concepts"].scope == SCOPE_READ_KNOWLEDGE
+    assert TOOLS["get_capability_blueprint"].scope == SCOPE_READ_KNOWLEDGE
+    assert TOOLS["suggest_for_later"].scope == SCOPE_WRITE_FEED
+    props = TOOLS["assess_concepts"].input_schema["properties"]
+    assert "user_id" not in props and "names" in props
