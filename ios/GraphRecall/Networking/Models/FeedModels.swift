@@ -10,14 +10,27 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
     case showcase
     case codeChallenge = "code_challenge"
     case territory
+    /// Curated by the user's external agent (agent bridge, PR #3). Pending items never reach
+    /// `/api/feed`; only ones the user approved in the inbox.
+    case agentCurated = "agent_curated"
+    /// A wire type this build doesn't know (e.g. added server-side later). Hidden from the feed
+    /// rather than mis-rendered as a blank Term Card. Never sent back to the server.
+    case unknown
 
     /// Accept backend wire values *and* web CardType aliases (`quiz`, `fillblank`, etc.).
+    /// Unrecognised values decode as `.unknown` (hidden), not as a flashcard.
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
-        self = FeedItemType.parse(raw)
+        self = FeedItemType.parseKnown(raw) ?? .unknown
     }
 
+    /// Lenient mapping for locally generated cards (chat create-card, concept dump), where a
+    /// missing/odd type really is a term card.
     static func parse(_ raw: String) -> FeedItemType {
+        parseKnown(raw) ?? .flashcard
+    }
+
+    static func parseKnown(_ raw: String) -> FeedItemType? {
         switch raw.lowercased() {
         case "flashcard", "term_card": return .flashcard
         case "mcq", "quiz": return .mcq
@@ -28,7 +41,8 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         case "showcase", "concept_showcase": return .showcase
         case "code_challenge": return .codeChallenge
         case "territory": return .territory
-        default: return .flashcard
+        case "agent_curated": return .agentCurated
+        default: return nil
         }
     }
 
@@ -43,6 +57,8 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         case .showcase: return "Concept Showcase"
         case .codeChallenge: return "Code Challenge"
         case .territory: return "Map the Territory"
+        case .agentCurated: return "From your agent"
+        case .unknown: return "Card"
         }
     }
 
@@ -53,6 +69,8 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         case .fillBlank, .codeChallenge, .territory: return "cyan"
         case .diagram: return "purple"
         case .screenshot, .infographic: return "coral"
+        case .agentCurated: return "cyan"
+        case .unknown: return "accent"
         }
     }
 }

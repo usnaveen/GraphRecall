@@ -37,6 +37,8 @@ extension FeedItemType {
         case .diagram: return "point.3.connected.trianglepath.dotted"
         case .screenshot, .infographic: return "photo"
         case .territory: return "map.fill"
+        case .agentCurated: return "sparkles"
+        case .unknown: return "questionmark.square.dashed"
         }
     }
 
@@ -46,6 +48,8 @@ extension FeedItemType {
         case .mcq, .diagram: return .purple
         case .fillBlank, .codeChallenge, .territory: return .cyan
         case .screenshot, .infographic: return .coral
+        case .agentCurated: return .cyan
+        case .unknown: return .neutral
         }
     }
 }

@@ -120,7 +120,13 @@ async def lifespan(app: FastAPI):
 
     lag_monitor = asyncio.create_task(telemetry.monitor_event_loop())
 
-    yield
+    # Mounted sub-apps do not get lifespan events, so run the MCP session manager here.
+    from contextlib import AsyncExitStack
+
+    async with AsyncExitStack() as bridge_stack:
+        if _agent_bridge_mcp is not None:
+            await bridge_stack.enter_async_context(_agent_bridge_mcp.lifespan())
+        yield
 
     # Shutdown
     lag_monitor.cancel()
@@ -188,6 +194,22 @@ app.include_router(later_router)     # /api/later - "Show me this later" capture
 app.include_router(leetcode_router)  # /api/leetcode - Pattern/pseudocode/mistake recall
 app.include_router(territory_router) # /api/territory - Map-the-territory cards
 app.include_router(knowledge_map_router)  # /api/knowledge-map, /api/profile - Knowledge map, profile, resume
+
+# Agent bridge (external always-on agent <-> GraphRecall). Off unless AGENT_BRIDGE_ENABLED=1.
+# See docs/agent-bridge/PROPOSAL.md.
+from backend.agent_bridge import bridge_enabled as _agent_bridge_enabled
+
+_agent_bridge_mcp = None
+if _agent_bridge_enabled():
+    from backend.agent_bridge.mcp_app import AgentBridgeMCPApp, default_services
+    from backend.agent_bridge.router import router as agent_bridge_router
+    from backend.agent_bridge.keys import check_key_config
+
+    check_key_config()  # fails startup if ENVIRONMENT=production and no AGENT_KEY_PEPPER
+
+    app.include_router(agent_bridge_router)  # /api/agent-bridge - keys, approvals, ask-my-agent
+    _agent_bridge_mcp = AgentBridgeMCPApp(default_services)
+    app.mount("/mcp/agent", _agent_bridge_mcp)  # MCP streamable HTTP for the agent
 
 
 # ============================================================================

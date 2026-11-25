@@ -25,6 +25,9 @@ class FeedItemType(str, Enum):
     CONCEPT_SHOWCASE = "showcase"
     CODE_CHALLENGE = "code_challenge"
     TERRITORY = "territory"  # map-the-territory: name a concept's subtopics (answer key = graph)
+    # Curated by the user's external agent via the agent bridge (only emitted when
+    # AGENT_BRIDGE_ENABLED=1). TODO(agent-bridge): render this type in iOS + web clients.
+    AGENT_CURATED = "agent_curated"
 
 
 class DifficultyLevel(str, Enum):

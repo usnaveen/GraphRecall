@@ -44,6 +44,16 @@ struct FeedTypedCard: View {
             case .territory:
                 TerritoryCardBody(item: item)
                     .id(item.id)
+            case .agentCurated:
+                AgentCuratedCardBody(item: item, revealed: revealed, onReveal: onReveal)
+            case .unknown:
+                // Normally filtered out by FeedViewModel; generic plain-text fallback if one slips through.
+                Text(verbatim: item.title)
+                    .font(GRType.headline)
+                    .foregroundStyle(GRColor.textPrimary)
+                Text("This card type needs a newer version of GraphRecall.")
+                    .font(GRType.caption)
+                    .foregroundStyle(GRColor.textTertiary)
             }
         }
     }
@@ -72,7 +82,7 @@ struct FeedTypedCard: View {
 
     private var typeColor: Color {
         switch item.itemType {
-        case .fillBlank, .codeChallenge, .territory: return GRColor.accentCyan
+        case .fillBlank, .codeChallenge, .territory, .agentCurated: return GRColor.accentCyan
         case .screenshot, .infographic: return Color(red: 1, green: 0.42, blue: 0.42)
         case .diagram: return Color(red: 0.61, green: 0.35, blue: 0.71)
         default: return GRColor.accent

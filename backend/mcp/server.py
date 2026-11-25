@@ -37,33 +37,48 @@ def _mcp_available() -> bool:
 
 
 async def _run_mcp_stdio() -> None:
-    """Official MCP SDK stdio loop."""
+    """Official MCP SDK stdio loop (supports mcp 1.x decorators and 2.x callbacks)."""
+    import inspect
+
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
     import mcp.types as types
 
-    app = Server("graphrecall")
-
-    @app.list_tools()
-    async def list_tools() -> list[types.Tool]:
-        tools: list[types.Tool] = []
-        for t in TOOL_DEFS:
-            tools.append(
-                types.Tool(
-                    name=t["name"],
-                    description=t.get("description", ""),
-                    inputSchema=t.get("inputSchema") or {"type": "object"},
-                )
+    def _tools() -> list[types.Tool]:
+        return [
+            types.Tool(
+                name=t["name"],
+                description=t.get("description", ""),
+                inputSchema=t.get("inputSchema") or {"type": "object"},
             )
-        return tools
+            for t in TOOL_DEFS
+        ]
 
-    @app.call_tool()
-    async def call_tool(
-        name: str, arguments: dict[str, Any] | None
-    ) -> list[types.TextContent]:
+    async def _call(name: str, arguments: dict[str, Any] | None) -> list[types.TextContent]:
         result = await asyncio.to_thread(dispatch_tool, name, arguments or {})
-        text = result_as_text(result)
-        return [types.TextContent(type="text", text=text)]
+        return [types.TextContent(type="text", text=result_as_text(result))]
+
+    if "on_call_tool" in inspect.signature(Server.__init__).parameters:
+        # mcp 2.x: decorators were replaced by constructor callbacks.
+        async def on_list_tools(ctx: Any, params: Any) -> Any:
+            return types.ListToolsResult(tools=_tools())
+
+        async def on_call_tool(ctx: Any, params: Any) -> Any:
+            return types.CallToolResult(content=await _call(params.name, params.arguments))
+
+        app = Server("graphrecall", on_list_tools=on_list_tools, on_call_tool=on_call_tool)
+    else:
+        app = Server("graphrecall")
+
+        @app.list_tools()
+        async def list_tools() -> list[types.Tool]:
+            return _tools()
+
+        @app.call_tool()
+        async def call_tool(
+            name: str, arguments: dict[str, Any] | None
+        ) -> list[types.TextContent]:
+            return await _call(name, arguments)
 
     async with stdio_server() as (read_stream, write_stream):
         await app.run(
