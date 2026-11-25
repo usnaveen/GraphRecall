@@ -167,3 +167,46 @@ async def delete_note(
     except Exception as e:
         logger.error("Notes: Error deleting note", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{note_id}/structure-cards")
+async def make_structure_cards(
+    note_id: str,
+    replace: bool = Query(default=False, description="Delete this note's earlier structure cards first"),
+    current_user: dict = Depends(get_current_user),
+):
+    """Make recall cards from a note's bullet lists and "Term: definition" lines. No LLM call.
+
+    Cards attach to the concepts this note explains (best name match to the list heading or term).
+    """
+    from backend.services.structure_cards import save_structure_cards
+
+    user_id = str(current_user["id"])
+    pg = await get_postgres_client()
+    rows = await pg.execute_query(
+        "SELECT id, content_text FROM notes WHERE id::text = :note_id AND user_id = :user_id",
+        {"note_id": note_id, "user_id": user_id},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Note not found")
+    try:
+        neo = await get_neo4j_client()
+        concepts = await neo.execute_query(
+            """
+            MATCH (n:NoteSource {user_id: $user_id})-[:EXPLAINS]->(c:Concept {user_id: $user_id})
+            WHERE n.id = $note_id
+            RETURN c.id AS id, c.name AS name
+            """,
+            {"user_id": user_id, "note_id": note_id},
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Notes: concept lookup for structure cards failed", error=str(e))
+        concepts = []
+    concepts = [{"id": str(c["id"]), "name": c.get("name") or ""} for c in concepts or [] if c.get("id")]
+    if not concepts:
+        return {"note_id": note_id, "card_ids": [], "reason": "note has no concepts yet"}
+    ids = await save_structure_cards(
+        pg, user_id=user_id, note_id=note_id, text=rows[0].get("content_text") or "",
+        concepts=concepts, fallback_concept_id=concepts[0]["id"], replace=replace,
+    )
+    return {"note_id": note_id, "card_ids": ids, "count": len(ids)}

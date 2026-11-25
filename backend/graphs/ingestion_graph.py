@@ -1528,7 +1528,7 @@ async def link_synthesis_node(state: IngestionState) -> dict:
         return {"synthesis_completed": False, "error": str(e)}
 
 
-async def generate_flashcards_node(state: IngestionState) -> dict:
+async def _generate_llm_flashcards(state: IngestionState) -> dict:
     """
     Node 7: Generate flashcards from extracted concepts.
     
@@ -1688,6 +1688,42 @@ Return ONLY valid JSON:
     except Exception as e:
         logger.error("generate_flashcards_node: Save failed", error=str(e))
         return {"term_card_ids": []}
+
+
+async def generate_flashcards_node(state: IngestionState) -> dict:
+    """Cards from the note's own structure (no LLM: bullet lists, "Term: definition" lines),
+    then LLM cloze cards. Structure cards still land when the LLM step fails or is out of quota."""
+    structure_ids: list[str] = []
+    concepts = state.get("user_approved_concepts") or state.get("extracted_concepts", [])
+    if concepts:
+        try:
+            from backend.services.structure_cards import save_structure_cards
+
+            name_to_id = state.get("concept_name_to_id", {}) or {}
+            created_ids = set(state.get("created_concept_ids", []) or [])
+            resolved = []
+            for c in concepts:
+                cid = _resolve_concept_uuid(candidate=c.get("name", ""), concepts=concepts,
+                                            concept_name_to_id=name_to_id, created_ids=created_ids)
+                if cid:
+                    resolved.append({"id": cid, "name": c.get("name", "")})
+            fallback = resolved[0]["id"] if resolved else None
+            pg_client = await get_postgres_client()
+            structure_ids = await save_structure_cards(
+                pg_client, user_id=state.get("user_id", "default_user"), note_id=state.get("note_id"),
+                text=state.get("raw_content", ""), concepts=resolved, fallback_concept_id=fallback,
+            )
+        except Exception as e:
+            logger.warning("generate_flashcards_node: structure cards failed", error=str(e))
+
+    result = await _generate_llm_flashcards(state)
+    if structure_ids:
+        result = dict(result)
+        result["term_card_ids"] = structure_ids + list(result.get("term_card_ids") or [])
+        meta = dict(result.get("processing_metadata") or state.get("processing_metadata") or {})
+        meta["structure_cards_generated"] = len(structure_ids)
+        result["processing_metadata"] = meta
+    return result
 
 
 async def generate_quiz_node(state: IngestionState) -> dict:
