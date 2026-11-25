@@ -4,9 +4,9 @@ name: backend-ci
 
 on:
   push:
-    paths: ["backend/**", "requirements.txt", "pyproject.toml", ".github/workflows/backend-ci.yml"]
+    paths: ["backend/**", "eval/**", "requirements.txt", "pyproject.toml", ".github/workflows/backend-ci.yml"]
   pull_request:
-    paths: ["backend/**", "requirements.txt", "pyproject.toml", ".github/workflows/backend-ci.yml"]
+    paths: ["backend/**", "eval/**", "requirements.txt", "pyproject.toml", ".github/workflows/backend-ci.yml"]
   workflow_call:   # reused by deploy.yml: no deploy without a green suite
 
 concurrency:
@@ -14,6 +14,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  offline-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEO4J_URI: bolt://127.0.0.1:7699
+      GOOGLE_API_KEY: test-key
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -r requirements.txt pytest pytest-asyncio ruff
+      - name: Lint (errors only)
+        run: ruff check backend eval --select E9,F63,F7,F82
+      - name: GraphRAG deterministic CI recall gate
+        run: python eval/graphrag/ci_recall_gate.py
+      - name: Offline Step #8/#9 and hardening unit tests
+        run: |
+          pytest --noconftest -v \
+            backend/tests/test_reliability_hardening.py \
+            backend/tests/test_code_sandbox_cards.py \
+            backend/tests/test_grounding_guard.py \
+            backend/tests/test_query_rewriter.py \
+            backend/tests/test_reranker.py \
+            backend/tests/test_rag_cache.py \
+            backend/tests/test_creative_cards.py \
+            backend/tests/test_embedding_cache.py \
+            backend/tests/test_query_owner_filters.py \
+            backend/tests/test_spaced_repetition.py \
+            backend/tests/test_multi_tenant_ann.py
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25

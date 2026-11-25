@@ -11,11 +11,8 @@ Flow:
 START → analyze_query → (conditional) → [tools] → get_context → generate_response → END
 """
 
-import hashlib
-import json
 import os
 import re
-import time
 from typing import Annotated, Literal, Optional
 
 import structlog
@@ -36,10 +33,28 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
+import json
+
 from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
 from backend.graphs.checkpointer import get_checkpointer
+from backend.services.grounding_guard import (
+    evaluate_retrieval_confidence,
+    verify_citations,
+)
 from backend.services.intent_router import router as intent_router
+from backend.services.rag_cache import (
+    CacheBackend,
+    CorpusVersionedResponseCache,
+    EmbeddingCache,
+    InMemoryTTLCache,
+    RedisCacheBackend,
+)
+from backend.services.reranker import (
+    LexicalOverlapReranker,
+    mmr_select_chunks,
+    order_lost_in_middle,
+)
 from backend.services.retrieval_service import (
     RetrievalService,
     extract_child_centered_window,
@@ -132,15 +147,79 @@ _TRIVIAL_GREETING_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Short-lived process cache keyed by (id(embedder), sha256(query), dims) so analyze_query_node
-# embeds in parallel with intent classification and get_context_node reuses it without bloating checkpoints.
-_QUERY_EMBED_CACHE: dict[tuple[int, str, int], tuple[float, Optional[list[float]]]] = {}
-_EMBED_CACHE_TTL_S = 30.0
-_EMBED_CACHE_MAX = 128
+_L2_CACHEABLE_INTENTS: frozenset[str] = frozenset({"explain", "compare", "find", "summarize"})
+
+
+def _extract_text(content: object) -> str:
+    """Flatten string, None, or multimodal list content blocks into plain text."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, (list, tuple)):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                if block:
+                    parts.append(block)
+            elif isinstance(block, dict):
+                block_type = block.get("type")
+                if block_type is None or block_type == "text":
+                    text = block.get("text")
+                    if isinstance(text, str) and text:
+                        parts.append(text)
+        return " ".join(parts).strip()
+    return str(content)
 
 
 def _is_trivial_greeting(query: str) -> bool:
     return bool(_TRIVIAL_GREETING_RE.match(query or ""))
+
+
+def _build_cache_backend() -> CacheBackend:
+    redis_url = (os.getenv("REDIS_URL") or "").strip()
+    if redis_url:
+        return RedisCacheBackend(redis_url)
+    return InMemoryTTLCache(max_entries=1024)
+
+
+class _ChatEmbeddingCache(EmbeddingCache):
+    """L1 EmbeddingCache with synchronous `.clear()` compatibility for unit tests."""
+
+    def clear(self) -> None:
+        if isinstance(self._backend, InMemoryTTLCache):
+            self._backend._store.clear()
+        self._hits = 0
+        self._misses = 0
+
+
+def _create_embedding_cache() -> _ChatEmbeddingCache:
+    return _ChatEmbeddingCache(
+        backend=_build_cache_backend(),
+        ttl_s=3600,
+        model_tag=f"dims_{get_embedding_dims()}",
+    )
+
+
+# L1 embedding cache shared between analyze_query_node, get_context_node, and generate_response_node
+# without bloating LangGraph checkpoints.
+_EMBED_CACHE: _ChatEmbeddingCache = _create_embedding_cache()
+_QUERY_EMBED_CACHE = _EMBED_CACHE
+
+_RESPONSE_CACHE: Optional[CorpusVersionedResponseCache] = None
+
+
+def get_response_cache() -> CorpusVersionedResponseCache:
+    """Return the module-level L2 CorpusVersionedResponseCache."""
+    global _RESPONSE_CACHE
+    if _RESPONSE_CACHE is None:
+        _RESPONSE_CACHE = CorpusVersionedResponseCache(backend=_build_cache_backend())
+    return _RESPONSE_CACHE
+
+
+async def bump_user_corpus_version(user_id: str) -> int:
+    """Invalidate a user's cached RAG responses by bumping their corpus version."""
+    return await get_response_cache().bump_corpus_version(str(user_id))
 
 
 async def _embed_query_cached(query: str) -> Optional[list[float]]:
@@ -149,13 +228,10 @@ async def _embed_query_cached(query: str) -> Optional[list[float]]:
         return None
     embedder = get_embeddings()
     dims = get_embedding_dims()
-    qhash = hashlib.sha256(clean.encode("utf-8")).hexdigest()
-    key = (id(embedder), qhash, dims)
-    now_mono = time.monotonic()
 
-    cached = _QUERY_EMBED_CACHE.get(key)
-    if cached is not None and (now_mono - cached[0]) < _EMBED_CACHE_TTL_S:
-        return cached[1]
+    cached = await _EMBED_CACHE.get(clean)
+    if cached is not None and len(cached) == dims:
+        return cached
 
     try:
         started = now()
@@ -168,12 +244,8 @@ async def _embed_query_cached(query: str) -> Optional[list[float]]:
         logger.warning("chat_graph: query embedding failed", error=str(e))
         vector = None
 
-    if len(_QUERY_EMBED_CACHE) >= _EMBED_CACHE_MAX:
-        cutoff = now_mono - _EMBED_CACHE_TTL_S
-        stale = [k for k, (ts, _) in _QUERY_EMBED_CACHE.items() if ts < cutoff]
-        for k in stale or [next(iter(_QUERY_EMBED_CACHE))]:
-            _QUERY_EMBED_CACHE.pop(k, None)
-    _QUERY_EMBED_CACHE[key] = (now_mono, vector)
+    if vector is not None:
+        await _EMBED_CACHE.set(clean, vector)
     return vector
 
 
@@ -200,10 +272,14 @@ async def analyze_query_node(state: ChatState) -> dict:
     """
     messages = state.get("messages", [])
     if not messages:
-        return {"intent": "general", "entities": []}
+        out: dict = {"intent": "general", "entities": []}
+        if "retrieval_query" in state:
+            out["retrieval_query"] = ""
+        return out
 
     last_message = messages[-1]
-    query = last_message.content if hasattr(last_message, "content") else str(last_message)
+    raw_content = last_message.content if hasattr(last_message, "content") else last_message
+    query = _extract_text(raw_content)
 
     user_id = state.get("user_id", "default")
     started = now()
@@ -211,14 +287,23 @@ async def analyze_query_node(state: ChatState) -> dict:
     if _is_trivial_greeting(query):
         logger.info("analyze_query_node: Trivial greeting fast-path")
         intent_router.log_decision(user_id=user_id, query=query, intent="general", source="greeting")
-        return {"intent": "general", "entities": [], "router_source": "greeting"}
+        out = {"intent": "general", "entities": [], "router_source": "greeting"}
+        if "retrieval_query" in state:
+            out["retrieval_query"] = query
+        return out
 
     logger.info("analyze_query_node: Analyzing", query=query[:100])
 
     # Follow-ups ("what are its limitations?") retrieve on the previous turn's topic too.
     from backend.services.query_rewrite import contextualize
 
-    earlier = [m.content for m in messages[:-1] if isinstance(m, HumanMessage) and isinstance(m.content, str)]
+    earlier = [
+        text
+        for m in messages[:-1]
+        if isinstance(m, HumanMessage)
+        for text in (_extract_text(m.content),)
+        if text and not _is_trivial_greeting(text)
+    ]
     retrieval_query = contextualize(query, earlier[-1] if earlier else None, state.get("entities") or [])
     if retrieval_query != query:
         record("chat.followup_rewrite", 0.0)
@@ -235,11 +320,12 @@ async def analyze_query_node(state: ChatState) -> dict:
 
     # Trained-router path: no LLM call when the classifier is confident. Entities come from the
     # user's own concept names found in the message; get_context_node adds vector seeds.
+    model_entities: Optional[list[str]] = None
     if mode == "model" and pred is not None:
-        entities = await intent_router.mentioned_concepts(user_id, retrieval_query)
+        model_entities = await intent_router.mentioned_concepts(user_id, retrieval_query)
         threshold = intent_router.threshold_for(
             pred.intent, intent_router.confidence_threshold(intent_router.default_threshold()))
-        quiz_without_topic = pred.intent == "quiz" and not entities and len(query.split()) > 3
+        quiz_without_topic = pred.intent == "quiz" and not model_entities and len(query.split()) > 3
         if pred.confidence >= threshold and not quiz_without_topic:
             try:
                 await embed_task
@@ -248,10 +334,10 @@ async def analyze_query_node(state: ChatState) -> dict:
             latency = elapsed_ms(started)
             record("chat.intent_model", latency, intent=pred.intent)
             logger.info("analyze_query_node: Routed by model", intent=pred.intent,
-                        confidence=round(pred.confidence, 3), entities=entities)
+                        confidence=round(pred.confidence, 3), entities=model_entities)
             intent_router.log_decision(user_id=user_id, query=query, intent=pred.intent, source="model",
-                                       entities=entities, latency_ms=latency, **model_fields)
-            return {"intent": pred.intent, "entities": entities, "router_source": "model",
+                                       entities=model_entities, latency_ms=latency, **model_fields)
+            return {"intent": pred.intent, "entities": model_entities, "router_source": "model",
                     "retrieval_query": retrieval_query}
 
     llm = get_fast_model(temperature=0)
@@ -304,7 +390,11 @@ async def analyze_query_node(state: ChatState) -> dict:
         logger.error("analyze_query_node: Failed", error=str(e))
         # LLM unavailable (quota, timeout): a low-confidence model guess beats "general".
         if pred is not None:
-            entities = await intent_router.mentioned_concepts(user_id, query)
+            entities = (
+                model_entities
+                if model_entities is not None
+                else await intent_router.mentioned_concepts(user_id, retrieval_query)
+            )
             result_payload = {"intent": pred.intent, "entities": entities, "router_source": "model",
                               "retrieval_query": retrieval_query}
     finally:
@@ -315,7 +405,7 @@ async def analyze_query_node(state: ChatState) -> dict:
             pass
 
     intent_router.log_decision(
-        user_id=user_id, query=query, intent=result_payload["intent"], source=source,
+        user_id=user_id, query=query, intent=result_payload["intent"], source=result_payload["router_source"],
         llm_intent=llm_intent, entities=result_payload["entities"], latency_ms=elapsed_ms(started),
         **model_fields,
     )
@@ -333,8 +423,8 @@ async def get_context_node(state: ChatState) -> dict:
     intent = state.get("intent", "general")
 
     last_message = messages[-1] if messages else None
-    query = last_message.content if last_message and hasattr(last_message, "content") else ""
-    query = state.get("retrieval_query") or query  # anchored for follow-ups (analyze_query_node)
+    raw_query = last_message.content if last_message and hasattr(last_message, "content") else ""
+    query = state.get("retrieval_query") or _extract_text(raw_query)  # anchored for follow-ups (analyze_query_node)
 
     logger.info(
         "get_context_node: Retrieving context",
@@ -527,8 +617,36 @@ async def get_context_node(state: ChatState) -> dict:
                 pg_client=pg_client,
                 neo4j_client=neo4j_client,
             )
-            record("chat.hybrid_retrieval", elapsed_ms(hybrid_start), rows=len(hybrid_out.get("chunks", [])))
+            raw_chunks = hybrid_out.get("chunks", []) or []
+            record("chat.hybrid_retrieval", elapsed_ms(hybrid_start), rows=len(raw_chunks))
             graph_context["retrieval_stats"] = hybrid_out.get("stats", {})
+
+            rerank_start = now()
+            rerank_res = LexicalOverlapReranker().rerank(
+                query,
+                raw_chunks,
+                top_k=max(rag_limit, 6),
+            )
+            mmr_chunks = mmr_select_chunks(
+                query_embedding,
+                rerank_res.chunks,
+                k=rag_limit,
+            )
+            ordered_chunks = order_lost_in_middle(mmr_chunks)
+            rerank_ms = elapsed_ms(rerank_start)
+            record(
+                "chat.rerank_mmr",
+                rerank_ms,
+                method=rerank_res.method,
+                in_count=len(raw_chunks),
+                out_count=len(ordered_chunks),
+            )
+            graph_context["rerank_stats"] = {
+                "method": rerank_res.method,
+                "latency_ms": round(rerank_res.latency_ms, 3),
+                "in_count": len(raw_chunks),
+                "out_count": len(ordered_chunks),
+            }
 
             image_chunks_result = []
             if intent == "show_images" and query_embedding:
@@ -612,7 +730,7 @@ async def get_context_node(state: ChatState) -> dict:
 
             rag_context = []
             seen_parents = set()
-            for row in hybrid_out.get("chunks", []) or []:
+            for row in ordered_chunks:
                 row_dict = _process_row(dict(row))
                 rag_context.append(row_dict)
                 parent_key = str(row_dict.get("parent_chunk_id") or row_dict.get("id") or "")
@@ -738,6 +856,49 @@ async def generate_response_node(state: ChatState) -> dict:
         context_parts.append(f"**Relationships:**\n{rels_text}")
     
     packed_rag = pack_context_chunks(rag_context, max_chars=_CHAT_RAG_CHAR_BUDGET)
+    graph_concepts = graph_context.get("concepts", [])
+    decision = evaluate_retrieval_confidence(packed_rag, graph_concepts, intent)
+    record(
+        "chat.grounding_guard",
+        0.0,
+        intent=intent,
+        should_abstain=decision.should_abstain,
+        confidence_tier=decision.confidence_tier,
+        reason=decision.reason,
+    )
+
+    last_message = messages[-1] if messages else None
+    raw_query = last_message.content if last_message and hasattr(last_message, "content") else ""
+    current_query = (state.get("retrieval_query") or _extract_text(raw_query)).strip()
+    is_single_turn = len(messages) <= 1
+    can_use_l2 = (
+        is_single_turn
+        and (intent or "").strip().lower() in _L2_CACHEABLE_INTENTS
+        and bool(current_query)
+        and not state.get("focused_source_ids")
+    )
+    query_embedding = state.get("query_embedding")
+    if query_embedding is None and can_use_l2:
+        query_embedding = await _EMBED_CACHE.get(current_query)
+
+    if can_use_l2 and query_embedding:
+        cached_payload = await get_response_cache().get(
+            user_id=str(user_id),
+            query=current_query,
+            intent=intent,
+            query_embedding=query_embedding,
+        )
+        if isinstance(cached_payload, dict) and isinstance(cached_payload.get("response"), str):
+            record("chat.l2_cache_hit", 0.0, intent=intent)
+            cached_meta = dict(cached_payload.get("metadata") or {})
+            cached_meta["cache_hit"] = True
+            return {
+                "messages": [AIMessage(content=cached_payload["response"])],
+                "related_concepts": cached_payload.get("related_concepts", []),
+                "sources": cached_payload.get("sources", []),
+                "metadata": cached_meta,
+            }
+
     if packed_rag:
         note_lines = []
         for i, n in enumerate(packed_rag, 1):
@@ -812,6 +973,13 @@ async def generate_response_node(state: ChatState) -> dict:
     dynamic_blocks = [f"<intent>{intent}</intent>", f"<retrieved_context>\n{context}\n</retrieved_context>"]
     if image_instruction:
         dynamic_blocks.append(f"<available_figures>\n{image_instruction}\n</available_figures>")
+    if decision.should_abstain:
+        dynamic_blocks.append(
+            "<grounding_notice>\n"
+            f"Retrieval confidence is low ({decision.reason}). "
+            "State honestly what is missing or unconfirmed in the user's notes rather than fabricating facts or citations.\n"
+            "</grounding_notice>"
+        )
     dynamic_context_message = "\n\n".join(dynamic_blocks)
 
     prompt = ChatPromptTemplate.from_messages([
@@ -830,6 +998,22 @@ async def generate_response_node(state: ChatState) -> dict:
         )
 
         response_content = response.text
+
+        citation_audit = None
+        if decision.valid_chunk_indices or decision.valid_graph_ids:
+            citation_audit = verify_citations(
+                response_content,
+                decision.valid_chunk_indices,
+                decision.valid_graph_ids,
+            )
+            response_content = citation_audit.cleaned_text
+            if citation_audit.invalid_refs:
+                record(
+                    "chat.citation_stripped",
+                    0.0,
+                    invalid_count=len(citation_audit.invalid_refs),
+                    grounded_ratio=citation_audit.grounded_ratio,
+                )
 
         if all_image_urls:
             missing_images = [
@@ -852,40 +1036,74 @@ async def generate_response_node(state: ChatState) -> dict:
 
         logger.info("generate_response_node: Complete", images_in_response=len(all_image_urls))
 
+        related_concepts = [
+            {"id": str(c.get("id")) if c.get("id") else None, "name": c.get("name")}
+            for c in graph_concepts
+        ]
+        sources = [
+            {
+                "id": str(n.get("id")) if n.get("id") else None,
+                "title": n.get("title"),
+                "content": extract_child_centered_window(
+                    n.get("parent_content") or n.get("content") or "",
+                    n.get("child_content") or "",
+                    window_chars=500,
+                    radius_chars=150,
+                ),
+                "images": n.get("images", []),
+                "note_id": str(n.get("note_id")) if n.get("note_id") else None,
+                "page_start": n.get("page_start"),
+                "page_end": n.get("page_end"),
+                "matched_by": n.get("_matched_by", []),
+                "rrf_score": n.get("_rrf_score"),
+            }
+            for n in packed_rag
+        ]
+        metadata = {
+            "intent": intent,
+            "entities": state.get("entities", []),
+            "documents_retrieved": len(packed_rag),
+            "nodes_retrieved": len(graph_concepts),
+            "images_attached": sum(len(n.get("images", [])) for n in packed_rag),
+            "retrieval_mode": "hybrid_rrf",
+            "retrieval_stats": graph_context.get("retrieval_stats", {}),
+            "rerank_stats": graph_context.get("rerank_stats", {}),
+            "grounding": {
+                "should_abstain": decision.should_abstain,
+                "confidence_tier": decision.confidence_tier,
+                "reason": decision.reason,
+                "max_score": decision.max_score,
+                "valid_refs": citation_audit.valid_refs if citation_audit else [],
+                "invalid_refs": citation_audit.invalid_refs if citation_audit else [],
+                "grounded_ratio": citation_audit.grounded_ratio if citation_audit else 1.0,
+            },
+            "cache_hit": False,
+        }
+
+        if (
+            can_use_l2
+            and query_embedding
+            and not decision.should_abstain
+            and response_content.strip()
+        ):
+            await get_response_cache().set(
+                user_id=str(user_id),
+                query=current_query,
+                intent=intent,
+                response={
+                    "response": response_content,
+                    "related_concepts": related_concepts,
+                    "sources": sources,
+                    "metadata": metadata,
+                },
+                query_embedding=query_embedding,
+            )
+
         return {
             "messages": [AIMessage(content=response_content)],
-            "related_concepts": [
-                {"id": str(c.get("id")) if c.get("id") else None, "name": c.get("name")}
-                for c in graph_context.get("concepts", [])
-            ],
-            "sources": [
-                {
-                    "id": str(n.get("id")) if n.get("id") else None,
-                    "title": n.get("title"),
-                    "content": extract_child_centered_window(
-                        n.get("parent_content") or n.get("content") or "",
-                        n.get("child_content") or "",
-                        window_chars=500,
-                        radius_chars=150,
-                    ),
-                    "images": n.get("images", []),
-                    "note_id": str(n.get("note_id")) if n.get("note_id") else None,
-                    "page_start": n.get("page_start"),
-                    "page_end": n.get("page_end"),
-                    "matched_by": n.get("_matched_by", []),
-                    "rrf_score": n.get("_rrf_score"),
-                }
-                for n in packed_rag
-            ],
-            "metadata": {
-                "intent": intent,
-                "entities": state.get("entities", []),
-                "documents_retrieved": len(packed_rag),
-                "nodes_retrieved": len(graph_context.get("concepts", [])),
-                "images_attached": sum(len(n.get("images", [])) for n in packed_rag),
-                "retrieval_mode": "hybrid_rrf",
-                "retrieval_stats": graph_context.get("retrieval_stats", {}),
-            },
+            "related_concepts": related_concepts,
+            "sources": sources,
+            "metadata": metadata,
         }
         
     except Exception as e:
@@ -996,6 +1214,7 @@ async def run_chat(
         "messages": [HumanMessage(content=message)],
         "user_id": user_id,
         "focused_source_ids": focused_source_ids or [],  # Pass to state
+        "retrieval_query": message,
         "graph_context": {},
         "rag_context": [],
     }

@@ -910,6 +910,7 @@ async def stream_chat(
                 "messages": [HumanMessage(content=request.message)],
                 "user_id": user_id,
                 "focused_source_ids": getattr(request, 'source_ids', None) or [],  # Source-scoped filtering
+                "retrieval_query": request.message,
                 "graph_context": {},
                 "rag_context": [],
             }
@@ -967,8 +968,15 @@ async def stream_chat(
             if final_messages:
                 last_msg = final_messages[-1]
                 final_content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+                # Cache hits or short-circuit nodes (e.g. quiz) produce final_content with no streamed tokens.
+                if not full_content and final_content:
+                    if not first_token_logged:
+                        first_token_logged = True
+                        record("chat.first_token_after_auth", elapsed_ms(stream_start))
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': final_content})}\n\n"
+                    full_content = final_content
                 # If the final content has more than what was streamed, send the extra
-                if len(final_content) > len(full_content) and full_content:
+                elif len(final_content) > len(full_content) and full_content:
                     extra_content = final_content[len(full_content):]
                     if extra_content.strip():
                         yield f"data: {json.dumps({'type': 'chunk', 'content': extra_content})}\n\n"

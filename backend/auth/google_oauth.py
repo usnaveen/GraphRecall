@@ -1,7 +1,10 @@
-from fastapi import HTTPException, status
-from google.oauth2 import id_token
-from google.auth.transport import requests
+import asyncio
 import os
+
+from fastapi import HTTPException, status
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
+import requests as http_requests
 import structlog
 
 logger = structlog.get_logger()
@@ -10,6 +13,10 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 # Tokens from the iOS app carry the iOS OAuth client ID as their audience, the web app's carry the web
 # client ID: accept any of the configured ones (comma-separated), falling back to GOOGLE_CLIENT_ID.
 GOOGLE_CLIENT_IDS = [c.strip() for c in os.getenv("GOOGLE_CLIENT_IDS", GOOGLE_CLIENT_ID or "").split(",") if c.strip()]
+
+_http_session = http_requests.Session()
+_google_request = google_requests.Request(session=_http_session)
+
 
 async def verify_google_token(token: str) -> dict:
     """
@@ -36,10 +43,11 @@ async def verify_google_token(token: str) -> dict:
                 "profile_picture": None,
             }
 
-        idinfo = id_token.verify_oauth2_token(
-            token, 
-            requests.Request(), 
-            GOOGLE_CLIENT_IDS or GOOGLE_CLIENT_ID
+        idinfo = await asyncio.to_thread(
+            id_token.verify_oauth2_token,
+            token,
+            _google_request,
+            GOOGLE_CLIENT_IDS or GOOGLE_CLIENT_ID,
         )
 
         # ID token is valid. Get the user's Google ID from the 'sub' claim.

@@ -1,4 +1,4 @@
-"""Token-bucket request rate limiting per client (bearer token, else IP).
+"""Token-bucket request rate limiting per client (verified session user, else IP).
 
 In-memory, so it bounds bursts per API instance; daily cost limits live in Postgres
 (backend/services/quota.py). Defaults: RATE_LIMIT_PER_MIN=120 requests, burst RATE_LIMIT_BURST=40.
@@ -7,9 +7,10 @@ Health checks are exempt. Answers 429 with Retry-After.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import time
+
+from backend.auth.sessions import verify_access_token
 
 EXEMPT = ("/api/v2/health", "/health", "/docs", "/openapi.json")
 
@@ -23,13 +24,22 @@ class RateLimitMiddleware:
         self.buckets: dict[str, tuple[float, float]] = {}
 
     def _key(self, scope) -> str:
-        headers = dict(scope.get("headers") or [])
-        auth = headers.get(b"authorization", b"")
+        headers = {k.lower(): v for k, v in (scope.get("headers") or [])}
+        auth = headers.get(b"authorization", b"").decode("latin-1").strip()
         if auth:
-            return "t:" + hashlib.sha256(auth).hexdigest()[:24]
+            parts = auth.split(None, 1)
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1].strip()
+                if token:
+                    try:
+                        user_id = verify_access_token(token)
+                        if user_id:
+                            return f"u:{user_id}"
+                    except Exception:
+                        pass
         fwd = headers.get(b"x-forwarded-for", b"").split(b",")[0].strip()
         client = scope.get("client") or ("?", 0)
-        return "ip:" + (fwd.decode() if fwd else str(client[0]))
+        return "ip:" + (fwd.decode("latin-1") if fwd else str(client[0]))
 
     def allow(self, key: str, now: float | None = None) -> tuple[bool, float]:
         now = time.monotonic() if now is None else now

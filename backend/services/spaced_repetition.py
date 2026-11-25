@@ -680,8 +680,9 @@ class SpacedRepetitionService:
                 COALESCE(ps.reps_fsrs, 0) as reps_fsrs
             FROM proficiency_scores ps
             WHERE ps.user_id = :user_id
-              AND (ps.next_review_due IS NULL OR ps.next_review_due <= :now)
-            ORDER BY ps.next_review_due ASC NULLS FIRST
+              AND ps.next_review_due IS NOT NULL
+              AND ps.next_review_due <= :now
+            ORDER BY ps.next_review_due ASC
             LIMIT :limit
         """
         
