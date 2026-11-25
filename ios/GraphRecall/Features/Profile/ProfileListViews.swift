@@ -50,7 +50,7 @@ private struct ProfileListSearchField: View {
     }
 }
 
-private struct ProfileSoftEmpty: View {
+struct ProfileSoftEmpty: View {
     let icon: String
     let title: String
     let message: String
@@ -179,6 +179,7 @@ struct ProfileNotesListView: View {
                                     .foregroundStyle(GRColor.textSecondary)
                             }
                         }
+                        StructureCardsButton(noteId: note.id)
                         Text(note.contentText ?? "No content available")
                             .font(GRType.body)
                             .foregroundStyle(GRColor.textSecondary)
@@ -851,6 +852,52 @@ private struct FlexibleTopicWrap: View {
         // Chunk ~3 chips per row for phone width.
         stride(from: 0, to: topics.count, by: 3).map {
             Array(topics[$0..<min($0 + 3, topics.count)])
+        }
+    }
+}
+
+
+// MARK: - Structure cards
+
+/// "Make recall cards": bullet lists and "Term: definition" lines in this note become
+/// hide-and-recall cards in the feed. No LLM, so it works on the free tier.
+struct StructureCardsButton: View {
+    let noteId: String
+    @State private var isWorking = false
+    @State private var result: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                Task { await run() }
+            } label: {
+                if isWorking { ProgressView() } else { Label("Make recall cards from bullets", systemImage: "rectangle.on.rectangle.angled") }
+            }
+            .grButton(.ghost, fullWidth: false, compact: true)
+            .disabled(isWorking)
+            .accessibilityIdentifier("note.structureCards")
+            if let result {
+                Text(result).font(GRType.caption).foregroundStyle(GRColor.textSecondary)
+            }
+        }
+    }
+
+    private func run() async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            let r = try await APIClient.shared.makeStructureCards(noteId: noteId)
+            let n = r.count ?? r.cardIds.count
+            if n > 0 {
+                GRHaptics.success()
+                result = "\(n) new card\(n == 1 ? "" : "s") added to your feed."
+            } else if r.reason == "note has no concepts yet" {
+                result = "This note has no concepts yet, so there's nothing to attach cards to."
+            } else {
+                result = "No new cards: no bullet lists or “Term: definition” lines found, or they already have cards."
+            }
+        } catch {
+            result = APIError.userFacing(error, resource: "cards")
         }
     }
 }

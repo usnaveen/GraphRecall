@@ -7,6 +7,8 @@ enum ProfileNavRoute: Hashable {
     case uploads
     case quizzes
     case saved
+    case leetcode
+    case later
 }
 
 struct ProfileView: View {
@@ -27,6 +29,8 @@ struct ProfileView: View {
     @State private var quizCount = 0
     @State private var booksCount = 0
     @State private var savedCount = 0
+    @State private var leetcodeCount = 0
+    @State private var laterCount = 0
     @State private var domainMastery: [DomainMastery] = []
     @State private var path = NavigationPath()
 
@@ -87,11 +91,17 @@ struct ProfileView: View {
                 case .uploads: ProfileUploadsListView()
                 case .quizzes: ProfileQuizzesListView()
                 case .saved: SavedItemsListView()
+                case .leetcode: LeetCodeListView()
+                case .later: LaterListView()
                 }
             }
             .navigationBarHidden(true)
         }
-        .task { await refresh() }
+        .task {
+            consumeProfileRoute()
+            await refresh()
+        }
+        .onChange(of: router.pendingProfileRoute) { _, _ in consumeProfileRoute() }
         .onChange(of: openLibraryToken) { _, newValue in
             guard newValue > 0 else { return }
             path.append(ProfileNavRoute.library)
@@ -430,6 +440,8 @@ struct ProfileView: View {
                 libraryTile("Resources", count: uploadsCount, icon: "photo.on.rectangle", tone: .coral, route: .uploads)
                 libraryTile("Books", count: booksCount, icon: "books.vertical.fill", tone: .amber, route: .library)
                 libraryTile("Saved", count: savedCount, icon: "bookmark.fill", tone: .accent, route: .saved)
+                libraryTile("LeetCode", count: leetcodeCount, icon: "chevron.left.forwardslash.chevron.right", tone: .cyan, route: .leetcode)
+                libraryTile("Later", count: laterCount, icon: "clock.arrow.circlepath", tone: .purple, route: .later)
             }
         }
     }
@@ -456,6 +468,13 @@ struct ProfileView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(title), \(count)")
+    }
+
+    private func consumeProfileRoute() {
+        guard let route = router.pendingProfileRoute else { return }
+        router.pendingProfileRoute = nil
+        path = NavigationPath()
+        path.append(route)
     }
 
     // MARK: - Load
@@ -518,7 +537,10 @@ struct ProfileView: View {
         async let quizzesR = softQuizCount()
         async let booksR = softBooksCount()
         async let savedR = softSavedCount()
+        async let leetR = (try? await APIClient.shared.codingProblems().count) ?? 0
+        async let laterR = (try? await APIClient.shared.laterItems().count) ?? 0
         let (n, u, q, b, s) = await (notesR, uploadsR, quizzesR, booksR, savedR)
+        (leetcodeCount, laterCount) = await (leetR, laterR)
         notesCount = n
         uploadsCount = u
         quizCount = q

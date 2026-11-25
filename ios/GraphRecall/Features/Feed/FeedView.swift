@@ -8,6 +8,8 @@ struct FeedView: View {
     @State private var contentReady = false
     @State private var activeSession: SessionLaunch?
     @State private var showAgentInsights = false
+    @State private var dueLater: [LaterItem] = []
+    @State private var dueCardHeight: CGFloat = 0
     @AppStorage(GRSettingsKey.feedStyle) private var feedStyleRaw = FeedStyle.reels.rawValue
     @Environment(AppRouter.self) private var router
 
@@ -40,10 +42,22 @@ struct FeedView: View {
                     }
                 }
             }
+            // A due "later" card pushes the feed down instead of covering the current card.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: dueLater.isEmpty ? 0 : dueCardHeight + 10)
+            }
             .opacity(contentReady ? 1 : 0)
             .animation(.easeOut(duration: 0.18), value: contentReady)
 
-            topBar
+            VStack(spacing: 10) {
+                topBar
+                if !dueLater.isEmpty {
+                    LaterDueCard(items: $dueLater)
+                        .padding(.horizontal, 16)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dueCardHeight = $0 }
+                }
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: dueLater)
 
             if let banner = model.softBanner {
                 VStack {
@@ -62,6 +76,7 @@ struct FeedView: View {
             contentReady = true
             consumePendingReview()
             await model.loadRevisitPool()
+            await loadDueLater()
         }
         .onChange(of: router.pendingStartReview) { _, _ in consumePendingReview() }
         .fullScreenCover(item: $activeSession) { launch in
@@ -82,7 +97,7 @@ struct FeedView: View {
             Task { await model.load() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .grFeedShouldReload)) { _ in
-            Task { await model.load() }
+            Task { await model.load(); await loadDueLater() }
         }
     }
 
@@ -148,6 +163,12 @@ struct FeedView: View {
     }
 
     // MARK: - Helpers
+
+    /// Saved-for-later items whose time has come. Best effort: the feed never waits on this.
+    private func loadDueLater() async {
+        guard let items = try? await APIClient.shared.dueLaterItems() else { return }
+        dueLater = items
+    }
 
     /// Widget / `graphrecall://review` / Profile asked for a focused review session.
     private func consumePendingReview() {

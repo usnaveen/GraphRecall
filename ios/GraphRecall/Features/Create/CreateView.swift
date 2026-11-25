@@ -424,6 +424,8 @@ struct CreateView: View {
     @State private var dictation = GRDictation()
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showScanner = false
+    @State private var showLater = false
+    @State private var showLeetCode = false
     @AppStorage(GRSettingsKey.reviewImports) private var reviewImports = true
     @Environment(\.scenePhase) private var scenePhase
 
@@ -442,6 +444,9 @@ struct CreateView: View {
                     }
 
                     sourceGrid
+                        .padding(.horizontal, 20)
+
+                    quickCaptures
                         .padding(.horizontal, 20)
 
                     GlassCard {
@@ -527,6 +532,31 @@ struct CreateView: View {
             model.loadSharedInbox()
         }
         .onDisappear { dictation.stop() }
+        .sheet(isPresented: $showLater) {
+            LaterCaptureSheet { _ in model.successMessage = "Saved. It comes back in your feed when it's due." }
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showLeetCode) {
+            LeetCodeEditorSheet(existing: nil) { saved in
+                model.successMessage = "Problem saved with \(saved.cardIds.count) recall cards."
+            }
+        }
+    }
+
+    /// Captures that skip ingestion: a reminder for later, or a LeetCode problem log.
+    private var quickCaptures: some View {
+        HStack(spacing: 10) {
+            Button { showLater = true; GRHaptics.tap() } label: {
+                Label("Show me later", systemImage: "clock.arrow.circlepath")
+            }
+            .grButton(.secondary, fullWidth: true, compact: true)
+            .accessibilityIdentifier("create.later")
+            Button { showLeetCode = true; GRHaptics.tap() } label: {
+                Label("LeetCode", systemImage: "chevron.left.forwardslash.chevron.right")
+            }
+            .grButton(.secondary, fullWidth: true, compact: true)
+            .accessibilityIdentifier("create.leetcode")
+        }
     }
 
     private var subtitleForMode: String {

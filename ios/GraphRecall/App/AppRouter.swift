@@ -19,6 +19,8 @@ final class AppRouter {
     var pendingConversationId: String?
     /// Set by the widget / `graphrecall://review` — Today starts a session when it next appears.
     var pendingStartReview = false
+    /// A Profile screen to open (deep links `graphrecall://leetcode`, `graphrecall://later`).
+    var pendingProfileRoute: ProfileNavRoute?
     /// True while the software keyboard is on screen — Assistant tightens its composer.
     var isKeyboardVisible = false
 
@@ -64,6 +66,12 @@ final class AppRouter {
             select(.create)
         case "today":
             select(.feed)
+        case "leetcode":
+            pendingProfileRoute = .leetcode
+            select(.profile)
+        case "later":
+            pendingProfileRoute = .later
+            select(.profile)
         default:
             break
         }
