@@ -184,22 +184,29 @@ class FeedService:
         return 0.0
 
     def _basic_concept_showcase(self, concept: dict) -> dict:
-        """Fallback concept showcase content without LLM calls."""
+        """Instant showcase without an LLM: only real information, nothing invented.
+
+        The definition leads; extra sentences of it become key points; tagline, metaphor and example
+        stay empty (the app hides empty sections) until the background buffer job writes a full card.
+        """
+        import re as _re
+
+        definition = (concept.get("definition") or "").strip()
+        sentences = [x.strip() for x in _re.split(r"(?<=[.!?])\s+", definition) if len(x.strip()) > 20]
         return {
             "concept_name": concept.get("name", "Concept"),
-            "definition": concept.get("definition", ""),
+            "definition": sentences[0] if sentences else definition,
             "domain": concept.get("domain", "General"),
             "complexity_score": concept.get("complexity_score", 5),
-            "tagline": f"Quick intro to {concept.get('name', 'this concept')}",
-            "visual_metaphor": "Think of this as a building block in your knowledge graph.",
-            "key_points": [
-                concept.get("definition", "")[:120] or "Key idea summary unavailable.",
-            ],
-            "real_world_example": "Applied when you connect knowledge to real tasks.",
-            "connections_note": "Explore prerequisites and related concepts to deepen understanding.",
-            "emoji_icon": "📚",
+            "tagline": "",
+            "visual_metaphor": "",
+            "key_points": sentences[1:4],
+            "real_world_example": "",
+            "connections_note": "",
+            "emoji_icon": "",
             "prerequisites": concept.get("prerequisites", []),
             "related_concepts": concept.get("related_concepts", []),
+            "generated": "basic",
         }
 
     def _basic_mcq_fallback(self, concept: dict) -> dict:
