@@ -57,6 +57,13 @@ logger = structlog.get_logger()
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
+import re as _re
+
+LATEX_COLLISIONS = _re.compile(
+    r"(?<!\\)\\(?=(?:frac|tfrac|dfrac|forall|beta|bar|bf|boldsymbol|begin|binom|nabla|neq|nu|not|notin|"
+    r"rho|right|rangle|rightarrow|tau|theta|times|text|textbf|top|tilde|tanh|to|triangle)(?![a-zA-Z]))")
+
+
 def _parse_llm_json(response) -> dict:
     """Safely parse JSON from LLM response, handling empty/malformed content."""
     # Gemini 3 returns content as a list of parts; `.text` joins them into a string.
@@ -90,15 +97,25 @@ def _parse_llm_json(response) -> dict:
     # Remove control characters that often break json.loads
     text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
     
+    # LaTeX commands whose first letter is a valid JSON escape (\\frac -> form feed + "rac",
+    # \\beta, \\nabla, \\tau, \\rho...) parse "successfully" into garbage. Escape them first.
+    text = LATEX_COLLISIONS.sub(r"\\\\", text)
+
     # Fix trailing commas
     text = re.sub(r',\s*}', '}', text)
     text = re.sub(r',\s*\]', ']', text)
 
     try:
         return json.loads(text)
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON parsing failed. Extracted text: {text[:200]}...", error=str(e))
-        raise
+    except json.JSONDecodeError:
+        # LaTeX in questions (\\frac, \\sqrt) arrives as invalid JSON escapes; escape and retry.
+        from backend.agents.extraction import _escape_invalid_json_backslashes
+
+        try:
+            return json.loads(_escape_invalid_json_backslashes(text))
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing failed. Extracted text: {text[:200]}...", error=str(e))
+            raise
 
 
 class ContentGeneratorAgent:

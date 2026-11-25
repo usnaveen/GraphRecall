@@ -1,6 +1,7 @@
 """Agent 1: Extraction Agent - Extracts concepts from input content."""
 
 import json
+import os
 import time
 import re
 from pathlib import Path
@@ -34,6 +35,37 @@ def _is_escaped(text: str, index: int) -> bool:
         backslash_count += 1
         i -= 1
     return backslash_count % 2 == 1
+
+
+EXTRACTION_MAX_TOKENS = int(os.getenv("LLM_EXTRACTION_MAX_TOKENS", "8192"))
+
+
+def salvage_concepts_json(text: str) -> Optional[dict]:
+    """Recover the complete concept objects from a response cut off mid-array (output token cap).
+
+    Losing a whole 10-chunk batch because the last object was truncated wastes the call; the
+    objects before the cut are valid, so keep them.
+    """
+    start = text.find('"concepts"')
+    if start == -1:
+        return None
+    bracket = text.find("[", start)
+    if bracket == -1:
+        return None
+    decoder = json.JSONDecoder()
+    i, concepts = bracket + 1, []
+    while i < len(text):
+        while i < len(text) and text[i] in " \t\r\n,":
+            i += 1
+        if i >= len(text) or text[i] != "{":
+            break
+        try:
+            obj, end = decoder.raw_decode(text, i)
+        except json.JSONDecodeError:
+            break
+        concepts.append(obj)
+        i = end
+    return {"concepts": concepts, "truncated": True} if concepts else None
 
 
 def _escape_invalid_json_backslashes(text: str) -> str:
@@ -116,6 +148,7 @@ class ExtractionAgent:
             model=model,
             temperature=temperature,
             json_mode=True,
+            max_output_tokens=EXTRACTION_MAX_TOKENS,
         )
         self._prompt_template = self._load_prompt()
 
@@ -207,7 +240,14 @@ Content:
                 # Remove control characters except newlines/tabs
                 cleaned = re.sub(r'[\x00-\x09\x0B-\x1F\x7F]', '', raw_response)
                 cleaned = _escape_invalid_json_backslashes(cleaned)
-                parsed = json.loads(cleaned)
+                try:
+                    parsed = json.loads(cleaned)
+                except json.JSONDecodeError:
+                    parsed = salvage_concepts_json(cleaned)
+                    if parsed is None:
+                        raise
+                    logger.warning("ExtractionAgent: response truncated; kept complete concepts",
+                                   kept=len(parsed["concepts"]))
 
             # Convert to ConceptCreate objects
             concepts = []
