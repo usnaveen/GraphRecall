@@ -39,6 +39,7 @@ from typing_extensions import TypedDict
 from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
 from backend.graphs.checkpointer import get_checkpointer
+from backend.services.intent_router import router as intent_router
 from backend.services.retrieval_service import (
     RetrievalService,
     extract_child_centered_window,
@@ -73,6 +74,7 @@ class ChatState(TypedDict, total=False):
     # Query analysis
     intent: str
     entities: list[str]
+    router_source: str  # greeting | model | llm | fallback
     
     # Retrieved context
     graph_context: dict
@@ -201,13 +203,44 @@ async def analyze_query_node(state: ChatState) -> dict:
     last_message = messages[-1]
     query = last_message.content if hasattr(last_message, "content") else str(last_message)
 
+    user_id = state.get("user_id", "default")
+    started = now()
+
     if _is_trivial_greeting(query):
         logger.info("analyze_query_node: Trivial greeting fast-path")
-        return {"intent": "general", "entities": []}
+        intent_router.log_decision(user_id=user_id, query=query, intent="general", source="greeting")
+        return {"intent": "general", "entities": [], "router_source": "greeting"}
 
     logger.info("analyze_query_node: Analyzing", query=query[:100])
 
     embed_task = asyncio.create_task(_embed_query_cached(query))
+    mode = intent_router.router_mode()
+    pred = intent_router.classify(query) if mode != "llm" else None
+    model_fields = {
+        "model_intent": pred.intent if pred else None,
+        "model_confidence": pred.confidence if pred else None,
+        "model_version": intent_router.model_version() if pred else None,
+    }
+
+    # Trained-router path: no LLM call when the classifier is confident. Entities come from the
+    # user's own concept names found in the message; get_context_node adds vector seeds.
+    if mode == "model" and pred is not None:
+        entities = await intent_router.mentioned_concepts(user_id, query)
+        threshold = intent_router.confidence_threshold(intent_router.default_threshold())
+        quiz_without_topic = pred.intent == "quiz" and not entities and len(query.split()) > 3
+        if pred.confidence >= threshold and not quiz_without_topic:
+            try:
+                await embed_task
+            except Exception:
+                pass
+            latency = elapsed_ms(started)
+            record("chat.intent_model", latency, intent=pred.intent)
+            logger.info("analyze_query_node: Routed by model", intent=pred.intent,
+                        confidence=round(pred.confidence, 3), entities=entities)
+            intent_router.log_decision(user_id=user_id, query=query, intent=pred.intent, source="model",
+                                       entities=entities, latency_ms=latency, **model_fields)
+            return {"intent": pred.intent, "entities": entities, "router_source": "model"}
+
     llm = get_fast_model(temperature=0)
 
     system_prompt = """Analyze the user's query to determine their intent and extract relevant entities.
@@ -232,7 +265,9 @@ async def analyze_query_node(state: ChatState) -> dict:
         HumanMessage(content=f"Query: {query}")
     ])
 
-    result_payload = {"intent": "general", "entities": []}
+    source = "fallback" if mode == "model" else "llm"
+    result_payload = {"intent": "general", "entities": [], "router_source": source}
+    llm_intent = None
     try:
         structured_llm = llm.with_structured_output(QueryAnalysis)
         response: QueryAnalysis = await asyncio.wait_for(
@@ -244,12 +279,18 @@ async def analyze_query_node(state: ChatState) -> dict:
             intent=response.intent,
             entities=response.entities,
         )
+        llm_intent = response.intent
         result_payload = {
             "intent": response.intent,
             "entities": response.entities,
+            "router_source": source,
         }
     except Exception as e:
         logger.error("analyze_query_node: Failed", error=str(e))
+        # LLM unavailable (quota, timeout): a low-confidence model guess beats "general".
+        if pred is not None:
+            entities = await intent_router.mentioned_concepts(user_id, query)
+            result_payload = {"intent": pred.intent, "entities": entities, "router_source": "model"}
     finally:
         # Ensure parallel embedding completes/caches cleanly before get_context_node starts.
         try:
@@ -257,6 +298,11 @@ async def analyze_query_node(state: ChatState) -> dict:
         except Exception:
             pass
 
+    intent_router.log_decision(
+        user_id=user_id, query=query, intent=result_payload["intent"], source=source,
+        llm_intent=llm_intent, entities=result_payload["entities"], latency_ms=elapsed_ms(started),
+        **model_fields,
+    )
     return result_payload
 
 
@@ -307,7 +353,9 @@ async def get_context_node(state: ChatState) -> dict:
     # Get graph context
     graph_start = now()
     seed_mode = os.getenv("GRAPH_SEED_MODE", "substring")
-    use_vector_seeds = seed_mode == "hybrid" and embed_task is not None
+    # Model-routed turns have no LLM-extracted entities, so seed from the query embedding too.
+    model_routed = state.get("router_source") == "model"
+    use_vector_seeds = (seed_mode == "hybrid" or model_routed) and embed_task is not None
     if entities or use_vector_seeds:
         try:
             if neo4j_client is None:

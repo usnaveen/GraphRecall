@@ -1,0 +1,158 @@
+[
+ {
+  "text": "Why is the learning rate so important when training neural nets?",
+  "probs": [
+   0.97988029,
+   0.00343404,
+   0.00336151,
+   0.00272028,
+   0.0011546,
+   0.00451766,
+   0.00357489,
+   0.00135674
+  ]
+ },
+ {
+  "text": "I read about attention heads but how do multiple heads help exactly",
+  "probs": [
+   0.54789921,
+   0.01913711,
+   0.05436179,
+   0.00574129,
+   0.03051687,
+   0.05288512,
+   0.00851007,
+   0.28094853
+  ]
+ },
+ {
+  "text": "what's actually happening when a model 'memorizes' training data",
+  "probs": [
+   0.79349485,
+   0.02276166,
+   0.00972926,
+   0.01845275,
+   0.00723188,
+   0.01839866,
+   0.00445055,
+   0.1254804
+  ]
+ },
+ {
+  "text": "So what is a monad anyway",
+  "probs": [
+   0.98328797,
+   0.00238325,
+   0.00129422,
+   0.00113748,
+   0.00017969,
+   0.00074781,
+   0.00115554,
+   0.00981405
+  ]
+ },
+ {
+  "text": "In plain English, what does the softmax function do?",
+  "probs": [
+   0.93802393,
+   0.00115994,
+   0.00159415,
+   0.00266473,
+   0.00034498,
+   0.00618984,
+   0.04922028,
+   0.00080214
+  ]
+ },
+ {
+  "text": "how come residual connections make deep networks trainable",
+  "probs": [
+   0.90374663,
+   0.01262014,
+   0.00413196,
+   0.00216569,
+   0.05897856,
+   0.00813146,
+   0.00449621,
+   0.00572934
+  ]
+ },
+ {
+  "text": "Why do we normalize inputs before training",
+  "probs": [
+   0.31525023,
+   0.02454822,
+   0.01209995,
+   0.01623113,
+   0.0058413,
+   0.56232924,
+   0.02847901,
+   0.03522093
+  ]
+ },
+ {
+  "text": "what is the vanishing gradient problem and why does it happen",
+  "probs": [
+   0.99606987,
+   0.00241363,
+   0.00031937,
+   6.239e-05,
+   0.0001503,
+   0.00016268,
+   0.00067275,
+   0.000149
+  ]
+ },
+ {
+  "text": "could you unpack the idea of a Markov chain for me",
+  "probs": [
+   0.710927,
+   0.0090071,
+   0.0107954,
+   0.04638361,
+   0.05268293,
+   0.07004283,
+   0.07785263,
+   0.02230849
+  ]
+ },
+ {
+  "text": "why is quicksort O(n log n) on average but n^2 worst case",
+  "probs": [
+   0.95862447,
+   0.00852231,
+   0.00550881,
+   0.00300374,
+   0.01368551,
+   0.00142285,
+   0.00495316,
+   0.00427915
+  ]
+ },
+ {
+  "text": "what's tokenization in LLMs",
+  "probs": [
+   0.85552529,
+   0.00341695,
+   0.011507,
+   0.05239319,
+   0.00187126,
+   0.05977164,
+   0.00332748,
+   0.01218719
+  ]
+ },
+ {
+  "text": "how do hash maps get O(1) lookups",
+  "probs": [
+   0.04807463,
+   0.03578899,
+   0.00942214,
+   0.00137643,
+   0.00214863,
+   0.533853,
+   0.01474542,
+   0.35459075
+  ]
+ }
+]

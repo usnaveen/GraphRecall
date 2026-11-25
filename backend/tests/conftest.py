@@ -15,6 +15,9 @@ os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/tes
 os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USER", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "test")
+# Chat tests mock the LLM router; the trained router has its own tests (test_intent_router.py).
+os.environ.setdefault("CHAT_INTENT_ROUTER", "llm")
+os.environ.setdefault("CHAT_INTENT_LOG", "0")
 
 
 @pytest.fixture

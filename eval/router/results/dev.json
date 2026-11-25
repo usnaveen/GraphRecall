@@ -1,0 +1,645 @@
+{
+ "eval_set": "dev",
+ "train_size": 2800,
+ "eval_size": 120,
+ "test_label_sources": {
+  "agent": 120
+ },
+ "rules": {
+  "model": "keyword rules",
+  "accuracy": 0.55,
+  "accuracy_ci95": [
+   0.4583,
+   0.6417
+  ],
+  "macro_f1": 0.5552,
+  "macro_f1_ci95": [
+   0.4695,
+   0.6185
+  ],
+  "routing_accuracy": 0.6167,
+  "per_class_f1": {
+   "explain": 0.562,
+   "compare": 0.889,
+   "find": 0.6,
+   "summarize": 0.0,
+   "quiz": 0.636,
+   "path": 0.571,
+   "show_images": 0.8,
+   "general": 0.382
+  },
+  "confusion": {
+   "labels": [
+    "explain",
+    "compare",
+    "find",
+    "summarize",
+    "quiz",
+    "path",
+    "show_images",
+    "general"
+   ],
+   "matrix": [
+    [
+     9,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6
+    ],
+    [
+     1,
+     12,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2
+    ],
+    [
+     0,
+     0,
+     9,
+     0,
+     0,
+     0,
+     0,
+     6
+    ],
+    [
+     2,
+     0,
+     5,
+     0,
+     0,
+     0,
+     0,
+     8
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     7,
+     0,
+     0,
+     7
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     0,
+     6,
+     0,
+     7
+    ],
+    [
+     0,
+     0,
+     1,
+     0,
+     0,
+     0,
+     10,
+     4
+    ],
+    [
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     13
+    ]
+   ]
+  },
+  "latency_ms_p50": 0.009,
+  "latency_ms_p95": 0.009
+ },
+ "tfidf_lr": {
+  "model": "TF-IDF + LogReg (ships)",
+  "accuracy": 0.85,
+  "accuracy_ci95": [
+   0.7833,
+   0.9083
+  ],
+  "macro_f1": 0.8469,
+  "macro_f1_ci95": [
+   0.7739,
+   0.9027
+  ],
+  "routing_accuracy": 0.8583,
+  "per_class_f1": {
+   "explain": 0.759,
+   "compare": 0.966,
+   "find": 0.867,
+   "summarize": 0.875,
+   "quiz": 0.933,
+   "path": 0.743,
+   "show_images": 0.938,
+   "general": 0.696
+  },
+  "confusion": {
+   "labels": [
+    "explain",
+    "compare",
+    "find",
+    "summarize",
+    "quiz",
+    "path",
+    "show_images",
+    "general"
+   ],
+   "matrix": [
+    [
+     11,
+     0,
+     0,
+     0,
+     0,
+     4,
+     0,
+     0
+    ],
+    [
+     0,
+     14,
+     0,
+     0,
+     0,
+     1,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     13,
+     2,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     14,
+     0,
+     1,
+     0,
+     0
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     14,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     1,
+     0,
+     0,
+     13,
+     1,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     15,
+     0
+    ],
+    [
+     2,
+     0,
+     1,
+     1,
+     1,
+     1,
+     1,
+     8
+    ]
+   ]
+  },
+  "selective": [
+   {
+    "threshold": 0.0,
+    "coverage": 1.0,
+    "accuracy_on_kept": 0.85
+   },
+   {
+    "threshold": 0.3,
+    "coverage": 0.992,
+    "accuracy_on_kept": 0.8571
+   },
+   {
+    "threshold": 0.4,
+    "coverage": 0.967,
+    "accuracy_on_kept": 0.8793
+   },
+   {
+    "threshold": 0.5,
+    "coverage": 0.908,
+    "accuracy_on_kept": 0.9083
+   },
+   {
+    "threshold": 0.6,
+    "coverage": 0.842,
+    "accuracy_on_kept": 0.9307
+   },
+   {
+    "threshold": 0.7,
+    "coverage": 0.767,
+    "accuracy_on_kept": 0.9674
+   },
+   {
+    "threshold": 0.8,
+    "coverage": 0.725,
+    "accuracy_on_kept": 0.9655
+   }
+  ],
+  "latency_ms_p50": 0.077,
+  "latency_ms_p95": 0.09,
+  "cv_macro_f1_by_C": {
+   "1.0": 0.9967844560396738,
+   "3.0": 0.9978559392786146,
+   "10.0": 0.9989285167610593,
+   "30.0": 0.999642838920353
+  },
+  "C": 30.0,
+  "parity_max_abs_diff": 5.73654790336775e-09,
+  "features": 10424
+ },
+ "tfidf_lr_errors": [
+  {
+   "text": "how do vaccines train the immune system",
+   "gold": "explain",
+   "pred": "path"
+  },
+  {
+   "text": "what's the deal with eventual consistency",
+   "gold": "explain",
+   "pred": "path"
+  },
+  {
+   "text": "why are GPUs fast for matrix math",
+   "gold": "explain",
+   "pred": "path"
+  },
+  {
+   "text": "what does it mean for a matrix to be singular",
+   "gold": "explain",
+   "pred": "path"
+  },
+  {
+   "text": "should I learn PyTorch or JAX first",
+   "gold": "compare",
+   "pred": "path"
+  },
+  {
+   "text": "what were my bullet points on the CAP theorem",
+   "gold": "find",
+   "pred": "summarize"
+  },
+  {
+   "text": "in my notes, what's listed under 'interview tips'",
+   "gold": "find",
+   "pred": "summarize"
+  },
+  {
+   "text": "in a few lines, what do I know about databases",
+   "gold": "summarize",
+   "pred": "path"
+  },
+  {
+   "text": "interrogate me about the Krebs cycle",
+   "gold": "quiz",
+   "pred": "explain"
+  },
+  {
+   "text": "I finished the basics of graphs, what now",
+   "gold": "path",
+   "pred": "find"
+  },
+  {
+   "text": "is there a recommended route into computer vision",
+   "gold": "path",
+   "pred": "show_images"
+  },
+  {
+   "text": "what's new",
+   "gold": "general",
+   "pred": "explain"
+  },
+  {
+   "text": "can you switch to dark mode",
+   "gold": "general",
+   "pred": "path"
+  },
+  {
+   "text": "is there a premium version",
+   "gold": "general",
+   "pred": "show_images"
+  },
+  {
+   "text": "why can't I log in",
+   "gold": "general",
+   "pred": "explain"
+  },
+  {
+   "text": "how long have I been using this",
+   "gold": "general",
+   "pred": "summarize"
+  },
+  {
+   "text": "make the font bigger",
+   "gold": "general",
+   "pred": "quiz"
+  },
+  {
+   "text": "what did you just do",
+   "gold": "general",
+   "pred": "find"
+  }
+ ],
+ "minilm_lr": {
+  "model": "MiniLM + LogReg",
+  "accuracy": 0.8333,
+  "accuracy_ci95": [
+   0.7583,
+   0.8919
+  ],
+  "macro_f1": 0.8382,
+  "macro_f1_ci95": [
+   0.7636,
+   0.8956
+  ],
+  "routing_accuracy": 0.8333,
+  "per_class_f1": {
+   "explain": 0.733,
+   "compare": 0.815,
+   "find": 0.828,
+   "summarize": 0.667,
+   "quiz": 0.929,
+   "path": 0.839,
+   "show_images": 0.968,
+   "general": 0.929
+  },
+  "confusion": {
+   "labels": [
+    "explain",
+    "compare",
+    "find",
+    "summarize",
+    "quiz",
+    "path",
+    "show_images",
+    "general"
+   ],
+   "matrix": [
+    [
+     11,
+     1,
+     0,
+     3,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     2,
+     11,
+     0,
+     1,
+     0,
+     1,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     12,
+     3,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     1,
+     0,
+     1,
+     12,
+     0,
+     1,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     1,
+     13,
+     1,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     1,
+     0,
+     0,
+     13,
+     1,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     15,
+     0
+    ],
+    [
+     1,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0,
+     13
+    ]
+   ]
+  },
+  "selective": [
+   {
+    "threshold": 0.0,
+    "coverage": 1.0,
+    "accuracy_on_kept": 0.8333
+   },
+   {
+    "threshold": 0.3,
+    "coverage": 0.992,
+    "accuracy_on_kept": 0.8403
+   },
+   {
+    "threshold": 0.4,
+    "coverage": 0.975,
+    "accuracy_on_kept": 0.8376
+   },
+   {
+    "threshold": 0.5,
+    "coverage": 0.9,
+    "accuracy_on_kept": 0.8796
+   },
+   {
+    "threshold": 0.6,
+    "coverage": 0.792,
+    "accuracy_on_kept": 0.9263
+   },
+   {
+    "threshold": 0.7,
+    "coverage": 0.683,
+    "accuracy_on_kept": 0.939
+   },
+   {
+    "threshold": 0.8,
+    "coverage": 0.542,
+    "accuracy_on_kept": 0.9846
+   }
+  ],
+  "latency_ms_p50": 8.327,
+  "latency_ms_p95": 9.818
+ },
+ "minilm_lr_errors": [
+  {
+   "text": "could you shed light on how compilers optimize loops",
+   "gold": "explain",
+   "pred": "summarize"
+  },
+  {
+   "text": "what makes a hash function good",
+   "gold": "explain",
+   "pred": "summarize"
+  },
+  {
+   "text": "tell me about the role of mitochondria",
+   "gold": "explain",
+   "pred": "summarize"
+  },
+  {
+   "text": "why are GPUs fast for matrix math",
+   "gold": "explain",
+   "pred": "compare"
+  },
+  {
+   "text": "hashmap or treemap for ordered keys",
+   "gold": "compare",
+   "pred": "summarize"
+  },
+  {
+   "text": "what sets apart a list and a tuple in python",
+   "gold": "compare",
+   "pred": "explain"
+  },
+  {
+   "text": "GPT-4 or Claude for coding help, which is stronger",
+   "gold": "compare",
+   "pred": "path"
+  },
+  {
+   "text": "explain the difference in how TCP and QUIC handle loss",
+   "gold": "compare",
+   "pred": "explain"
+  },
+  {
+   "text": "dig up what I wrote on the master theorem",
+   "gold": "find",
+   "pred": "summarize"
+  },
+  {
+   "text": "look through my stuff for anything on raft",
+   "gold": "find",
+   "pred": "summarize"
+  },
+  {
+   "text": "bring back my highlights on deep work",
+   "gold": "find",
+   "pred": "summarize"
+  },
+  {
+   "text": "what are the threads running through my notes",
+   "gold": "summarize",
+   "pred": "find"
+  },
+  {
+   "text": "condense my week of reading into bullets",
+   "gold": "summarize",
+   "pred": "explain"
+  },
+  {
+   "text": "in a few lines, what do I know about databases",
+   "gold": "summarize",
+   "pred": "path"
+  },
+  {
+   "text": "see if I remember the SOLID principles",
+   "gold": "quiz",
+   "pred": "path"
+  },
+  {
+   "text": "make me practice explaining backprop",
+   "gold": "quiz",
+   "pred": "summarize"
+  },
+  {
+   "text": "I finished the basics of graphs, what now",
+   "gold": "path",
+   "pred": "show_images"
+  },
+  {
+   "text": "what's missing before I can read the LoRA paper",
+   "gold": "path",
+   "pred": "find"
+  },
+  {
+   "text": "can you switch to dark mode",
+   "gold": "general",
+   "pred": "explain"
+  },
+  {
+   "text": "how long have I been using this",
+   "gold": "general",
+   "pred": "summarize"
+  }
+ ]
+}

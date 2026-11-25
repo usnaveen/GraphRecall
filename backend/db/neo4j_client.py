@@ -193,6 +193,9 @@ class Neo4jClient:
         try:
             await self.find_seed_concepts("__warmup__", ["warmup"])
             await self.find_seed_concepts("__warmup__", ["warmup"], allowed_concept_ids=["__warmup__"])
+            from backend.services.intent_router.router import MENTION_QUERY
+
+            await self.execute_query(MENTION_QUERY, {"user_id": "__warmup__", "q": "warmup"})
             default_pattern = _rel_pattern(DEFAULT_REL_TYPES)
             for pattern, hops in ((default_pattern, 1), (default_pattern, 2), (_rel_pattern(["PREREQUISITE_OF"]), 3)):
                 await self.execute_query(_neighbor_query(pattern, hops, scoped=False), params)

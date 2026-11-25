@@ -115,12 +115,12 @@ async def test_analyze_query_parallel_embed_and_greeting_fastpath() -> None:
          patch.object(cg, "get_embedding_dims", return_value=8), \
          patch.object(cg, "get_fast_model", return_value=fake_llm):
         greet = await cg.analyze_query_node({"messages": [HumanMessage(content="hello!")]})
-        assert greet == {"intent": "general", "entities": []}
+        assert greet == {"intent": "general", "entities": [], "router_source": "greeting"}
         assert llm_calls == 0
         assert embed_calls == 0
 
         analyzed = await cg.analyze_query_node({"messages": [HumanMessage(content="Explain HNSW iterative scan")]})
-        assert analyzed == {"intent": "explain", "entities": ["HNSW"]}
+        assert analyzed == {"intent": "explain", "entities": ["HNSW"], "router_source": "llm"}
         assert llm_calls == 1
         assert embed_calls == 1
 

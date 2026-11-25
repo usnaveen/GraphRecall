@@ -1,0 +1,645 @@
+{
+ "eval_set": "test",
+ "train_size": 2800,
+ "eval_size": 160,
+ "test_label_sources": {
+  "agent": 160
+ },
+ "rules": {
+  "model": "keyword rules",
+  "accuracy": 0.625,
+  "accuracy_ci95": [
+   0.55,
+   0.6937
+  ],
+  "macro_f1": 0.6571,
+  "macro_f1_ci95": [
+   0.5794,
+   0.7194
+  ],
+  "routing_accuracy": 0.6875,
+  "per_class_f1": {
+   "explain": 0.634,
+   "compare": 0.824,
+   "find": 0.7,
+   "summarize": 0.552,
+   "quiz": 0.75,
+   "path": 0.625,
+   "show_images": 0.778,
+   "general": 0.395
+  },
+  "confusion": {
+   "labels": [
+    "explain",
+    "compare",
+    "find",
+    "summarize",
+    "quiz",
+    "path",
+    "show_images",
+    "general"
+   ],
+   "matrix": [
+    [
+     13,
+     0,
+     0,
+     1,
+     0,
+     1,
+     0,
+     5
+    ],
+    [
+     1,
+     14,
+     0,
+     0,
+     0,
+     1,
+     0,
+     4
+    ],
+    [
+     0,
+     0,
+     14,
+     0,
+     0,
+     0,
+     1,
+     5
+    ],
+    [
+     0,
+     0,
+     3,
+     8,
+     0,
+     0,
+     1,
+     8
+    ],
+    [
+     0,
+     0,
+     1,
+     0,
+     12,
+     0,
+     0,
+     7
+    ],
+    [
+     3,
+     0,
+     0,
+     0,
+     0,
+     10,
+     0,
+     7
+    ],
+    [
+     0,
+     0,
+     1,
+     0,
+     0,
+     0,
+     14,
+     5
+    ],
+    [
+     4,
+     0,
+     1,
+     0,
+     0,
+     0,
+     0,
+     15
+    ]
+   ]
+  },
+  "latency_ms_p50": 0.009,
+  "latency_ms_p95": 0.009
+ },
+ "tfidf_lr": {
+  "model": "TF-IDF + LogReg (ships)",
+  "accuracy": 0.9187,
+  "accuracy_ci95": [
+   0.875,
+   0.9563
+  ],
+  "macro_f1": 0.9181,
+  "macro_f1_ci95": [
+   0.87,
+   0.9553
+  ],
+  "routing_accuracy": 0.9187,
+  "per_class_f1": {
+   "explain": 0.833,
+   "compare": 1.0,
+   "find": 0.872,
+   "summarize": 0.905,
+   "quiz": 1.0,
+   "path": 0.889,
+   "show_images": 0.923,
+   "general": 0.923
+  },
+  "confusion": {
+   "labels": [
+    "explain",
+    "compare",
+    "find",
+    "summarize",
+    "quiz",
+    "path",
+    "show_images",
+    "general"
+   ],
+   "matrix": [
+    [
+     15,
+     0,
+     0,
+     1,
+     0,
+     3,
+     0,
+     1
+    ],
+    [
+     0,
+     20,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     17,
+     2,
+     0,
+     0,
+     1,
+     0
+    ],
+    [
+     1,
+     0,
+     0,
+     19,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     20,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     20,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     18,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     18
+    ]
+   ]
+  },
+  "selective": [
+   {
+    "threshold": 0.0,
+    "coverage": 1.0,
+    "accuracy_on_kept": 0.9187
+   },
+   {
+    "threshold": 0.3,
+    "coverage": 1.0,
+    "accuracy_on_kept": 0.9187
+   },
+   {
+    "threshold": 0.4,
+    "coverage": 0.969,
+    "accuracy_on_kept": 0.9355
+   },
+   {
+    "threshold": 0.5,
+    "coverage": 0.95,
+    "accuracy_on_kept": 0.9474
+   },
+   {
+    "threshold": 0.6,
+    "coverage": 0.881,
+    "accuracy_on_kept": 0.9716
+   },
+   {
+    "threshold": 0.7,
+    "coverage": 0.831,
+    "accuracy_on_kept": 0.985
+   },
+   {
+    "threshold": 0.8,
+    "coverage": 0.75,
+    "accuracy_on_kept": 0.9917
+   }
+  ],
+  "latency_ms_p50": 0.082,
+  "latency_ms_p95": 0.103,
+  "cv_macro_f1_by_C": {
+   "1.0": 0.9967844560396738,
+   "3.0": 0.9978559392786146,
+   "10.0": 0.9989285167610593,
+   "30.0": 0.999642838920353
+  },
+  "C": 30.0,
+  "parity_max_abs_diff": 7.673693014353944e-09,
+  "features": 10424
+ },
+ "tfidf_lr_errors": [
+  {
+   "text": "Why do we normalize inputs before training",
+   "gold": "explain",
+   "pred": "path"
+  },
+  {
+   "text": "how do hash maps get O(1) lookups",
+   "gold": "explain",
+   "pred": "path"
+  },
+  {
+   "text": "Give me the gist of how mRNA vaccines work",
+   "gold": "explain",
+   "pred": "summarize"
+  },
+  {
+   "text": "whats the reason transformers need positional encoding",
+   "gold": "explain",
+   "pred": "path"
+  },
+  {
+   "text": "how do neurons fire? biology question",
+   "gold": "explain",
+   "pred": "general"
+  },
+  {
+   "text": "Do my notes mention the author of the Stoicism book",
+   "gold": "find",
+   "pred": "summarize"
+  },
+  {
+   "text": "is there a note on the Krebs cycle in here",
+   "gold": "find",
+   "pred": "show_images"
+  },
+  {
+   "text": "Get the bullet points I had on the immune response",
+   "gold": "find",
+   "pred": "summarize"
+  },
+  {
+   "text": "Briefly, what does my collection say about sleep and memory",
+   "gold": "summarize",
+   "pred": "explain"
+  },
+  {
+   "text": "Are there any charts in my notes about inflation",
+   "gold": "show_images",
+   "pred": "find"
+  },
+  {
+   "text": "find me a visual of the OSI model from my notes",
+   "gold": "show_images",
+   "pred": "find"
+  },
+  {
+   "text": "Is this thing connected to the internet",
+   "gold": "general",
+   "pred": "path"
+  },
+  {
+   "text": "What's your favourite topic",
+   "gold": "general",
+   "pred": "path"
+  }
+ ],
+ "minilm_lr": {
+  "model": "MiniLM + LogReg",
+  "accuracy": 0.8438,
+  "accuracy_ci95": [
+   0.7875,
+   0.9
+  ],
+  "macro_f1": 0.8429,
+  "macro_f1_ci95": [
+   0.7795,
+   0.8968
+  ],
+  "routing_accuracy": 0.85,
+  "per_class_f1": {
+   "explain": 0.757,
+   "compare": 0.872,
+   "find": 0.9,
+   "summarize": 0.756,
+   "quiz": 0.789,
+   "path": 0.927,
+   "show_images": 0.909,
+   "general": 0.833
+  },
+  "confusion": {
+   "labels": [
+    "explain",
+    "compare",
+    "find",
+    "summarize",
+    "quiz",
+    "path",
+    "show_images",
+    "general"
+   ],
+   "matrix": [
+    [
+     14,
+     2,
+     0,
+     3,
+     1,
+     0,
+     0,
+     0
+    ],
+    [
+     1,
+     17,
+     0,
+     0,
+     1,
+     1,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     18,
+     1,
+     0,
+     0,
+     1,
+     0
+    ],
+    [
+     0,
+     0,
+     1,
+     17,
+     0,
+     0,
+     2,
+     0
+    ],
+    [
+     1,
+     0,
+     0,
+     1,
+     15,
+     1,
+     1,
+     1
+    ],
+    [
+     0,
+     0,
+     0,
+     1,
+     0,
+     19,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     20,
+     0
+    ],
+    [
+     1,
+     0,
+     1,
+     2,
+     1,
+     0,
+     0,
+     15
+    ]
+   ]
+  },
+  "selective": [
+   {
+    "threshold": 0.0,
+    "coverage": 1.0,
+    "accuracy_on_kept": 0.8438
+   },
+   {
+    "threshold": 0.3,
+    "coverage": 0.994,
+    "accuracy_on_kept": 0.8491
+   },
+   {
+    "threshold": 0.4,
+    "coverage": 0.975,
+    "accuracy_on_kept": 0.8654
+   },
+   {
+    "threshold": 0.5,
+    "coverage": 0.912,
+    "accuracy_on_kept": 0.8904
+   },
+   {
+    "threshold": 0.6,
+    "coverage": 0.838,
+    "accuracy_on_kept": 0.903
+   },
+   {
+    "threshold": 0.7,
+    "coverage": 0.731,
+    "accuracy_on_kept": 0.9231
+   },
+   {
+    "threshold": 0.8,
+    "coverage": 0.644,
+    "accuracy_on_kept": 0.932
+   }
+  ],
+  "latency_ms_p50": 8.454,
+  "latency_ms_p95": 11.228
+ },
+ "minilm_lr_errors": [
+  {
+   "text": "could you unpack the idea of a Markov chain for me",
+   "gold": "explain",
+   "pred": "summarize"
+  },
+  {
+   "text": "why is quicksort O(n log n) on average but n^2 worst case",
+   "gold": "explain",
+   "pred": "compare"
+  },
+  {
+   "text": "how do hash maps get O(1) lookups",
+   "gold": "explain",
+   "pred": "summarize"
+  },
+  {
+   "text": "Give me the gist of how mRNA vaccines work",
+   "gold": "explain",
+   "pred": "summarize"
+  },
+  {
+   "text": "what is temperature when sampling from an LLM",
+   "gold": "explain",
+   "pred": "compare"
+  },
+  {
+   "text": "how do neurons fire? biology question",
+   "gold": "explain",
+   "pred": "quiz"
+  },
+  {
+   "text": "what separates a CNN from a vision transformer",
+   "gold": "compare",
+   "pred": "explain"
+  },
+  {
+   "text": "Should I memoize or tabulate for this DP problem",
+   "gold": "compare",
+   "pred": "quiz"
+  },
+  {
+   "text": "Monolith or microservices for a 3 person team",
+   "gold": "compare",
+   "pred": "path"
+  },
+  {
+   "text": "remind me what my notes say the time complexity of union find is",
+   "gold": "find",
+   "pred": "summarize"
+  },
+  {
+   "text": "find the screenshot text where I captured the Big-O table",
+   "gold": "find",
+   "pred": "show_images"
+  },
+  {
+   "text": "Give me an overview of everything in my graph",
+   "gold": "summarize",
+   "pred": "show_images"
+  },
+  {
+   "text": "Can you recap the system design material I've collected",
+   "gold": "summarize",
+   "pred": "show_images"
+  },
+  {
+   "text": "what's the gist of all the transformer papers I saved",
+   "gold": "summarize",
+   "pred": "find"
+  },
+  {
+   "text": "Let's see if I actually remember the graph algorithms",
+   "gold": "quiz",
+   "pred": "show_images"
+  },
+  {
+   "text": "Can you check me on the OSI layers",
+   "gold": "quiz",
+   "pred": "general"
+  },
+  {
+   "text": "Make me recall the steps of photosynthesis",
+   "gold": "quiz",
+   "pred": "path"
+  },
+  {
+   "text": "ask me something about the French revolution I should know",
+   "gold": "quiz",
+   "pred": "explain"
+  },
+  {
+   "text": "Grill me on system design",
+   "gold": "quiz",
+   "pred": "summarize"
+  },
+  {
+   "text": "After finishing arrays and hashing, what's the next LeetCode topic",
+   "gold": "path",
+   "pred": "summarize"
+  },
+  {
+   "text": "Can you be more concise from now on",
+   "gold": "general",
+   "pred": "summarize"
+  },
+  {
+   "text": "that's not what I asked",
+   "gold": "general",
+   "pred": "quiz"
+  },
+  {
+   "text": "Why was the last answer so slow",
+   "gold": "general",
+   "pred": "explain"
+  },
+  {
+   "text": "who built GraphRecall",
+   "gold": "general",
+   "pred": "find"
+  },
+  {
+   "text": "What's your favourite topic",
+   "gold": "general",
+   "pred": "summarize"
+  }
+ ]
+}
