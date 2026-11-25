@@ -10,6 +10,8 @@ struct FeedView: View {
     @State private var showAgentInsights = false
     @State private var dueLater: [LaterItem] = []
     @State private var dueCardHeight: CGFloat = 0
+    @State private var showAgentInbox = false
+    private let agentBridge = AgentBridgeCapability.shared
     @AppStorage(GRSettingsKey.feedStyle) private var feedStyleRaw = FeedStyle.reels.rawValue
     @Environment(AppRouter.self) private var router
 
@@ -77,6 +79,14 @@ struct FeedView: View {
             consumePendingReview()
             await model.loadRevisitPool()
             await loadDueLater()
+            await agentBridge.refresh()
+        }
+        // Agent bridge: curated cards waiting for approval + "ask my agent" answers.
+        .sheet(isPresented: $showAgentInbox, onDismiss: {
+            Task { await agentBridge.refreshPendingCount() }
+        }) {
+            AgentInboxView()
+                .presentationDragIndicator(.visible)
         }
         .onChange(of: router.pendingStartReview) { _, _ in consumePendingReview() }
         .fullScreenCover(item: $activeSession) { launch in
@@ -115,6 +125,12 @@ struct FeedView: View {
                     .grGlassEffect(in: Capsule())
             }
             Spacer()
+            if agentBridge.isAvailable {
+                AgentInboxButton(pendingCount: agentBridge.pendingCount) {
+                    GRHaptics.tap()
+                    showAgentInbox = true
+                }
+            }
             GRIconButton(
                 systemImage: "sparkles",
                 tint: model.agentInsights.isEmpty ? GRColor.textSecondary : GRColor.accent,
