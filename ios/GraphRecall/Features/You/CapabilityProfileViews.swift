@@ -17,18 +17,18 @@ private func splitList(_ s: String) -> [String] {
 final class EducationViewModel {
     var profile = UserProfileInfo.empty
     var courses: [UserCourse] = []
-    var isLoading = false
+    var isLoading = true
     var errorMessage: String?
 
     func load() async {
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
         do {
             async let p = APIClient.shared.capabilityProfile()
             async let c = APIClient.shared.courses()
             profile = (try? await p) ?? .empty
             courses = try await c
-            errorMessage = nil
         } catch {
             errorMessage = APIError.userFacing(error, resource: "courses")
         }
@@ -58,16 +58,24 @@ struct EducationView: View {
                     .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 8, trailing: 20))
             }
             Section {
-                if let err = model.errorMessage {
-                    Text(err).font(GRType.caption).foregroundStyle(GRColor.warning).listRowBackground(Color.clear)
-                }
                 if model.isLoading && model.courses.isEmpty {
-                    ProgressView().tint(GRColor.accent).frame(maxWidth: .infinity).listRowBackground(Color.clear)
-                }
-                if model.courses.isEmpty && !model.isLoading {
+                    ProgressView()
+                        .tint(GRColor.accent)
+                        .frame(maxWidth: .infinity, minHeight: 80)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                } else if let err = model.errorMessage {
+                    CapabilityErrorBanner(message: err) {
+                        Task { await model.load() }
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
+                } else if model.courses.isEmpty {
                     Text("Add the courses you've taken. Their topics show up in your knowledge map, weighted by your grade.")
                         .font(GRType.caption).foregroundStyle(GRColor.textSecondary)
                         .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                 }
                 ForEach(model.courses) { c in
                     courseRow(c)
@@ -298,15 +306,15 @@ struct CourseEditSheet: View {
 @Observable
 final class ProjectsViewModel {
     var projects: [UserProject] = []
-    var isLoading = false
+    var isLoading = true
     var errorMessage: String?
 
     func load() async {
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
         do {
             projects = try await APIClient.shared.projects()
-            errorMessage = nil
         } catch {
             errorMessage = APIError.userFacing(error, resource: "projects")
         }
@@ -331,16 +339,24 @@ struct ProjectsView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
-            if let err = model.errorMessage {
-                Text(err).font(GRType.caption).foregroundStyle(GRColor.warning).listRowBackground(Color.clear)
-            }
             if model.isLoading && model.projects.isEmpty {
-                ProgressView().tint(GRColor.accent).frame(maxWidth: .infinity).listRowBackground(Color.clear)
-            }
-            if model.projects.isEmpty && !model.isLoading {
+                ProgressView()
+                    .tint(GRColor.accent)
+                    .frame(maxWidth: .infinity, minHeight: 80)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            } else if let err = model.errorMessage {
+                CapabilityErrorBanner(message: err) {
+                    Task { await model.load() }
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
+            } else if model.projects.isEmpty {
                 Text("Add projects with the skills they used. Each skill becomes evidence in your knowledge map.")
                     .font(GRType.caption).foregroundStyle(GRColor.textSecondary)
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
             ForEach(model.projects) { p in
                 row(p)
@@ -460,6 +476,33 @@ struct ProjectEditSheet: View {
             dismiss()
         } catch {
             errorMessage = APIError.userFacing(error, resource: "project")
+        }
+    }
+}
+
+private struct CapabilityErrorBanner: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GRBanner(
+                systemImage: "exclamationmark.triangle.fill",
+                title: "Couldn\u{2019}t load",
+                subtitle: message,
+                tone: .warning
+            )
+            Button {
+                GRHaptics.tap()
+                onRetry()
+            } label: {
+                Label("Retry", systemImage: "arrow.clockwise")
+                    .font(GRType.caption.weight(.semibold))
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.capsule)
+            .controlSize(.small)
+            .tint(GRColor.accent)
         }
     }
 }

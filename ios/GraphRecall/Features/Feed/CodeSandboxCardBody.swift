@@ -8,7 +8,7 @@ import WebKit
 struct CodeSandboxCardBody: View {
     let item: FeedItem
     var onReveal: (() -> Void)? = nil
-    var onComplete: ((Int, Int) -> Void)? = nil
+    var onComplete: ((Int, Int, Int) -> Void)? = nil
 
     @State private var code = ""
     @State private var showHint = false
@@ -18,32 +18,14 @@ struct CodeSandboxCardBody: View {
     @State private var executionResult: SandboxExecutionResult?
     @FocusState private var editorFocused: Bool
 
-    private var titleText: String {
-        item.stringContent("title") ?? item.conceptName ?? "Code Sandbox"
-    }
+    private var payload: SandboxChallengePayload { item.sandboxPayload }
 
-    private var promptText: String {
-        item.stringContent("prompt") ?? item.stringContent("instruction") ?? item.prompt
-    }
-
-    private var starterCode: String {
-        item.stringContent("starter_code")
-            ?? item.stringContent("starterCode")
-            ?? item.stringContent("initial_code")
-            ?? ""
-    }
-
-    private var solutionCode: String? {
-        item.stringContent("solution_code") ?? item.stringContent("solutionCode")
-    }
-
-    private var hintText: String? {
-        item.stringContent("hint")
-    }
-
-    private var difficultyLabel: String {
-        (item.stringContent("difficulty") ?? "medium").uppercased()
-    }
+    private var titleText: String { payload.title }
+    private var promptText: String { payload.prompt }
+    private var starterCode: String { payload.starterCode }
+    private var solutionCode: String? { payload.solutionCode }
+    private var hintText: String? { payload.hint }
+    private var difficultyLabel: String { payload.difficulty.uppercased() }
 
     private var difficultyTone: GRTone {
         switch difficultyLabel.lowercased() {
@@ -53,23 +35,8 @@ struct CodeSandboxCardBody: View {
         }
     }
 
-    private var languageLabel: String {
-        (item.stringContent("language") ?? "javascript").uppercased()
-    }
-
-    private var testCases: [SandboxTestCase] {
-        let raw = (item.content["test_cases"]?.value as? [[String: Any]])
-            ?? (item.content["testCases"]?.value as? [[String: Any]])
-            ?? []
-        return raw.compactMap { dict in
-            guard let name = dict["name"] as? String,
-                  let expression = dict["expression"] as? String else { return nil }
-            let expected = (dict["expected_repr"] as? String)
-                ?? (dict["expectedRepr"] as? String)
-                ?? "null"
-            return SandboxTestCase(name: name, expression: expression, expectedRepr: expected)
-        }
-    }
+    private var languageLabel: String { payload.language.uppercased() }
+    private var testCases: [SandboxTestCase] { payload.testCases }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -106,7 +73,7 @@ struct CodeSandboxCardBody: View {
                     GRHaptics.warning()
                 }
                 onReveal?()
-                onComplete?(result.passed, result.total)
+                onComplete?(result.passed, result.total, result.elapsedMs)
             }
             .frame(width: 1, height: 1)
             .opacity(0.01)

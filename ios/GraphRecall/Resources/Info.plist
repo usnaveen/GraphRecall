@@ -63,7 +63,12 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>GraphRecall turns your dictation into text for concept dumps and questions.</string>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

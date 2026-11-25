@@ -181,24 +181,26 @@ async def get_3d_graph(
             concepts = [r["concept"] for r in result]
             logger.info("Graph3D: Concepts found", count=len(concepts))
         
-        # Get relationship counts for sizing
+        # Get relationship counts for sizing (single batched Cypher query)
+        concept_ids = [c.get("id") for c in concepts if c.get("id") is not None]
         relationship_counts = {}
-        for concept in concepts:
-            concept_id = concept.get("id")
-            count_result = await neo4j_client.execute_query(
+        if concept_ids:
+            count_rows = await neo4j_client.execute_query(
                 """
-                MATCH (c:Concept {id: $id, user_id: $user_id})-[r]-()
-                RETURN count(r) as count
+                UNWIND $ids AS cid
+                MATCH (c:Concept {id: cid, user_id: $user_id})
+                OPTIONAL MATCH (c)-[r]-()
+                RETURN cid AS id, count(r) AS count
                 """,
-                {"id": concept_id, "user_id": user_id},
+                {"ids": concept_ids, "user_id": user_id},
             )
-            relationship_counts[concept_id] = (
-                count_result[0]["count"] if count_result else 0
-            )
+            for row in count_rows or []:
+                rid = row.get("id")
+                if rid is not None:
+                    relationship_counts[rid] = row.get("count", 0)
         
         # Get mastery levels from PostgreSQL
         mastery_levels = {}
-        concept_ids = [c.get("id") for c in concepts]
         
         if concept_ids:
             mastery_result = await pg_client.execute_query(
@@ -406,7 +408,7 @@ async def focus_on_concept(
         # Get linked notes for this concept
         linked_notes_result = await neo4j_client.execute_query(
             """
-            MATCH (n:NoteSource)-[r:EXPLAINS]->(c:Concept {id: $id, user_id: $user_id})
+            MATCH (n:NoteSource {user_id: $user_id})-[r:EXPLAINS]->(c:Concept {id: $id, user_id: $user_id})
             RETURN n.id AS note_id, n.summary AS summary,
                    r.relevance AS relevance,
                    r.evidence_span AS evidence_span
@@ -416,37 +418,55 @@ async def focus_on_concept(
             {"id": concept_id, "user_id": user_id},
         )
 
-        # Enrich linked notes with full note data from Postgres
+        # Enrich linked notes with full note data from Postgres (batched, no N+1)
         linked_notes = []
-        for ln in linked_notes_result:
-            note_data = await pg_client.execute_query(
+        note_ids = list(
+            dict.fromkeys(
+                str(ln["note_id"])
+                for ln in (linked_notes_result or [])
+                if ln.get("note_id") is not None
+            )
+        )
+        if note_ids:
+            notes_rows = await pg_client.execute_query(
                 """
                 SELECT id, title, content_text, resource_type, created_at
                 FROM notes
-                WHERE id = :note_id AND user_id = :user_id
+                WHERE id = ANY(:ids) AND user_id = :user_id
                 """,
-                {"note_id": ln["note_id"], "user_id": user_id},
+                {"ids": note_ids, "user_id": user_id},
             )
-            
-            # Fetch images from chunks for this note
-            chunk_data = await pg_client.execute_query(
+            notes_by_id = {str(nd["id"]): nd for nd in (notes_rows or [])}
+
+            chunk_rows = await pg_client.execute_query(
                 """
-                SELECT images
-                FROM chunks
-                WHERE note_id = :note_id AND jsonb_array_length(images) > 0
-                LIMIT 5
+                SELECT c.note_id, c.images
+                FROM chunks c
+                JOIN notes n ON n.id = c.note_id
+                WHERE c.note_id = ANY(:ids)
+                  AND n.user_id = :user_id
+                  AND jsonb_array_length(c.images) > 0
                 """,
-                {"note_id": ln["note_id"]},
+                {"ids": note_ids, "user_id": user_id},
             )
-            images = []
-            for row in chunk_data:
-                images.extend(row.get("images", []))
-                
-            if note_data:
-                nd = note_data[0]
+            images_by_note: dict[str, list] = {}
+            chunks_seen_per_note: dict[str, int] = {}
+            for row in chunk_rows or []:
+                nid = str(row.get("note_id"))
+                if chunks_seen_per_note.get(nid, 0) >= 5:
+                    continue
+                chunks_seen_per_note[nid] = chunks_seen_per_note.get(nid, 0) + 1
+                imgs = row.get("images") or []
+                if imgs:
+                    images_by_note.setdefault(nid, []).extend(imgs)
+
+            for ln in linked_notes_result:
+                nid = str(ln.get("note_id") or "")
+                nd = notes_by_id.get(nid)
+                if not nd:
+                    continue
                 # Use evidence_span if available, fallback to full text
                 preview_text = ln.get("evidence_span") or nd.get("content_text", "")
-                
                 linked_notes.append({
                     "id": str(nd["id"]),
                     "title": nd.get("title", "Untitled"),
@@ -454,7 +474,7 @@ async def focus_on_concept(
                     "resource_type": nd.get("resource_type", "note"),
                     "relevance": ln.get("relevance", 0),
                     "created_at": str(nd.get("created_at", "")),
-                    "images": images,
+                    "images": images_by_note.get(nid, []),
                 })
 
         # Get mastery for all concepts

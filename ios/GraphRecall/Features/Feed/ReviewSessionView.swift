@@ -33,7 +33,7 @@ extension FeedItemType {
         case .mcq: return "checklist"
         case .fillBlank: return "pencil.line"
         case .showcase: return "sparkles"
-        case .codeChallenge: return "chevron.left.forwardslash.chevron.right"
+        case .codeChallenge, .codeSandbox: return "chevron.left.forwardslash.chevron.right"
         case .diagram: return "point.3.connected.trianglepath.dotted"
         case .screenshot, .infographic: return "photo"
         case .territory: return "map.fill"
@@ -46,7 +46,7 @@ extension FeedItemType {
         switch self {
         case .flashcard, .showcase: return .accent
         case .mcq, .diagram: return .purple
-        case .fillBlank, .codeChallenge, .territory: return .cyan
+        case .fillBlank, .codeChallenge, .codeSandbox, .territory: return .cyan
         case .screenshot, .infographic: return .coral
         case .agentCurated: return .cyan
         case .unknown: return .neutral

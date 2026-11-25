@@ -200,8 +200,9 @@ struct KnowledgeMapView: View {
                     conceptsSection.padding(.horizontal, 20)
                 }
             }
-            .padding(.bottom, 32)
+            .padding(.bottom, 16)
         }
+        .contentMargins(.bottom, 100, for: .scrollContent)
         .background(GRColor.canvas.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }

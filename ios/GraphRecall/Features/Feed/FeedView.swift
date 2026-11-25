@@ -39,8 +39,13 @@ struct FeedView: View {
                         .frame(maxHeight: .infinity)
                 } else {
                     switch style {
-                    case .reels: FeedReelView(model: model)
-                    case .posts: FeedPostsView(model: model)
+                    case .reels:
+                        FeedReelView(model: model)
+                            .padding(.bottom, 12)
+                            .clipped()
+                    case .posts:
+                        FeedPostsView(model: model)
+                            .contentMargins(.bottom, 16, for: .scrollContent)
                     }
                 }
             }

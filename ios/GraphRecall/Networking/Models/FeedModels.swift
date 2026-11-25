@@ -9,6 +9,7 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
     case screenshot
     case showcase
     case codeChallenge = "code_challenge"
+    case codeSandbox = "code_sandbox"
     case territory
     /// Curated by the user's external agent (agent bridge, PR #3). Pending items never reach
     /// `/api/feed`; only ones the user approved in the inbox.
@@ -40,6 +41,7 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         case "screenshot": return .screenshot
         case "showcase", "concept_showcase": return .showcase
         case "code_challenge": return .codeChallenge
+        case "code_sandbox": return .codeSandbox
         case "territory": return .territory
         case "agent_curated": return .agentCurated
         default: return nil
@@ -56,6 +58,7 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         case .screenshot: return "Screenshot"
         case .showcase: return "Concept Showcase"
         case .codeChallenge: return "Code Challenge"
+        case .codeSandbox: return "Code Sandbox"
         case .territory: return "Map the Territory"
         case .agentCurated: return "From your agent"
         case .unknown: return "Card"
@@ -66,7 +69,7 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         switch self {
         case .flashcard, .showcase: return "accent"
         case .mcq: return "accent"
-        case .fillBlank, .codeChallenge, .territory: return "cyan"
+        case .fillBlank, .codeChallenge, .codeSandbox, .territory: return "cyan"
         case .diagram: return "purple"
         case .screenshot, .infographic: return "coral"
         case .agentCurated: return "cyan"
@@ -329,6 +332,85 @@ struct FeedItem: Codable, Sendable, Identifiable, Hashable {
     var keyPoints: [String] {
         let a = stringArrayContent("key_points")
         return a.isEmpty ? stringArrayContent("keyPoints") : a
+    }
+
+    /// Decoded payload for `code_sandbox` feed cards (`backend/services/code_sandbox_cards.py`).
+    var sandboxPayload: SandboxChallengePayload {
+        let fallbackId = id.hasPrefix("code_sandbox:")
+            ? String(id.dropFirst("code_sandbox:".count))
+            : id
+        let challengeId = stringContent("challenge_id")
+            ?? stringContent("challengeId")
+            ?? fallbackId
+        let title = stringContent("title") ?? conceptName ?? "Code Sandbox"
+        let promptText = stringContent("prompt")
+            ?? stringContent("instruction")
+            ?? prompt
+        let language = stringContent("language") ?? "javascript"
+        let starterCode = stringContent("starter_code")
+            ?? stringContent("starterCode")
+            ?? stringContent("initial_code")
+            ?? ""
+        let solutionCode = stringContent("solution_code")
+            ?? stringContent("solutionCode")
+        let hint = stringContent("hint")
+        let difficulty = stringContent("difficulty") ?? "medium"
+
+        let rawTests: [[String: Any]]
+        if let typed = content["test_cases"]?.value as? [[String: Any]] {
+            rawTests = typed
+        } else if let typed = content["testCases"]?.value as? [[String: Any]] {
+            rawTests = typed
+        } else if let boxed = (content["test_cases"]?.value as? [Any]) ?? (content["testCases"]?.value as? [Any]) {
+            rawTests = boxed.compactMap { $0 as? [String: Any] }
+        } else {
+            rawTests = []
+        }
+
+        let testCases = rawTests.compactMap { dict -> SandboxTestCase? in
+            guard let name = dict["name"] as? String,
+                  let expression = dict["expression"] as? String else { return nil }
+            let expected = (dict["expected_repr"] as? String)
+                ?? (dict["expectedRepr"] as? String)
+                ?? "null"
+            return SandboxTestCase(name: name, expression: expression, expectedRepr: expected)
+        }
+
+        return SandboxChallengePayload(
+            challengeId: challengeId,
+            title: title,
+            prompt: promptText,
+            language: language,
+            starterCode: starterCode,
+            solutionCode: solutionCode,
+            hint: hint,
+            difficulty: difficulty,
+            testCases: testCases
+        )
+    }
+}
+
+struct SandboxChallengePayload: Hashable, Sendable {
+    let challengeId: String
+    let title: String
+    let prompt: String
+    let language: String
+    let starterCode: String
+    let solutionCode: String?
+    let hint: String?
+    let difficulty: String
+    let testCases: [SandboxTestCase]
+}
+
+struct SandboxResultResponse: Decodable, Sendable {
+    let recorded: Bool
+    let signal: Double?
+    let result: String?
+    let conceptId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case recorded, signal, result
+        case conceptId = "concept_id"
     }
 }
 

@@ -31,6 +31,8 @@ from backend.models.feed_schemas import (
 from backend.services.feed_service import FeedService
 from backend.services.spaced_repetition import SpacedRepetitionService
 from backend.services.review_target import UnresolvableReviewTarget, resolve_review_concept
+from backend.services import creative_cards
+from backend.services import knowledge_map as km
 from backend.agents.research_agent import WebResearchAgent
 
 logger = structlog.get_logger()
@@ -237,6 +239,155 @@ async def sandbox_result(body: SandboxResultBody, current_user: dict = Depends(g
                           source_id=f"sandbox:{body.challenge_id}", detail=ev["metadata"])
     return {"recorded": True, "signal": ev["score"], "result": ev["signal_type"],
             "concept_id": concept["id"] if concept else None}
+
+
+class SpotTheBugGradeRequest(BaseModel):
+    card_id: str = Field(..., min_length=1, max_length=120)
+    selected_line: int
+
+
+@router.get("/creative-cards")
+async def get_creative_cards(
+    current_user: dict = Depends(get_current_user),
+    limit: int = Query(default=4, ge=1, le=20),
+    exclude_ids: Optional[str] = Query(default=None, description="Comma-separated card IDs to exclude"),
+):
+    """Select deterministic spot_the_bug and tradeoff_duel cards matched to user's recent/weak concepts (0 LLM)."""
+    user_id = str(current_user["id"])
+    excluded = [x.strip() for x in (exclude_ids or "").split(",") if x.strip()]
+
+    concept_names: list[str] = []
+    seen_names: set[str] = set()
+
+    def _add_name(name: Optional[str]) -> None:
+        cleaned = (name or "").strip()
+        if cleaned and cleaned.lower() not in seen_names:
+            seen_names.add(cleaned.lower())
+            concept_names.append(cleaned)
+
+    weak_ids: list[str] = []
+    try:
+        pg_client = await get_postgres_client()
+        weak_rows = await pg_client.execute_query(
+            """
+            SELECT concept_id
+            FROM proficiency_scores
+            WHERE user_id = :user_id
+            ORDER BY score ASC, next_review_due ASC NULLS LAST
+            LIMIT 10
+            """,
+            {"user_id": user_id},
+        )
+        weak_ids = [str(r["concept_id"]) for r in (weak_rows or []) if r.get("concept_id")]
+    except Exception as exc:  # noqa: BLE001 - best-effort personalization
+        logger.warning("Feed: creative-cards weak concept lookup skipped", error=str(exc))
+
+    try:
+        neo4j_client = await get_neo4j_client()
+        neo_rows = await neo4j_client.execute_query(
+            """
+            MATCH (c:Concept {user_id: $user_id})
+            RETURN c.id AS id, c.name AS name, c.domain AS domain
+            ORDER BY c.created_at DESC
+            LIMIT 25
+            """,
+            {"user_id": user_id},
+        )
+        by_id = {str(r["id"]): r for r in (neo_rows or []) if r.get("id")}
+        for cid in weak_ids:
+            if cid in by_id:
+                _add_name(by_id[cid].get("name"))
+                _add_name(by_id[cid].get("domain"))
+        for r in neo_rows or []:
+            _add_name(r.get("name"))
+    except Exception as exc:  # noqa: BLE001 - best-effort personalization
+        logger.warning("Feed: creative-cards neo4j concept lookup skipped", error=str(exc))
+
+    spot_cards: list[dict] = []
+    duel_cards: list[dict] = []
+    seen_spot = list(excluded)
+    seen_duel = list(excluded)
+
+    while len(spot_cards) + len(duel_cards) < limit:
+        progressed = False
+        if len(spot_cards) <= len(duel_cards):
+            s = creative_cards.select_spot_the_bug(concept_names, exclude_ids=seen_spot)
+            if s is not None:
+                seen_spot.append(s.id)
+                spot_cards.append(s.as_dict())
+                progressed = True
+        if len(spot_cards) + len(duel_cards) < limit:
+            d = creative_cards.select_tradeoff_duel(concept_names, exclude_ids=seen_duel)
+            if d is not None:
+                seen_duel.append(d.id)
+                duel_cards.append(d.as_dict())
+                progressed = True
+        if not progressed:
+            s = creative_cards.select_spot_the_bug(concept_names, exclude_ids=seen_spot)
+            if s is not None:
+                seen_spot.append(s.id)
+                spot_cards.append(s.as_dict())
+                progressed = True
+        if not progressed:
+            break
+
+    cards: list[dict] = []
+    for idx in range(max(len(spot_cards), len(duel_cards))):
+        if idx < len(spot_cards):
+            cards.append(spot_cards[idx])
+        if idx < len(duel_cards):
+            cards.append(duel_cards[idx])
+
+    return {
+        "cards": cards,
+        "spot_the_bug": spot_cards,
+        "tradeoff_duel": duel_cards,
+        "matched_concepts": concept_names[:10],
+        "total": len(cards),
+    }
+
+
+@router.post("/spot-the-bug-grade")
+async def grade_spot_the_bug_card(
+    body: SpotTheBugGradeRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Grade a Spot-the-Bug selection and record `quiz` evidence into knowledge_map."""
+    card = next((c for c in creative_cards.SPOT_THE_BUG_CARDS if c.id == body.card_id), None)
+    if card is None:
+        raise HTTPException(status_code=404, detail=f"Spot-the-bug card not found: {body.card_id}")
+
+    graded = creative_cards.grade_spot_the_bug(card, body.selected_line)
+    user_id = str(current_user["id"])
+
+    concept_id: Optional[str] = None
+    try:
+        neo4j_client = await get_neo4j_client()
+        concept = km.match_concept(card.concept_name, await km._user_concepts(neo4j_client, user_id))
+        concept_id = concept["id"] if concept else None
+    except Exception as exc:  # noqa: BLE001 - concept lookup is best-effort; skill_name still records
+        logger.warning("Feed: spot-the-bug concept match skipped", error=str(exc))
+
+    pg_client = await get_postgres_client()
+    ev = graded["evidence"]
+    await km.add_evidence(
+        pg_client,
+        user_id,
+        kind="quiz",
+        signal=ev["score"],
+        concept_id=concept_id,
+        skill_name=card.concept_name,
+        source_id=f"spot_the_bug:{card.id}",
+        detail=ev.get("metadata"),
+    )
+
+    return {
+        **graded,
+        "card_id": card.id,
+        "concept_name": card.concept_name,
+        "concept_id": concept_id,
+        "recorded": True,
+    }
 
 
 @router.post("/review")

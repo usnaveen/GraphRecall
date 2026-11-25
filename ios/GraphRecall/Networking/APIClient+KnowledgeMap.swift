@@ -80,4 +80,52 @@ extension APIClient {
     func answerTerritory(conceptId: String, answer: String) async throws -> TerritoryResult {
         try await post("/api/territory/\(kmPath(conceptId))/answer", body: TerritoryAnswerBody(answer: answer))
     }
+
+    // MARK: Code Sandbox & Digest
+
+    @discardableResult
+    func submitSandboxResult(
+        challengeId: String,
+        conceptName: String,
+        passed: Int,
+        total: Int,
+        elapsedMs: Int
+    ) async throws -> SandboxResultResponse {
+        try await post(
+            "/api/feed/sandbox-result",
+            body: SandboxResultBody(
+                challengeId: challengeId,
+                conceptName: conceptName,
+                passed: passed,
+                total: total,
+                elapsedMs: elapsedMs
+            )
+        )
+    }
+
+    func digestLaterOrUrl(url: String?, text: String, title: String?) async throws {
+        let data = try JSONEncoder().encode(DigestLaterURLBody(url: url, text: text, title: title))
+        try await sendNoContent("/api/later/digest-url", method: "POST", body: data)
+    }
+}
+
+private struct SandboxResultBody: Encodable, Sendable {
+    let challengeId: String
+    let conceptName: String
+    let passed: Int
+    let total: Int
+    let elapsedMs: Int
+
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case conceptName = "concept_name"
+        case passed, total
+        case elapsedMs = "elapsed_ms"
+    }
+}
+
+private struct DigestLaterURLBody: Encodable, Sendable {
+    let url: String?
+    let text: String
+    let title: String?
 }

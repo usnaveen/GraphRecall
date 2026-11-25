@@ -37,6 +37,25 @@ struct FeedTypedCard: View {
                 showcaseBody
             case .codeChallenge:
                 codeBody
+            case .codeSandbox:
+                CodeSandboxCardBody(
+                    item: item,
+                    onReveal: onReveal,
+                    onComplete: { passed, total, elapsedMs in
+                        let payload = item.sandboxPayload
+                        let conceptName = item.conceptName ?? payload.title
+                        Task {
+                            _ = try? await APIClient.shared.submitSandboxResult(
+                                challengeId: payload.challengeId,
+                                conceptName: conceptName,
+                                passed: passed,
+                                total: total,
+                                elapsedMs: elapsedMs
+                            )
+                        }
+                    }
+                )
+                .id(item.id)
             case .diagram:
                 diagramBody
             case .screenshot, .infographic:
@@ -82,7 +101,7 @@ struct FeedTypedCard: View {
 
     private var typeColor: Color {
         switch item.itemType {
-        case .fillBlank, .codeChallenge, .territory, .agentCurated: return GRColor.accentCyan
+        case .fillBlank, .codeChallenge, .codeSandbox, .territory, .agentCurated: return GRColor.accentCyan
         case .screenshot, .infographic: return Color(red: 1, green: 0.42, blue: 0.42)
         case .diagram: return Color(red: 0.61, green: 0.35, blue: 0.71)
         default: return GRColor.accent
