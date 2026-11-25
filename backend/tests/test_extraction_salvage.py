@@ -16,3 +16,14 @@ def test_quiz_json_with_latex_backslashes_parses():
     raw = '{"question": "Why divide by \\\\sqrt{d_k}? Use \\frac{1}{2}", "answer": "scale"}'
     parsed = _parse_llm_json(SimpleNamespace(text=raw))
     assert "frac" in parsed["question"] and parsed["answer"] == "scale"
+
+
+def test_salvage_ignores_null_concepts_and_other_arrays():
+    assert salvage_concepts_json('{"concepts": null, "other": [{"a": 1}') is None
+
+
+def test_odd_backslash_runs_and_more_latex_commands():
+    raw = '{"q": "\\\\\\frac{a}{b} and \\bullet and \\textit{x} and \\sqrt{2}", "a": "ok"}'
+    parsed = _parse_llm_json(SimpleNamespace(text=raw))
+    assert "\x0c" not in parsed["q"] and "\x08" not in parsed["q"] and "\t" not in parsed["q"]
+    assert "frac" in parsed["q"] and "bullet" in parsed["q"] and "textit" in parsed["q"]

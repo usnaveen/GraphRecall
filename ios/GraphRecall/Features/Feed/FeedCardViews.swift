@@ -42,7 +42,7 @@ struct FeedTypedCard: View {
             case .screenshot, .infographic:
                 mediaBody
             case .territory:
-                TerritoryCardBody(item: item)
+                TerritoryCardBody(item: item, onReveal: onReveal)
                     .id(item.id)
             case .agentCurated:
                 AgentCuratedCardBody(item: item, revealed: revealed, onReveal: onReveal)

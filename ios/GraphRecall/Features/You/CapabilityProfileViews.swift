@@ -58,6 +58,12 @@ struct EducationView: View {
                     .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 8, trailing: 20))
             }
             Section {
+                if let err = model.errorMessage {
+                    Text(err).font(GRType.caption).foregroundStyle(GRColor.warning).listRowBackground(Color.clear)
+                }
+                if model.isLoading && model.courses.isEmpty {
+                    ProgressView().tint(GRColor.accent).frame(maxWidth: .infinity).listRowBackground(Color.clear)
+                }
                 if model.courses.isEmpty && !model.isLoading {
                     Text("Add the courses you've taken. Their topics show up in your knowledge map, weighted by your grade.")
                         .font(GRType.caption).foregroundStyle(GRColor.textSecondary)
@@ -324,6 +330,12 @@ struct ProjectsView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
+            }
+            if let err = model.errorMessage {
+                Text(err).font(GRType.caption).foregroundStyle(GRColor.warning).listRowBackground(Color.clear)
+            }
+            if model.isLoading && model.projects.isEmpty {
+                ProgressView().tint(GRColor.accent).frame(maxWidth: .infinity).listRowBackground(Color.clear)
             }
             if model.projects.isEmpty && !model.isLoading {
                 Text("Add projects with the skills they used. Each skill becomes evidence in your knowledge map.")

@@ -166,7 +166,17 @@ struct KnowledgeMapView: View {
             VStack(alignment: .leading, spacing: 18) {
                 GRScreenHeader(title: "Knowledge map", subtitle: "What you know, and how sure we are")
 
-                if let summary = model.summary {
+                if let summary = model.summary, summary.total == 0 {
+                    GlassCard(cornerRadius: 22) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Image(systemName: "point.3.filled.connected.trianglepath.dotted").font(.title).foregroundStyle(GRColor.accent)
+                            Text("Your map fills in as you learn").font(GRType.title).foregroundStyle(GRColor.textPrimary)
+                            Text("Add notes or a book in Create, import your resume, or add courses and projects. Every review and quiz then sharpens it.")
+                                .font(GRType.body).foregroundStyle(GRColor.textSecondary)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                } else if let summary = model.summary {
                     overview(summary).padding(.horizontal, 20)
                 } else if model.isLoading {
                     ProgressView().tint(GRColor.accent).frame(maxWidth: .infinity, minHeight: 140)

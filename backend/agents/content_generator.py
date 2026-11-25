@@ -60,8 +60,10 @@ PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 import re as _re
 
 LATEX_COLLISIONS = _re.compile(
-    r"(?<!\\)\\(?=(?:frac|tfrac|dfrac|forall|beta|bar|bf|boldsymbol|begin|binom|nabla|neq|nu|not|notin|"
-    r"rho|right|rangle|rightarrow|tau|theta|times|text|textbf|top|tilde|tanh|to|triangle)(?![a-zA-Z]))")
+    # an odd run of backslashes before a LaTeX command starting with b/f/n/r/t (valid JSON escapes)
+    r"(?<!\\)((?:\\\\)*)\\(?=(?:frac|tfrac|dfrac|fbox|forall|beta|bar|bf|big|bigl|bigr|boldsymbol|bot|"
+    r"bullet|begin|binom|nabla|neg|neq|nu|not|notin|rho|right|rangle|rceil|rfloor|rightarrow|tau|theta|"
+    r"times|text|textbf|textit|textrm|texttt|top|tilde|tanh|to|triangle)(?![a-zA-Z]))")
 
 
 def _parse_llm_json(response) -> dict:
@@ -99,7 +101,7 @@ def _parse_llm_json(response) -> dict:
     
     # LaTeX commands whose first letter is a valid JSON escape (\\frac -> form feed + "rac",
     # \\beta, \\nabla, \\tau, \\rho...) parse "successfully" into garbage. Escape them first.
-    text = LATEX_COLLISIONS.sub(r"\\\\", text)
+    text = LATEX_COLLISIONS.sub(lambda m: m.group(1) + "\\\\", text)
 
     # Fix trailing commas
     text = re.sub(r',\s*}', '}', text)

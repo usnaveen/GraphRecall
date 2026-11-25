@@ -46,12 +46,10 @@ def salvage_concepts_json(text: str) -> Optional[dict]:
     Losing a whole 10-chunk batch because the last object was truncated wastes the call; the
     objects before the cut are valid, so keep them.
     """
-    start = text.find('"concepts"')
-    if start == -1:
+    m = re.search(r'"concepts"\s*:\s*\[', text)
+    if not m:  # "concepts": null, or no array: don't latch onto some other list
         return None
-    bracket = text.find("[", start)
-    if bracket == -1:
-        return None
+    bracket = m.end() - 1
     decoder = json.JSONDecoder()
     i, concepts = bracket + 1, []
     while i < len(text):

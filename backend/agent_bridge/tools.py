@@ -232,9 +232,13 @@ async def _assess(p: AgentPrincipal, s: BridgeServices, a: AssessArgs) -> dict:
         require_scope(p, SCOPE_WRITE_FEED)
     results = await km.assess(p.user_id, a.names, pg=s.knowledge.pg, neo4j=s.knowledge.neo4j, max_names=100)
     if a.track_unknown:
-        for r in results:
-            if r.status == "unexposed" and r.self_rating is None:
-                await km.upsert_skill(s.knowledge.pg, p.user_id, r.name, source="agent")
+        # Cap what an agent can queue: at most 10 per call, and nothing while 50 agent questions wait.
+        waiting = await s.knowledge.pg.execute_query(
+            "SELECT count(*) AS n FROM user_skills WHERE user_id = CAST(:u AS uuid) AND self_rating IS NULL "
+            "AND 'agent' = ANY(sources)", {"u": p.user_id})
+        room = max(0, 50 - int((waiting or [{"n": 0}])[0]["n"]))
+        for r in [r for r in results if r.status == "unexposed" and r.self_rating is None][:min(10, room)]:
+            await km.upsert_skill(s.knowledge.pg, p.user_id, r.name, source="agent")
     keep = ("name", "status", "mastery", "confidence", "basis", "concept_name", "domain", "evidence")
     return {"results": [{k: v for k, v in r.as_dict().items() if k in keep} for r in results],
             "legend": {"strong": "tested well, or backed by coursework/projects/self-rating",
@@ -251,9 +255,11 @@ async def _blueprint(p: AgentPrincipal, s: BridgeServices, a: BlueprintArgs) -> 
         "SELECT headline, education_status, institution, program, graduation_year, goals FROM user_profile "
         "WHERE user_id = CAST(:u AS uuid)", {"u": p.user_id})
     courses = await pg.execute_query(
-        "SELECT code, name, term, grade, topics FROM user_courses WHERE user_id = CAST(:u AS uuid)", {"u": p.user_id})
+        "SELECT code, name, term, grade, topics FROM user_courses WHERE user_id = CAST(:u AS uuid) "
+        "ORDER BY created_at DESC", {"u": p.user_id})
     projects = await pg.execute_query(
-        "SELECT name, summary, skills, started, ended FROM user_projects WHERE user_id = CAST(:u AS uuid)",
+        "SELECT name, summary, skills, started, ended FROM user_projects WHERE user_id = CAST(:u AS uuid) "
+        "ORDER BY created_at DESC",
         {"u": p.user_id})
     knowledge = await km.summary(p.user_id, pg=pg, neo4j=s.knowledge.neo4j)
     knowledge.pop("items", None)
@@ -264,14 +270,20 @@ async def _blueprint(p: AgentPrincipal, s: BridgeServices, a: BlueprintArgs) -> 
 async def _later(p: AgentPrincipal, s: BridgeServices, a: LaterArgs) -> dict:
     from backend.services.later import parse_later
 
-    if a.url and not is_safe_http_url(a.url):
+    url = (a.url or "").strip() or None
+    if url and not is_safe_http_url(url):
         raise ToolError("invalid_arguments", "url must be a public http(s) URL")
     parsed = parse_later(a.text, when=a.when)
+    if not parsed.text and not url:
+        raise ToolError("invalid_arguments", "Nothing to save: give some text beyond the time phrase, or a url")
+    if a.when and not parsed.phrase:
+        raise ToolError("invalid_arguments", f"Unrecognised when {a.when!r}: use e.g. tomorrow, tonight, "
+                                             "this weekend, next week, friday, in 3 days, or YYYY-MM-DD")
     rows = await s.knowledge.pg.execute_query(
         "INSERT INTO later_items (user_id, text, url, source, when_phrase, show_at) VALUES "
         "(CAST(:u AS uuid), :t, :url, 'agent', :ph, :at) RETURNING id::text AS id, show_at",
-        {"u": p.user_id, "t": parsed.text or a.url or a.text, "url": a.url, "ph": parsed.phrase, "at": parsed.show_at})
-    return {"ok": True, "id": rows[0]["id"], "show_at": iso(rows[0]["show_at"])}
+        {"u": p.user_id, "t": parsed.text or url, "url": url, "ph": parsed.phrase, "at": parsed.show_at})
+    return {"ok": True, "id": rows[0]["id"], "show_at": iso(rows[0]["show_at"]), "when_phrase": parsed.phrase}
 
 
 async def _search(p: AgentPrincipal, s: BridgeServices, a: SearchArgs) -> dict:

@@ -48,7 +48,7 @@ enum KnowledgeStatus: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 struct KnowledgeAssessment: Decodable, Identifiable, Hashable, Sendable {
-    var id: String { key + (conceptId ?? "") }
+    var id: String { name }
     let name: String
     let key: String
     let status: KnowledgeStatus
@@ -261,9 +261,25 @@ struct TerritoryMatch: Decodable, Hashable, Sendable {
     let id: String?
     let name: String
     let said: String?
+
+    init(id: String?, name: String, said: String?) {
+        self.id = id
+        self.name = name
+        self.said = said
+    }
 }
 
 struct TerritoryResult: Decodable, Sendable {
+    init(matched: [TerritoryMatch], missed: [TerritoryMatch], extras: [String], score: Double,
+         suggestedDifficulty: String, total: Int) {
+        self.matched = matched
+        self.missed = missed
+        self.extras = extras
+        self.score = score
+        self.suggestedDifficulty = suggestedDifficulty
+        self.total = total
+    }
+
     let matched: [TerritoryMatch]
     let missed: [TerritoryMatch]
     let extras: [String]

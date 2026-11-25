@@ -34,19 +34,23 @@ final class ResumeViewModel {
     func importPDF(_ url: URL) async {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
-        guard let doc = PDFDocument(url: url) else {
+        isUploading = true
+        defer { isUploading = false }
+        // PDF text extraction can take a while on long files: keep it off the main actor.
+        let extracted: String? = await Task.detached(priority: .userInitiated) {
+            guard let doc = PDFDocument(url: url) else { return nil }
+            return (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }.joined(separator: "\n")
+        }.value
+        guard let text = extracted else {
             errorMessage = "That file couldn't be opened as a PDF."
             return
         }
-        let text = (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }.joined(separator: "\n")
         guard text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 50 else {
             errorMessage = "No selectable text in that PDF. Export it from your editor as a text PDF."
             return
         }
-        isUploading = true
-        defer { isUploading = false }
         do {
-            overview = try await APIClient.shared.uploadResume(text: text, fileName: url.lastPathComponent)
+            overview = try await APIClient.shared.uploadResume(text: String(text.prefix(60000)), fileName: url.lastPathComponent)
             errorMessage = nil
             GRHaptics.success()
         } catch {
@@ -61,9 +65,10 @@ final class ResumeViewModel {
         attr.foregroundColor = GRColor.textSecondary
         for skill in skills where focus == nil || skill.status == focus {
             for span in skill.spans where span.count == 2 {
-                // Spans are Python code-point offsets; Character offsets match for resume text (no emoji clusters).
-                guard let lo = text.index(text.startIndex, offsetBy: span[0], limitedBy: text.endIndex),
-                      let hi = text.index(text.startIndex, offsetBy: span[1], limitedBy: text.endIndex),
+                // Spans are Python code-point offsets, i.e. Unicode scalar offsets (not Characters).
+                let scalars = text.unicodeScalars
+                guard let lo = scalars.index(scalars.startIndex, offsetBy: span[0], limitedBy: scalars.endIndex),
+                      let hi = scalars.index(scalars.startIndex, offsetBy: span[1], limitedBy: scalars.endIndex),
                       lo < hi,
                       let range = Range(lo..<hi, in: attr) else { continue }
                 attr[range].foregroundColor = skill.status == .unexposed ? GRColor.textPrimary : skill.status.color
@@ -123,7 +128,10 @@ struct ResumeView: View {
             }
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.pdf]) { result in
-            if case .success(let url) = result { Task { await model.importPDF(url) } }
+            switch result {
+            case .success(let url): Task { await model.importPDF(url) }
+            case .failure(let error): model.errorMessage = APIError.userFacing(error, resource: "file")
+            }
         }
         .task { await model.load() }
         .refreshable { await model.load() }
@@ -167,9 +175,9 @@ struct ResumeView: View {
                     Text("\(model.skills.count) skills").font(GRType.caption.weight(.semibold)).foregroundStyle(GRColor.textSecondary)
                 }
                 KnowledgeStatusBar(counts: counts, height: 10)
-                HStack(spacing: 6) {
+                GRFlowLayout(spacing: 6) {
                     ForEach(KnowledgeStatus.allCases) { s in
-                        GRChip(title: "\(s.title) \(counts[s] ?? 0)",
+                        GRChip(title: "\(s.shortTitle) \(counts[s] ?? 0)",
                                style: model.focus == s ? .selected : .tinted(s == .strong ? .success : s == .shaky ? .amber : s == .seen ? .cyan : .neutral),
                                compact: true) {
                             withAnimation(.easeOut(duration: 0.2)) { model.focus = model.focus == s ? nil : s }
