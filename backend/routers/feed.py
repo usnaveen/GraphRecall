@@ -10,7 +10,7 @@ from typing import Optional
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from backend.agent_bridge import bridge_enabled
 from backend.auth.middleware import get_current_user
 from backend.agent_v2.enqueue import enqueue_durable_job
@@ -126,6 +126,7 @@ async def get_feed(
                 logger.warning("Feed: agent-curated items skipped", error=str(e))
         
         await _add_territory_card(response, request, neo4j_client)
+        await _add_sandbox_card(response, request, pg_client)
 
         # Inject Daily Goal & Trigger Durable Pre-gen Buffer
         response.daily_goal = await feed_service.get_daily_goal(request.user_id)
@@ -179,6 +180,63 @@ async def _add_territory_card(response, request, neo4j_client) -> None:
             response.items.pop()
     except Exception as e:  # noqa: BLE001
         logger.warning("Feed: territory card skipped", error=str(e))
+
+
+async def _add_sandbox_card(response, request, pg_client) -> None:
+    """One code-sandbox card per feed load, matched to concepts in this feed and LeetCode weak spots.
+    The code runs on the phone; the server only ships the challenge and records the result."""
+    if request.item_types and FeedItemType.CODE_SANDBOX not in request.item_types:
+        return
+    try:
+        from backend.services.code_sandbox_cards import build_sandbox_feed_payload, select_sandbox_challenge
+
+        names = [i.concept_name for i in response.items if i.concept_name]
+        weak = await pg_client.execute_query(
+            "SELECT DISTINCT p.pattern FROM coding_attempts a JOIN coding_problems p ON p.id = a.problem_id "
+            "WHERE a.user_id = CAST(:u AS uuid) AND a.outcome <> 'solved' AND p.pattern IS NOT NULL LIMIT 5",
+            {"u": request.user_id})
+        challenge = select_sandbox_challenge(names, [r["pattern"] for r in weak or []])
+        if request.domains:
+            payload_domain = build_sandbox_feed_payload(challenge)["domain"]
+            if payload_domain not in request.domains:
+                return
+        p = build_sandbox_feed_payload(challenge)
+        card = FeedItem(id=p["id"], item_type=FeedItemType.CODE_SANDBOX, content=p["content"],
+                        concept_id=None, concept_name=p["concept_name"], domain=p["domain"],
+                        priority_score=p["priority_score"])
+        response.items.insert(min(4, len(response.items)), card)
+        if len(response.items) > request.max_items:
+            response.items.pop()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Feed: sandbox card skipped", error=str(e))
+
+
+class SandboxResultBody(BaseModel):
+    challenge_id: str = Field(..., max_length=80)
+    concept_name: str = Field(..., max_length=200)
+    passed: int = Field(..., ge=0, le=100)
+    total: int = Field(..., ge=0, le=100)
+    elapsed_ms: int = Field(0, ge=0)
+
+
+@router.post("/sandbox-result")
+async def sandbox_result(body: SandboxResultBody, current_user: dict = Depends(get_current_user)):
+    """Record a sandbox run as tested evidence for the concept (all tests 0.9, half 0.45, else 0.15)."""
+    from backend.db.neo4j_client import get_neo4j_client as _neo
+    from backend.services import knowledge_map as km
+    from backend.services.code_sandbox_cards import CodeSandboxSubmission, compute_sandbox_evidence
+
+    user_id = str(current_user["id"])
+    ev = compute_sandbox_evidence(CodeSandboxSubmission(
+        challenge_id=body.challenge_id, concept_id=None, concept_name=body.concept_name,
+        passed_tests=body.passed, total_tests=body.total, elapsed_ms=body.elapsed_ms))
+    pg = await get_postgres_client()
+    concept = km.match_concept(body.concept_name, await km._user_concepts(await _neo(), user_id))
+    await km.add_evidence(pg, user_id, kind="sandbox", signal=ev["score"],
+                          concept_id=concept["id"] if concept else None, skill_name=body.concept_name,
+                          source_id=f"sandbox:{body.challenge_id}", detail=ev["metadata"])
+    return {"recorded": True, "signal": ev["score"], "result": ev["signal_type"],
+            "concept_id": concept["id"] if concept else None}
 
 
 @router.post("/review")

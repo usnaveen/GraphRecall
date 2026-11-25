@@ -33,11 +33,11 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from typing import Any, Iterable, Optional
 
-HALF_LIFE_DAYS = {"review": 45, "quiz": 45, "territory": 45, "leetcode": 60, "agent": 90, "note": 120,
+HALF_LIFE_DAYS = {"review": 45, "quiz": 45, "territory": 45, "leetcode": 60, "sandbox": 60, "agent": 90, "note": 120,
                   "self_rating": 180, "resume": 365, "project": 365, "course": 540}
-DEFAULT_WEIGHT = {"quiz": 1.0, "territory": 1.0, "leetcode": 1.0, "course": 0.8, "project": 0.8,
+DEFAULT_WEIGHT = {"quiz": 1.0, "territory": 1.0, "leetcode": 1.0, "sandbox": 1.0, "course": 0.8, "project": 0.8,
                   "self_rating": 0.6, "resume": 0.4, "note": 0.3, "agent": 0.5, "review": 1.0}
-TESTED_KINDS = {"review", "quiz", "territory", "leetcode"}
+TESTED_KINDS = {"review", "quiz", "territory", "leetcode", "sandbox"}
 NON_SELF_KINDS = {"course", "project"}
 SELF_LEVEL_SIGNAL = [0.0, 0.2, 0.45, 0.65, 0.85]
 SELF_LEVEL_LABEL = ["Never", "Heard of it", "Know the basics", "Used it", "Strong"]
