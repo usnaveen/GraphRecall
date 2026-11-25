@@ -272,6 +272,9 @@ struct GRSharedImport: Codable, Identifiable, Equatable, Sendable {
     var lastError: String?
     var warnings: [String]
     var noteId: String?
+    /// The server rejected it for good (e.g. a private address): don't retry it automatically on
+    /// every launch. The Retry button in Create still works.
+    var permanentFailure: Bool = false
 
     init(
         kind: Kind,
@@ -294,7 +297,7 @@ struct GRSharedImport: Codable, Identifiable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, content, title, createdAt, status, lastError, warnings, noteId
+        case id, kind, content, title, createdAt, status, lastError, warnings, noteId, permanentFailure
     }
 
     init(from decoder: Decoder) throws {
@@ -308,6 +311,7 @@ struct GRSharedImport: Codable, Identifiable, Equatable, Sendable {
         lastError = try c.decodeIfPresent(String.self, forKey: .lastError)
         warnings = try c.decodeIfPresent([String].self, forKey: .warnings) ?? []
         noteId = try c.decodeIfPresent(String.self, forKey: .noteId)
+        permanentFailure = try c.decodeIfPresent(Bool.self, forKey: .permanentFailure) ?? false
     }
 
     var displayTitle: String {
@@ -336,12 +340,14 @@ enum GRShareInbox {
         status: GRSharedImport.Status,
         error: String? = nil,
         warnings: [String]? = nil,
-        noteId: String? = nil
+        noteId: String? = nil,
+        permanent: Bool = false
     ) {
         var items = load()
         guard let idx = items.firstIndex(where: { $0.id == id }) else { return }
         items[idx].status = status
         items[idx].lastError = error
+        items[idx].permanentFailure = status == .failed && permanent
         if let warnings { items[idx].warnings = warnings }
         if let noteId { items[idx].noteId = noteId }
         save(items)
@@ -351,8 +357,10 @@ enum GRShareInbox {
         let cutoff = Date().addingTimeInterval(-staleUploadSeconds)
         return load().filter { item in
             switch item.status {
-            case .pending, .failed:
+            case .pending:
                 return true
+            case .failed:
+                return !item.permanentFailure
             case .uploading:
                 return item.createdAt < cutoff
             case .sent:

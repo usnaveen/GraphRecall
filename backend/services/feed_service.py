@@ -1397,7 +1397,11 @@ class FeedService:
                             request.user_id,
                             concept,
                             item_type,
-                            allow_llm=True,
+                            # The feed request never waits on a model: cached content or a deterministic
+                            # showcase now; the feed.buffer_ensure job (queued on every GET) generates
+                            # richer cards in the background for next time. FEED_INLINE_LLM=1 restores
+                            # the old inline generation.
+                            allow_llm=os.getenv("FEED_INLINE_LLM", "0") == "1",
                         )
                     )
                 )

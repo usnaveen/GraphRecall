@@ -161,6 +161,13 @@ class CommunityService:
         )
         return all_communities
 
+    async def recompute_communities(self, user_id: str) -> dict[str, Any]:
+        """Compute and persist communities (what the API endpoints do); used by the background worker.
+        Summaries are generated separately, on demand, because they cost LLM calls."""
+        communities = await self.compute_communities(user_id)
+        await self.persist_communities(user_id, communities)
+        return {"communities": len(communities)}
+
     async def persist_communities(self, user_id: str, communities: list[dict[str, Any]]) -> None:
         """Persist communities to Postgres and sync community_id to Neo4j Concept nodes."""
         pg = await get_postgres_client()

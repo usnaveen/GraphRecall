@@ -98,7 +98,9 @@ final class ShareInboxDrainer {
             }
             let bodyText = String(data: data, encoding: .utf8) ?? ""
             let msg = APIError.userFacing(APIError.http(code, bodyText), resource: "shared link")
-            GRShareInbox.update(id: itemId, status: .failed, error: msg)
+            // 4xx other than auth, timeout and rate limit won't succeed on a retry.
+            let permanent = (400..<500).contains(code) && ![401, 408, 429].contains(code)
+            GRShareInbox.update(id: itemId, status: .failed, error: msg, permanent: permanent)
             showToast(message: "Couldn’t import link", detail: msg, tone: .warning)
             return
         }
@@ -140,7 +142,11 @@ final class ShareInboxDrainer {
             }
         } catch {
             let msg = APIError.userFacing(error, resource: "shared link")
-            GRShareInbox.update(id: item.id, status: .failed, error: msg)
+            var permanent = false
+            if case let APIError.http(code, _) = error {
+                permanent = (400..<500).contains(code) && ![401, 408, 429].contains(code)
+            }
+            GRShareInbox.update(id: item.id, status: .failed, error: msg, permanent: permanent)
             let headline: String
             if case let APIError.http(code, _) = error, (400..<500).contains(code) {
                 headline = "Couldn’t import link"
@@ -155,7 +161,8 @@ final class ShareInboxDrainer {
     private func markSent(id: UUID, title: String, response: IngestResponse?) {
         let warnings = response?.warnings ?? []
         if let err = response?.error, response?.status == "error" {
-            GRShareInbox.update(id: id, status: .failed, error: err, warnings: warnings)
+            // The server read it and rejected it (validation, e.g. a private address): retrying won't help.
+            GRShareInbox.update(id: id, status: .failed, error: err, warnings: warnings, permanent: true)
             showToast(message: "Shared ingest failed", detail: err, tone: .warning)
             return
         }

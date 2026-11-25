@@ -713,7 +713,7 @@ async def build_default_worker() -> AgentWorker:
     memory = PostgresMemoryFacade(pg)
     llm = GeminiLLMGateway()
 
-    community_service = CommunityService(pg, neo4j)
+    community_service = CommunityService()  # fetches its own clients
     scanner_agent = ScannerAgent()
     feed_service = FeedService(pg, neo4j)
 

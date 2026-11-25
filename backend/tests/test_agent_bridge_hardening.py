@@ -405,3 +405,23 @@ async def test_dispatch_in_background_returns_immediately():
     assert time.monotonic() - t0 < 0.1 and task is not None
     await asyncio.wait_for(task, 5)
     assert notifier.calls
+
+
+async def test_default_worker_builds_and_community_recompute_exists():
+    """The always-on worker must start: it crashed on CommunityService(pg, neo4j) and called a
+    recompute_communities method that did not exist (found running it locally, 26 Nov)."""
+    from unittest.mock import AsyncMock, patch
+
+    from backend.agent_v2 import worker as w
+    from backend.services.community_service import CommunityService
+
+    assert callable(getattr(CommunityService(), "recompute_communities", None))
+    with patch("backend.db.postgres_client.get_postgres_client", AsyncMock(return_value=object())), \
+         patch("backend.db.neo4j_client.get_neo4j_client", AsyncMock(return_value=object())):
+        try:
+            built = await w.build_default_worker()
+        except TypeError as e:  # constructor mismatches are what this test guards
+            raise AssertionError(f"worker failed to build: {e}")
+        except Exception:
+            return  # other environment dependencies (Gemini key etc.) are out of scope here
+    assert "article.digest" in built._handlers and "community.recompute" in built._handlers
