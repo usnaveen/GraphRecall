@@ -129,6 +129,7 @@ async def get_feed(
         
         await _add_territory_card(response, request, neo4j_client)
         await _add_sandbox_card(response, request, pg_client)
+        await _add_creative_card(response, request)
 
         # Inject Daily Goal & Trigger Durable Pre-gen Buffer
         response.daily_goal = await feed_service.get_daily_goal(request.user_id)
@@ -211,6 +212,166 @@ async def _add_sandbox_card(response, request, pg_client) -> None:
             response.items.pop()
     except Exception as e:  # noqa: BLE001
         logger.warning("Feed: sandbox card skipped", error=str(e))
+
+
+def _resolve_creative_card_domain(
+    card,
+    feed_items: list[FeedItem],
+    requested_domains: Optional[list[str]],
+) -> Optional[str]:
+    """Resolve domain for a creative card from matched feed items or tags, honoring domain filters."""
+    extra = getattr(card, "scenario", "")
+    matched_domains: list[tuple[int, str]] = []
+    for item in feed_items:
+        if not item.concept_name or not item.domain:
+            continue
+        score = creative_cards._match_score(
+            [item.concept_name],
+            title=card.title,
+            concept_name=card.concept_name,
+            tags=card.tags,
+            extra=extra,
+        )
+        if score > 0:
+            matched_domains.append((score, item.domain))
+    matched_domains.sort(key=lambda pair: -pair[0])
+
+    tag_set = {t.lower() for t in card.tags}
+    if "leetcode" in tag_set or "algorithms" in tag_set:
+        inferred = "Coding Interviews"
+    elif ("sql" in tag_set or "postgres" in tag_set) and "rag" not in tag_set and "ml" not in tag_set:
+        inferred = "Database Systems"
+    else:
+        inferred = "AI & ML"
+
+    if not requested_domains:
+        return matched_domains[0][1] if matched_domains else inferred
+
+    allowed = {d.strip() for d in requested_domains if d and d.strip()}
+    for _, dom in matched_domains:
+        if dom in allowed:
+            return dom
+    if inferred in allowed:
+        return inferred
+
+    alias_domains: set[str] = set()
+    if tag_set & {"ml", "deep-learning", "llm", "rag", "embeddings", "attention", "prompt-caching"}:
+        alias_domains.update({"AI & ML", "Machine Learning", "RAG", "Deep Learning", "LLMs"})
+    if tag_set & {"sql", "postgres", "pgvector", "multi-tenant"}:
+        alias_domains.update({"Database Systems", "Databases"})
+    if tag_set & {"systems", "rate-limiting", "redis", "reliability", "security", "sandbox"}:
+        alias_domains.update({"Systems", "Distributed Systems", "System Design"})
+    if tag_set & {"leetcode", "algorithms", "binary-search"}:
+        alias_domains.update({"Coding Interviews", "Algorithms", "Data Structures"})
+
+    for req_dom in requested_domains:
+        cleaned = (req_dom or "").strip()
+        if cleaned in alias_domains:
+            return cleaned
+    return None
+
+
+async def _add_creative_card(response, request) -> None:
+    """One creative card (spot_the_bug or tradeoff_duel) per feed load, matched to feed concepts.
+    Zero LLM cost; respects item_types, domains, and max_items; never fails the feed."""
+    if request.max_items <= 0:
+        return
+    allow_spot = request.item_types is None or FeedItemType.SPOT_THE_BUG in request.item_types
+    allow_duel = request.item_types is None or FeedItemType.TRADEOFF_DUEL in request.item_types
+    if not allow_spot and not allow_duel:
+        return
+    try:
+        names = [i.concept_name for i in response.items if i.concept_name]
+
+        def _pick_valid_spot():
+            if not allow_spot:
+                return None, None, -1
+            excluded: list[str] = []
+            while True:
+                cand = creative_cards.select_spot_the_bug(names, exclude_ids=excluded)
+                if cand is None:
+                    return None, None, -1
+                dom = _resolve_creative_card_domain(cand, response.items, request.domains)
+                if dom is not None:
+                    sc = creative_cards._match_score(
+                        names, title=cand.title, concept_name=cand.concept_name, tags=cand.tags
+                    )
+                    return cand, dom, sc
+                excluded.append(cand.id)
+
+        def _pick_valid_duel():
+            if not allow_duel:
+                return None, None, -1
+            excluded: list[str] = []
+            while True:
+                cand = creative_cards.select_tradeoff_duel(names, exclude_ids=excluded)
+                if cand is None:
+                    return None, None, -1
+                dom = _resolve_creative_card_domain(cand, response.items, request.domains)
+                if dom is not None:
+                    sc = creative_cards._match_score(
+                        names,
+                        title=cand.title,
+                        concept_name=cand.concept_name,
+                        tags=cand.tags,
+                        extra=cand.scenario,
+                    )
+                    return cand, dom, sc
+                excluded.append(cand.id)
+
+        spot, spot_dom, spot_score = _pick_valid_spot()
+        duel, duel_dom, duel_score = _pick_valid_duel()
+
+        chosen = None
+        chosen_type: Optional[FeedItemType] = None
+        chosen_domain: Optional[str] = None
+
+        if spot is not None and duel is not None:
+            has_spot = any(i.item_type == FeedItemType.SPOT_THE_BUG for i in response.items)
+            has_duel = any(i.item_type == FeedItemType.TRADEOFF_DUEL for i in response.items)
+            if has_spot and not has_duel:
+                chosen, chosen_type, chosen_domain = duel, FeedItemType.TRADEOFF_DUEL, duel_dom
+            elif has_duel and not has_spot:
+                chosen, chosen_type, chosen_domain = spot, FeedItemType.SPOT_THE_BUG, spot_dom
+            elif spot_score > duel_score:
+                chosen, chosen_type, chosen_domain = spot, FeedItemType.SPOT_THE_BUG, spot_dom
+            elif duel_score > spot_score:
+                chosen, chosen_type, chosen_domain = duel, FeedItemType.TRADEOFF_DUEL, duel_dom
+            elif len(response.items) % 2 == 0:
+                chosen, chosen_type, chosen_domain = spot, FeedItemType.SPOT_THE_BUG, spot_dom
+            else:
+                chosen, chosen_type, chosen_domain = duel, FeedItemType.TRADEOFF_DUEL, duel_dom
+        elif spot is not None:
+            chosen, chosen_type, chosen_domain = spot, FeedItemType.SPOT_THE_BUG, spot_dom
+        elif duel is not None:
+            chosen, chosen_type, chosen_domain = duel, FeedItemType.TRADEOFF_DUEL, duel_dom
+        else:
+            return
+
+        target_key = km.skill_key(chosen.concept_name)
+        matched_cid = next(
+            (
+                i.concept_id
+                for i in response.items
+                if i.concept_id and i.concept_name and km.skill_key(i.concept_name) == target_key
+            ),
+            None,
+        )
+        card = FeedItem(
+            id=f"{chosen_type.value}:{chosen.id}",
+            item_type=chosen_type,
+            content=chosen.as_dict(),
+            concept_id=matched_cid,
+            concept_name=chosen.concept_name,
+            domain=chosen_domain,
+            priority_score=0.8,
+        )
+        insert_at = min(6, len(response.items), request.max_items - 1)
+        response.items.insert(insert_at, card)
+        if len(response.items) > request.max_items:
+            response.items.pop()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Feed: creative card skipped", error=str(e))
 
 
 class SandboxResultBody(BaseModel):

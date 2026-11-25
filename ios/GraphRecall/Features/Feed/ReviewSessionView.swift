@@ -34,9 +34,11 @@ extension FeedItemType {
         case .fillBlank: return "pencil.line"
         case .showcase: return "sparkles"
         case .codeChallenge, .codeSandbox: return "chevron.left.forwardslash.chevron.right"
-        case .diagram: return "point.3.connected.trianglepath.dotted"
+        case .diagram, .diagramOcclusion: return "point.3.connected.trianglepath.dotted"
         case .screenshot, .infographic: return "photo"
         case .territory: return "map.fill"
+        case .spotTheBug: return "ladybug.fill"
+        case .tradeoffDuel: return "arrow.left.arrow.right.circle.fill"
         case .agentCurated: return "sparkles"
         case .unknown: return "questionmark.square.dashed"
         }
@@ -45,8 +47,8 @@ extension FeedItemType {
     var tone: GRTone {
         switch self {
         case .flashcard, .showcase: return .accent
-        case .mcq, .diagram: return .purple
-        case .fillBlank, .codeChallenge, .codeSandbox, .territory: return .cyan
+        case .mcq, .diagram, .tradeoffDuel, .diagramOcclusion: return .purple
+        case .fillBlank, .codeChallenge, .codeSandbox, .territory, .spotTheBug: return .cyan
         case .screenshot, .infographic: return .coral
         case .agentCurated: return .cyan
         case .unknown: return .neutral

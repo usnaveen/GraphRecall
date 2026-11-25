@@ -11,6 +11,9 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
     case codeChallenge = "code_challenge"
     case codeSandbox = "code_sandbox"
     case territory
+    case spotTheBug = "spot_the_bug"
+    case tradeoffDuel = "tradeoff_duel"
+    case diagramOcclusion = "diagram_occlusion"
     /// Curated by the user's external agent (agent bridge, PR #3). Pending items never reach
     /// `/api/feed`; only ones the user approved in the inbox.
     case agentCurated = "agent_curated"
@@ -43,6 +46,9 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         case "code_challenge": return .codeChallenge
         case "code_sandbox": return .codeSandbox
         case "territory": return .territory
+        case "spot_the_bug": return .spotTheBug
+        case "tradeoff_duel": return .tradeoffDuel
+        case "diagram_occlusion": return .diagramOcclusion
         case "agent_curated": return .agentCurated
         default: return nil
         }
@@ -60,6 +66,9 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         case .codeChallenge: return "Code Challenge"
         case .codeSandbox: return "Code Sandbox"
         case .territory: return "Map the Territory"
+        case .spotTheBug: return "Spot the Bug"
+        case .tradeoffDuel: return "Tradeoff Duel"
+        case .diagramOcclusion: return "Diagram Check"
         case .agentCurated: return "From your agent"
         case .unknown: return "Card"
         }
@@ -69,8 +78,8 @@ enum FeedItemType: String, Codable, Hashable, Sendable {
         switch self {
         case .flashcard, .showcase: return "accent"
         case .mcq: return "accent"
-        case .fillBlank, .codeChallenge, .codeSandbox, .territory: return "cyan"
-        case .diagram: return "purple"
+        case .fillBlank, .codeChallenge, .codeSandbox, .territory, .spotTheBug: return "cyan"
+        case .diagram, .tradeoffDuel, .diagramOcclusion: return "purple"
         case .screenshot, .infographic: return "coral"
         case .agentCurated: return "cyan"
         case .unknown: return "accent"
@@ -215,6 +224,8 @@ struct FeedItem: Codable, Sendable, Identifiable, Hashable {
             ?? stringContent("instruction")
             ?? stringContent("description")
             ?? stringContent("definition")
+            ?? stringContent("prompt")
+            ?? stringContent("scenario")
             ?? title
     }
 
@@ -387,6 +398,324 @@ struct FeedItem: Codable, Sendable, Identifiable, Hashable {
             difficulty: difficulty,
             testCases: testCases
         )
+    }
+
+    /// Decoded payload for `spot_the_bug` feed cards (`backend/services/creative_cards.py`).
+    var spotTheBugPayload: SpotTheBugPayload {
+        let rawCardId = stringContent("card_id")
+            ?? stringContent("cardId")
+            ?? stringContent("id")
+            ?? id
+        let cardId = rawCardId.hasPrefix("spot_the_bug:")
+            ? String(rawCardId.dropFirst("spot_the_bug:".count))
+            : rawCardId
+
+        let title = stringContent("title") ?? conceptName ?? "Spot the Bug"
+        let language = stringContent("language") ?? "python"
+
+        var parsedLines = stringArrayContent("lines")
+        if parsedLines.isEmpty, let codeBlock = stringContent("code") ?? stringContent("initial_code") {
+            parsedLines = codeBlock
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .components(separatedBy: "\n")
+        }
+        if parsedLines.isEmpty {
+            parsedLines = ["# Inspect snippet"]
+        }
+
+        let rawBugIndex: Int = {
+            if let v = content["buggy_line_index"]?.value as? Int { return v }
+            if let v = content["buggyLineIndex"]?.value as? Int { return v }
+            if let d = content["buggy_line_index"]?.value as? Double { return Int(d) }
+            if let s = stringContent("buggy_line_index"), let parsed = Int(s) { return parsed }
+            return 1
+        }()
+        let safeBugIndex = min(max(rawBugIndex, 1), parsedLines.count)
+
+        let explanation = stringContent("explanation")
+            ?? "Review why this line introduces a subtle bug in production."
+        let fixedLine = stringContent("fixed_line")
+            ?? stringContent("fixedLine")
+            ?? ""
+        let resolvedConcept = stringContent("concept_name")
+            ?? stringContent("conceptName")
+            ?? conceptName
+            ?? title
+        let tags = stringArrayContent("tags")
+
+        return SpotTheBugPayload(
+            cardId: cardId,
+            title: title,
+            language: language,
+            lines: parsedLines,
+            buggyLineIndex: safeBugIndex,
+            explanation: explanation,
+            fixedLine: fixedLine,
+            conceptName: resolvedConcept,
+            tags: tags
+        )
+    }
+
+    /// Decoded payload for `tradeoff_duel` feed cards (`backend/services/creative_cards.py`).
+    var tradeoffDuelPayload: TradeoffDuelPayload {
+        let rawCardId = stringContent("card_id")
+            ?? stringContent("cardId")
+            ?? stringContent("id")
+            ?? id
+        let cardId = rawCardId.hasPrefix("tradeoff_duel:")
+            ? String(rawCardId.dropFirst("tradeoff_duel:".count))
+            : rawCardId
+
+        let title = stringContent("title") ?? conceptName ?? "Tradeoff Duel"
+        let scenario = stringContent("scenario")
+            ?? stringContent("prompt")
+            ?? "Compare both architectural approaches for this workload."
+        let optionA = stringContent("option_a")
+            ?? stringContent("optionA")
+            ?? "Option A"
+        let optionB = stringContent("option_b")
+            ?? stringContent("optionB")
+            ?? "Option B"
+
+        let rawRec = (stringContent("recommended") ?? "a")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let recommended: String
+        switch rawRec {
+        case "a", "b", "depends":
+            recommended = rawRec
+        default:
+            recommended = "depends"
+        }
+
+        let winningRationale = stringContent("winning_rationale")
+            ?? stringContent("winningRationale")
+            ?? stringContent("explanation")
+            ?? "Compare latency, operational complexity, and consistency guarantees."
+        let whenOtherWins = stringContent("when_other_wins")
+            ?? stringContent("whenOtherWins")
+            ?? ""
+        let resolvedConcept = stringContent("concept_name")
+            ?? stringContent("conceptName")
+            ?? conceptName
+            ?? title
+        let tags = stringArrayContent("tags")
+
+        return TradeoffDuelPayload(
+            cardId: cardId,
+            title: title,
+            scenario: scenario,
+            optionA: optionA,
+            optionB: optionB,
+            recommended: recommended,
+            winningRationale: winningRationale,
+            whenOtherWins: whenOtherWins,
+            conceptName: resolvedConcept,
+            tags: tags
+        )
+    }
+
+    /// Decoded payload for `diagram_occlusion` feed cards (`backend/services/creative_cards.py`).
+    var diagramOcclusionPayload: DiagramOcclusionPayload {
+        let rawCardId = stringContent("card_id")
+            ?? stringContent("cardId")
+            ?? stringContent("id")
+            ?? id
+        let cardId = rawCardId.hasPrefix("diagram_occlusion:")
+            ? String(rawCardId.dropFirst("diagram_occlusion:".count))
+            : rawCardId
+
+        let title = stringContent("title") ?? conceptName ?? "Diagram Check"
+        let sourceTitle = stringContent("source_title") ?? stringContent("sourceTitle") ?? ""
+        let safeSourceURL = Self.validatedHTTPURL(
+            stringContent("source_url") ?? stringContent("sourceUrl")
+        )
+        let originalMermaid = stringContent("original_mermaid") ?? stringContent("originalMermaid")
+        let occludedMermaid = stringContent("occluded_mermaid")
+            ?? stringContent("occludedMermaid")
+            ?? stringContent("mermaid_code")
+
+        let safeImageURL = Self.validatedHTTPURL(
+            stringContent("image_url")
+                ?? stringContent("imageUrl")
+                ?? stringContent("file_url")
+        )
+        let caption = stringContent("caption")
+
+        let rawKind = stringContent("kind")?.lowercased()
+        let kind: String
+        if let rawKind, rawKind == "figure" || rawKind == "mermaid" {
+            kind = rawKind
+        } else if safeImageURL != nil && occludedMermaid == nil {
+            kind = "figure"
+        } else {
+            kind = "mermaid"
+        }
+
+        var answerKey: [String: String] = [:]
+        let rawAnswerObj = content["answer_key"]?.value ?? content["answerKey"]?.value
+        if let typed = rawAnswerObj as? [String: String] {
+            answerKey = typed
+        } else if let generic = rawAnswerObj as? [String: Any] {
+            for (k, v) in generic {
+                if let strVal = v as? String, !strVal.isEmpty {
+                    answerKey[k] = strVal
+                }
+            }
+        }
+
+        let distractors = stringArrayContent("distractors")
+        var options = stringArrayContent("options")
+        if options.isEmpty && kind == "mermaid" {
+            let answerValues = DiagramOcclusionPayload.sortSlotKeys(Array(answerKey.keys))
+                .compactMap { answerKey[$0] }
+            var seen = Set<String>()
+            for candidate in answerValues + distractors {
+                let key = candidate.lowercased()
+                if !seen.contains(key) {
+                    seen.insert(key)
+                    options.append(candidate)
+                }
+            }
+        }
+
+        let promptText = stringContent("prompt")
+            ?? (kind == "figure"
+                ? "Explain the architecture and key takeaway shown in this figure."
+                : "Recall the occluded component(s) in this diagram.")
+
+        return DiagramOcclusionPayload(
+            cardId: cardId,
+            kind: kind,
+            title: title,
+            prompt: promptText,
+            sourceTitle: sourceTitle,
+            sourceURL: safeSourceURL,
+            originalMermaid: originalMermaid,
+            occludedMermaid: occludedMermaid,
+            answerKey: answerKey,
+            distractors: distractors,
+            options: options,
+            imageURL: safeImageURL,
+            caption: caption
+        )
+    }
+
+    private static func validatedHTTPURL(_ raw: String?) -> URL? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !trimmed.contains(where: { $0.isWhitespace }),
+              let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = url.host,
+              !host.isEmpty else {
+            return nil
+        }
+        return url
+    }
+}
+
+struct SpotTheBugPayload: Hashable, Sendable {
+    let cardId: String
+    let title: String
+    let language: String
+    let lines: [String]
+    let buggyLineIndex: Int
+    let explanation: String
+    let fixedLine: String
+    let conceptName: String
+    let tags: [String]
+}
+
+struct SpotTheBugGradeResponse: Decodable, Sendable {
+    let correct: Bool
+    let selectedLine: Int?
+    let buggyLineIndex: Int?
+    let explanation: String?
+    let fixedLine: String?
+    let cardId: String?
+    let conceptName: String?
+    let conceptId: String?
+    let recorded: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case correct
+        case selectedLine = "selected_line"
+        case buggyLineIndex = "buggy_line_index"
+        case explanation
+        case fixedLine = "fixed_line"
+        case cardId = "card_id"
+        case conceptName = "concept_name"
+        case conceptId = "concept_id"
+        case recorded
+    }
+}
+
+struct TradeoffDuelPayload: Hashable, Sendable {
+    let cardId: String
+    let title: String
+    let scenario: String
+    let optionA: String
+    let optionB: String
+    /// `"a"` | `"b"` | `"depends"`
+    let recommended: String
+    let winningRationale: String
+    let whenOtherWins: String
+    let conceptName: String
+    let tags: [String]
+}
+
+struct DiagramOcclusionPayload: Hashable, Sendable {
+    let cardId: String
+    /// `"mermaid"` | `"figure"`
+    let kind: String
+    let title: String
+    let prompt: String
+    let sourceTitle: String
+    let sourceURL: URL?
+    let originalMermaid: String?
+    let occludedMermaid: String?
+    let answerKey: [String: String]
+    let distractors: [String]
+    let options: [String]
+    let imageURL: URL?
+    let caption: String?
+
+    var isFigure: Bool {
+        kind == "figure" || (imageURL != nil && occludedMermaid == nil)
+    }
+
+    /// Ordered slot keys (`SLOT_1`, `SLOT_2`, ...) for Mermaid occlusion cards.
+    var orderedSlots: [String] {
+        let nonTakeawayKeys = answerKey.keys.filter { $0.lowercased() != "takeaway" }
+        if !nonTakeawayKeys.isEmpty {
+            return Self.sortSlotKeys(Array(nonTakeawayKeys))
+        }
+        guard let occludedMermaid,
+              let regex = try? NSRegularExpression(pattern: #"\[(SLOT_\d+)\]"#) else {
+            return []
+        }
+        let nsRange = NSRange(occludedMermaid.startIndex..<occludedMermaid.endIndex, in: occludedMermaid)
+        var discovered: [String] = []
+        regex.enumerateMatches(in: occludedMermaid, options: [], range: nsRange) { match, _, _ in
+            guard let match, let r = Range(match.range(at: 1), in: occludedMermaid) else { return }
+            let slot = String(occludedMermaid[r])
+            if !discovered.contains(slot) {
+                discovered.append(slot)
+            }
+        }
+        return Self.sortSlotKeys(discovered)
+    }
+
+    static func sortSlotKeys(_ keys: [String]) -> [String] {
+        keys.sorted { lhs, rhs in
+            let lNum = Int(lhs.replacingOccurrences(of: "SLOT_", with: "")) ?? Int.max
+            let rNum = Int(rhs.replacingOccurrences(of: "SLOT_", with: "")) ?? Int.max
+            if lNum != rNum { return lNum < rNum }
+            return lhs < rhs
+        }
     }
 }
 

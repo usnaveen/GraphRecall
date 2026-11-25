@@ -26,6 +26,9 @@ class FeedItemType(str, Enum):
     CODE_CHALLENGE = "code_challenge"
     CODE_SANDBOX = "code_sandbox"  # write code, run tests on the phone (WKWebView, strict CSP)
     TERRITORY = "territory"  # map-the-territory: name a concept's subtopics (answer key = graph)
+    SPOT_THE_BUG = "spot_the_bug"
+    TRADEOFF_DUEL = "tradeoff_duel"
+    DIAGRAM_OCCLUSION = "diagram_occlusion"
     # Curated by the user's external agent via the agent bridge (only emitted when
     # AGENT_BRIDGE_ENABLED=1). TODO(agent-bridge): render this type in iOS + web clients.
     AGENT_CURATED = "agent_curated"

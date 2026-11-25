@@ -63,6 +63,15 @@ struct FeedTypedCard: View {
             case .territory:
                 TerritoryCardBody(item: item, onReveal: onReveal)
                     .id(item.id)
+            case .spotTheBug:
+                SpotTheBugCardBody(item: item, onReveal: onReveal)
+                    .id(item.id)
+            case .tradeoffDuel:
+                TradeoffDuelCardBody(item: item, onReveal: onReveal)
+                    .id(item.id)
+            case .diagramOcclusion:
+                DiagramOcclusionCardBody(item: item, onReveal: onReveal)
+                    .id(item.id)
             case .agentCurated:
                 AgentCuratedCardBody(item: item, revealed: revealed, onReveal: onReveal)
             case .unknown:
@@ -101,10 +110,14 @@ struct FeedTypedCard: View {
 
     private var typeColor: Color {
         switch item.itemType {
-        case .fillBlank, .codeChallenge, .codeSandbox, .territory, .agentCurated: return GRColor.accentCyan
-        case .screenshot, .infographic: return Color(red: 1, green: 0.42, blue: 0.42)
-        case .diagram: return Color(red: 0.61, green: 0.35, blue: 0.71)
-        default: return GRColor.accent
+        case .fillBlank, .codeChallenge, .codeSandbox, .territory, .agentCurated, .spotTheBug:
+            return GRColor.accentCyan
+        case .screenshot, .infographic:
+            return Color(red: 1, green: 0.42, blue: 0.42)
+        case .diagram, .tradeoffDuel, .diagramOcclusion:
+            return GRColor.purple
+        default:
+            return GRColor.accent
         }
     }
 

@@ -81,6 +81,7 @@
 		C25E93AFF53FB438B794FDA5 /* GraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6B4BB4C9768BAB47A1235D /* GraphView.swift */; };
 		C2820A0F6A8238AEF3A48B50 /* TerritoryCardBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2C8770AB783C0B62C5A5DD /* TerritoryCardBody.swift */; };
 		C4B385FAC417B230BA949476 /* graph3d.html in Resources */ = {isa = PBXBuildFile; fileRef = AB2B223947F7FA737F47CF8A /* graph3d.html */; };
+		C5647F689FA08F3653C6EE35 /* CreativeCardBodies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B897A91DB4533FA1260D81B /* CreativeCardBodies.swift */; };
 		C5F0D1B3DEC5DFE60289B31A /* GraphQuizSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECBEB72ED744FC19DA09627 /* GraphQuizSheet.swift */; };
 		C9003B32FDF8C0501E09980C /* graph3d.bundle.js in Resources */ = {isa = PBXBuildFile; fileRef = 8D48E55D5893DADFCFF6D6D3 /* graph3d.bundle.js */; };
 		C92F43040B0687C155984AAA /* AgentBridgeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5E95274C7E1617D061D0847 /* AgentBridgeModels.swift */; };
@@ -179,6 +180,7 @@
 		46B2AA9997F6ACBF0A93366B /* GraphSceneChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphSceneChrome.swift; sourceTree = "<group>"; };
 		495A4E189BF01A6E33F2A97D /* ShareInboxDrainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInboxDrainer.swift; sourceTree = "<group>"; };
 		4A4B731FA97D99242886CC71 /* GraphRecallWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphRecallWidget.swift; sourceTree = "<group>"; };
+		4B897A91DB4533FA1260D81B /* CreativeCardBodies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreativeCardBodies.swift; sourceTree = "<group>"; };
 		4CDDF5717E5AB0F0AF9C9007 /* SandboxHTML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxHTML.swift; sourceTree = "<group>"; };
 		4D60F0755297C074FCE2F88D /* APIConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfig.swift; sourceTree = "<group>"; };
 		4F2A42135005D5FC3959526A /* GraphRecallUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GraphRecallUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -454,6 +456,7 @@
 				8595C712596B9A55F19C3046 /* AgentHubSheet.swift */,
 				A122E64F532D4834DD4424ED /* AgentInsightsSheet.swift */,
 				1499585AEC54496196362936 /* CodeSandboxCardBody.swift */,
+				4B897A91DB4533FA1260D81B /* CreativeCardBodies.swift */,
 				A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */,
 				D53E4786769C667032C743FF /* FeedCardViews.swift */,
 				C25355E86F96487699425E9E /* FeedContentCard.swift */,
@@ -817,6 +820,7 @@
 				FE7A11C962F00CC8ECC0E618 /* ConceptDumpModels.swift in Sources */,
 				D2A05657AAACF954D3E49D31 /* ContentView.swift in Sources */,
 				D6C1E3C34FF1FB23F0940C77 /* CreateView.swift in Sources */,
+				C5647F689FA08F3653C6EE35 /* CreativeCardBodies.swift in Sources */,
 				677AC8792FA0E88D851F90AD /* DemoFeedSeed.swift in Sources */,
 				9D0082A37375C67E27A2039D /* FeedCardViews.swift in Sources */,
 				66B3F9863520E9EF2083B633 /* FeedContentCard.swift in Sources */,

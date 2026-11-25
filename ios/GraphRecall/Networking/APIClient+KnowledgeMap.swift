@@ -107,6 +107,26 @@ extension APIClient {
         let data = try JSONEncoder().encode(DigestLaterURLBody(url: url, text: text, title: title))
         try await sendNoContent("/api/later/digest-url", method: "POST", body: data)
     }
+
+    // MARK: Creative Cards
+
+    @discardableResult
+    func gradeSpotTheBug(cardId: String, selectedLine: Int) async throws -> SpotTheBugGradeResponse {
+        try await post(
+            "/api/feed/spot-the-bug-grade",
+            body: SpotTheBugGradeBody(cardId: cardId, selectedLine: selectedLine)
+        )
+    }
+}
+
+private struct SpotTheBugGradeBody: Encodable, Sendable {
+    let cardId: String
+    let selectedLine: Int
+
+    enum CodingKeys: String, CodingKey {
+        case cardId = "card_id"
+        case selectedLine = "selected_line"
+    }
 }
 
 private struct SandboxResultBody: Encodable, Sendable {
