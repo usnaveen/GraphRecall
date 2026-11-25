@@ -255,6 +255,24 @@ struct FeedTypedCard: View {
 
     // MARK: - Showcase
 
+    private var showcaseDefinition: String {
+        item.stringContent("definition") ?? item.stringContent("description") ?? item.prompt
+    }
+
+    /// Key points that add something: a point that only repeats the definition is dropped.
+    private var showcaseKeyPoints: [String] {
+        let norm: (String) -> String = { text in
+            text.lowercased().filter { $0.isLetter || $0.isNumber }
+        }
+        let definition = norm(showcaseDefinition)
+        var seen = Set<String>()
+        return item.keyPoints.filter { point in
+            let key = norm(point)
+            guard !key.isEmpty, key != definition, !definition.contains(key) else { return false }
+            return seen.insert(key).inserted
+        }
+    }
+
     @ViewBuilder
     private var showcaseBody: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -272,14 +290,12 @@ struct FeedTypedCard: View {
                     .italic()
                     .foregroundStyle(GRColor.accent)
             }
-            Text(item.stringContent("definition")
-                 ?? item.stringContent("description")
-                 ?? item.prompt)
+            Text(showcaseDefinition)
                 .font(.subheadline)
                 .foregroundStyle(GRColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            ForEach(Array(item.keyPoints.enumerated()), id: \.offset) { _, point in
+            ForEach(Array(showcaseKeyPoints.enumerated()), id: \.offset) { _, point in
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "arrow.right")
                         .font(.caption)

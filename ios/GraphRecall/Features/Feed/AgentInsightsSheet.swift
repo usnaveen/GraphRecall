@@ -1,40 +1,28 @@
 import SwiftUI
 
-/// Liquid Glass drawer surfacing provenance-grounded proactive insights from Agent v2.
-struct AgentInsightsSheet: View {
+/// Insights from the always-on agent (connections, lapses, briefings), each grounded in quotes
+/// from the user's notes. Shown in the Feed's Agent Inbox sheet.
+struct AgentInsightsList: View {
     let model: FeedViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(AppRouter.self) private var router
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                GRColor.canvas.ignoresSafeArea()
-                GRBackdropGlow()
-
-                if model.agentInsights.isEmpty {
-                    emptyState
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            ForEach(model.agentInsights) { card in
-                                insightCardView(card)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+        if model.agentInsights.isEmpty {
+            ScrollView {
+                emptyState.padding(.top, 8)
+            }
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    ForEach(model.agentInsights) { card in
+                        insightCardView(card)
                     }
-                    .scrollIndicators(.hidden)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .navigationTitle("Agent Inbox")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .foregroundStyle(GRColor.accent)
-                }
-            }
+            .scrollIndicators(.hidden)
         }
     }
 
@@ -133,7 +121,7 @@ struct AgentInsightsSheet: View {
                 Label("All caught up", systemImage: "checkmark.seal.fill")
                     .font(GRType.headline)
                     .foregroundStyle(GRColor.accent)
-                Text("Your always-on agent will surface verified cross-note connections and lapse prompts here.")
+                Text("When your notes connect in a way you haven\u{2019}t linked, or a concept starts slipping, the background agent posts it here with the quotes it is based on.")
                     .font(GRType.body)
                     .foregroundStyle(GRColor.textSecondary)
             }

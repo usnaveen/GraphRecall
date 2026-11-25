@@ -43,7 +43,7 @@ struct FeedContentCard: View {
                 // Agent cards are reading suggestions, not SM-2 cards: no toughness slider.
                 // TODO(agent-bridge-ios): POST a seen/dismiss interaction once the backend has one.
                 HStack(alignment: .center, spacing: 8) {
-                    Text("Suggested by your agent \u{00B7} approved by you")
+                    Text("Approved by you")
                         .font(GRType.caption)
                         .foregroundStyle(GRColor.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)

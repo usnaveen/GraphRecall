@@ -7,10 +7,9 @@ struct FeedView: View {
     @State private var model = FeedViewModel()
     @State private var contentReady = false
     @State private var activeSession: SessionLaunch?
-    @State private var showAgentInsights = false
+    @State private var showAgentHub = false
     @State private var dueLater: [LaterItem] = []
     @State private var dueCardHeight: CGFloat = 0
-    @State private var showAgentInbox = false
     private let agentBridge = AgentBridgeCapability.shared
     @AppStorage(GRSettingsKey.feedStyle) private var feedStyleRaw = FeedStyle.reels.rawValue
     @Environment(AppRouter.self) private var router
@@ -86,13 +85,6 @@ struct FeedView: View {
             await loadDueLater()
             await agentBridge.refresh()
         }
-        // Agent bridge: curated cards waiting for approval + "ask my agent" answers.
-        .sheet(isPresented: $showAgentInbox, onDismiss: {
-            Task { await agentBridge.refreshPendingCount() }
-        }) {
-            AgentInboxView()
-                .presentationDragIndicator(.visible)
-        }
         .onChange(of: router.pendingStartReview) { _, _ in consumePendingReview() }
         .fullScreenCover(item: $activeSession) { launch in
             ReviewSessionView(
@@ -103,10 +95,17 @@ struct FeedView: View {
             )
             .environment(router)
         }
-        .sheet(isPresented: $showAgentInsights) {
-            AgentInsightsSheet(model: model)
-                .environment(router)
-                .presentationDragIndicator(.visible)
+        // One inbox for both agents: always-on insights, and outside-agent suggestions to approve.
+        .sheet(isPresented: $showAgentHub, onDismiss: {
+            Task { await agentBridge.refreshPendingCount() }
+        }) {
+            AgentHubSheet(
+                feed: model,
+                showsSuggestions: agentBridge.isAvailable,
+                startOn: agentBridge.pendingCount > 0 ? .suggestions : .insights
+            )
+            .environment(router)
+            .presentationDragIndicator(.visible)
         }
         .onReceive(NotificationCenter.default.publisher(for: .grDumpCompleted)) { _ in
             Task { await model.load() }
@@ -130,20 +129,9 @@ struct FeedView: View {
                     .grGlassEffect(in: Capsule())
             }
             Spacer()
-            if agentBridge.isAvailable {
-                AgentInboxButton(pendingCount: agentBridge.pendingCount) {
-                    GRHaptics.tap()
-                    showAgentInbox = true
-                }
-            }
-            GRIconButton(
-                systemImage: "sparkles",
-                tint: model.agentInsights.isEmpty ? GRColor.textSecondary : GRColor.accent,
-                size: 38,
-                accessibilityLabel: "Agent Inbox"
-            ) {
-                showAgentInsights = true
+            AgentInboxButton(count: agentInboxCount) {
                 GRHaptics.tap()
+                showAgentHub = true
             }
             GRIconButton(
                 systemImage: style == .reels ? "rectangle.stack" : "rectangle.portrait.on.rectangle.portrait",
@@ -184,6 +172,10 @@ struct FeedView: View {
     }
 
     // MARK: - Helpers
+
+    private var agentInboxCount: Int {
+        model.agentInsights.count + (agentBridge.isAvailable ? agentBridge.pendingCount : 0)
+    }
 
     /// Saved-for-later items whose time has come. Best effort: the feed never waits on this.
     private func loadDueLater() async {

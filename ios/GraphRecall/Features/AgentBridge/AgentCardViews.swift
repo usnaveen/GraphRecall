@@ -67,9 +67,8 @@ struct AgentCuratedCardBody: View {
     var onReveal: () -> Void = {}
 
     var body: some View {
+        // The card's type header already reads "From your agent", so no second badge here.
         VStack(alignment: .leading, spacing: 12) {
-            AgentProvenanceBadge(label: item.agentProvenanceLabel, compact: true)
-
             if let fc = item.agentFlashcard {
                 Text(verbatim: fc.front)
                     .font(GRType.headline)
@@ -127,33 +126,33 @@ struct AgentReasonRow: View {
     }
 }
 
-/// Feed top-bar entry to the approval inbox, with a pending count.
+/// Feed top-bar entry to the Agent Inbox (insights + suggestions), with a count of what's new.
 struct AgentInboxButton: View {
-    let pendingCount: Int
+    let count: Int
     let action: () -> Void
 
     var body: some View {
         GRIconButton(
-            systemImage: "tray.full",
-            tint: pendingCount > 0 ? GRColor.accentCyan : GRColor.textSecondary,
+            systemImage: "sparkles",
+            tint: count > 0 ? GRColor.accent : GRColor.textSecondary,
             size: 38,
-            accessibilityLabel: pendingCount > 0
-                ? "Agent suggestions, \(pendingCount) waiting"
-                : "Agent suggestions",
+            accessibilityLabel: "Agent Inbox",
             action: action
         )
         .overlay(alignment: .topTrailing) {
-            if pendingCount > 0 {
-                Text(pendingCount > 99 ? "99+" : "\(pendingCount)")
+            if count > 0 {
+                Text(count > 99 ? "99+" : "\(count)")
                     .font(GRType.micro.weight(.bold))
                     .foregroundStyle(GRColor.canvas)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(GRColor.accentCyan, in: Capsule())
+                    .background(GRColor.accent, in: Capsule())
                     .offset(x: 4, y: -4)
                     .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
         }
+        .accessibilityValue(count > 0 ? "\(count) new" : "")
         .accessibilityIdentifier("agent.inboxButton")
     }
 }
@@ -170,8 +169,8 @@ struct AgentInboxButton: View {
 
 #Preview("Inbox button") {
     HStack {
-        AgentInboxButton(pendingCount: 3) {}
-        AgentInboxButton(pendingCount: 0) {}
+        AgentInboxButton(count: 3) {}
+        AgentInboxButton(count: 0) {}
     }
     .padding()
     .background(GRColor.canvas)

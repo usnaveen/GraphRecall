@@ -103,74 +103,59 @@ final class AgentInboxViewModel {
     }
 }
 
-struct AgentInboxView: View {
-    @State private var model: AgentInboxViewModel
-    @Environment(\.dismiss) private var dismiss
-
-    init(model: AgentInboxViewModel = AgentInboxViewModel()) {
-        _model = State(initialValue: model)
-    }
+/// The suggestion list without navigation chrome, so it can sit inside the Feed's Agent Inbox
+/// sheet as well as in `AgentInboxView`.
+struct AgentInboxContent: View {
+    let model: AgentInboxViewModel
+    /// The sheet puts the status filter in its toolbar instead.
+    var showsFilterPicker = true
 
     var body: some View {
         @Bindable var bindable = model
-        NavigationStack {
-            ZStack(alignment: .bottom) {
-                GRColor.canvas.ignoresSafeArea()
-                GRBackdropGlow(tint: GRColor.accentCyan, offset: CGSize(width: 140, height: -260))
-
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    if showsFilterPicker {
                         Picker("Filter", selection: $bindable.filter) {
                             ForEach(AgentInboxViewModel.Filter.allCases) { Text($0.title).tag($0) }
                         }
                         .pickerStyle(.segmented)
+                    }
 
-                        if let error = model.errorMessage {
-                            GRBanner(systemImage: "exclamationmark.triangle.fill", title: "Couldn\u{2019}t update", subtitle: error, tone: .warning)
-                        }
+                    if let error = model.errorMessage {
+                        GRBanner(systemImage: "exclamationmark.triangle.fill", title: "Couldn\u{2019}t update", subtitle: error, tone: .warning)
+                    }
 
-                        if model.isLoading && model.items.isEmpty {
-                            ProgressView().tint(GRColor.accent).frame(maxWidth: .infinity).padding(.top, 40)
-                        } else if model.items.isEmpty {
-                            emptyState
-                        } else {
-                            ForEach(model.items) { item in
-                                AgentSuggestionCard(
-                                    item: item,
-                                    busy: model.busyIds.contains(item.id),
-                                    showsActions: item.status == .pending,
-                                    onApprove: { Task { await model.approve(item) } },
-                                    onReject: { Task { await model.reject(item) } }
-                                )
-                            }
+                    if model.isLoading && model.items.isEmpty {
+                        ProgressView().tint(GRColor.accent).frame(maxWidth: .infinity).padding(.top, 40)
+                    } else if model.items.isEmpty {
+                        emptyState
+                    } else {
+                        ForEach(model.items) { item in
+                            AgentSuggestionCard(
+                                item: item,
+                                busy: model.busyIds.contains(item.id),
+                                showsActions: item.status == .pending,
+                                onApprove: { Task { await model.approve(item) } },
+                                onReject: { Task { await model.reject(item) } }
+                            )
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .padding(.bottom, 32)
                 }
-                .refreshable { await model.load() }
-
-                if let toast = model.toast {
-                    GRToast(message: toast)
-                        .padding(.bottom, 20)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
             }
-            .animation(.easeOut(duration: 0.2), value: model.toast)
-            .navigationTitle("From your agent")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-                if model.filter == .pending && model.items.count > 1 {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Approve all") { Task { await model.approveAll() } }
-                    }
-                }
+            .scrollIndicators(.hidden)
+            .refreshable { await model.load() }
+
+            if let toast = model.toast {
+                GRToast(message: toast)
+                    .padding(.bottom, 20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.easeOut(duration: 0.2), value: model.toast)
         .task { await model.load() }
         .onChange(of: model.filter) { _, _ in Task { await model.load() } }
     }
@@ -182,10 +167,42 @@ struct AgentInboxView: View {
                     .font(GRType.headline)
                     .foregroundStyle(GRColor.accent)
                 Text(model.filter == .pending
-                     ? "Your agent curates overnight. New suggestions show up here for you to approve before they reach your feed."
-                     : "Items you \(model.filter == .approved ? "approve" : "dismiss") will be listed here.")
+                     ? "Cards an outside agent (Claude, Grok) suggests for your feed wait here until you approve them."
+                     : "Suggestions you \(model.filter == .approved ? "approve" : "dismiss") are listed here.")
                     .font(GRType.body)
                     .foregroundStyle(GRColor.textSecondary)
+            }
+        }
+    }
+}
+
+/// Stand-alone suggestions screen (previews, deep links).
+struct AgentInboxView: View {
+    @State private var model: AgentInboxViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    init(model: AgentInboxViewModel = AgentInboxViewModel()) {
+        _model = State(initialValue: model)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                GRColor.canvas.ignoresSafeArea()
+                GRBackdropGlow(tint: GRColor.accentCyan, offset: CGSize(width: 140, height: -260))
+                AgentInboxContent(model: model)
+            }
+            .navigationTitle("From your agent")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                if model.filter == .pending && model.items.count > 1 {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Approve all") { Task { await model.approveAll() } }
+                    }
+                }
             }
         }
     }
