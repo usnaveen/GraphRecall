@@ -18,3 +18,13 @@ def test_cleaned_text_replaces_what_was_streamed_and_is_what_gets_saved():
 
 def test_identical_text_sends_nothing():
     assert finalize_stream_text("Same.", "Same.") == ([], "Same.")
+
+
+def test_prompt_control_blocks_echoed_by_the_model_are_removed():
+    import importlib
+
+    cg = importlib.import_module("backend.graphs.chat_graph")
+    assert cg.strip_prompt_echo("<intent>explain</intent>\n\nSelf-attention [1].") == "Self-attention [1]."
+    assert cg.strip_prompt_echo("<intent>x</intent><retrieved_context>\n[1] a\n</retrieved_context>\nAnswer") == "Answer"
+    assert cg.strip_prompt_echo("Use <intent> tags like <intent>x</intent> mid-answer") == \
+        "Use <intent> tags like <intent>x</intent> mid-answer"

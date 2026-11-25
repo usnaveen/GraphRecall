@@ -217,6 +217,16 @@ def get_response_cache() -> CorpusVersionedResponseCache:
     return _RESPONSE_CACHE
 
 
+_PROMPT_ECHO_RE = re.compile(
+    r"^\s*(?:<(intent|retrieved_context|context|graph_context)>[\s\S]*?</\1>\s*)+", re.IGNORECASE)
+
+
+def strip_prompt_echo(text: str) -> str:
+    """Small models sometimes start the answer by repeating the prompt's control blocks
+    (<intent>explain</intent>, <retrieved_context>...). Remove them from the start of the answer."""
+    return _PROMPT_ECHO_RE.sub("", text or "", count=1)
+
+
 async def _notes_fingerprint(user_id: str) -> Optional[str]:
     """Count and last change of the user's notes, read from the database, so ingestion or deletion by
     any process (API worker, ingest script) is seen. None when unavailable."""
@@ -1026,7 +1036,7 @@ async def generate_response_node(state: ChatState) -> dict:
             timeout=_CHAT_GEN_TIMEOUT_S,
         )
 
-        response_content = response.text
+        response_content = strip_prompt_echo(response.text)
 
         citation_audit = None
         if decision.valid_chunk_indices or decision.valid_graph_ids:
