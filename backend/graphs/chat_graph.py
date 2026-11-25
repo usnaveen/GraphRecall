@@ -226,7 +226,8 @@ async def analyze_query_node(state: ChatState) -> dict:
     # user's own concept names found in the message; get_context_node adds vector seeds.
     if mode == "model" and pred is not None:
         entities = await intent_router.mentioned_concepts(user_id, query)
-        threshold = intent_router.confidence_threshold(intent_router.default_threshold())
+        threshold = intent_router.threshold_for(
+            pred.intent, intent_router.confidence_threshold(intent_router.default_threshold()))
         quiz_without_topic = pred.intent == "quiz" and not entities and len(query.split()) > 3
         if pred.confidence >= threshold and not quiz_without_topic:
             try:
@@ -354,7 +355,7 @@ async def get_context_node(state: ChatState) -> dict:
     graph_start = now()
     seed_mode = os.getenv("GRAPH_SEED_MODE", "substring")
     # Model-routed turns have no LLM-extracted entities, so seed from the query embedding too.
-    model_routed = state.get("router_source") == "model"
+    model_routed = state.get("router_source") == "model" and intent != "general"
     use_vector_seeds = (seed_mode == "hybrid" or model_routed) and embed_task is not None
     if entities or use_vector_seeds:
         try:

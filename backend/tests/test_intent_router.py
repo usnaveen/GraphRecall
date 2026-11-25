@@ -81,6 +81,7 @@ async def test_model_mode_skips_llm_when_confident(monkeypatch):
     monkeypatch.setenv("CHAT_INTENT_ROUTER", "model")
     monkeypatch.setenv("CHAT_INTENT_THRESHOLD", "0.3")
     cg._QUERY_EMBED_CACHE.clear()
+    assert im.get_classifier().predict("quiz me on binary search").confidence >= 0.8  # quiz bar
     llm = _llm()
     logged = []
     a, b, c = _patches(llm)
@@ -150,3 +151,36 @@ async def test_log_decision_never_raises_without_db(monkeypatch):
         ir.log_decision(user_id="u1", query="q", intent="general", source="model")
         await asyncio.sleep(0)
         await asyncio.gather(*list(ir._PENDING), return_exceptions=True)
+
+
+def test_quiz_needs_higher_confidence():
+    assert ir.threshold_for("quiz", 0.6) == 0.8
+    assert ir.threshold_for("explain", 0.6) == 0.6
+
+
+@pytest.mark.parametrize("router_source,intent,expect_vector_seeds", [
+    ("model", "explain", True),     # no LLM entities, so seed from the query embedding
+    ("model", "general", False),    # chit-chat stays off the graph, as it did with the LLM router
+    ("llm", "explain", False),      # LLM path unchanged (substring seeds only unless GRAPH_SEED_MODE=hybrid)
+])
+async def test_context_vector_seeds_follow_router_source(monkeypatch, router_source, intent, expect_vector_seeds):
+    monkeypatch.delenv("GRAPH_SEED_MODE", raising=False)
+    cg._QUERY_EMBED_CACHE.clear()
+    embedder = MagicMock()
+    embedder.aembed_query = AsyncMock(return_value=[0.1] * 8)
+    pg = AsyncMock()
+    pg.execute_query = AsyncMock(return_value=[])
+    neo = AsyncMock()
+    neo.find_seed_concepts = AsyncMock(return_value=[])
+    neo.execute_query = AsyncMock(return_value=[])
+    sim = AsyncMock(return_value=[])
+    with patch.object(cg, "get_embeddings", return_value=embedder), \
+         patch.object(cg, "get_embedding_dims", return_value=8), \
+         patch.object(cg, "get_postgres_client", new=AsyncMock(return_value=pg)), \
+         patch.object(cg, "get_neo4j_client", new=AsyncMock(return_value=neo)), \
+         patch("backend.services.concept_similarity.similar_to_embedding", sim):
+        await cg.get_context_node({
+            "user_id": "u1", "intent": intent, "entities": [], "router_source": router_source,
+            "messages": [HumanMessage(content="how does self-attention work")],
+        })
+    assert sim.await_count == (1 if expect_vector_seeds else 0)

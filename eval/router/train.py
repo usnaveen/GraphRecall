@@ -161,7 +161,7 @@ def main() -> None:
     ap.add_argument("--no-minilm", action="store_true")
     ap.add_argument("--threshold", type=float, default=0.6,
                     help="chosen on dev: 84%% coverage at 93%% accuracy")
-    ap.add_argument("--eval-set", default="dev", choices=["dev", "test"],
+    ap.add_argument("--eval-set", default="dev", choices=["dev", "test", "human"],
                     help="iterate on dev; score test once, at the end")
     args = ap.parse_args()
 

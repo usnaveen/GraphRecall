@@ -48,13 +48,24 @@ confidence, LLM intent when called, entities, latency. Deleted with the user's d
 | MiniLM + LogReg | 0.833 | 0.844 [0.79, 0.90] | 0.843 | 8.4 ms | torch |
 
 At the 0.6 threshold the shipped model handles 84% of dev questions at 93% accuracy (88% of test
-at 97%); the rest go to Gemini.
+at 97%); the rest go to Gemini. Quiz has a higher bar (0.8) because a false quiz starts a 10-quiz
+generation job.
 
-**Read the test number with care.** After v1 (test acc 0.794) I looked at the test errors, then added
-training phrasings. The dev set was written after that to drive tuning, but the v2 phrasings were
-partly shaped by test mistakes, so the test score is optimistic. Treat dev (0.85) as the honest
-estimate until a fresh test set or human-checked real queries exist. 5-fold CV on the synthetic train
-set is 0.998, which shows how far template data is from real phrasing.
+**Only one of these numbers is clean: v1 on test, 0.794 accuracy.** After v1 I read the test errors,
+wrote the dev set, then added training phrasings. Those phrasings echo both sets ("see if i remember",
+"dig up", "what unlocks after", "got any figures of"...), and the 0.6 threshold was picked on dev. So
+dev 0.85 and test 0.92 are both optimistic. 5-fold CV on the synthetic train set is 0.998, which shows
+how far template data is from real phrasing. A clean number needs questions nobody tuned against:
+human-written ones, or real logged messages.
+
+**Outside check (57 GraphRAG benchmark questions, no labels for our intents).** No question was routed
+to quiz. 6 of 57 were confidently routed to a retrieval-changing intent that is probably wrong
+(4 "path", mostly "where..." questions, 2 "show_images"). The cost of those is a 3-hop instead of a
+2-hop expansion, or 10 chunks instead of 5, not a wrong answer path.
+
+Logging was verified end to end against the local database: a model-routed message for a real user
+wrote one `intent_decisions` row (23 ms routing time, no LLM call). The row needs a `users` record
+(foreign key with cascade delete), which every signed-in user has.
 
 MiniLM embeddings did not beat TF-IDF here and are 100x slower with a torch dependency, so TF-IDF ships.
 The numpy runtime reproduces sklearn's probabilities to < 1e-6 (checked in `train.py` and
@@ -62,7 +73,7 @@ The numpy runtime reproduces sklearn's probabilities to < 1e-6 (checked in `trai
 
 ## Next
 
-1. Human-check the test labels (`label.py`).
+1. Write ~50 real questions you would ask, label them with `label.py`, and score once: that is the clean number.
 2. Run `shadow` mode locally for a while and measure model-vs-Gemini agreement on real messages.
 3. Retrain on logged real queries (Gemini labels + human spot checks) and re-pick the threshold.
 4. Compare against Gemini itself on the test set once billing is on (needs ~160 fast-model calls).

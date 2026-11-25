@@ -2,6 +2,8 @@
 
     python3 eval/router/label.py            # only rows not yet human-checked
     python3 eval/router/label.py --all      # go through everything again
+    python3 eval/router/label.py --write    # type your own real questions -> data/human.jsonl
+                                            # (the clean set: score it once with train.py --eval-set human)
 
 For each question: press Enter to keep the proposed label, type a number to change it,
 s to skip, q to save and quit. Checked rows get label_source "human"; train.py reports how many
@@ -25,7 +27,29 @@ HELP = {
 }
 
 
+def write_mode() -> None:
+    out = PATH.parent / "human.jsonl"
+    print("Type a question you would really ask, then its label number. Empty question = done.")
+    print("  ".join(f"{i}={c}" for i, c in enumerate(CLASSES)))
+    n = 0
+    with out.open("a") as f:
+        while True:
+            text = input("\nquestion> ").strip()
+            if not text:
+                break
+            lab = input("label #> ").strip()
+            if not (lab.isdigit() and int(lab) < len(CLASSES)):
+                print("skipped (need a number 0-7)")
+                continue
+            f.write(json.dumps({"text": text, "intent": CLASSES[int(lab)], "label_source": "human"}) + "\n")
+            n += 1
+    print(f"added {n} to {out}")
+
+
 def main() -> None:
+    if "--write" in sys.argv:
+        write_mode()
+        return
     redo = "--all" in sys.argv
     rows = [json.loads(line) for line in PATH.open()]
     menu = "  ".join(f"{i}={c}" for i, c in enumerate(CLASSES))

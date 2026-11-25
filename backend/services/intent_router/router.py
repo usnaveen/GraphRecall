@@ -46,6 +46,15 @@ def confidence_threshold(default: float) -> float:
         return default
 
 
+# Quiz is the one intent with a side effect (it starts a 10-quiz generation job and replaces the
+# answer), so a false positive costs real LLM quota. Hold it to a higher bar.
+_INTENT_MIN_CONFIDENCE = {"quiz": 0.8}
+
+
+def threshold_for(intent: str, base: float) -> float:
+    return max(base, _INTENT_MIN_CONFIDENCE.get(intent, 0.0))
+
+
 def classify(query: str) -> Optional[Prediction]:
     clf = get_classifier()
     if clf is None:
@@ -112,7 +121,7 @@ async def _write_decision(row: dict[str, Any]) -> None:
             {**row, "entities": json.dumps(row.get("entities") or [])},
         )
     except Exception as e:  # noqa: BLE001
-        logger.debug("intent_router: decision not logged", error=str(e))
+        logger.warning("intent_router: decision not logged", error=str(e)[:300])
 
 
 _PENDING: set[asyncio.Task] = set()
