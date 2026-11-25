@@ -114,10 +114,16 @@ final class FeedViewModel {
             let merged = Self.merge(server: feed.items.filter { $0.itemType != .unknown }, dump: dumpItems)
             isDemoMode = false
 
-            // NAV-24: empty live feed → seed rich demo cards (never blank Simulator).
-            if merged.isEmpty {
+            // Signed in with nothing to show: a real empty state (FeedView points to Create).
+            // The demo pack is only for signed-out browsing and UI tests.
+            if merged.isEmpty && Self.demoAllowed {
                 isOffline = false
                 applyDemoSeed(reason: "Feed returned no cards — showing Demo pack.")
+            } else if merged.isEmpty {
+                isOffline = false
+                items = []
+                dueTotal = 0
+                errorMessage = nil
             } else {
                 items = merged
                 completedToday = feed.completedToday
@@ -152,9 +158,13 @@ final class FeedViewModel {
                 items = dumpItems
                 dueTotal = items.count
                 isDemoMode = false
-            } else {
-                // NAV-24: 404 / offline with no cache → demo pack
+            } else if Self.demoAllowed {
+                // Signed out / UI tests with no cache → demo pack
                 applyDemoSeed(reason: errorMessage ?? "Couldn't reach feed — showing Demo pack.")
+            } else {
+                // Signed in but offline with nothing cached: say so instead of showing sample cards.
+                items = []
+                dueTotal = 0
             }
             pendingFlushCount = await OfflineReviewStore.shared.load().count
             currentIndex = 0
@@ -170,6 +180,11 @@ final class FeedViewModel {
         queue = items
         grades = [:]
         gradedIds = []
+    }
+
+    /// Sample cards are for people who haven't signed in (and UI tests), never for a real account.
+    private static var demoAllowed: Bool {
+        ProcessInfo.processInfo.environment["GR_UITEST"] != nil || !AuthSession.shared.isSignedIn
     }
 
     private func applyDemoSeed(reason: String) {
