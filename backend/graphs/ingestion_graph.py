@@ -403,7 +403,7 @@ async def embed_node(state: IngestionState) -> dict:
     if not all_child_texts:
         return {}
 
-    embeddings = await embedding_service.embed_batch(all_child_texts)
+    embeddings = await embedding_service.embed_batch(all_child_texts, owner=state.get("user_id"))
 
     # Initialize child_embeddings lists
     for group in chunks:

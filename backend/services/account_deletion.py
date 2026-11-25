@@ -22,7 +22,7 @@ PURGE_TABLES = (  # child tables before parents
     "user_uploads", "chat_conversations", "notes", "intent_decisions", "later_items", "coding_attempts", "coding_problems", "knowledge_evidence", "user_skills", "user_profile", "user_courses", "user_projects", "user_resumes",
     # always-on agent (015), usage meter (017) and the agent bridge (026/027) if present
     "agent_audit_log", "agent_requests", "agent_daily_digests", "agent_feed_items", "agent_api_keys",
-    "agent_insights", "agent_runs", "agent_jobs", "usage_daily",
+    "agent_insights", "agent_runs", "agent_jobs", "usage_daily", "embedding_cache",
 )
 
 

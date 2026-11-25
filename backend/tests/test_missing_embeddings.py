@@ -15,12 +15,12 @@ def _chunks(n_children: int):
 
 
 class FailingEmbedder:
-    async def embed_batch(self, texts):
+    async def embed_batch(self, texts, owner=None):
         return []  # what EmbeddingService returns when every call failed
 
 
 class PartialEmbedder:
-    async def embed_batch(self, texts):
+    async def embed_batch(self, texts, owner=None):
         return [[0.1] * 3 if i % 2 == 0 else [] for i in range(len(texts))]
 
 
@@ -76,7 +76,7 @@ async def test_reembed_fills_missing_and_stops_on_dead_provider():
     from backend.services.ingestion.reembed import reembed_missing_chunks
 
     class Ok:
-        async def embed_batch(self, texts):
+        async def embed_batch(self, texts, owner=None):
             return [[0.5, 0.5] for _ in texts]
 
     pg = FakePg([{"id": f"id{i}", "content": f"t{i}"} for i in range(5)])
@@ -87,7 +87,7 @@ async def test_reembed_fills_missing_and_stops_on_dead_provider():
     calls = []
 
     class Dead:
-        async def embed_batch(self, texts):
+        async def embed_batch(self, texts, owner=None):
             calls.append(len(texts))
             return []
 

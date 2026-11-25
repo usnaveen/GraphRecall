@@ -12,7 +12,9 @@ os.environ.setdefault("GEMINI_API_KEY", "test-key")
 # Disable LangSmith tracing in tests to avoid network calls
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
-os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
+# A port nothing listens on: tests must never authenticate against the developer's real Neo4j with a
+# dummy password (repeated failures trip Neo4j's login rate limit and break local ingestion).
+os.environ.setdefault("NEO4J_URI", "bolt://127.0.0.1:7699")
 os.environ.setdefault("NEO4J_USER", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "test")
 # Chat tests mock the LLM router; the trained router has its own tests (test_intent_router.py).

@@ -1,7 +1,21 @@
 import asyncio
-from typing import List
+import hashlib
+import os
+import re
+from typing import List, Optional
 import structlog
 from backend.config.llm import get_embeddings, get_embedding_dims
+
+_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+CACHE_ENABLED = os.getenv("EMBEDDING_CACHE", "1") != "0"
+
+
+def _model_name(embedder) -> str:
+    return str(getattr(embedder, "model", None) or getattr(embedder, "model_name", None) or "embedding")
+
+
+def cache_key(model: str, dims: int, text: str) -> str:
+    return hashlib.sha256(f"{model}|{dims}|{text}".encode("utf-8")).hexdigest()
 
 logger = structlog.get_logger()
 
@@ -44,11 +58,50 @@ class EmbeddingService:
                     await asyncio.sleep(wait)
         return []
 
-    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    async def embed_batch(self, texts: List[str], owner: Optional[str] = None) -> List[List[float]]:
         """Embed a batch of texts for storage (retrieval_document task).
 
-        Splits large batches and retries on failure.
+        With ``owner`` (a user id), vectors already computed for the same text, model and dims
+        come from the per-user embedding cache; only the misses hit the API.
         """
+        if not owner or not CACHE_ENABLED or not _UUID.match(str(owner)) or not texts:
+            return await self._embed_uncached(texts)
+        model = _model_name(self.embedder)
+        keys = [cache_key(model, self.dims, t) for t in texts]
+        hits: dict[str, List[float]] = {}
+        try:
+            from backend.db.postgres_client import get_postgres_client
+
+            pg = await get_postgres_client()
+            rows = await pg.execute_query(
+                "SELECT key, embedding FROM embedding_cache WHERE user_id = CAST(:u AS uuid) AND key = ANY(:keys)",
+                {"u": owner, "keys": list(set(keys))},
+            )
+            hits = {r["key"]: list(r["embedding"]) for r in rows or []}
+        except Exception as e:  # noqa: BLE001 - the cache is an optimisation
+            logger.warning("embedding cache read failed", error=str(e)[:200])
+            pg = None
+        missing = [i for i, k in enumerate(keys) if k not in hits]
+        fresh = await self._embed_uncached([texts[i] for i in missing]) if missing else []
+        out: List[List[float]] = [hits.get(k, []) for k in keys]
+        for i, vec in zip(missing, fresh):
+            out[i] = vec
+        logger.info("embed_batch: cache", total=len(texts), hits=len(texts) - len(missing))
+        if pg is not None and missing:
+            try:
+                for i, vec in zip(missing, fresh):
+                    if vec:
+                        await pg.execute_update(
+                            "INSERT INTO embedding_cache (key, user_id, model, dims, embedding) "
+                            "VALUES (:k, CAST(:u AS uuid), :m, :d, :e) ON CONFLICT DO NOTHING",
+                            {"k": keys[i], "u": owner, "m": model, "d": self.dims, "e": [float(x) for x in vec]},
+                        )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("embedding cache write failed", error=str(e)[:200])
+        return out
+
+    async def _embed_uncached(self, texts: List[str]) -> List[List[float]]:
+        """Embed via the API: splits large batches and retries on failure."""
         if not self.embedder:
             logger.error("Embedding service not configured")
             return []

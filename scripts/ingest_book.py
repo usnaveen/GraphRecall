@@ -129,7 +129,8 @@ async def _upload_images(images_dir: str, filenames: Iterable[str], user_id: str
     return url_map
 
 
-async def _embed_texts(texts: List[str], use_local: bool, skip: bool) -> List[Optional[List[float]]]:
+async def _embed_texts(texts: List[str], use_local: bool, skip: bool,
+                       owner: Optional[str] = None) -> List[Optional[List[float]]]:
     """Generate embeddings for a list of texts."""
     if skip:
         return [None] * len(texts)
@@ -140,7 +141,7 @@ async def _embed_texts(texts: List[str], use_local: bool, skip: bool) -> List[Op
         return [emb.tolist() if hasattr(emb, "tolist") else emb for emb in embeddings]
 
     service = EmbeddingService()
-    embeddings = await service.embed_batch(texts)
+    embeddings = await service.embed_batch(texts, owner=owner)
     if not embeddings:
         logger.warning("Embedding service returned no embeddings; continuing without")
         return [None] * len(texts)
@@ -668,6 +669,7 @@ async def main():
         [c.text for c in chunks],
         use_local=args.local_embeddings,
         skip=args.skip_embeddings,
+        owner=args.user_id,
     )
     if len(embeddings) != len(chunks):
         logger.warning("Embedding count mismatch; falling back to no embeddings")
