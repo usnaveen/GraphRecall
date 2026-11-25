@@ -332,6 +332,62 @@ TOOL_DEFS: list[dict[str, Any]] = [
         },
         "route": "POST /api/chat",
     },
+    {
+        "name": "knowledge_assess",
+        "description": (
+            "Check what the user already knows before you teach them. Pass concept or skill names "
+            "(e.g. a paper's prerequisites). Each comes back as strong (tested well or backed by "
+            "coursework/projects), shaky (struggled when tested), seen (studied or claimed, never tested) "
+            "or unexposed (no evidence), with mastery 0-1 and the evidence behind it. Use it to skip "
+            "what they know, slow down on shaky items and introduce unexposed ones from scratch. With "
+            "track_unknown=true, unexposed names are queued so GraphRecall asks the user about them."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "names": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 200},
+                "track_unknown": {"type": "boolean", "default": False},
+            },
+            "required": ["names"],
+        },
+        "route": "POST /api/knowledge-map/assess",
+    },
+    {
+        "name": "knowledge_profile",
+        "description": (
+            "The user's knowledge at a glance: counts of strong / shaky / seen / unexposed concepts, the "
+            "same broken down by domain, and their strongest and weakest tested concepts."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+        "route": "GET /api/knowledge-map/summary?compact=true",
+    },
+    {
+        "name": "capability_blueprint",
+        "description": (
+            "Who the user is as a learner and builder: education, courses with grades and topics, projects "
+            "with skills, LeetCode attempts by pattern, and the knowledge summary. No resume text or notes."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+        "route": "GET /api/profile/blueprint",
+    },
+    {
+        "name": "suggest_for_later",
+        "description": (
+            "Put an article, paper or topic in the user's 'Later' queue so it comes back in their feed at a "
+            "chosen time. Give a one-line text, an optional http(s) link and a when phrase such as "
+            "'tomorrow', 'this weekend' or 'in 3 days'."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "url": {"type": "string"},
+                "when": {"type": "string"},
+            },
+            "required": ["text"],
+        },
+        "route": "POST /api/later",
+    },
 ]
 
 
@@ -434,6 +490,27 @@ def handle_chat_ask(args: dict[str, Any]) -> dict[str, Any]:
     return api_request("POST", "/api/chat", json_body=body)
 
 
+def handle_knowledge_assess(args: dict[str, Any]) -> dict[str, Any]:
+    return api_request("POST", "/api/knowledge-map/assess", json_body={
+        "names": list(args["names"]), "track_unknown": bool(args.get("track_unknown", False))})
+
+
+def handle_knowledge_profile(args: dict[str, Any]) -> dict[str, Any]:
+    return api_request("GET", "/api/knowledge-map/summary", params={"compact": "true"})
+
+
+def handle_capability_blueprint(args: dict[str, Any]) -> dict[str, Any]:
+    return api_request("GET", "/api/profile/blueprint")
+
+
+def handle_suggest_for_later(args: dict[str, Any]) -> dict[str, Any]:
+    body = {"text": args["text"], "source": "agent"}
+    for key in ("url", "when"):
+        if args.get(key):
+            body[key] = args[key]
+    return api_request("POST", "/api/later", json_body=body)
+
+
 HANDLERS: dict[str, Handler] = {
     "concepts_dump": handle_concepts_dump,
     "ingest_notes": handle_ingest_notes,
@@ -448,6 +525,10 @@ HANDLERS: dict[str, Handler] = {
     "feed_get": handle_feed_get,
     "stats_get": handle_stats_get,
     "chat_ask": handle_chat_ask,
+    "knowledge_assess": handle_knowledge_assess,
+    "knowledge_profile": handle_knowledge_profile,
+    "capability_blueprint": handle_capability_blueprint,
+    "suggest_for_later": handle_suggest_for_later,
 }
 
 

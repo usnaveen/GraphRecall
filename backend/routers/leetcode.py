@@ -151,6 +151,13 @@ async def log_attempt(problem_id: str, body: AttemptIn, current_user: dict = Dep
          "tag": body.mistake_tag, "minutes": body.minutes},
     )
     card_ids = await lc.rebuild_cards(pg, user_id, problem, await _attempts(pg, user_id, problem_id))
+    try:
+        from backend.services.knowledge_map import record_leetcode_evidence
+
+        await record_leetcode_evidence(pg, user_id, concept_id=problem.get("concept_id"),
+                                       pattern_concept_id=problem.get("pattern_concept_id"), outcome=body.outcome)
+    except Exception as e:  # noqa: BLE001 - logging evidence must not fail the attempt
+        logger.warning("leetcode: evidence not recorded", error=str(e))
     if body.outcome == "failed" and problem.get("concept_id"):
         await lc.make_due_now(pg, user_id, problem["concept_id"])
     return {"problem_id": problem_id, "card_ids": card_ids, "due_now": body.outcome == "failed"}

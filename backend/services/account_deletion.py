@@ -19,7 +19,7 @@ logger = structlog.get_logger()
 PURGE_TABLES = (  # child tables before parents
     "community_nodes", "communities", "saved_responses", "concept_review_sessions", "study_sessions",
     "proficiency_scores", "quiz_candidates", "generated_content", "flashcards", "quizzes", "daily_stats",
-    "user_uploads", "chat_conversations", "notes", "intent_decisions", "later_items", "coding_attempts", "coding_problems",
+    "user_uploads", "chat_conversations", "notes", "intent_decisions", "later_items", "coding_attempts", "coding_problems", "knowledge_evidence", "user_skills", "user_profile", "user_courses", "user_projects", "user_resumes",
 )
 
 

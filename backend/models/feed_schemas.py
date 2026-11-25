@@ -24,6 +24,7 @@ class FeedItemType(str, Enum):
     SCREENSHOT = "screenshot"  # User uploaded
     CONCEPT_SHOWCASE = "showcase"
     CODE_CHALLENGE = "code_challenge"
+    TERRITORY = "territory"  # map-the-territory: name a concept's subtopics (answer key = graph)
 
 
 class DifficultyLevel(str, Enum):

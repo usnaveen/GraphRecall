@@ -26,7 +26,7 @@ class LaterCreate(BaseModel):
     url: Optional[str] = Field(default=None, max_length=2000)
     when: Optional[str] = Field(default=None, max_length=60, description='e.g. "tomorrow", "in 3 days"')
     tz: Optional[str] = Field(default=None, max_length=64, description="IANA time zone, e.g. Asia/Kolkata")
-    source: Literal["typed", "voice", "share", "chat"] = "typed"
+    source: Literal["typed", "voice", "share", "chat", "agent"] = "typed"
 
 
 class Snooze(BaseModel):

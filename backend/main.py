@@ -55,6 +55,8 @@ try:
     from backend.routers.agent_v2 import router as agent_v2_router
     from backend.routers.later import router as later_router
     from backend.routers.leetcode import router as leetcode_router
+    from backend.routers.territory import router as territory_router
+    from backend.routers.knowledge_map import router as knowledge_map_router
 except Exception as e:
     import traceback
     traceback.print_exc()
@@ -184,6 +186,8 @@ app.include_router(users_router)     # /api/users - User management (purge, etc)
 app.include_router(agent_v2_router)  # /api/v2/agent - Always-on agent insights & jobs
 app.include_router(later_router)     # /api/later - "Show me this later" captures
 app.include_router(leetcode_router)  # /api/leetcode - Pattern/pseudocode/mistake recall
+app.include_router(territory_router) # /api/territory - Map-the-territory cards
+app.include_router(knowledge_map_router)  # /api/knowledge-map, /api/profile - Knowledge map, profile, resume
 
 
 # ============================================================================

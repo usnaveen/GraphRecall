@@ -21,6 +21,7 @@ from backend.db.postgres_client import get_postgres_client
 from backend.models.feed_schemas import (
     DifficultyLevel,
     FeedFilterRequest,
+    FeedItem,
     FeedItemType,
     FeedResponse,
     ReviewResult,
@@ -100,7 +101,8 @@ async def get_feed(
         )
         
         response = await feed_service.get_feed(request)
-        
+        await _add_territory_card(response, request, neo4j_client)
+
         # Inject Daily Goal & Trigger Durable Pre-gen Buffer
         response.daily_goal = await feed_service.get_daily_goal(request.user_id)
         await enqueue_durable_job(
@@ -118,6 +120,39 @@ async def get_feed(
     except Exception as e:
         logger.error("Feed: Error getting feed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _add_territory_card(response, request, neo4j_client) -> None:
+    """One map-the-territory card per feed load, preferring a parent of a concept already in the feed.
+    No LLM: the card is built from SUBTOPIC_OF edges. Best effort; the feed never fails on it."""
+    if request.item_types and FeedItemType.TERRITORY not in request.item_types:
+        return
+    try:
+        from backend.services import territory as tt
+
+        options = await tt.territories(neo4j_client, request.user_id, limit=12)
+        if not options:
+            return
+        in_feed = {i.concept_id for i in response.items if i.concept_id}
+        option = next((t for t in options if t["id"] in in_feed), None)
+        if option is None:
+            import random
+
+            option = random.choice(options)
+        card = FeedItem(
+            id=f"territory:{option['id']}",
+            item_type=FeedItemType.TERRITORY,
+            content=tt.card_content(option),
+            concept_id=option["id"],
+            concept_name=option["name"],
+            domain=option.get("domain"),
+            priority_score=0.75,
+        )
+        response.items.insert(min(2, len(response.items)), card)
+        if len(response.items) > request.max_items:
+            response.items.pop()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Feed: territory card skipped", error=str(e))
 
 
 @router.post("/review")
