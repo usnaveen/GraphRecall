@@ -34,6 +34,7 @@
 		548CAE724C27CF0C9595C8B5 /* FeedPostsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571574011BF854B11FF5626D /* FeedPostsView.swift */; };
 		54D62B63DB351CE3DB305053 /* AgentInboxUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C670D511ACB3A69231A7E51 /* AgentInboxUITests.swift */; };
 		56EAEACF6E68918C9A446A00 /* GraphNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */; };
+		5856EC9957337FA13597D3E3 /* FeedPagingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8150165C7BF5F2DFF020F8 /* FeedPagingUITests.swift */; };
 		5D8A719D00E8E4E5BCCEE8F1 /* GraphToolsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D3BF4391B44E6E2469BCD9 /* GraphToolsSheets.swift */; };
 		5DBCE912CF09F6C857490E3D /* ConceptFigureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 027AF4E110315AB89375BB16 /* ConceptFigureView.swift */; };
 		60FF4F0896591B3C7A8F0EF7 /* ChatSSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0A25E9DDEB6FA4EA9F3A30 /* ChatSSEClient.swift */; };
@@ -106,6 +107,7 @@
 		EA91840184ADA49500E76AD3 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4AB921E260606FD5618584 /* APIClient.swift */; };
 		EED2457B084FAB48F5143FAF /* CapabilityProfileViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB9952CE9FE7E997C8EFA99D /* CapabilityProfileViews.swift */; };
 		EF31F821B5D52CD61798BDB9 /* GraphViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12ACAFF6FE6A4E2FC61274B /* GraphViewModel.swift */; };
+		F092581FAE18C0D1CDCF18A8 /* ConceptMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CDC6067822B5B5B35F39E97 /* ConceptMapView.swift */; };
 		F0A41B925A7BC81D64C59230 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07010B2398942B883315389E /* SettingsView.swift */; };
 		F1FBC2793C54513177F326C9 /* ReviewFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FF54DECE7F455EA0BB8D0F0 /* ReviewFlowUITests.swift */; };
 		F4022251C43C1FFD563C0E9C /* ImportReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B41DFEE6E9CC527A799EF02 /* ImportReviewView.swift */; };
@@ -163,6 +165,7 @@
 		1499585AEC54496196362936 /* CodeSandboxCardBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeSandboxCardBody.swift; sourceTree = "<group>"; };
 		14DA63CEEA141B107C21F909 /* KnowledgeMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeMapView.swift; sourceTree = "<group>"; };
 		197D3F82D29D0397F795B9F4 /* APIClient+AgentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+AgentBridge.swift"; sourceTree = "<group>"; };
+		1CDC6067822B5B5B35F39E97 /* ConceptMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptMapView.swift; sourceTree = "<group>"; };
 		1DF16E1C6D9C4EDB538661AD /* ResumeDocumentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResumeDocumentView.swift; sourceTree = "<group>"; };
 		1EAC19540B0FC26CF2901971 /* GraphLinksSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphLinksSheet.swift; sourceTree = "<group>"; };
 		20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphNotePanel.swift; sourceTree = "<group>"; };
@@ -184,6 +187,7 @@
 		46B2AA9997F6ACBF0A93366B /* GraphSceneChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphSceneChrome.swift; sourceTree = "<group>"; };
 		495A4E189BF01A6E33F2A97D /* ShareInboxDrainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInboxDrainer.swift; sourceTree = "<group>"; };
 		4A4B731FA97D99242886CC71 /* GraphRecallWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphRecallWidget.swift; sourceTree = "<group>"; };
+		4B8150165C7BF5F2DFF020F8 /* FeedPagingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedPagingUITests.swift; sourceTree = "<group>"; };
 		4B897A91DB4533FA1260D81B /* CreativeCardBodies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreativeCardBodies.swift; sourceTree = "<group>"; };
 		4CDDF5717E5AB0F0AF9C9007 /* SandboxHTML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxHTML.swift; sourceTree = "<group>"; };
 		4D60F0755297C074FCE2F88D /* APIConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfig.swift; sourceTree = "<group>"; };
@@ -461,6 +465,7 @@
 				A122E64F532D4834DD4424ED /* AgentInsightsSheet.swift */,
 				1499585AEC54496196362936 /* CodeSandboxCardBody.swift */,
 				027AF4E110315AB89375BB16 /* ConceptFigureView.swift */,
+				1CDC6067822B5B5B35F39E97 /* ConceptMapView.swift */,
 				4B897A91DB4533FA1260D81B /* CreativeCardBodies.swift */,
 				A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */,
 				D53E4786769C667032C743FF /* FeedCardViews.swift */,
@@ -520,6 +525,7 @@
 			isa = PBXGroup;
 			children = (
 				0C670D511ACB3A69231A7E51 /* AgentInboxUITests.swift */,
+				4B8150165C7BF5F2DFF020F8 /* FeedPagingUITests.swift */,
 				8FF54DECE7F455EA0BB8D0F0 /* ReviewFlowUITests.swift */,
 				C5E2ABA3A6A6F055C1E2DBFB /* ShareIngestTests.swift */,
 			);
@@ -766,6 +772,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				54D62B63DB351CE3DB305053 /* AgentInboxUITests.swift in Sources */,
+				5856EC9957337FA13597D3E3 /* FeedPagingUITests.swift in Sources */,
 				F1FBC2793C54513177F326C9 /* ReviewFlowUITests.swift in Sources */,
 				C007D729D392D72926FD645A /* ShareIngestTests.swift in Sources */,
 			);
@@ -825,6 +832,7 @@
 				B59A12713BA21EE4FF1F7436 /* ConceptDetailView.swift in Sources */,
 				FE7A11C962F00CC8ECC0E618 /* ConceptDumpModels.swift in Sources */,
 				5DBCE912CF09F6C857490E3D /* ConceptFigureView.swift in Sources */,
+				F092581FAE18C0D1CDCF18A8 /* ConceptMapView.swift in Sources */,
 				D2A05657AAACF954D3E49D31 /* ContentView.swift in Sources */,
 				D6C1E3C34FF1FB23F0940C77 /* CreateView.swift in Sources */,
 				C5647F689FA08F3653C6EE35 /* CreativeCardBodies.swift in Sources */,

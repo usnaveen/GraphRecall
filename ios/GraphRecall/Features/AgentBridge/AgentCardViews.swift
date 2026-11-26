@@ -132,8 +132,9 @@ struct AgentInboxButton: View {
     let action: () -> Void
 
     var body: some View {
+        // An inbox looks like an inbox: the sparkles icon belongs to "Ask about this" on each card.
         GRIconButton(
-            systemImage: "sparkles",
+            systemImage: count > 0 ? "tray.full" : "tray",
             tint: count > 0 ? GRColor.accent : GRColor.textSecondary,
             size: 38,
             accessibilityLabel: "Agent Inbox",

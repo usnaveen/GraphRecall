@@ -5,6 +5,9 @@ import SwiftUI
 /// when held (higher push = easier recall).
 struct FeedReelView: View {
     let model: FeedViewModel
+    /// Height of the floating tab bar (and home indicator). The reel runs underneath it, like
+    /// Instagram or TikTok, and uses this to keep cards and the grading rail clear of it.
+    var bottomInset: CGFloat = 0
     @Environment(AppRouter.self) private var router
     @State private var currentId: String?
 
@@ -49,9 +52,10 @@ struct FeedReelView: View {
                         Task { await model.extendQueueIfNeeded(currentIndex: index) }
                     }
 
-                    // Right-rail press-and-hold vertical difficulty slider anchored above the
-                    // ScrollView so vertical thumb scrubbing never fights Reel paging.
-                    // Only shown on active-recall cards (not passive Showcases / Revisit cards).
+                    // Press-and-hold vertical grading control. It is drawn here, over the empty slot
+                    // at the right of the card's bottom bar, so it looks part of the card while staying
+                    // outside the paging scroll view: a vertical scrub never turns the page.
+                    // Only on active-recall cards (not showcases or revisit cards).
                     if let active = activeItem, active.usesRecallGrading {
                         FeedHoldGradeRail(graded: model.grades[active.id]) { difficulty in
                             let gradedId = active.id
@@ -61,42 +65,35 @@ struct FeedReelView: View {
                             }
                         }
                         .id(active.id)
-                        .padding(.trailing, 18)
-                        .padding(.bottom, 16)
+                        .padding(.trailing, Self.sidePadding + FeedContentCard.barInsets.trailing)
+                        .padding(.bottom, bottomInset + Self.bottomGap + FeedContentCard.barInsets.bottom)
                     }
                 }
             }
         }
     }
 
-    private func page(_ item: FeedItem, height: CGFloat, proxy: ScrollViewProxy) -> some View {
-        VStack(spacing: 8) {
-            ScrollView {
-                FeedContentCard(
-                    item: item,
-                    model: model,
-                    showsInlineDifficulty: false,
-                    onAsk: {
-                        router.ask("Explain \(item.conceptName ?? item.title) simply.", topic: item.conceptName)
-                    },
-                    onGraded: { advance(from: item.id, proxy: proxy) }
-                )
-                // Extra bottom breathing room so long card content can scroll clear of the right-rail button
-                .padding(.bottom, 76)
-            }
-            .scrollIndicators(.hidden)
+    private static let topChrome: CGFloat = 50   // the floating Agent Inbox / style / search buttons
+    private static let sidePadding: CGFloat = 14
+    private static let bottomGap: CGFloat = 12   // between the card and the floating tab bar
 
-            if model.gradedIds.contains(item.id) {
-                Label("Swipe up for the next one", systemImage: "chevron.up")
-                    .font(GRType.micro)
-                    .foregroundStyle(GRColor.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 8)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 50) // clears the floating Agent Inbox / style / search chrome
-        .padding(.bottom, 6)
+    /// One page: a card exactly as tall as the screen allows. Its content scrolls inside it and
+    /// its action bar stays pinned at the bottom, just above the floating tab bar.
+    private func page(_ item: FeedItem, height: CGFloat, proxy: ScrollViewProxy) -> some View {
+        let cardHeight = max(320, height - Self.topChrome - bottomInset - Self.bottomGap)
+        return FeedContentCard(
+            item: item,
+            model: model,
+            showsInlineDifficulty: false,
+            fixedHeight: cardHeight,
+            onAsk: {
+                router.ask("Explain \(item.conceptName ?? item.title) simply.", topic: item.conceptName)
+            },
+            onGraded: { advance(from: item.id, proxy: proxy) }
+        )
+        .padding(.horizontal, Self.sidePadding)
+        .padding(.top, Self.topChrome)
+        .frame(height: height, alignment: .top)
     }
 
     /// After a grade, glide smoothly to the next Reel card so the thumb never has to.

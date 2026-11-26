@@ -1,74 +1,139 @@
 import SwiftUI
 
-/// One feed card, used by both feed modes: actions along the top, content in the middle at full
-/// width, and the toughness slider inside the card at the bottom.
+/// One feed card, used by both feed modes. The content sits on top; everything you do with the
+/// card (save, ask, share, and grading by press-and-hold) lives in a bar pinned to its bottom edge,
+/// where the thumb already is.
 struct FeedContentCard: View {
     private enum DigestState {
         case idle, queueing, queued
     }
 
+    /// Size of the press-and-hold grading button (FeedHoldGradeRail's resting pill).
+    static let gradeSlot = CGSize(width: 52, height: 58)
+    /// Padding inside the bottom bar; the reel uses it to line its grading overlay up with the slot.
+    static let barInsets = EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+
     let item: FeedItem
     let model: FeedViewModel
+    /// Posts list: the grading control lives inside the bar. Reel: the reel draws it over the bar's
+    /// empty slot instead, outside the paging scroll view, so a vertical scrub never turns the page.
     var showsInlineDifficulty: Bool = true
+    /// Reel pages pass the page's height: the card fills it and long content scrolls inside it,
+    /// so the bar never leaves the bottom of the screen. Nil in the posts list (natural height).
+    var fixedHeight: CGFloat? = nil
     var onAsk: () -> Void
     var onGraded: () -> Void = {}
 
     @State private var digestState: DigestState = .idle
+    @State private var viewportHeight: CGFloat = 0
+
+    /// Question cards read like a flashcard: the question sits in the middle of the card.
+    private var centersContent: Bool {
+        switch item.itemType {
+        case .flashcard, .mcq, .fillBlank: return true
+        default: return false
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            topRow
-
-            FeedTypedCard(
-                item: item,
-                revealed: model.revealedIds.contains(item.id),
-                selectedOptionId: model.selectedOptionIds[item.id],
-                fillAnswer: model.fillAnswers[item.id] ?? "",
-                showHint: model.hintIds.contains(item.id),
-                showsContainer: false,
-                onReveal: {
-                    model.reveal(item.id)
-                    GRHaptics.tap()
-                },
-                onSelectOption: { optionId in
-                    model.selectOption(itemId: item.id, optionId: optionId)
-                    GRHaptics.tap()
-                },
-                onFillAnswerChange: { model.setFillAnswer(itemId: item.id, text: $0) },
-                onToggleHint: { model.toggleHint(item.id) }
-            )
-
-            if item.isAgentCurated {
-                Divider().overlay(GRColor.stroke)
-                // Agent cards are reading suggestions, not SM-2 cards: no toughness slider.
-                HStack(alignment: .center, spacing: 8) {
-                    Text("Approved by you")
-                        .font(GRType.caption)
-                        .foregroundStyle(GRColor.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 4)
-                    digestChip
-                    GRChip(title: "Done", systemImage: "checkmark", style: .outline, compact: true) {
-                        onGraded()
-                    }
+        VStack(spacing: 0) {
+            if fixedHeight != nil {
+                ScrollView {
+                    contentStack
+                        .frame(minHeight: viewportHeight, alignment: centersContent ? .center : .top)
                 }
-            } else if showsInlineDifficulty && item.usesRecallGrading {
-                Divider().overlay(GRColor.stroke)
-                FeedDifficultySlider(graded: model.grades[item.id]) { difficulty in
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: .infinity)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
+            } else {
+                contentStack
+            }
+
+            Divider().overlay(GRColor.stroke)
+            bottomBar
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: fixedHeight)
+        .grGlassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(GRColor.stroke, lineWidth: 1))
+        .onChange(of: item.id) { _, _ in
+            digestState = .idle
+        }
+    }
+
+    private var contentStack: some View {
+        FeedTypedCard(
+            item: item,
+            revealed: model.revealedIds.contains(item.id),
+            selectedOptionId: model.selectedOptionIds[item.id],
+            fillAnswer: model.fillAnswers[item.id] ?? "",
+            showHint: model.hintIds.contains(item.id),
+            showsContainer: false,
+            isRevisit: model.isRevisit(item),
+            onReveal: {
+                model.reveal(item.id)
+                GRHaptics.tap()
+            },
+            onSelectOption: { optionId in
+                model.selectOption(itemId: item.id, optionId: optionId)
+                GRHaptics.tap()
+            },
+            onFillAnswerChange: { model.setFillAnswer(itemId: item.id, text: $0) },
+            onToggleHint: { model.toggleHint(item.id) }
+        )
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var bottomBar: some View {
+        HStack(spacing: 10) {
+            actionButton(
+                systemName: model.savedIds.contains(item.id) ? "bookmark.fill" : "bookmark",
+                active: model.savedIds.contains(item.id),
+                label: "Save"
+            ) {
+                Task { await model.toggleSave(for: item) }
+            }
+            actionButton(systemName: "sparkles", active: false, label: "Ask about this", action: onAsk)
+            ShareLink(item: item.sharePlainText) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(GRColor.textSecondary)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .accessibilityLabel("Share card")
+
+            Spacer(minLength: 4)
+
+            trailingControl
+        }
+        .padding(Self.barInsets)
+        .frame(minHeight: Self.gradeSlot.height + Self.barInsets.top + Self.barInsets.bottom)
+    }
+
+    @ViewBuilder
+    private var trailingControl: some View {
+        if item.isAgentCurated {
+            // Agent cards are reading suggestions you approved, not SM-2 cards: no grading.
+            digestChip
+            GRChip(title: "Done", systemImage: "checkmark", style: .outline, compact: true) {
+                onGraded()
+            }
+        } else if item.usesRecallGrading {
+            if showsInlineDifficulty {
+                FeedHoldGradeRail(graded: model.grades[item.id]) { difficulty in
                     Task {
                         await model.grade(item, difficulty: difficulty)
                         onGraded()
                     }
                 }
-                .id(item.id) // a fresh slider per card
+                .id(item.id) // a fresh control per card
+            } else {
+                Color.clear.frame(width: Self.gradeSlot.width, height: Self.gradeSlot.height)
             }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .grGlassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(GRColor.stroke, lineWidth: 1))
-        .onChange(of: item.id) { _, _ in
-            digestState = .idle
         }
     }
 
@@ -130,51 +195,12 @@ struct FeedContentCard: View {
         }
     }
 
-    private var topRow: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                if item.itemType != .showcase, let name = item.conceptName, !name.isEmpty {
-                    Text(name)
-                        .font(GRType.caption.weight(.semibold))
-                        .foregroundStyle(GRColor.textSecondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if model.isRevisit(item) {
-                    Text("REVISIT")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .foregroundStyle(GRColor.accentCyan)
-                }
-            }
-
-            Spacer(minLength: 0)
-
-            actionButton(
-                systemName: model.savedIds.contains(item.id) ? "bookmark.fill" : "bookmark",
-                active: model.savedIds.contains(item.id),
-                label: "Save"
-            ) {
-                Task { await model.toggleSave(for: item) }
-            }
-            actionButton(systemName: "sparkles", active: false, label: "Ask about this", action: onAsk)
-            ShareLink(item: item.sharePlainText) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(GRColor.textSecondary)
-                    .frame(width: 18, height: 18)
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .accessibilityLabel("Share card")
-        }
-    }
-
     private func actionButton(systemName: String, active: Bool, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(active ? GRColor.accent : GRColor.textSecondary)
-                .frame(width: 18, height: 18)
+                .frame(width: 22, height: 22)
         }
         .buttonStyle(.glass)
         .buttonBorderShape(.circle)

@@ -39,9 +39,23 @@ struct FeedView: View {
                 } else {
                     switch style {
                     case .reels:
-                        FeedReelView(model: model)
-                            .padding(.bottom, 12)
-                            .clipped()
+                        // Full-bleed under the floating tab bar (no dead black band at the bottom);
+                        // a short fade keeps cards readable where they pass under the glass.
+                        GeometryReader { geo in
+                            FeedReelView(model: model, bottomInset: geo.safeAreaInsets.bottom)
+                                .ignoresSafeArea(edges: .bottom)
+                                .clipped() // only the top edge now: the previous page must not peek under the status bar
+                                .overlay(alignment: .bottom) {
+                                    LinearGradient(
+                                        colors: [GRColor.canvas.opacity(0), GRColor.canvas.opacity(0.7)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                    .frame(height: geo.safeAreaInsets.bottom + 24)
+                                    .allowsHitTesting(false)
+                                    .ignoresSafeArea(edges: .bottom)
+                                }
+                        }
                     case .posts:
                         FeedPostsView(model: model)
                             .contentMargins(.bottom, 16, for: .scrollContent)

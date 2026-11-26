@@ -142,6 +142,10 @@ async def get_feed(
         from backend.services.concept_figures import attach_concept_figures
 
         await attach_concept_figures(response.items, request.user_id, pg_client)
+        # And where each concept sits in the user's graph, so every concept card has a visual.
+        from backend.services.concept_maps import attach_concept_maps
+
+        await attach_concept_maps(response.items, request.user_id, neo4j_client)
 
         # Inject Daily Goal & Trigger Durable Pre-gen Buffer
         response.daily_goal = await feed_service.get_daily_goal(request.user_id)

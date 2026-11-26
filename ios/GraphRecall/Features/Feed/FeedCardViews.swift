@@ -9,6 +9,8 @@ struct FeedTypedCard: View {
     var showHint: Bool = false
     /// False when the feed already provides the card container around this content.
     var showsContainer: Bool = true
+    /// Shown as a chip in the header, so the card needs no second header row.
+    var isRevisit: Bool = false
     var onReveal: () -> Void = {}
     var onSelectOption: (String) -> Void = { _ in }
     var onFillAnswerChange: (String) -> Void = { _ in }
@@ -91,6 +93,14 @@ struct FeedTypedCard: View {
             Text(item.itemType.displayLabel.uppercased())
                 .font(GRType.caption)
                 .foregroundStyle(typeColor)
+            if isRevisit {
+                Text("REVISIT")
+                    .font(GRType.micro.weight(.bold))
+                    .foregroundStyle(GRColor.accentCyan)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .overlay(Capsule().stroke(GRColor.accentCyan.opacity(0.6), lineWidth: 1))
+            }
             if item.isDemo {
                 Text("DEMO")
                     .font(GRType.micro.weight(.bold))
@@ -127,16 +137,18 @@ struct FeedTypedCard: View {
     private var flashcardBody: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(item.prompt)
-                .font(GRType.headline)
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(GRColor.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
             if revealed, let answer = item.answer {
                 Divider().overlay(GRColor.stroke)
                 Text(answer)
-                    .font(.subheadline)
+                    .font(.body)
                     .foregroundStyle(GRColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                // After the answer only: the picture is centred on the concept's name, which is
+                // often exactly what the card asks for.
                 revealedFigure
             } else if !revealed {
                 revealButton(title: "Show answer")
@@ -275,8 +287,7 @@ struct FeedTypedCard: View {
         item.stringContent("definition") ?? item.stringContent("description") ?? item.prompt
     }
 
-    /// Key points that add something: a point that only repeats the definition is dropped. With a
-    /// figure on the card, two at most, so the grading slider stays on screen in the reel.
+    /// Key points that add something: a point that only repeats the definition is dropped.
     private var showcaseKeyPoints: [String] {
         let norm: (String) -> String = { text in
             text.lowercased().filter { $0.isLetter || $0.isNumber }
@@ -288,7 +299,7 @@ struct FeedTypedCard: View {
             guard !key.isEmpty, key != definition, !definition.contains(key) else { return false }
             return seen.insert(key).inserted
         }
-        return item.conceptFigure == nil ? points : Array(points.prefix(2))
+        return points
     }
 
     @ViewBuilder
@@ -299,8 +310,9 @@ struct FeedTypedCard: View {
                     Text(emoji).font(.title2)
                 }
                 Text(item.conceptName ?? item.stringContent("title") ?? item.title)
-                    .font(GRType.headline)
+                    .font(.title2.weight(.bold))
                     .foregroundStyle(GRColor.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let tagline = item.stringContent("tagline"),
                tagline.caseInsensitiveCompare(item.domain ?? "") != .orderedSame,
@@ -310,15 +322,13 @@ struct FeedTypedCard: View {
                     .italic()
                     .foregroundStyle(GRColor.accent)
             }
+            ConceptVisual(item: item)
+                .padding(.vertical, 4)
+
             Text(showcaseDefinition)
-                .font(.subheadline)
+                .font(.body)
                 .foregroundStyle(GRColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            if let figure = item.conceptFigure {
-                ConceptFigureView(figure: figure)
-                    .id(figure.id) // fresh load state per figure, even after a failed one
-            }
 
             ForEach(Array(showcaseKeyPoints.enumerated()), id: \.offset) { _, point in
                 HStack(alignment: .top, spacing: 8) {
@@ -484,12 +494,11 @@ struct FeedTypedCard: View {
 
     // MARK: - Shared
 
-    /// Quiz-style cards show the concept's figure only once answered: its caption names the concept.
+    /// Quiz-style cards show the concept's picture only once answered: it names the concept.
     @ViewBuilder
     private var revealedFigure: some View {
-        if let figure = item.conceptFigure {
-            ConceptFigureView(figure: figure)
-                .id(figure.id) // fresh load state per figure, even after a failed one
+        if item.hasConceptVisual {
+            ConceptVisual(item: item)
                 .padding(.top, 4)
         }
     }
