@@ -893,7 +893,11 @@ async def generate_response_node(state: ChatState) -> dict:
     
     packed_rag = pack_context_chunks(rag_context, max_chars=_CHAT_RAG_CHAR_BUDGET)
     graph_concepts = graph_context.get("concepts", [])
-    decision = evaluate_retrieval_confidence(packed_rag, graph_concepts, intent)
+    # The anchored retrieval query for follow-ups ("and its time complexity?"), else this turn's text.
+    guard_query = state.get("retrieval_query") or (
+        _extract_text(messages[-1].content) if messages and hasattr(messages[-1], "content") else ""
+    )
+    decision = evaluate_retrieval_confidence(packed_rag, graph_concepts, intent, query=guard_query)
     record(
         "chat.grounding_guard",
         0.0,
@@ -901,6 +905,9 @@ async def generate_response_node(state: ChatState) -> dict:
         should_abstain=decision.should_abstain,
         confidence_tier=decision.confidence_tier,
         reason=decision.reason,
+        best_similarity=decision.best_similarity,
+        term_coverage=decision.term_coverage,
+        concept_coverage=decision.concept_coverage,
     )
 
     last_message = messages[-1] if messages else None

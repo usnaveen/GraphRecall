@@ -65,6 +65,9 @@ class GroundingDecision:
     valid_chunk_indices: set[int]
     valid_graph_ids: set[str]
     abstention_message: str = ""
+    best_similarity: Optional[float] = None
+    term_coverage: Optional[float] = None
+    concept_coverage: Optional[float] = None
 
 
 @dataclass(slots=True)
@@ -83,6 +86,12 @@ class CircuitBreakerOpenError(Exception):
     def __init__(self, message: str = "LLM circuit breaker is open", retry_after_s: float = 0.0) -> None:
         super().__init__(message)
         self.retry_after_s = max(0.0, float(retry_after_s))
+
+
+_LOW_RELEVANCE_MESSAGE = (
+    "Your notes don't seem to cover this: the closest passages and concepts don't match the "
+    "question. Add notes on this topic or rephrase it with the terms your notes use."
+)
 
 
 def _extract_chunk_scores(
@@ -131,105 +140,117 @@ def _extract_chunk_scores(
     )
 
 
+# Words that frame a question rather than name its topic. Kept out of term coverage.
+_QUESTION_STOPWORDS: frozenset[str] = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "by", "do", "does", "for", "from", "has", "have",
+    "how", "in", "is", "it", "its", "of", "on", "or", "that", "the", "this", "to", "was", "were",
+    "what", "when", "where", "which", "who", "why", "will", "with", "i", "me", "my", "you", "your",
+    "can", "could", "should", "would", "explain", "describe", "tell", "about", "between",
+    "difference", "different", "use", "using", "make", "work", "works", "get", "best", "way",
+    "please", "vs", "versus", "s", "there", "their", "them", "they", "we", "our", "if", "than",
+})
+_TERM_RE = re.compile(r"[a-z0-9]+")
+
+# Calibrated on GraphRecall's own corpus (10 in-domain vs 10 off-topic questions, Nov 2026):
+# best cosine in-domain 0.605-0.862, off-topic 0.550-0.607; passage term coverage in-domain
+# >= 0.5, off-topic 0.0 for all ten; concept-name coverage in-domain > 0, off-topic 0.0.
+_STRONG_SIMILARITY = 0.66
+_MIN_TERM_COVERAGE = 0.6
+
+
+def query_terms(query: str) -> list[str]:
+    """Content terms of a question, in order, deduplicated (single letters dropped, digits kept)."""
+    out: list[str] = []
+    for tok in _TERM_RE.findall((query or "").lower()):
+        if tok in _QUESTION_STOPWORDS or (len(tok) == 1 and not tok.isdigit()) or tok in out:
+            continue
+        out.append(tok)
+    return out
+
+
+def _chunk_text(chunk: dict[str, Any]) -> str:
+    return " ".join(
+        str(chunk.get(k) or "")
+        for k in ("title", "content", "window_content", "parent_content", "child_content", "text")
+    )
+
+
+def _coverage(terms: Sequence[str], texts: Sequence[str]) -> float:
+    vocab: set[str] = set()
+    for text in texts:
+        vocab.update(_TERM_RE.findall(text.lower()))
+    return sum(t in vocab for t in terms) / len(terms)
+
+
 def evaluate_retrieval_confidence(
     chunks: Sequence[dict[str, Any]],
     graph_concepts: Sequence[dict[str, Any]],
     intent: str,
-    min_vector_score: float = 0.58,
-    min_rrf_score: float = 0.012,
+    query: str = "",
+    min_vector_score: float = _STRONG_SIMILARITY,
+    min_term_coverage: float = _MIN_TERM_COVERAGE,
 ) -> GroundingDecision:
-    """Decide whether retrieved chunks and graph concepts justify answering or abstaining."""
+    """Decide whether retrieved chunks and graph concepts justify answering or abstaining.
+
+    Off-topic means all three signals fail: no strong semantic match (best cosine), no query term
+    naming a retrieved concept, and too few query terms in the retrieved passages. RRF and the
+    reranker score are deliberately not used: RRF is rank-based (whatever ranks first scores
+    1/(k+1) however irrelevant), and the reranker min-max normalises within the candidate set.
+    """
     valid_chunk_indices = set(range(1, len(chunks) + 1))
     valid_graph_ids = {f"G{i}" for i in range(1, len(graph_concepts) + 1)}
     best_vector, best_rrf, best_rerank = _extract_chunk_scores(chunks)
     score_candidates = [s for s in (best_vector, best_rerank, best_rrf) if s is not None]
     max_score = max(score_candidates) if score_candidates else 0.0
 
+    def decide(abstain: bool, tier: Literal["high", "medium", "low"], reason: str,
+               term_cov: Optional[float] = None, concept_cov: Optional[float] = None,
+               message: str = "") -> GroundingDecision:
+        return GroundingDecision(
+            should_abstain=abstain,
+            confidence_tier=tier,
+            reason=reason,
+            max_score=max_score if chunks or graph_concepts else 0.0,
+            valid_chunk_indices=valid_chunk_indices,
+            valid_graph_ids=valid_graph_ids,
+            abstention_message=message,
+            best_similarity=best_vector,
+            term_coverage=term_cov,
+            concept_coverage=concept_cov,
+        )
+
     norm_intent = (intent or "general").strip().lower()
     if norm_intent in _GENERAL_BYPASS_INTENTS:
-        return GroundingDecision(
-            should_abstain=False,
-            confidence_tier="medium",
-            reason="general_intent_bypass",
-            max_score=max_score,
-            valid_chunk_indices=valid_chunk_indices,
-            valid_graph_ids=valid_graph_ids,
-            abstention_message="",
-        )
+        return decide(False, "medium", "general_intent_bypass")
 
     if not chunks and not graph_concepts:
-        return GroundingDecision(
-            should_abstain=True,
-            confidence_tier="low",
-            reason="no_retrieval_results",
-            max_score=0.0,
-            valid_chunk_indices=valid_chunk_indices,
-            valid_graph_ids=valid_graph_ids,
-            abstention_message=(
-                "I couldn't find enough matching information in your notes or knowledge graph "
-                "to answer this reliably. Try adding notes on this topic or rephrasing your question."
-            ),
-        )
+        return decide(True, "low", "no_retrieval_results", message=(
+            "I couldn't find enough matching information in your notes or knowledge graph "
+            "to answer this reliably. Try adding notes on this topic or rephrasing your question."
+        ))
 
-    if not graph_concepts:
-        has_vector = best_vector is not None
-        has_rrf = best_rrf is not None
-        vector_ok = best_vector >= min_vector_score if has_vector else False
-        rrf_ok = best_rrf >= min_rrf_score if has_rrf else False
+    semantic_ok = best_vector is not None and best_vector >= min_vector_score
+    terms = query_terms(query)
 
-        abstain_reason: Optional[str] = None
-        if has_vector and has_rrf:
-            if not vector_ok and not rrf_ok:
-                abstain_reason = "low_vector_and_rrf_score"
-        elif has_vector and not vector_ok:
-            abstain_reason = "low_vector_similarity"
-        elif has_rrf and not rrf_ok:
-            abstain_reason = "low_rrf_score"
+    if not terms:
+        # Nothing topical to check (no query passed, or only framing words): similarity alone.
+        if best_vector is not None and not semantic_ok and not graph_concepts:
+            return decide(True, "low", "low_vector_similarity", message=_LOW_RELEVANCE_MESSAGE)
+        return decide(False, "high" if semantic_ok else "medium",
+                      "graph_and_chunk_support" if graph_concepts else "chunk_support_sufficient")
 
-        if abstain_reason is not None:
-            return GroundingDecision(
-                should_abstain=True,
-                confidence_tier="low",
-                reason=abstain_reason,
-                max_score=max_score,
-                valid_chunk_indices=valid_chunk_indices,
-                valid_graph_ids=valid_graph_ids,
-                abstention_message=(
-                    "The retrieved note snippets had low relevance and no supporting knowledge graph "
-                    "concepts were found. Please add more specific notes on this topic or refine your query."
-                ),
-            )
+    term_cov = _coverage(terms, [_chunk_text(c) for c in chunks if isinstance(c, dict)]) if chunks else 0.0
+    concept_cov = _coverage(terms, [str(c.get("name") or "") for c in graph_concepts if isinstance(c, dict)])
+    lexical_ok = term_cov >= min_term_coverage
+    concept_ok = concept_cov > 0.0
 
-        high_vector = has_vector and best_vector >= max(min_vector_score + 0.12, 0.70)
-        high_rrf = has_rrf and best_rrf >= (min_rrf_score * 2.0)
-        tier: Literal["high", "medium", "low"] = (
-            "high" if (high_vector or high_rrf) else "medium"
-        )
-        return GroundingDecision(
-            should_abstain=False,
-            confidence_tier=tier,
-            reason="chunk_support_sufficient",
-            max_score=max_score,
-            valid_chunk_indices=valid_chunk_indices,
-            valid_graph_ids=valid_graph_ids,
-            abstention_message="",
-        )
+    if not (semantic_ok or lexical_ok or concept_ok):
+        return decide(True, "low", "off_topic", term_cov, concept_cov, _LOW_RELEVANCE_MESSAGE)
 
-    # Graph concepts are present (with or without chunks).
-    strong_chunk = (
-        (best_vector is not None and best_vector >= min_vector_score)
-        or (best_rrf is not None and best_rrf >= min_rrf_score)
-        or (bool(chunks) and best_vector is None and best_rrf is None)
-    )
-    return GroundingDecision(
-        should_abstain=False,
-        confidence_tier="high" if strong_chunk else "medium",
-        reason="graph_and_chunk_support" if chunks else "graph_only_support",
-        max_score=max_score,
-        valid_chunk_indices=valid_chunk_indices,
-        valid_graph_ids=valid_graph_ids,
-        abstention_message="",
-    )
+    tier: Literal["high", "medium", "low"] = "high" if semantic_ok and (lexical_ok or concept_ok) else "medium"
+    reason = "graph_and_chunk_support" if concept_ok and chunks else (
+        "graph_only_support" if concept_ok else "chunk_support_sufficient")
+    return decide(False, tier, reason, term_cov, concept_cov)
 
 
 def verify_citations(

@@ -13,6 +13,7 @@ from backend.services.grounding_guard import (
     GroundingDecision,
     evaluate_retrieval_confidence,
     is_retryable_llm_error,
+    query_terms,
     verify_citations,
 )
 
@@ -60,7 +61,7 @@ def test_retrieval_confidence_abstains_when_both_chunks_and_graph_empty() -> Non
     assert decision.abstention_message != ""
 
 
-def test_retrieval_confidence_abstains_on_low_vector_or_rrf_without_graph() -> None:
+def test_retrieval_confidence_abstains_on_low_vector_without_graph() -> None:
     low_vec = evaluate_retrieval_confidence(
         chunks=[{"content": "weak", "similarity": 0.41, "note_id": "n1", "parent_chunk_id": "p1"}],
         graph_concepts=[],
@@ -71,14 +72,74 @@ def test_retrieval_confidence_abstains_on_low_vector_or_rrf_without_graph() -> N
     assert low_vec.max_score == pytest.approx(0.41)
     assert low_vec.valid_chunk_indices == {1}
 
-    low_rrf = evaluate_retrieval_confidence(
-        chunks=[{"content": "weak", "_rrf_score": 0.006}],
-        graph_concepts=[],
-        intent="compare",
-    )
-    assert low_rrf.should_abstain is True
-    assert low_rrf.confidence_tier == "low"
-    assert low_rrf.max_score == pytest.approx(0.006)
+
+# Shapes taken from the Nov 2026 calibration run on the real corpus: off-topic questions still
+# get five chunks (best cosine ~0.55-0.61, RRF exactly 1/61) and ~15 unrelated graph concepts.
+_ML_CHUNKS = [
+    {"content": "Multi-query attention shares one key and value head across query heads.",
+     "similarity": 0.57, "_rrf_score": 1 / 61},
+    {"content": "The KV cache stores keys and values from earlier decoding steps.",
+     "similarity": 0.55, "_rrf_score": 1 / 62},
+]
+_ML_CONCEPTS = [{"name": "Multi-Query Attention"}, {"name": "KV Cache"}, {"name": "Transformer"}]
+
+
+@pytest.mark.parametrize("question", [
+    "How do I tune a guitar to drop D?",
+    "What is the income tax rate in Norway?",
+    "Who won the 1998 FIFA World Cup?",
+])
+def test_off_topic_question_abstains_even_with_graph_concepts_and_top_rrf(question: str) -> None:
+    decision = evaluate_retrieval_confidence(_ML_CHUNKS, _ML_CONCEPTS, "explain", query=question)
+    assert decision.should_abstain is True
+    assert decision.reason == "off_topic"
+    assert decision.term_coverage == 0.0 and decision.concept_coverage == 0.0
+    assert "don't seem to cover" in decision.abstention_message
+
+
+def test_rrf_alone_never_decides() -> None:
+    """Rank 1 always scores 1/(k+1); a big RRF value must not rescue an off-topic question."""
+    chunks = [dict(c, _rrf_score=0.9) for c in _ML_CHUNKS]
+    decision = evaluate_retrieval_confidence(chunks, [], "explain", query="best time to visit Kyoto")
+    assert decision.should_abstain is True
+
+
+def test_in_domain_question_with_moderate_similarity_answers_on_term_coverage() -> None:
+    # The GCD question scored only 0.605 cosine but every term is in the passage.
+    chunks = [{"content": "The Euclidean algorithm computes the GCD by repeated remainders.", "similarity": 0.605}]
+    decision = evaluate_retrieval_confidence(chunks, [], "explain", query="What is the Euclidean algorithm for GCD?")
+    assert decision.should_abstain is False
+    assert decision.term_coverage == pytest.approx(1.0)
+    assert decision.confidence_tier == "medium"
+
+
+def test_query_naming_a_concept_answers_from_graph() -> None:
+    decision = evaluate_retrieval_confidence([], [{"name": "LoRA"}], "explain", query="what is LoRA?")
+    assert decision.should_abstain is False
+    assert decision.reason == "graph_only_support"
+
+
+def test_paraphrase_with_no_shared_terms_answers_on_strong_similarity() -> None:
+    chunks = [{"content": "The KV cache stores keys and values.", "similarity": 0.78}]
+    decision = evaluate_retrieval_confidence(
+        chunks, [], "explain", query="why is generating text slow without remembering earlier work?")
+    assert decision.should_abstain is False
+    assert decision.term_coverage == 0.0
+    assert decision.confidence_tier == "medium"
+
+
+def test_strong_similarity_and_term_match_is_high_tier() -> None:
+    chunks = [{"content": "Multi-query attention shares key and value heads.", "similarity": 0.75}]
+    decision = evaluate_retrieval_confidence(chunks, _ML_CONCEPTS, "explain", query="What is multi-query attention?")
+    assert decision.should_abstain is False
+    assert decision.confidence_tier == "high"
+    assert decision.reason == "graph_and_chunk_support"
+
+
+def test_query_terms_drop_question_framing() -> None:
+    assert query_terms("How do I tune a guitar to drop D?") == ["tune", "guitar", "drop"]
+    assert query_terms("Explain this") == []
+    assert query_terms("C4 plants in 1998") == ["c4", "plants", "1998"]
 
 
 def test_retrieval_confidence_graph_confirmation_prevents_abstention_and_sets_ids() -> None:
