@@ -18,6 +18,40 @@
 
 ---
 
+## GraphRecall in one minute (November 2026)
+
+**You forget most of what you learn, and neither you nor your AI tools can see what you actually know.** GraphRecall turns what you read — PDFs, notes, links, YouTube — into a personal knowledge graph, then brings it back as a feed you scroll like social media instead of homework. The same graph tells your AI agents what you know, so they can explain things in terms you already have.
+
+It runs as a native iOS 26 app (SwiftUI, Liquid Glass) on a FastAPI + PostgreSQL/pgvector + Neo4j backend.
+
+<p align="center">
+  <img src="docs/media/feed-posts.png" width="200" alt="Feed: cards one after another, graded with Apple's native slider">
+  <img src="docs/media/graph-focus-neural-network.png" width="200" alt="Graph: a concept with its closest prerequisites and subtopics, typed arrows">
+  <img src="docs/media/assistant.png" width="200" alt="Assistant: GraphRAG answer with citations and Ask-next suggestions">
+  <img src="docs/media/create.png" width="200" alt="Create: concepts, text, URL, YouTube, scan, voice, Remind me, LeetCode">
+</p>
+
+### What's built
+- **Your knowledge as a graph.** Concepts with typed, directed links (prerequisite → concept, subtopic → parent, builds on), grouped into named communities. On the author's account: 507 concepts, about 2,184 links, 23 communities. The graph view keeps communities apart and labelled; tapping a concept shows only its closest neighbours.
+- **GraphRAG assistant with citations.** Answers come from your own notes and graph, with numbered sources.
+- **Intent routing without an LLM call.** A trained classifier routes each message when it is confident and falls back to one LLM call when it isn't; every decision is logged (`backend/services/intent_router/`).
+- **Corpus-versioned answer cache.** Cached answers are partitioned by a corpus version, so a deleted note's text is never served from cache.
+- **"Ask next": follow-ups chosen by the graph, not a model.** Around the concepts that grounded the answer, it picks a prerequisite you're shaky on, a part you haven't studied and what the concept unlocks — about 0.2 s and zero tokens (`backend/services/followups.py`). Taps are logged per suggestion kind for click-through evaluation.
+- **A feed, not homework.** Quiz, term, concept and code-sandbox cards with spaced repetition; you rate recall on Apple's native slider, and any card can come back later with "Remind me".
+- **Resume vs. what you know.** Each skill on your resume is checked against evidence in your graph: strong, shaky, seen or new.
+- **LeetCode by number.** Type 146: title, difficulty, topics and a suggested pattern fill in from LeetCode's public API; attempts schedule reviews.
+- **Illustrations from Gemini's image model (Nano Banana)** on concept cards, clearly attributed (`backend/scripts/generate_concept_illustrations.py`).
+- **MCP server for agents.** Claude, Cursor and other MCP clients can read your knowledge profile with scoped keys; OAuth 2.1 with PKCE is implemented (not yet publicly hosted).
+
+<p align="center"><img src="docs/media/nano-banana-transformer.jpg" width="520" alt="A Nano Banana illustration of the Transformer on a concept card"></p>
+
+### What's next
+Dictate concepts and watch the graph wire them up live · zoomable subject → community → concept levels · newsletter and any-link ingestion · overnight batch jobs on the cheapest model · per-question "knowledge frontier" context for agents (what you know well, what's shaky, what's missing) · published retrieval evals.
+
+The rest of this README documents the system in depth (architecture, API, schema, workflows); parts of it describe the earlier React web client.
+
+---
+
 GraphRecall is a full-stack AI application that ingests your notes, articles, and transcripts, extracts key concepts into a **Neo4j knowledge graph**, and generates personalized study material using **spaced repetition (SM-2)**. A **GraphRAG chatbot** lets you query your knowledge base conversationally, while a **3D force-directed graph** visualizes how your concepts connect.
 
 ## Table of Contents
