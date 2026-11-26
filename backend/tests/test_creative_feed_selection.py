@@ -84,3 +84,10 @@ def test_tradeoff_duel_pick_rejects_unknown_card_and_bad_choice(monkeypatch) -> 
     assert client.post("/api/feed/tradeoff-duel-pick", json={"card_id": "nope", "choice": "a"}).status_code == 404
     assert client.post("/api/feed/tradeoff-duel-pick",
                        json={"card_id": "duel-pgvector-hnsw-vs-ivfflat", "choice": "c"}).status_code == 422
+
+
+def test_repeated_feed_concepts_do_not_inflate_relevance() -> None:
+    """Live case: "Multi-Query Attention" twice in the feed scored the cross-encoder/RRF duel's
+    single shared word ("query") twice, enough to clear the bar."""
+    items = [_item("Multi-Query Attention", 0), _item("Multi-Query Attention", 1), _item("Greatest Common Divisor", 2)]
+    assert all(c.id != "tradeoff_duel:duel-cross-encoder-vs-rrf" for c in _run(items, _Pg([])))

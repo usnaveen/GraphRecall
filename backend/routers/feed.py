@@ -305,7 +305,8 @@ async def _add_creative_card(response, request, pg_client=None) -> None:
     if not allow_spot and not allow_duel:
         return
     try:
-        names = [i.concept_name for i in response.items if i.concept_name]
+        # Distinct names: a concept with several cards in the feed must not count one shared word twice.
+        names = list(dict.fromkeys(i.concept_name for i in response.items if i.concept_name))
         if not names:
             return
         answered = await _recently_answered_creative_ids(pg_client, request.user_id) if pg_client else []
