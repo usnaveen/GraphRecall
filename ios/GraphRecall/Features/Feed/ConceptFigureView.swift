@@ -14,10 +14,11 @@ struct ConceptFigure: Equatable, Sendable {
     let height: Int
 
     /// Shape of the full-width panel the figure sits on: its own width over height, clamped so a
-    /// tall architecture diagram does not tower over the card and a thin strip still gets room.
+    /// tall architecture diagram stays about 170pt high (the grading slider must stay on screen in
+    /// the reel; tap for the full figure) and a thin strip still gets room.
     var panelAspectRatio: CGFloat {
-        guard width > 0, height > 0 else { return 4.0 / 3.0 }
-        return min(max(CGFloat(width) / CGFloat(height), 1.4), 3.0)
+        guard width > 0, height > 0 else { return 2.0 }
+        return min(max(CGFloat(width) / CGFloat(height), 2.0), 3.2)
     }
 
     var attribution: String {

@@ -275,18 +275,20 @@ struct FeedTypedCard: View {
         item.stringContent("definition") ?? item.stringContent("description") ?? item.prompt
     }
 
-    /// Key points that add something: a point that only repeats the definition is dropped.
+    /// Key points that add something: a point that only repeats the definition is dropped. With a
+    /// figure on the card, two at most, so the grading slider stays on screen in the reel.
     private var showcaseKeyPoints: [String] {
         let norm: (String) -> String = { text in
             text.lowercased().filter { $0.isLetter || $0.isNumber }
         }
         let definition = norm(showcaseDefinition)
         var seen = Set<String>()
-        return item.keyPoints.filter { point in
+        let points = item.keyPoints.filter { point in
             let key = norm(point)
             guard !key.isEmpty, key != definition, !definition.contains(key) else { return false }
             return seen.insert(key).inserted
         }
+        return item.conceptFigure == nil ? points : Array(points.prefix(2))
     }
 
     @ViewBuilder
@@ -313,6 +315,7 @@ struct FeedTypedCard: View {
 
             if let figure = item.conceptFigure {
                 ConceptFigureView(figure: figure)
+                    .id(figure.id) // fresh load state per figure, even after a failed one
             }
 
             ForEach(Array(showcaseKeyPoints.enumerated()), id: \.offset) { _, point in
@@ -500,6 +503,7 @@ struct FeedTypedCard: View {
     private var revealedFigure: some View {
         if let figure = item.conceptFigure {
             ConceptFigureView(figure: figure)
+                .id(figure.id) // fresh load state per figure, even after a failed one
                 .padding(.top, 4)
         }
     }
