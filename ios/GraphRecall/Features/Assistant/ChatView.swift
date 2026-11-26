@@ -275,6 +275,15 @@ struct ChatView: View {
                 guard isNearBottom else { return }
                 proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
             }
+            .onChange(of: model.isStreaming) { wasStreaming, streaming in
+                // UI-QA (`GR_ASK`): once the answer finishes, show the question and the answer's start.
+                guard wasStreaming, !streaming, ProcessInfo.processInfo.environment["GR_ASK"] != nil,
+                      let question = model.messages.dropLast().last else { return }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(600))
+                    proxy.scrollTo(question.id, anchor: .top)
+                }
+            }
             .onChange(of: model.messages.first?.id) { _, _ in
                 // A conversation opened from history starts at its latest message.
                 Task { @MainActor in
