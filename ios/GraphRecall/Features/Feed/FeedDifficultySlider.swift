@@ -294,83 +294,71 @@ struct FeedHoldGradeRail: View {
     }
 }
 
-/// Inline horizontal slider retained for scrolling `FeedPostsView` timeline mode.
+/// Posts-mode grading: Apple's own stepped `Slider` (Liquid Glass thumb, system tick marks) across
+/// the card, one step per band — No idea · Shaky · Got it · Easy — with a haptic tick per step.
+/// SwiftUI has no vertical slider; the vertical rail stays in Reels, where it sits under the thumb.
 struct FeedDifficultySlider: View {
     var graded: ReviewDifficulty?
     var onCommit: (ReviewDifficulty) -> Void
 
-    @State private var value: Double = 0.5
+    /// 0 = Again (No idea) … 3 = Easy. Starts on "Got it" so a stray tap never records "No idea".
+    @State private var step: Double = 2
     @State private var isScrubbing = false
-    @State private var lastBand: Int?
 
     private static var bands: [GRDifficultyBand] { GRDifficultyBand.bottomToTop }
 
-    private static func band(for value: Double) -> Int {
-        GRDifficultyBand.index(for: value)
-    }
+    private var index: Int { min(Self.bands.count - 1, max(0, Int(step.rounded()))) }
 
     private var activeBand: GRDifficultyBand {
-        if let graded { return GRDifficultyBand.band(for: graded) }
-        return Self.bands[Self.band(for: value)]
+        if let graded, !isScrubbing { return GRDifficultyBand.band(for: graded) }
+        return Self.bands[index]
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Text(graded == nil ? "How easy was it?" : "Rated")
+                Text(graded == nil ? "How well did you know it?" : "You said")
                     .font(GRType.micro)
                     .foregroundStyle(GRColor.textTertiary)
-                if graded != nil || isScrubbing {
-                    Text(activeBand.shortLabel)
-                        .font(GRType.micro.weight(.bold))
-                        .foregroundStyle(activeBand.color)
-                }
+                Text(activeBand.subtitle)
+                    .font(GRType.micro.weight(.bold))
+                    .foregroundStyle(graded != nil || isScrubbing ? activeBand.color : GRColor.textSecondary)
+                    .contentTransition(.numericText())
                 Spacer(minLength: 0)
-                if graded != nil {
+                if graded != nil && !isScrubbing {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(activeBand.color)
                 }
             }
-
-            Slider(value: sliderValue, in: 0...1) {
-                Text("Difficulty")
-            } minimumValueLabel: {
-                Text("Again")
-            } maximumValueLabel: {
-                Text("Easy")
-            } onEditingChanged: { editing in
-                if editing {
-                    isScrubbing = true
-                } else {
-                    commit()
+            Slider(
+                value: $step,
+                in: 0...Double(Self.bands.count - 1),
+                step: 1,
+                label: { Text("How well did you know it?") },
+                tick: { SliderTick($0) },
+                onEditingChanged: { editing in
+                    if editing {
+                        isScrubbing = true
+                    } else {
+                        isScrubbing = false
+                        GRHaptics.success()
+                        onCommit(Self.bands[index].difficulty)
+                    }
                 }
-            }
-            .font(GRType.micro)
-            .foregroundStyle(GRColor.textTertiary)
+            )
             .tint(activeBand.color)
-            .accessibilityValue(activeBand.shortLabel)
+            .accessibilityValue(activeBand.subtitle)
+            .accessibilityIdentifier("feed.gradeSlider")
         }
-    }
-
-    private var sliderValue: Binding<Double> {
-        Binding(get: { value }, set: { update(to: $0) })
-    }
-
-    private func update(to raw: Double) {
-        let clamped = min(1, max(0, raw))
-        value = clamped
-        let band = Self.band(for: clamped)
-        if band != lastBand {
-            lastBand = band
-            GRHaptics.tick(intensity: Self.bands[band].hapticIntensity)
+        .animation(.easeOut(duration: 0.15), value: index)
+        .onChange(of: index) { _, newIndex in
+            GRHaptics.tick(intensity: Self.bands[newIndex].hapticIntensity)
         }
-    }
-
-    private func commit() {
-        isScrubbing = false
-        lastBand = nil
-        GRHaptics.success()
-        onCommit(Self.bands[Self.band(for: value)].difficulty)
+        .onAppear {
+            if let graded, let i = Self.bands.firstIndex(where: { $0.difficulty == graded }) {
+                step = Double(i)
+            }
+        }
     }
 }

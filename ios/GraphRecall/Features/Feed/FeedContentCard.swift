@@ -41,6 +41,17 @@ struct FeedContentCard: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
             } else {
                 contentStack
+                if gradesInline {
+                    FeedDifficultySlider(graded: model.grades[item.id]) { difficulty in
+                        Task {
+                            await model.grade(item, difficulty: difficulty)
+                            onGraded()
+                        }
+                    }
+                    .id(item.id) // a fresh control per card
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                }
             }
 
             Divider().overlay(GRColor.stroke)
@@ -61,6 +72,11 @@ struct FeedContentCard: View {
             }
             .presentationDetents([.medium, .large])
         }
+    }
+
+    /// Posts: grade with the native slider inside the card. Reels keep the hold-and-slide rail.
+    private var gradesInline: Bool {
+        fixedHeight == nil && item.usesRecallGrading && !item.isAgentCurated
     }
 
     private var contentStack: some View {
@@ -127,7 +143,7 @@ struct FeedContentCard: View {
             GRChip(title: "Done", systemImage: "checkmark", style: .outline, compact: true) {
                 onGraded()
             }
-        } else if item.usesRecallGrading {
+        } else if item.usesRecallGrading && !gradesInline {
             if showsInlineDifficulty {
                 FeedHoldGradeRail(graded: model.grades[item.id]) { difficulty in
                     Task {
