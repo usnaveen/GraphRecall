@@ -13,7 +13,19 @@ struct FeedView: View {
     @AppStorage(GRSettingsKey.feedStyle) private var feedStyleRaw = FeedStyle.posts.rawValue
     /// One-time move to posts for installs that stored the old reels default.
     @AppStorage(GRSettingsKey.feedStylePostsMigrated) private var postsMigrated = false
+    @AppStorage(GRSettingsKey.titleFont) private var titleFontRaw = GRTitleFont.orbitron.rawValue
     @Environment(AppRouter.self) private var router
+
+    private var titleFont: GRTitleFont {
+        GRTitleFont(rawValue: titleFontRaw) ?? .orbitron
+    }
+
+    private var toolbarTitleFont: Font {
+        if let uiFont = GRFonts.titleFont(titleFont, size: 20) {
+            return Font(uiFont)
+        }
+        return .system(size: 20, weight: .bold, design: .rounded)
+    }
 
     enum FeedStyle: String {
         case reels, posts
@@ -129,15 +141,24 @@ struct FeedView: View {
     /// effect where the feed passes under them.
     @ToolbarContentBuilder
     private var feedToolbar: some ToolbarContent {
-        if model.isDemoMode {
-            ToolbarItem(placement: .topBarLeading) {
-                Text("Demo cards")
-                    .font(GRType.micro)
-                    .foregroundStyle(GRColor.accent)
+        ToolbarItem(placement: .topBarLeading) {
+            HStack(spacing: 8) {
+                Text("GraphRecall")
+                    .font(toolbarTitleFont)
+                    .textCase(titleFont.uppercaseOnly ? .uppercase : nil)
+                    .tracking(1.1)
+                    .foregroundStyle(GRColor.textPrimary)
                     .lineLimit(1)
-                    .fixedSize() // the toolbar otherwise squeezes it into a circle ("Dem / o / car…")
-                    .padding(.horizontal, 6)
-                    .accessibilityIdentifier("feed.demoBadge")
+                    .fixedSize()
+                if model.isDemoMode {
+                    Text("Demo cards")
+                        .font(GRType.micro)
+                        .foregroundStyle(GRColor.accent)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 6)
+                        .accessibilityIdentifier("feed.demoBadge")
+                }
             }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {

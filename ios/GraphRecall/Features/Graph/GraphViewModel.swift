@@ -320,7 +320,7 @@ final class GraphViewModel {
         }
         return counts
             .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
-            .prefix(6)
+            .prefix(8)
             .map(\.key)
     }
 

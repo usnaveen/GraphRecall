@@ -296,23 +296,25 @@ struct GraphView: View {
             .overlay(alignment: .topLeading) {
                 controlsOverlay.padding(10)
             }
-            .overlay(alignment: .topTrailing) {
-                if model.usingStub { demoBadge.padding(10) }
-            }
             .overlay(alignment: .bottomTrailing) {
                 if showsCanvasChrome {
                     canvasTools.padding(10)
-                } else if !model.mergeMode && model.activeSheet == nil {
-                    // Keep create reachable while a concept card is open (long-press still works too).
-                    createFAB.padding(10)
                 }
             }
             .overlay(alignment: .bottomLeading) {
-                if showsCanvasChrome && model.colorMode == .mastery { masteryLegendView.padding(10) }
+                if !model.mergeMode && model.activeSheet == nil && model.colorMode == .mastery {
+                    masteryLegendView.padding(10)
+                }
             }
-            // The key to the graph — which colour means which kind of connection — top right.
+            // The key to the graph — always stays visible (even during 3D concept focus) unless controls are expanded.
             .overlay(alignment: .topTrailing) {
-                if showsCanvasChrome && !model.showControls { relationshipLegend.padding(10) }
+                if !model.showControls && !model.mergeMode && model.activeSheet == nil {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if model.usingStub { demoBadge }
+                        relationshipLegend
+                    }
+                    .padding(10)
+                }
             }
 
             if model.isLoading {
@@ -422,7 +424,6 @@ struct GraphView: View {
                 ) {
                     model.resetCamera()
                 }
-                if model.selectedNodeId != nil && !model.showControls { focusPill }
                 if model.isLayingOut && !model.isLoading {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini).tint(GRColor.accent)
@@ -435,6 +436,9 @@ struct GraphView: View {
                     .grGlassEffect(in: Capsule())
                 }
             }
+            if model.selectedNodeId != nil && !model.showControls {
+                focusPill
+            }
             if model.showControls {
                 GraphControlsPanel(model: model)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
@@ -442,15 +446,15 @@ struct GraphView: View {
         }
     }
 
-    /// Shown while a concept is selected — the scene is flat then, and this is the way back out.
+    /// Shown while a concept is focused in interactive 3D — tap to return to the full graph.
     private var focusPill: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.22)) { model.select(nodeId: nil) }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "square.on.square.dashed")
+                Image(systemName: "cube")
                     .font(.system(size: 11, weight: .bold))
-                Text("2D focus")
+                Text("3D focus")
                     .font(GRType.micro.weight(.bold))
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
@@ -460,7 +464,7 @@ struct GraphView: View {
         .buttonStyle(.glass)
         .buttonBorderShape(.capsule)
         .controlSize(.small)
-        .accessibilityLabel("2D focus. Back to the 3D overview")
+        .accessibilityLabel("3D focus. Back to full graph")
         .fixedSize()
     }
 

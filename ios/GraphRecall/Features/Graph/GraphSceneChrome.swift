@@ -103,7 +103,7 @@ struct GraphControlsPanel: View {
                 .foregroundStyle(GRColor.textSecondary)
             }
 
-            Text("Drag to orbit · pinch to zoom · tap a concept to focus it · double-tap space to fly to the nearest one · long-press space to add one")
+            Text("Drag to orbit · pinch to zoom · tap a group orb to enter it · tap a concept for rotatable 3D focus")
                 .font(.system(size: 9, weight: .medium, design: .rounded))
                 .foregroundStyle(GRColor.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
