@@ -6,19 +6,68 @@ struct ChatStreamRequest: Codable {
     /// Backend `ChatRequest` requires user_id even when JWT is present (matches web client).
     let userId: String
     let sourceIds: [String]?
+    /// Set when the message is a tapped follow-up suggestion (logged server-side for click-through rates).
+    let fromSuggestion: ChatFollowUpClick?
 
     enum CodingKeys: String, CodingKey {
         case message
         case conversationId = "conversation_id"
         case userId = "user_id"
         case sourceIds = "source_ids"
+        case fromSuggestion = "from_suggestion"
     }
 
-    init(message: String, conversationId: String? = nil, userId: String = ChatIdentity.stubUserId, sourceIds: [String]? = nil) {
+    init(
+        message: String,
+        conversationId: String? = nil,
+        userId: String = ChatIdentity.stubUserId,
+        sourceIds: [String]? = nil,
+        fromSuggestion: ChatFollowUpClick? = nil
+    ) {
         self.message = message
         self.conversationId = conversationId
         self.userId = userId
         self.sourceIds = sourceIds
+        self.fromSuggestion = fromSuggestion
+    }
+}
+
+/// A next question the backend picked from your graph around what grounded the answer:
+/// a prerequisite you're shaky on, a part you haven't studied, or what the concept unlocks.
+struct ChatFollowUp: Hashable, Sendable {
+    let text: String
+    let kind: String          // prerequisite | subtopic | next
+    let conceptId: String?
+    let conceptName: String?
+    let reason: String?
+
+    init?(_ raw: Any) {
+        guard let d = raw as? [String: Any],
+              let text = d["text"] as? String, !text.isEmpty,
+              let kind = d["kind"] as? String else { return nil }
+        self.text = text
+        self.kind = kind
+        self.conceptId = d["concept_id"] as? String
+        self.conceptName = d["concept_name"] as? String
+        self.reason = d["reason"] as? String
+    }
+
+    var systemImage: String {
+        switch kind {
+        case "prerequisite": return "arrow.down.circle"
+        case "subtopic": return "plus.magnifyingglass"
+        default: return "arrow.right.circle"
+        }
+    }
+}
+
+struct ChatFollowUpClick: Codable, Hashable, Sendable {
+    let kind: String
+    let conceptId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case conceptId = "concept_id"
     }
 }
 
@@ -128,6 +177,7 @@ struct ChatMessageUI: Identifiable, Hashable {
     var sources: [ChatSourceRef]
     var relatedConcepts: [String]
     var retrieval: ChatRetrieval? = nil
+    var followUps: [ChatFollowUp] = []
     var serverId: String?
     var isStreaming: Bool
 
@@ -167,6 +217,7 @@ enum ChatSSEEvent: Equatable {
         var messageId: String?
         var conversationId: String?
         var retrieval: ChatRetrieval? = nil
+        var followUps: [ChatFollowUp] = []
     }
 }
 

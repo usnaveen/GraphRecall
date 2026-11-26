@@ -37,6 +37,8 @@ final class ChatViewModel {
 
     private var streamTask: Task<Void, Never>?
     private var bannerTask: Task<Void, Never>?
+    /// The follow-up chip behind the next message, if one was tapped (sent once, then cleared).
+    private var pendingFollowUpClick: ChatFollowUpClick?
 
     var canSend: Bool {
         !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isStreaming
@@ -79,6 +81,13 @@ final class ChatViewModel {
 
     func sendSuggestion(_ text: String) {
         input = text
+        Task { await send() }
+    }
+
+    /// Ask a follow-up the backend picked from the graph; which one was tapped is logged for evals.
+    func sendFollowUp(_ followUp: ChatFollowUp) {
+        pendingFollowUpClick = ChatFollowUpClick(kind: followUp.kind, conceptId: followUp.conceptId)
+        input = followUp.text
         Task { await send() }
     }
 
@@ -301,6 +310,8 @@ final class ChatViewModel {
     private func runStream(assistantId: String, text: String) async {
         let hasAuth = await APIClient.shared.hasAuthToken
         usingStub = !hasAuth
+        let click = pendingFollowUpClick
+        pendingFollowUpClick = nil
 
         let events: AsyncThrowingStream<ChatSSEEvent, Error>
         if hasAuth {
@@ -308,7 +319,8 @@ final class ChatViewModel {
                 message: text,
                 conversationId: conversationId,
                 accessToken: await APIClient.shared.getAccessToken(),
-                sourceIds: scopedNotes.isEmpty ? nil : scopedNotes.map(\.id)
+                sourceIds: scopedNotes.isEmpty ? nil : scopedNotes.map(\.id),
+                fromSuggestion: click
             )
         } else {
             events = await ChatSSEClient.shared.stubStream(message: text)
@@ -355,6 +367,7 @@ final class ChatViewModel {
                 msg.sources = payload.sources
                 msg.relatedConcepts = payload.relatedConcepts
                 msg.retrieval = payload.retrieval
+                msg.followUps = payload.followUps
                 msg.serverId = payload.messageId
                 msg.isStreaming = false
                 msg.status = nil

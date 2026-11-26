@@ -16,7 +16,8 @@ actor ChatSSEClient {
         conversationId: String?,
         accessToken: String?,
         sourceIds: [String]? = nil,
-        userId: String = ChatIdentity.stubUserId
+        userId: String = ChatIdentity.stubUserId,
+        fromSuggestion: ChatFollowUpClick? = nil
     ) -> AsyncThrowingStream<ChatSSEEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -27,7 +28,8 @@ actor ChatSSEClient {
                         conversationId: conversationId,
                         sourceIds: sourceIds,
                         userId: userId,
-                        bearerToken: usedToken
+                        bearerToken: usedToken,
+                        fromSuggestion: fromSuggestion
                     )
                     var (bytes, response) = try await session.bytes(for: request)
                     if let http = response as? HTTPURLResponse, http.statusCode == 401,
@@ -38,7 +40,8 @@ actor ChatSSEClient {
                             conversationId: conversationId,
                             sourceIds: sourceIds,
                             userId: userId,
-                            bearerToken: refreshedToken
+                            bearerToken: refreshedToken,
+                            fromSuggestion: fromSuggestion
                         )
                         (bytes, response) = try await session.bytes(for: retryRequest)
                     }
@@ -155,7 +158,8 @@ actor ChatSSEClient {
                 relatedConcepts: concepts,
                 messageId: messageId,
                 conversationId: conversationId,
-                retrieval: ChatRetrieval(obj["metadata"])
+                retrieval: ChatRetrieval(obj["metadata"]),
+                followUps: (obj["suggestions"] as? [Any] ?? []).compactMap { ChatFollowUp($0) }
             ))
         default:
             return .unknown

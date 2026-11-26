@@ -395,7 +395,8 @@ actor APIClient {
         conversationId: String?,
         sourceIds: [String]? = nil,
         userId: String = ChatIdentity.stubUserId,
-        bearerToken: String? = nil
+        bearerToken: String? = nil,
+        fromSuggestion: ChatFollowUpClick? = nil
     ) throws -> URLRequest {
         guard let url = URL(string: "/api/chat/stream", relativeTo: APIConfig.baseURL)?.absoluteURL else {
             throw APIError.invalidURL
@@ -409,7 +410,13 @@ actor APIClient {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         req.httpBody = try JSONEncoder().encode(
-            ChatStreamRequest(message: message, conversationId: conversationId, userId: userId, sourceIds: sourceIds)
+            ChatStreamRequest(
+                message: message,
+                conversationId: conversationId,
+                userId: userId,
+                sourceIds: sourceIds,
+                fromSuggestion: fromSuggestion
+            )
         )
         // SSE can run longer than a normal REST call.
         req.timeoutInterval = max(APIConfig.defaultTimeout, 300)

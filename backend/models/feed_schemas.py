@@ -342,6 +342,10 @@ class ChatRequest(BaseModel):
         default=None, 
         description="Optional list of note/concept IDs to scope retrieval to"
     )
+    from_suggestion: Optional[dict] = Field(
+        default=None,
+        description="Set when the message is a tapped follow-up suggestion: {kind, concept_id}. Logged for click-through rates.",
+    )
 
 
 class ChatResponse(BaseModel):

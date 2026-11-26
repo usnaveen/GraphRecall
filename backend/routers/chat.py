@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from backend.auth.middleware import get_current_user
+from backend.services.followups import suggest_followups, suggestion_click_meta
 from backend.services.quota import require_quota
 
 from backend.db.neo4j_client import get_neo4j_client
@@ -938,14 +939,19 @@ async def stream_chat(
             thread_id = chat_thread_id(user_id, conversation_id)
             config = {"configurable": {"thread_id": thread_id}}
 
-            # Save user message immediately
+            # Save user message immediately (with which suggestion it came from, if any).
+            click = suggestion_click_meta(getattr(request, "from_suggestion", None))
             await pg_client.execute_insert(
                 """
-                INSERT INTO chat_messages (conversation_id, role, content)
-                VALUES (:conversation_id, 'user', :content)
+                INSERT INTO chat_messages (conversation_id, role, content, meta_json)
+                VALUES (:conversation_id, 'user', :content, CAST(:meta AS jsonb))
                 RETURNING id
                 """,
-                {"conversation_id": conversation_id, "content": request.message},
+                {
+                    "conversation_id": conversation_id,
+                    "content": request.message,
+                    "meta": json.dumps({"from_suggestion": click}) if click else None,
+                },
             )
             record("chat.setup_db", elapsed_ms(stream_start))
 
@@ -1024,6 +1030,14 @@ async def stream_chat(
                     return str(obj)
                 return obj
 
+            # Next questions from the user's own graph around what grounded this answer (no LLM call).
+            followups_start = now()
+            suggestions = await suggest_followups(user_id, request.message, related_concepts)
+            record("chat.followups", elapsed_ms(followups_start))
+            meta = message_meta(related_concepts, values.get("metadata") or {})
+            if suggestions:
+                meta["suggestions"] = suggestions
+
             persist_start = now()
             # Persist assistant message, with what grounded it (shown again when the thread reopens).
             assistant_message_id = await pg_client.execute_insert(
@@ -1036,7 +1050,7 @@ async def stream_chat(
                     "conversation_id": conversation_id,
                     "content": full_content,
                     "sources": json.dumps(sources),
-                    "meta": json.dumps(message_meta(related_concepts, values.get("metadata") or {}), default=str),
+                    "meta": json.dumps(meta, default=str),
                 },
             )
 
@@ -1061,6 +1075,7 @@ async def stream_chat(
                 'metadata': metadata,
                 'message_id': assistant_message_id,
                 'conversation_id': conversation_id,
+                'suggestions': suggestions,
             }
             yield f"data: {json.dumps(final_data, default=json_safe)}\n\n"
             

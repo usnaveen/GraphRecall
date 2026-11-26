@@ -382,6 +382,33 @@ struct ChatView: View {
                 .padding(.top, 2)
             }
 
+            // Next questions picked from your graph; only under the latest answer.
+            if !message.followUps.isEmpty && !message.isStreaming && message.id == model.messages.last?.id {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("ASK NEXT")
+                        .font(GRType.micro)
+                        .foregroundStyle(GRColor.textTertiary)
+                    ForEach(message.followUps, id: \.self) { followUp in
+                        Button {
+                            GRHaptics.tap()
+                            model.sendFollowUp(followUp)
+                        } label: {
+                            Label(followUp.text, systemImage: followUp.systemImage)
+                                .font(GRType.caption)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.roundedRectangle(radius: 14))
+                        .tint(GRColor.accentCyan)
+                        .disabled(model.isStreaming)
+                        .accessibilityHint(followUp.reason ?? "")
+                        .accessibilityIdentifier("chat.followUp.\(followUp.kind)")
+                    }
+                }
+                .padding(.top, 2)
+            }
+
             if !sourceGroups.isEmpty {
                 VStack(spacing: 6) {
                     ForEach(sourceGroups.prefix(4)) { group in
