@@ -463,7 +463,7 @@ struct SessionSummaryView: View {
                 Button {
                     onDone()
                 } label: {
-                    Label("Back to Today", systemImage: "house")
+                    Label("Back to feed", systemImage: "house")
                 }
                 .grButton(model.weakCards.isEmpty ? .primary : .secondary)
                 .accessibilityIdentifier("review.summary.done")

@@ -151,6 +151,7 @@ struct FeedTypedCard: View {
                 // often exactly what the card asks for.
                 revealedFigure
             } else if !revealed {
+                ConceptClue(item: item)
                 revealButton(title: "Show answer")
             }
             sourcesBlock
@@ -244,6 +245,7 @@ struct FeedTypedCard: View {
             .fixedSize(horizontal: false, vertical: true)
 
             if !revealed {
+                ConceptClue(item: item)
                 TextField("Type your answer…", text: Binding(
                     get: { fillAnswer },
                     set: { onFillAnswerChange($0) }

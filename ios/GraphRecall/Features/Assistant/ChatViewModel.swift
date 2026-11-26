@@ -200,7 +200,7 @@ final class ChatViewModel {
             let result = try await APIClient.shared.generateTopicQuiz(topic: topic, targetPoolSize: 5)
             let count = result.generated ?? result.total ?? result.questions?.count ?? 0
             NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
-            showBanner(count > 0 ? "\(count) quiz card\(count == 1 ? "" : "s") on \(topic) added to Today" : "Quiz queued for \(topic)")
+            showBanner(count > 0 ? "\(count) quiz card\(count == 1 ? "" : "s") on \(topic) added to your feed" : "Quiz queued for \(topic)")
         } catch {
             showBanner(APIError.userFacing(error, resource: "quiz"))
         }

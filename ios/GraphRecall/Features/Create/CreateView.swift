@@ -250,7 +250,7 @@ final class CreateViewModel {
                 lastDumpResponse = response
                 await OfflineReviewStore.shared.ingestDump(response)
                 NotificationCenter.default.post(name: .grDumpCompleted, object: nil)
-                successMessage = "Added \(response.succeeded)/\(response.processed) concepts — teach cards are in Today."
+                successMessage = "Added \(response.succeeded)/\(response.processed) concepts — their cards are in your feed."
                 RecentImportsStore.shared.add(RecentImport(
                     title: parsedConcepts.prefix(3).joined(separator: ", "),
                     kind: mode.title,
@@ -561,7 +561,7 @@ struct CreateView: View {
 
     private var subtitleForMode: String {
         switch model.mode {
-        case .concepts: return "Dump concepts to research — teach cards land in Today"
+        case .concepts: return "List concepts to learn: we research each one and add cards to your feed"
         case .text: return "Paste notes or markdown — extracted into your graph"
         case .url: return "Ingest an article from a URL (Substack, Medium, blogs)"
         case .youtube: return "Save a YouTube link as a resource"

@@ -67,6 +67,33 @@ extension FeedItem {
     var hasConceptVisual: Bool { conceptFigure != nil || conceptMap != nil }
 }
 
+/// Before the answer: the graph picture with the concept's name hidden. Nothing for cards with no
+/// graph links. Same identity as ConceptVisual's map, so revealing turns "?" into the name in place.
+struct ConceptClue: View {
+    let item: FeedItem
+
+    var body: some View {
+        if let map = clueMap {
+            ConceptMapView(map: map, masked: true)
+                .id(item.id)
+        }
+    }
+
+    /// The map without any neighbour that is (or contains) the answer.
+    private var clueMap: ConceptMap? {
+        guard let map = item.conceptMap else { return nil }
+        let answers = [item.answer, item.firstAnswerFromList()]
+            .compactMap { $0?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }
+            // Short answers only: a paragraph-long "back" mentions neighbours without being one.
+            .filter { !$0.isEmpty && $0.split(separator: " ").count <= 6 }
+        let nodes = map.nodes.filter { node in
+            let name = node.name.lowercased()
+            return !answers.contains { $0.contains(name) || name.contains($0) }
+        }
+        return nodes.isEmpty ? nil : ConceptMap(center: map.center, nodes: nodes)
+    }
+}
+
 /// The figure if there is one, else the graph picture.
 struct ConceptVisual: View {
     let item: FeedItem
@@ -87,6 +114,9 @@ struct ConceptVisual: View {
 /// related concepts as dashed chips. Nothing can overlap, and each group says what it is.
 struct ConceptMapView: View {
     let map: ConceptMap
+    /// Question cards before the answer: the concept's own name is the answer, so it shows as "?"
+    /// and the neighbours work as a clue.
+    var masked: Bool = false
 
     @State private var appeared = false
 
@@ -96,7 +126,7 @@ struct ConceptMapView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("WHERE IT SITS IN YOUR GRAPH")
+            Text(masked ? "CLUE · WHERE THE ANSWER SITS IN YOUR GRAPH" : "WHERE IT SITS IN YOUR GRAPH")
                 .font(GRType.micro)
                 .foregroundStyle(GRColor.textTertiary)
 
@@ -143,8 +173,10 @@ struct ConceptMapView: View {
     }
 
     private var centerNode: some View {
-        Text(map.center)
-            .font(.footnote.weight(.bold))
+        Text(masked ? "?" : map.center)
+            .font(masked ? .title3.weight(.heavy) : .footnote.weight(.bold))
+            .contentTransition(.opacity)
+            .animation(.easeOut(duration: 0.25), value: masked)
             .foregroundStyle(GRColor.canvas)
             .lineLimit(3)
             .multilineTextAlignment(.center)
@@ -221,7 +253,7 @@ struct ConceptMapView: View {
             let names = nodes(role).map(\.name)
             return names.isEmpty ? nil : "\(role.label) \(names.joined(separator: ", "))"
         }
-        return "\(map.center): " + parts.joined(separator: "; ")
+        return (masked ? "Clue: " : "\(map.center): ") + parts.joined(separator: "; ")
     }
 }
 

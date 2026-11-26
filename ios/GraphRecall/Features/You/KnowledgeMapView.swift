@@ -14,14 +14,18 @@ struct KnowledgeStatusBar: View {
 
     var body: some View {
         GeometryReader { geo in
-            HStack(spacing: 2) {
-                ForEach(KnowledgeStatus.allCases) { s in
-                    let n = counts[s] ?? 0
-                    if n > 0 {
-                        Capsule()
-                            .fill(s.color.opacity(s == .unexposed ? 0.45 : 0.9))
-                            .frame(width: max(height, geo.size.width * CGFloat(n) / CGFloat(max(total, 1)) - 2))
-                    }
+            // Every present status gets at least a dot's width; the rest is shared by count, so the
+            // segments always add up to the bar (tiny counts used to push it past the card edge).
+            let present = KnowledgeStatus.allCases.filter { (counts[$0] ?? 0) > 0 }
+            let spacing: CGFloat = 2
+            let available = max(0, geo.size.width - spacing * CGFloat(max(present.count - 1, 0)))
+            let minimum = present.isEmpty ? 0 : min(height, available / CGFloat(present.count))
+            let extra = max(0, available - minimum * CGFloat(present.count))
+            HStack(spacing: spacing) {
+                ForEach(present) { s in
+                    Capsule()
+                        .fill(s.color.opacity(s == .unexposed ? 0.45 : 0.9))
+                        .frame(width: minimum + extra * CGFloat(counts[s] ?? 0) / CGFloat(max(total, 1)))
                 }
             }
         }

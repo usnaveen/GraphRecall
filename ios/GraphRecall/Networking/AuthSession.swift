@@ -56,6 +56,17 @@ final class AuthSession {
 
     var isSignedIn: Bool { state != .signedOut }
 
+    /// The name the account came with (Apple or Google), when there is one.
+    var accountName: String? {
+        switch state {
+        case .apple(let name, _), .google(let name, _):
+            let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        default:
+            return nil
+        }
+    }
+
     var statusLabel: String {
         switch state {
         case .signedOut: return "Not signed in"

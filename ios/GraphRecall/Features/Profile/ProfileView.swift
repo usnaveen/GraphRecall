@@ -137,7 +137,16 @@ struct ProfileView: View {
 
     private var identityName: String {
         if !displayName.trimmingCharacters(in: .whitespaces).isEmpty { return displayName }
-        return tokenPresent ? "Signed in" : "Guest"
+        if let name = AuthSession.shared.accountName { return name }
+        return AuthSession.shared.isSignedIn || tokenPresent ? "You" : "Guest"
+    }
+
+    /// How you're signed in, without repeating the name shown right above it.
+    private var accountLine: String {
+        guard AuthSession.shared.isSignedIn else { return "Not signed in · open Settings to sign in" }
+        let label = AuthSession.shared.statusLabel
+        let suffix = " · \(identityName)"
+        return label.hasSuffix(suffix) ? String(label.dropLast(suffix.count)) : label
     }
 
     private var identityCard: some View {
@@ -159,7 +168,7 @@ struct ProfileView: View {
                     Text(identityName)
                         .font(GRType.headline)
                         .foregroundStyle(GRColor.textPrimary)
-                    Text(AuthSession.shared.isSignedIn ? AuthSession.shared.statusLabel : "Not signed in · open Settings to sign in")
+                    Text(accountLine)
                         .font(GRType.caption)
                         .foregroundStyle(GRColor.textSecondary)
                     HStack(spacing: 6) {
@@ -210,11 +219,6 @@ struct ProfileView: View {
                 .frame(width: 96, height: 96)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    if let streak = stats?.streakDays, streak > 0 {
-                        Label("\(streak)-day streak", systemImage: "flame.fill")
-                            .font(GRType.caption.weight(.bold))
-                            .foregroundStyle(GRColor.amber)
-                    }
                     Text(todayTitle)
                         .font(GRType.headline)
                         .foregroundStyle(GRColor.textPrimary)
@@ -222,16 +226,26 @@ struct ProfileView: View {
                     Text(todaySubtitle)
                         .font(GRType.caption)
                         .foregroundStyle(GRColor.textSecondary)
-                    Button {
-                        router.pendingStartReview = true
-                        router.select(.feed)
-                    } label: {
-                        Label("Start review", systemImage: "play.fill")
+                    if (stats?.dueToday ?? 0) > 0 {
+                        Button {
+                            router.pendingStartReview = true
+                            router.select(.feed)
+                        } label: {
+                            Label("Start review", systemImage: "play.fill")
+                        }
+                        .grButton(.primary, compact: true)
+                        .accessibilityIdentifier("today.startReview")
+                        .padding(.top, 2)
+                    } else {
+                        Button {
+                            router.select(.feed)
+                        } label: {
+                            Label("Open feed", systemImage: "rectangle.stack")
+                        }
+                        .grButton(.ghost, fullWidth: false, compact: true)
+                        .accessibilityIdentifier("today.openFeed")
+                        .padding(.top, 2)
                     }
-                    .grButton(.primary, compact: true)
-                    .disabled((stats?.dueToday ?? 0) == 0)
-                    .accessibilityIdentifier("today.startReview")
-                    .padding(.top, 2)
                 }
             }
         }
