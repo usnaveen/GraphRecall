@@ -72,7 +72,8 @@ enum ResumeStrength: CaseIterable, Identifiable {
         case .strong: return UIColor(red: 0.16, green: 0.74, blue: 0.33, alpha: 1)
         case .okay: return UIColor(red: 0.98, green: 0.68, blue: 0.10, alpha: 1)
         case .weak: return UIColor(red: 0.93, green: 0.26, blue: 0.26, alpha: 1)
-        case .untested: return UIColor(red: 0.45, green: 0.58, blue: 0.86, alpha: 1)
+        // Neutral: most claims are untested, and colour should mean something (green / amber / red).
+        case .untested: return UIColor(white: 0.62, alpha: 1)
         }
     }
 

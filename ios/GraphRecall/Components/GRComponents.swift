@@ -429,6 +429,8 @@ enum GRSettingsKey {
     static let feedStyle = "graphrecall.feed.style"
     /// Set once the feed has moved an install from the old reels default to posts.
     static let feedStylePostsMigrated = "graphrecall.feed.style.postsMigrated"
+    /// Display face for screen titles (`GRTitleFont`).
+    static let titleFont = "graphrecall.appearance.titleFont"
 }
 
 // MARK: - Layout

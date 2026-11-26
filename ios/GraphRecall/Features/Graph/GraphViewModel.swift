@@ -112,7 +112,6 @@ final class GraphViewModel {
     }
 
     static let weakThreshold = 0.4
-    static let autoFocusNodeThreshold = 45
     /// Concepts per `/api/graph3d` request; later pages load in the background like the web.
     static let pageSize = 1000
 
@@ -421,14 +420,8 @@ final class GraphViewModel {
 
         let validClusterIds = Set(semanticClusters.map(\.id))
         activeClusterIds.formIntersection(validClusterIds)
-        if activeClusterIds.isEmpty,
-           !userChoseAllClusters,
-           response.nodes.count > Self.autoFocusNodeThreshold,
-           semanticClusters.count >= 2,
-           let primary = semanticClusters.first {
-            // Start in one clean, readable community so large graphs never open as a hairball.
-            activeClusterIds = [primary.id]
-        }
+        // No auto-focus on one community any more: the overview itself is readable now (named
+        // communities far apart, no lines between them), and tapping a name flies into it.
     }
 
     private static func combine(_ current: Graph3DResponse, _ page: Graph3DResponse) -> Graph3DResponse {

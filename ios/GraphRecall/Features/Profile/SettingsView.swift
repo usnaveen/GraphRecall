@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage(GRSettingsKey.dailyGoal) private var dailyGoal = 0
     @AppStorage(GRSettingsKey.newCardsPerDay) private var newCardsPerDay = 10
     @AppStorage(GRSettingsKey.feedStyle) private var feedStyle = FeedView.FeedStyle.posts.rawValue
+    @AppStorage(GRSettingsKey.titleFont) private var titleFont = GRTitleFont.orbitron.rawValue
 
     private let auth = AuthSession.shared
     @State private var studySyncTask: Task<Void, Never>?
@@ -81,6 +82,23 @@ struct SettingsView: View {
                                 .labelsHidden()
                                 .pickerStyle(.segmented)
                                 .frame(width: 148)
+                            }
+                            SettingsDivider()
+                            SettingsRow(
+                                title: "Title font",
+                                subtitle: "Screen titles like “Graph” and “Feed”",
+                                systemImage: "textformat",
+                                tone: .cyan
+                            ) {
+                                Picker("Title font", selection: $titleFont) {
+                                    ForEach(GRTitleFont.allCases.filter { GRFonts.isAvailable($0) }) { choice in
+                                        Text(choice.title).tag(choice.rawValue)
+                                    }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.menu)
+                                .tint(GRColor.accent)
+                                .accessibilityIdentifier("settings.titleFont")
                             }
                             SettingsDivider()
                             SettingsRow(title: "Review reminders", subtitle: "A daily nudge when cards are due", systemImage: "bell.fill", tone: .accent) {

@@ -135,7 +135,6 @@ struct ResumeView: View {
                             .padding(.horizontal, 20)
                     }
                     skillGroups.padding(.horizontal, 20)
-                    resumeText.padding(.horizontal, 20)
                 } else if !model.isLoading && !model.isUploading {
                     emptyState.padding(.horizontal, 20)
                 } else if model.isLoading {
@@ -291,16 +290,4 @@ struct ResumeView: View {
         }
     }
 
-    private var resumeText: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GRSectionHeader(title: "Highlighted resume")
-            Text(model.highlighted())
-                .font(GRType.body)
-                .lineSpacing(3)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .grGlassEffect(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-    }
 }

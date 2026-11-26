@@ -117,3 +117,9 @@ eval/graphrag/results/*.partial.jsonl
 eval/scheduler/data/
 data/library/*
 !data/library/essential.txt
+
+# Display fonts licensed for personal use only (or with no licence): kept out of the public repo.
+# The app falls back to Orbitron/system when they are missing.
+ios/GraphRecall/Resources/Assets.xcassets/LEDLight.dataset/
+ios/GraphRecall/Resources/Assets.xcassets/PlatinumSign.dataset/
+ios/GraphRecall/Resources/Assets.xcassets/AlienMushrooms.dataset/

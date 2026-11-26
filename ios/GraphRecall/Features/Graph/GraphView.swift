@@ -310,6 +310,10 @@ struct GraphView: View {
             .overlay(alignment: .bottomLeading) {
                 if showsCanvasChrome && model.colorMode == .mastery { masteryLegendView.padding(10) }
             }
+            // The key to the graph — which colour means which kind of connection — top right.
+            .overlay(alignment: .topTrailing) {
+                if showsCanvasChrome && !model.showControls { relationshipLegend.padding(10) }
+            }
 
             if model.isLoading {
                 ProgressView()
@@ -418,6 +422,7 @@ struct GraphView: View {
                 ) {
                     model.resetCamera()
                 }
+                if model.selectedNodeId != nil && !model.showControls { focusPill }
                 if model.isLayingOut && !model.isLoading {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini).tint(GRColor.accent)
@@ -433,10 +438,6 @@ struct GraphView: View {
             if model.showControls {
                 GraphControlsPanel(model: model)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
-            } else {
-                // The key to the graph: which colour means which kind of connection.
-                if model.selectedNodeId != nil { focusPill }
-                relationshipLegend
             }
         }
     }

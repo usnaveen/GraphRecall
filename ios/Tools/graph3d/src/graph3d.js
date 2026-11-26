@@ -66,7 +66,9 @@ const LABEL_LOD_NODE_COUNT = 350; // above this, gate browsing labels by importa
 const DIM_OPACITY = 0.14;
 const MAX_OVERVIEW_ARROWS = 700; // arrowheads are one mesh each; enough for a community or two
 /// 2D focus layout: ring radius, extra ring spacing when crowded, and how fast things settle.
-const FOCUS = { radius: 48, ringGap: 30, lerp: 0.16, perRing: 7 };
+const FOCUS = { radius: 64, ringGap: 42, lerp: 0.16, perRing: 5 };
+// Focus shows the closest neighbours only: at most this many per side (needs / unlocks / related).
+const FOCUS_CAP = { needs: 5, unlocks: 5, related: 4 };
 
 function post(message) {
   try { window.webkit.messageHandlers.graphBridge.postMessage(message); } catch (e) { /* not in WKWebView */ }
@@ -201,7 +203,8 @@ async function layoutGraph(graph, previous, isStale) {
   for (const node of nodes) sizes.set(node.clusterIndex ?? 0, (sizes.get(node.clusterIndex ?? 0) || 0) + 1);
   const byPlace = [...Array(kClusters).keys()].sort((a, b) => (sizes.get(b) || 0) - (sizes.get(a) || 0));
   const islandRadius = (n) => Math.max(24, 16 * Math.cbrt(n || 1));
-  const spacing = 3.0 * Math.max(...byPlace.map((c) => islandRadius(sizes.get(c))), 24);
+  // Far apart, so the zoomed-out view reads as separate named places, not one molecule.
+  const spacing = 5.4 * Math.max(...byPlace.map((c) => islandRadius(sizes.get(c))), 24);
   const clusterCenters = new Array(kClusters);
   byPlace.forEach((c, i) => {
     if (kClusters === 1) { clusterCenters[c] = { x: 0, y: 0, z: 0 }; return; }
@@ -257,7 +260,7 @@ async function layoutGraph(graph, previous, isStale) {
         const w = Math.min(1, l.weight);
         return l.source.clusterIndex === l.target.clusterIndex
           ? 0.24 + 0.30 * w
-          : 0.012;
+          : 0;
       }))
     .force('collide', d3.forceCollide().radius((d) => nodeRadius(d) + 5.5).iterations(2))
     .force('x', d3.forceX((d) => d.clusterCenter.x).strength(0.15))
@@ -526,10 +529,17 @@ function buildClusterViews() {
     label.className = 'cluster-label';
     label.textContent = (graph.clusterTitles && graph.clusterTitles[index]) || '';
     label.style.cssText = 'position:absolute;left:0;top:0;transform:translate(-50%,-50%);white-space:nowrap;'
-      + 'font:600 9.5px -apple-system,system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;'
-      + `color:#${colour.getHexString()};opacity:0;text-shadow:0 0 10px rgba(0,0,0,.9);pointer-events:none;transition:opacity .25s`;
+      + 'font:700 12px -apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;'
+      + `color:#${colour.getHexString()};opacity:0;text-shadow:0 0 10px rgba(0,0,0,.9);pointer-events:auto;`
+      + 'padding:8px 10px;transition:opacity .25s';
     labelsEl.appendChild(label);
-    clusterViews.push({ index, sprite, label, centre, radius, members: new Set(members.map((n) => n.id)) });
+    const view = { index, sprite, label, centre, radius, members: new Set(members.map((n) => n.id)) };
+    label.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (label.style.opacity === '0') return;
+      flyToCluster(view);
+    });
+    clusterViews.push(view);
   }
 }
 
@@ -565,7 +575,7 @@ function placeClusterLabels() {
     }
     view.sprite.visible = anyVisible && !focusView;
     const dist = camera.position.distanceTo(view.centre);
-    const show = overview && anyVisible && dist > view.radius * 3.2 && view.label.textContent;
+    const show = overview && anyVisible && dist > view.radius * 2.2 && view.label.textContent;
     if (!show) { view.label.style.opacity = '0'; continue; }
     // Just under the island, so the name never sits on top of its concepts.
     clusterUp.copy(camera.up).applyQuaternion(camera.quaternion).multiplyScalar(-view.radius * 0.95);
@@ -656,9 +666,12 @@ function buildFocusView(id) {
   const members = [...byOther.values()].sort((a, b) => b.link.weight - a.link.weight);
   const targets = new Map([[id, origin.clone()]]);
 
-  const needs = members.filter((m) => m.group === 0);
-  const unlocks = members.filter((m) => m.group === 1);
-  const related = members.filter((m) => m.group === 2);
+  // Strongest first within each side; the rest stay out of the way (they're one tap away in the
+  // concept's own focus). Typed links outrank vague "related" ones.
+  const needs = members.filter((m) => m.group === 0).slice(0, FOCUS_CAP.needs);
+  const unlocks = members.filter((m) => m.group === 1).slice(0, FOCUS_CAP.unlocks);
+  const related = members.filter((m) => m.group === 2).slice(0, FOCUS_CAP.related);
+  const shown = [...needs, ...unlocks, ...related];
   const right = related.filter((_, i) => i % 2 === 0);
   const left = related.filter((_, i) => i % 2 === 1);
 
@@ -678,8 +691,9 @@ function buildFocusView(id) {
     id,
     origin,
     targets,
-    members: new Set([id, ...byOther.keys()]),
-    links: members.map((m) => m.link),
+    members: new Set([id, ...shown.map((m) => m.other.id)]),
+    links: shown.map((m) => m.link),
+    hidden: members.length - shown.length,
     radius: FOCUS.radius + (rings - 1) * FOCUS.ringGap,
   };
 }
@@ -812,8 +826,8 @@ function rebuildLinks(selectedId, searching) {
     } else if (searching && !(state.highlightIds.has(link.source.id) && state.highlightIds.has(link.target.id))) {
       faint.push(link);
     } else if (link.source.clusterIndex !== link.target.clusterIndex) {
-      // Cross-community bridges stay whisper-light so separated clusters read cleanly in space.
-      faint.push(link);
+      // Bridges between communities are hidden in the overview; select a concept to see them.
+      continue;
     } else {
       idle.push(link);
     }
@@ -1134,6 +1148,17 @@ function flyToNode(nodeId) {
   const direction = camera.position.clone().sub(controls.target);
   const distance = THREE.MathUtils.clamp(direction.length(), 45, 150);
   cameraFlight = { target, position: target.clone().add(direction.normalize().multiplyScalar(distance)) };
+  invalidate();
+}
+
+/** Tapping a community's name flies into it: the community fills the view, its concepts labelled. */
+function flyToCluster(view) {
+  const target = view.centre.clone();
+  const direction = camera.position.clone().sub(controls.target).normalize();
+  const vFov = THREE.MathUtils.degToRad(camera.fov);
+  const distance = Math.max(60, (view.radius * 1.25) / Math.tan(vFov / 2));
+  cameraFlight = { target, position: target.clone().add(direction.multiplyScalar(distance)) };
+  post({ type: 'clusterTapped', title: view.label.textContent || '' });
   invalidate();
 }
 

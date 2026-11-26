@@ -3,11 +3,16 @@ import SwiftUI
 struct GRScreenHeader: View {
     let title: String
     var subtitle: String? = nil
+    /// Re-renders titles when the font is switched in Settings.
+    @AppStorage(GRSettingsKey.titleFont) private var titleFontRaw = GRTitleFont.orbitron.rawValue
+
+    private var titleFont: GRTitleFont { GRTitleFont(rawValue: titleFontRaw) ?? .orbitron }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(GRType.screenTitle)
+                .font(GRType.screenTitle(for: titleFont))
+                .textCase(titleFont.uppercaseOnly ? .uppercase : nil)
                 .tracking(1.5)
                 .foregroundStyle(GRColor.textPrimary)
                 .lineLimit(1)

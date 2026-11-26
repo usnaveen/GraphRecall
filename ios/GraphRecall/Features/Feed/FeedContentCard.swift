@@ -27,6 +27,8 @@ struct FeedContentCard: View {
     @State private var digestState: DigestState = .idle
     @State private var viewportHeight: CGFloat = 0
     @State private var showRemind = false
+    /// The rating slider stays tucked away until you tap the rate button (or after you've rated).
+    @State private var showGrade = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,7 +43,7 @@ struct FeedContentCard: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
             } else {
                 contentStack
-                if gradesInline {
+                if gradesInline && (showGrade || model.grades[item.id] != nil) {
                     FeedDifficultySlider(graded: model.grades[item.id]) { difficulty in
                         Task {
                             await model.grade(item, difficulty: difficulty)
@@ -51,6 +53,7 @@ struct FeedContentCard: View {
                     .id(item.id) // a fresh control per card
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
 
@@ -116,6 +119,16 @@ struct FeedContentCard: View {
             actionButton(systemName: "clock.arrow.circlepath", active: false, label: "Remind me") {
                 GRHaptics.tap()
                 showRemind = true
+            }
+            if gradesInline {
+                actionButton(
+                    systemName: "dial.medium",
+                    active: showGrade || model.grades[item.id] != nil,
+                    label: "Rate how well you knew it"
+                ) {
+                    GRHaptics.tap()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { showGrade.toggle() }
+                }
             }
             ShareLink(item: item.sharePlainText) {
                 Image(systemName: "square.and.arrow.up")
