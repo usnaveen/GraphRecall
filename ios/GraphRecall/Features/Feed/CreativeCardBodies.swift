@@ -467,6 +467,12 @@ struct TradeoffDuelCardBody: View {
             isRevealed = true
         }
         onReveal()
+
+        // The pick is knowledge-map evidence (recommended option 0.8, the other 0.4). Best effort.
+        let cardId = payload.cardId
+        Task {
+            _ = try? await APIClient.shared.pickTradeoffDuel(cardId: cardId, choice: choice)
+        }
     }
 }
 

@@ -119,6 +119,35 @@ extension APIClient {
     }
 }
 
+extension APIClient {
+    /// Records a Tradeoff Duel pick ("a" or "b") as quiz evidence for the card's concept.
+    @discardableResult
+    func pickTradeoffDuel(cardId: String, choice: String) async throws -> TradeoffDuelPickResponse {
+        try await post("/api/feed/tradeoff-duel-pick", body: TradeoffDuelPickBody(cardId: cardId, choice: choice))
+    }
+}
+
+struct TradeoffDuelPickResponse: Decodable, Sendable {
+    let cardId: String
+    let matched: Bool
+    let recommended: String
+
+    enum CodingKeys: String, CodingKey {
+        case cardId = "card_id"
+        case matched, recommended
+    }
+}
+
+private struct TradeoffDuelPickBody: Encodable, Sendable {
+    let cardId: String
+    let choice: String
+
+    enum CodingKeys: String, CodingKey {
+        case cardId = "card_id"
+        case choice
+    }
+}
+
 private struct SpotTheBugGradeBody: Encodable, Sendable {
     let cardId: String
     let selectedLine: Int

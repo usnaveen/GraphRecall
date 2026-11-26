@@ -5,7 +5,7 @@ import os
 import uuid
 import random
 import asyncio
-from typing import Optional
+from typing import Literal, Optional
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -129,7 +129,7 @@ async def get_feed(
         
         await _add_territory_card(response, request, neo4j_client)
         await _add_sandbox_card(response, request, pg_client)
-        await _add_creative_card(response, request)
+        await _add_creative_card(response, request, pg_client)
 
         # Inject Daily Goal & Trigger Durable Pre-gen Buffer
         response.daily_goal = await feed_service.get_daily_goal(request.user_id)
@@ -271,9 +271,33 @@ def _resolve_creative_card_domain(
     return None
 
 
-async def _add_creative_card(response, request) -> None:
+# A creative card the user answered in this window is not shown again.
+_CREATIVE_REPEAT_DAYS = 30
+# _match_score gives 10 for an exact concept/tag match, 6 for a name inside the card text and 2 per
+# shared word. One shared word ("algorithm", "attention") is not relevance: a geometry feed pulled
+# in a code-sandboxing duel that way. No card beats an unrelated card.
+_MIN_CREATIVE_RELEVANCE = 4
+
+
+async def _recently_answered_creative_ids(pg_client, user_id: str) -> list[str]:
+    """Card ids with spot_the_bug / tradeoff_duel evidence in the last _CREATIVE_REPEAT_DAYS days."""
+    try:
+        rows = await pg_client.execute_query(
+            "SELECT DISTINCT source_id FROM knowledge_evidence "
+            "WHERE user_id = CAST(:u AS uuid) AND created_at > now() - make_interval(days => :d) "
+            "AND (source_id LIKE 'spot_the_bug:%' OR source_id LIKE 'tradeoff_duel:%')",
+            {"u": user_id, "d": _CREATIVE_REPEAT_DAYS},
+        )
+        return [str(r["source_id"]).split(":", 1)[1] for r in rows if r.get("source_id")]
+    except Exception as e:  # noqa: BLE001 - repeats are a nuisance, not a failure
+        logger.warning("Feed: answered creative cards unavailable", error=str(e))
+        return []
+
+
+async def _add_creative_card(response, request, pg_client=None) -> None:
     """One creative card (spot_the_bug or tradeoff_duel) per feed load, matched to feed concepts.
-    Zero LLM cost; respects item_types, domains, and max_items; never fails the feed."""
+    Only a card that matches something in this feed (score > 0) and that the user has not answered
+    in the last 30 days. Zero LLM cost; respects item_types, domains and max_items; never fails the feed."""
     if request.max_items <= 0:
         return
     allow_spot = request.item_types is None or FeedItemType.SPOT_THE_BUG in request.item_types
@@ -282,40 +306,47 @@ async def _add_creative_card(response, request) -> None:
         return
     try:
         names = [i.concept_name for i in response.items if i.concept_name]
+        if not names:
+            return
+        answered = await _recently_answered_creative_ids(pg_client, request.user_id) if pg_client else []
 
         def _pick_valid_spot():
             if not allow_spot:
                 return None, None, -1
-            excluded: list[str] = []
+            excluded: list[str] = list(answered)
             while True:
                 cand = creative_cards.select_spot_the_bug(names, exclude_ids=excluded)
                 if cand is None:
                     return None, None, -1
+                sc = creative_cards._match_score(
+                    names, title=cand.title, concept_name=cand.concept_name, tags=cand.tags
+                )
+                if sc < _MIN_CREATIVE_RELEVANCE:
+                    return None, None, -1  # the best remaining card matches nothing in this feed
                 dom = _resolve_creative_card_domain(cand, response.items, request.domains)
                 if dom is not None:
-                    sc = creative_cards._match_score(
-                        names, title=cand.title, concept_name=cand.concept_name, tags=cand.tags
-                    )
                     return cand, dom, sc
                 excluded.append(cand.id)
 
         def _pick_valid_duel():
             if not allow_duel:
                 return None, None, -1
-            excluded: list[str] = []
+            excluded: list[str] = list(answered)
             while True:
                 cand = creative_cards.select_tradeoff_duel(names, exclude_ids=excluded)
                 if cand is None:
                     return None, None, -1
+                sc = creative_cards._match_score(
+                    names,
+                    title=cand.title,
+                    concept_name=cand.concept_name,
+                    tags=cand.tags,
+                    extra=cand.scenario,
+                )
+                if sc < _MIN_CREATIVE_RELEVANCE:
+                    return None, None, -1
                 dom = _resolve_creative_card_domain(cand, response.items, request.domains)
                 if dom is not None:
-                    sc = creative_cards._match_score(
-                        names,
-                        title=cand.title,
-                        concept_name=cand.concept_name,
-                        tags=cand.tags,
-                        extra=cand.scenario,
-                    )
                     return cand, dom, sc
                 excluded.append(cand.id)
 
@@ -549,6 +580,46 @@ async def grade_spot_the_bug_card(
         "concept_id": concept_id,
         "recorded": True,
     }
+
+
+class TradeoffDuelPickRequest(BaseModel):
+    card_id: str = Field(..., max_length=80)
+    choice: Literal["a", "b"]
+
+
+# A pick matching the recommended option is good evidence; the other option is a miss, but a
+# defensible one (each card says when the other option wins), so it is not scored as a failure.
+_DUEL_MATCH_SIGNAL = 0.8
+_DUEL_OTHER_SIGNAL = 0.4
+
+
+@router.post("/tradeoff-duel-pick")
+async def pick_tradeoff_duel(
+    body: TradeoffDuelPickRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Record a Tradeoff Duel pick as `quiz` evidence ("depends" cards accept either option)."""
+    card = next((c for c in creative_cards.TRADEOFF_DUEL_CARDS if c.id == body.card_id), None)
+    if card is None:
+        raise HTTPException(status_code=404, detail=f"Tradeoff duel card not found: {body.card_id}")
+    matched = card.recommended == "depends" or card.recommended == body.choice
+    signal = _DUEL_MATCH_SIGNAL if matched else _DUEL_OTHER_SIGNAL
+    user_id = str(current_user["id"])
+
+    concept_id: Optional[str] = None
+    try:
+        concept = km.match_concept(card.concept_name, await km._user_concepts(await get_neo4j_client(), user_id))
+        concept_id = concept["id"] if concept else None
+    except Exception as exc:  # noqa: BLE001 - concept lookup is best-effort; skill_name still records
+        logger.warning("Feed: tradeoff duel concept match skipped", error=str(exc))
+
+    await km.add_evidence(
+        await get_postgres_client(), user_id, kind="quiz", signal=signal, concept_id=concept_id,
+        skill_name=card.concept_name, source_id=f"tradeoff_duel:{card.id}",
+        detail={"choice": body.choice, "recommended": card.recommended, "matched": matched},
+    )
+    return {"card_id": card.id, "matched": matched, "recommended": card.recommended,
+            "signal": signal, "concept_id": concept_id, "recorded": True}
 
 
 @router.post("/review")
