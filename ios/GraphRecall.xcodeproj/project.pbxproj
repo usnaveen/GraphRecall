@@ -35,6 +35,7 @@
 		54D62B63DB351CE3DB305053 /* AgentInboxUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C670D511ACB3A69231A7E51 /* AgentInboxUITests.swift */; };
 		56EAEACF6E68918C9A446A00 /* GraphNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */; };
 		5856EC9957337FA13597D3E3 /* FeedPagingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8150165C7BF5F2DFF020F8 /* FeedPagingUITests.swift */; };
+		4EF5E38370D62607334B8D28 /* ShowcaseTourUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFA5FB7CDDBF596E5E77EE44 /* ShowcaseTourUITests.swift */; };
 		5D8A719D00E8E4E5BCCEE8F1 /* GraphToolsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D3BF4391B44E6E2469BCD9 /* GraphToolsSheets.swift */; };
 		5DBCE912CF09F6C857490E3D /* ConceptFigureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 027AF4E110315AB89375BB16 /* ConceptFigureView.swift */; };
 		60FF4F0896591B3C7A8F0EF7 /* ChatSSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0A25E9DDEB6FA4EA9F3A30 /* ChatSSEClient.swift */; };
@@ -188,6 +189,7 @@
 		495A4E189BF01A6E33F2A97D /* ShareInboxDrainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInboxDrainer.swift; sourceTree = "<group>"; };
 		4A4B731FA97D99242886CC71 /* GraphRecallWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphRecallWidget.swift; sourceTree = "<group>"; };
 		4B8150165C7BF5F2DFF020F8 /* FeedPagingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedPagingUITests.swift; sourceTree = "<group>"; };
+		FFA5FB7CDDBF596E5E77EE44 /* ShowcaseTourUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShowcaseTourUITests.swift; sourceTree = "<group>"; };
 		4B897A91DB4533FA1260D81B /* CreativeCardBodies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreativeCardBodies.swift; sourceTree = "<group>"; };
 		4CDDF5717E5AB0F0AF9C9007 /* SandboxHTML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxHTML.swift; sourceTree = "<group>"; };
 		4D60F0755297C074FCE2F88D /* APIConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfig.swift; sourceTree = "<group>"; };
@@ -526,6 +528,7 @@
 			children = (
 				0C670D511ACB3A69231A7E51 /* AgentInboxUITests.swift */,
 				4B8150165C7BF5F2DFF020F8 /* FeedPagingUITests.swift */,
+				FFA5FB7CDDBF596E5E77EE44 /* ShowcaseTourUITests.swift */,
 				8FF54DECE7F455EA0BB8D0F0 /* ReviewFlowUITests.swift */,
 				C5E2ABA3A6A6F055C1E2DBFB /* ShareIngestTests.swift */,
 			);
@@ -773,6 +776,7 @@
 			files = (
 				54D62B63DB351CE3DB305053 /* AgentInboxUITests.swift in Sources */,
 				5856EC9957337FA13597D3E3 /* FeedPagingUITests.swift in Sources */,
+				4EF5E38370D62607334B8D28 /* ShowcaseTourUITests.swift in Sources */,
 				F1FBC2793C54513177F326C9 /* ReviewFlowUITests.swift in Sources */,
 				C007D729D392D72926FD645A /* ShareIngestTests.swift in Sources */,
 			);
