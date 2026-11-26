@@ -1,0 +1,316 @@
+{
+ "eval_set": "heldout_v2",
+ "score_only": true,
+ "is_frozen_eval_set": true,
+ "eval_size": 57,
+ "eval_file_sha256": "0acae9607dfaf978cad1c987841baa346de22159243c9a6ec2cdcda124eb665a",
+ "test_label_sources": {
+  "agent_provisional": 57
+ },
+ "frozen_errors_inspected": false,
+ "rules": {
+  "model": "keyword rules",
+  "accuracy": 0.0702,
+  "accuracy_ci95": [
+   0.0175,
+   0.1404
+  ],
+  "macro_f1": 0.0761,
+  "macro_f1_ci95": [
+   0.0047,
+   0.1462
+  ],
+  "macro_f1_present_gold": 0.1522,
+  "macro_f1_present_gold_ci95": [
+   0.0121,
+   0.3078
+  ],
+  "routing_accuracy": 0.7544,
+  "routing_accuracy_ci95": [
+   0.6491,
+   0.8596
+  ],
+  "per_class_f1": {
+   "explain": 0.235,
+   "compare": 0.333,
+   "find": 0.04,
+   "summarize": 0.0,
+   "quiz": 0.0,
+   "path": 0.0,
+   "show_images": 0.0,
+   "general": 0.0
+  },
+  "confusion": {
+   "labels": [
+    "explain",
+    "compare",
+    "find",
+    "summarize",
+    "quiz",
+    "path",
+    "show_images",
+    "general"
+   ],
+   "matrix": [
+    [
+     2,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1
+    ],
+    [
+     0,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     2
+    ],
+    [
+     11,
+     2,
+     1,
+     0,
+     0,
+     0,
+     0,
+     35
+    ],
+    [
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     1
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   ]
+  },
+  "latency_ms_p50": 0.021,
+  "latency_ms_p95": 0.021
+ },
+ "artifact_sha256": "ced416ac2f7679200bf90a3ce30bcb69d4866abfed5ed869747d21524b7e41eb",
+ "artifact_version": "tfidf-lr-v1",
+ "tfidf_lr": {
+  "model": "TF-IDF + LogReg (ships)",
+  "accuracy": 0.3158,
+  "accuracy_ci95": [
+   0.193,
+   0.4386
+  ],
+  "macro_f1": 0.1369,
+  "macro_f1_ci95": [
+   0.0649,
+   0.1889
+  ],
+  "macro_f1_present_gold": 0.2738,
+  "macro_f1_present_gold_ci95": [
+   0.1526,
+   0.4443
+  ],
+  "routing_accuracy": 0.386,
+  "routing_accuracy_ci95": [
+   0.2632,
+   0.5088
+  ],
+  "per_class_f1": {
+   "explain": 0.105,
+   "compare": 0.545,
+   "find": 0.444,
+   "summarize": 0.0,
+   "quiz": 0.0,
+   "path": 0.0,
+   "show_images": 0.0,
+   "general": 0.0
+  },
+  "confusion": {
+   "labels": [
+    "explain",
+    "compare",
+    "find",
+    "summarize",
+    "quiz",
+    "path",
+    "show_images",
+    "general"
+   ],
+   "matrix": [
+    [
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     1,
+     0
+    ],
+    [
+     0,
+     3,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     14,
+     3,
+     14,
+     3,
+     0,
+     9,
+     5,
+     1
+    ],
+    [
+     1,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ]
+   ]
+  },
+  "selective": [
+   {
+    "threshold": 0.0,
+    "coverage": 1.0,
+    "accuracy_on_kept": 0.3158,
+    "routing_accuracy_on_kept": 0.386
+   },
+   {
+    "threshold": 0.3,
+    "coverage": 0.947,
+    "accuracy_on_kept": 0.3333,
+    "routing_accuracy_on_kept": 0.3704
+   },
+   {
+    "threshold": 0.4,
+    "coverage": 0.772,
+    "accuracy_on_kept": 0.3636,
+    "routing_accuracy_on_kept": 0.4091
+   },
+   {
+    "threshold": 0.5,
+    "coverage": 0.596,
+    "accuracy_on_kept": 0.4118,
+    "routing_accuracy_on_kept": 0.4412
+   },
+   {
+    "threshold": 0.6,
+    "coverage": 0.421,
+    "accuracy_on_kept": 0.375,
+    "routing_accuracy_on_kept": 0.4167
+   },
+   {
+    "threshold": 0.7,
+    "coverage": 0.298,
+    "accuracy_on_kept": 0.3529,
+    "routing_accuracy_on_kept": 0.4118
+   },
+   {
+    "threshold": 0.8,
+    "coverage": 0.211,
+    "accuracy_on_kept": 0.3333,
+    "routing_accuracy_on_kept": 0.4167
+   }
+  ],
+  "latency_ms_p50": 0.127,
+  "latency_ms_p95": 0.231,
+  "features": 10424
+ }
+}

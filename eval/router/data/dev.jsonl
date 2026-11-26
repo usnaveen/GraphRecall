@@ -1,0 +1,120 @@
+{"text": "why does adding more layers sometimes make accuracy worse", "intent": "explain", "label_source": "agent"}
+{"text": "what's a closure in javascript", "intent": "explain", "label_source": "agent"}
+{"text": "how do vaccines train the immune system", "intent": "explain", "label_source": "agent"}
+{"text": "what is going on with the attention mask in decoders", "intent": "explain", "label_source": "agent"}
+{"text": "I'm lost on how recursion unwinds", "intent": "explain", "label_source": "agent"}
+{"text": "could you shed light on how compilers optimize loops", "intent": "explain", "label_source": "agent"}
+{"text": "what's the deal with eventual consistency", "intent": "explain", "label_source": "agent"}
+{"text": "how is the loss actually computed for a language model", "intent": "explain", "label_source": "agent"}
+{"text": "what makes a hash function good", "intent": "explain", "label_source": "agent"}
+{"text": "so how does gradient clipping help", "intent": "explain", "label_source": "agent"}
+{"text": "tell me about the role of mitochondria", "intent": "explain", "label_source": "agent"}
+{"text": "why are GPUs fast for matrix math", "intent": "explain", "label_source": "agent"}
+{"text": "what does it mean for a matrix to be singular", "intent": "explain", "label_source": "agent"}
+{"text": "how does a kalman filter work intuitively", "intent": "explain", "label_source": "agent"}
+{"text": "why would anyone use a B-tree", "intent": "explain", "label_source": "agent"}
+{"text": "hashmap or treemap for ordered keys", "intent": "compare", "label_source": "agent"}
+{"text": "should I learn PyTorch or JAX first", "intent": "compare", "label_source": "agent"}
+{"text": "is mean or median better for skewed salaries", "intent": "compare", "label_source": "agent"}
+{"text": "what sets apart a list and a tuple in python", "intent": "compare", "label_source": "agent"}
+{"text": "Swift structs vs classes?", "intent": "compare", "label_source": "agent"}
+{"text": "GPT-4 or Claude for coding help, which is stronger", "intent": "compare", "label_source": "agent"}
+{"text": "which wins for small data, random forest or a neural net", "intent": "compare", "label_source": "agent"}
+{"text": "explain the difference in how TCP and QUIC handle loss", "intent": "compare", "label_source": "agent"}
+{"text": "Is it better to use Celery or a cron job here", "intent": "compare", "label_source": "agent"}
+{"text": "normal vs log-normal distribution", "intent": "compare", "label_source": "agent"}
+{"text": "are agents and workflows the same thing", "intent": "compare", "label_source": "agent"}
+{"text": "sharding or replication \u2014 what's the distinction", "intent": "compare", "label_source": "agent"}
+{"text": "what's the gap between AI and ML", "intent": "compare", "label_source": "agent"}
+{"text": "how does Anki compare with Quizlet", "intent": "compare", "label_source": "agent"}
+{"text": "would a trie or a hash set be better for prefix search", "intent": "compare", "label_source": "agent"}
+{"text": "what did I paste about the kafka retention settings", "intent": "find", "label_source": "agent"}
+{"text": "is the Andrew Ng quote somewhere in my notes", "intent": "find", "label_source": "agent"}
+{"text": "dig up what I wrote on the master theorem", "intent": "find", "label_source": "agent"}
+{"text": "where are my notes from the system design book", "intent": "find", "label_source": "agent"}
+{"text": "which upload had the table of Big-O complexities", "intent": "find", "label_source": "agent"}
+{"text": "I saved a definition of entropy once, where", "intent": "find", "label_source": "agent"}
+{"text": "look through my stuff for anything on raft", "intent": "find", "label_source": "agent"}
+{"text": "what code snippet did I save for binary search", "intent": "find", "label_source": "agent"}
+{"text": "did I ever note the learning rate I used", "intent": "find", "label_source": "agent"}
+{"text": "bring back my highlights on deep work", "intent": "find", "label_source": "agent"}
+{"text": "what were my bullet points on the CAP theorem", "intent": "find", "label_source": "agent"}
+{"text": "where did I store the YouTube transcript about transformers", "intent": "find", "label_source": "agent"}
+{"text": "what's the exact wording I saved for Bayes rule", "intent": "find", "label_source": "agent"}
+{"text": "find the note with the heap operations", "intent": "find", "label_source": "agent"}
+{"text": "in my notes, what's listed under 'interview tips'", "intent": "find", "label_source": "agent"}
+{"text": "give me a quick rundown of all my statistics notes", "intent": "summarize", "label_source": "agent"}
+{"text": "what's my knowledge graph mostly about", "intent": "summarize", "label_source": "agent"}
+{"text": "digest everything I saved on sleep science", "intent": "summarize", "label_source": "agent"}
+{"text": "high level, what have I collected on investing", "intent": "summarize", "label_source": "agent"}
+{"text": "main ideas from my system design notes please", "intent": "summarize", "label_source": "agent"}
+{"text": "how would you sum up the papers I uploaded", "intent": "summarize", "label_source": "agent"}
+{"text": "what are the threads running through my notes", "intent": "summarize", "label_source": "agent"}
+{"text": "short version of my notes on the Cold War", "intent": "summarize", "label_source": "agent"}
+{"text": "condense my week of reading into bullets", "intent": "summarize", "label_source": "agent"}
+{"text": "what topics dominate my notes", "intent": "summarize", "label_source": "agent"}
+{"text": "give me the essence of my RL material", "intent": "summarize", "label_source": "agent"}
+{"text": "synthesize my notes on productivity", "intent": "summarize", "label_source": "agent"}
+{"text": "what's the overall story of my history notes", "intent": "summarize", "label_source": "agent"}
+{"text": "in a few lines, what do I know about databases", "intent": "summarize", "label_source": "agent"}
+{"text": "an executive summary of my ML notes", "intent": "summarize", "label_source": "agent"}
+{"text": "let's practice: ask me about heaps", "intent": "quiz", "label_source": "agent"}
+{"text": "see if I remember the SOLID principles", "intent": "quiz", "label_source": "agent"}
+{"text": "I'd like some recall practice on vectors", "intent": "quiz", "label_source": "agent"}
+{"text": "throw 5 flashcards at me on networking", "intent": "quiz", "label_source": "agent"}
+{"text": "interrogate me about the Krebs cycle", "intent": "quiz", "label_source": "agent"}
+{"text": "can you test whether I know Dijkstra", "intent": "quiz", "label_source": "agent"}
+{"text": "run me through some questions on statistics", "intent": "quiz", "label_source": "agent"}
+{"text": "I want to drill LeetCode patterns", "intent": "quiz", "label_source": "agent"}
+{"text": "examine me on the cold war", "intent": "quiz", "label_source": "agent"}
+{"text": "give me a problem to solve on two pointers", "intent": "quiz", "label_source": "agent"}
+{"text": "ask me to define precision and recall", "intent": "quiz", "label_source": "agent"}
+{"text": "make me practice explaining backprop", "intent": "quiz", "label_source": "agent"}
+{"text": "quiz me hard on transformers", "intent": "quiz", "label_source": "agent"}
+{"text": "fill in the blank questions on SQL please", "intent": "quiz", "label_source": "agent"}
+{"text": "start a review session on biology", "intent": "quiz", "label_source": "agent"}
+{"text": "what's step one if I want to learn compilers", "intent": "path", "label_source": "agent"}
+{"text": "how do I progress from linear regression to deep learning", "intent": "path", "label_source": "agent"}
+{"text": "which topics should come before reinforcement learning", "intent": "path", "label_source": "agent"}
+{"text": "what should my learning order be for web dev", "intent": "path", "label_source": "agent"}
+{"text": "I finished the basics of graphs, what now", "intent": "path", "label_source": "agent"}
+{"text": "give me a sequence for learning probability", "intent": "path", "label_source": "agent"}
+{"text": "what do I need before I can understand RAG", "intent": "path", "label_source": "agent"}
+{"text": "lay out the stepping stones to system design interviews", "intent": "path", "label_source": "agent"}
+{"text": "is there a recommended route into computer vision", "intent": "path", "label_source": "agent"}
+{"text": "what unlocks after mastering recursion", "intent": "path", "label_source": "agent"}
+{"text": "what to study before tackling segment trees", "intent": "path", "label_source": "agent"}
+{"text": "map the route from statistics to causal inference", "intent": "path", "label_source": "agent"}
+{"text": "help me plan which LeetCode topics to do in order", "intent": "path", "label_source": "agent"}
+{"text": "what's missing before I can read the LoRA paper", "intent": "path", "label_source": "agent"}
+{"text": "what should I pick up after SQL joins", "intent": "path", "label_source": "agent"}
+{"text": "display the diagram I saved about the OSI layers", "intent": "show_images", "label_source": "agent"}
+{"text": "got any figures of the heart's anatomy", "intent": "show_images", "label_source": "agent"}
+{"text": "let me see the chart from my investing notes", "intent": "show_images", "label_source": "agent"}
+{"text": "I want the picture of the decision tree from class", "intent": "show_images", "label_source": "agent"}
+{"text": "show the architecture figure for ResNet", "intent": "show_images", "label_source": "agent"}
+{"text": "pull up visuals of the water cycle", "intent": "show_images", "label_source": "agent"}
+{"text": "any photos of my whiteboard notes on graphs", "intent": "show_images", "label_source": "agent"}
+{"text": "what does the LSTM cell diagram look like", "intent": "show_images", "label_source": "agent"}
+{"text": "show me the plot of the sigmoid curve", "intent": "show_images", "label_source": "agent"}
+{"text": "bring up the screenshot about the attention formula", "intent": "show_images", "label_source": "agent"}
+{"text": "can you show slides about the Krebs cycle", "intent": "show_images", "label_source": "agent"}
+{"text": "images from the book chapter I scanned", "intent": "show_images", "label_source": "agent"}
+{"text": "give me the figure of a B-tree", "intent": "show_images", "label_source": "agent"}
+{"text": "show the drawing of the binary heap", "intent": "show_images", "label_source": "agent"}
+{"text": "show me visual examples of overfitting", "intent": "show_images", "label_source": "agent"}
+{"text": "hey hey", "intent": "general", "label_source": "agent"}
+{"text": "thanks!!", "intent": "general", "label_source": "agent"}
+{"text": "what's new", "intent": "general", "label_source": "agent"}
+{"text": "can you switch to dark mode", "intent": "general", "label_source": "agent"}
+{"text": "you there", "intent": "general", "label_source": "agent"}
+{"text": "good job", "intent": "general", "label_source": "agent"}
+{"text": "is there a premium version", "intent": "general", "label_source": "agent"}
+{"text": "why can't I log in", "intent": "general", "label_source": "agent"}
+{"text": "I'm bored", "intent": "general", "label_source": "agent"}
+{"text": "how long have I been using this", "intent": "general", "label_source": "agent"}
+{"text": "please stop", "intent": "general", "label_source": "agent"}
+{"text": "make the font bigger", "intent": "general", "label_source": "agent"}
+{"text": "haha nice", "intent": "general", "label_source": "agent"}
+{"text": "thank u", "intent": "general", "label_source": "agent"}
+{"text": "what did you just do", "intent": "general", "label_source": "agent"}

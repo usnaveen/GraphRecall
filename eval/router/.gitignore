@@ -1,0 +1,7 @@
+# Keep frozen small JSONL benchmarks & results tracked despite root `data/` ignore,
+# while keeping generated synthetic `train.jsonl` out of git.
+!data/
+!data/heldout_v2.jsonl
+!data/dev.jsonl
+!data/test.jsonl
+data/train.jsonl

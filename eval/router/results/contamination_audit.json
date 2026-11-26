@@ -1,0 +1,391 @@
+{
+  "hashes_sha256": {
+    "train.jsonl": "e3820bd267b66462fdedb6ed53d9af276a44bef9a111682600ffcfbbc0a1d7ca",
+    "dev.jsonl": "796bda488dd1cf0222b50fba1e1a547bdab62ac888bf749b126fa53331a4c5e4",
+    "test.jsonl": "5ac5f4d76d8a0bed923dcd0cd7406eeaa3ed16e3b62f39d24079ff30b212568c",
+    "intent_tfidf_lr.json": "ced416ac2f7679200bf90a3ce30bcb69d4866abfed5ed869747d21524b7e41eb"
+  },
+  "sizes": {
+    "train": 2800,
+    "dev": 120,
+    "test": 160
+  },
+  "dev_overlap": {
+    "tfidf_cosine": {
+      "n": 120,
+      "min": 0.2013,
+      "p25": 0.3483,
+      "median": 0.4217,
+      "p75": 0.5354,
+      "p90": 0.6534,
+      "p95": 0.7493,
+      "max": 1.0,
+      "count_gt_0.80": 4,
+      "count_gt_0.70": 11,
+      "count_gt_0.60": 22
+    },
+    "char5_jaccard": {
+      "n": 120,
+      "min": 0.027,
+      "p25": 0.1446,
+      "median": 0.1812,
+      "p75": 0.287,
+      "p90": 0.3816,
+      "p95": 0.4587,
+      "max": 1.0,
+      "count_gt_0.80": 1,
+      "count_gt_0.70": 1,
+      "count_gt_0.60": 2
+    },
+    "either_gt_0.80": 4,
+    "either_gt_0.70": 11,
+    "top_10_nearest_in_dev": [
+      {
+        "index": 109,
+        "text": "you there",
+        "intent": "general",
+        "max_tfidf_cosine": 1.0,
+        "nearest_train_tfidf": "You there",
+        "max_char5_jaccard": 1.0,
+        "nearest_train_jaccard": "You there",
+        "max_either": 1.0
+      },
+      {
+        "index": 117,
+        "text": "haha nice",
+        "intent": "general",
+        "max_tfidf_cosine": 0.9689,
+        "nearest_train_tfidf": "nice",
+        "max_char5_jaccard": 0.2857,
+        "nearest_train_jaccard": "nice",
+        "max_either": 0.9689
+      },
+      {
+        "index": 106,
+        "text": "thanks!!",
+        "intent": "general",
+        "max_tfidf_cosine": 0.9191,
+        "nearest_train_tfidf": "thanks",
+        "max_char5_jaccard": 0.4286,
+        "nearest_train_jaccard": "thanks",
+        "max_either": 0.9191
+      },
+      {
+        "index": 74,
+        "text": "start a review session on biology",
+        "intent": "quiz",
+        "max_tfidf_cosine": 0.8374,
+        "nearest_train_tfidf": "start a review session on RLHF",
+        "max_char5_jaccard": 0.6389,
+        "nearest_train_jaccard": "start a review session on RLHF",
+        "max_either": 0.8374
+      },
+      {
+        "index": 105,
+        "text": "hey hey",
+        "intent": "general",
+        "max_tfidf_cosine": 0.78,
+        "nearest_train_tfidf": "hey hey there",
+        "max_char5_jaccard": 0.4,
+        "nearest_train_jaccard": "hey hey there",
+        "max_either": 0.78
+      },
+      {
+        "index": 61,
+        "text": "see if I remember the SOLID principles",
+        "intent": "quiz",
+        "max_tfidf_cosine": 0.7665,
+        "nearest_train_tfidf": "See if i remember BFS",
+        "max_char5_jaccard": 0.375,
+        "nearest_train_jaccard": "See if i remember BFS",
+        "max_either": 0.7665
+      },
+      {
+        "index": 60,
+        "text": "let's practice: ask me about heaps",
+        "intent": "quiz",
+        "max_tfidf_cosine": 0.7484,
+        "nearest_train_tfidf": "ask me about heaps",
+        "max_char5_jaccard": 0.5,
+        "nearest_train_jaccard": "ask me about heaps",
+        "max_either": 0.7484
+      },
+      {
+        "index": 91,
+        "text": "got any figures of the heart's anatomy",
+        "intent": "show_images",
+        "max_tfidf_cosine": 0.7428,
+        "nearest_train_tfidf": "Got any figures of BM25",
+        "max_char5_jaccard": 0.4167,
+        "nearest_train_jaccard": "Got any figures of the Krebs cycle",
+        "max_either": 0.7428
+      },
+      {
+        "index": 97,
+        "text": "what does the LSTM cell diagram look like",
+        "intent": "show_images",
+        "max_tfidf_cosine": 0.7329,
+        "nearest_train_tfidf": "What does the LRU cache diagram look like",
+        "max_char5_jaccard": 0.5294,
+        "nearest_train_jaccard": "What does the LRU cache diagram look like",
+        "max_either": 0.7329
+      },
+      {
+        "index": 2,
+        "text": "how do vaccines train the immune system",
+        "intent": "explain",
+        "max_tfidf_cosine": 0.7152,
+        "nearest_train_tfidf": "Sum up the immune system",
+        "max_char5_jaccard": 0.3571,
+        "nearest_train_jaccard": "Draw the immune system",
+        "max_either": 0.7152
+      }
+    ]
+  },
+  "test_overlap": {
+    "tfidf_cosine": {
+      "n": 160,
+      "min": 0.1944,
+      "p25": 0.35,
+      "median": 0.4337,
+      "p75": 0.5542,
+      "p90": 0.6453,
+      "p95": 0.6934,
+      "max": 0.8488,
+      "count_gt_0.80": 3,
+      "count_gt_0.70": 8,
+      "count_gt_0.60": 30
+    },
+    "char5_jaccard": {
+      "n": 160,
+      "min": 0.0,
+      "p25": 0.142,
+      "median": 0.1941,
+      "p75": 0.2833,
+      "p90": 0.3726,
+      "p95": 0.4197,
+      "max": 0.7111,
+      "count_gt_0.80": 0,
+      "count_gt_0.70": 1,
+      "count_gt_0.60": 2
+    },
+    "either_gt_0.80": 3,
+    "either_gt_0.70": 8,
+    "contaminated_gt_0.80": [
+      {
+        "index": 68,
+        "text": "tl;dr my notes on reinforcement learning",
+        "intent": "summarize",
+        "max_tfidf_cosine": 0.8465,
+        "nearest_train_tfidf": "Digest my notes on reinforcement learning",
+        "max_char5_jaccard": 0.7111,
+        "nearest_train_jaccard": "Digest my notes on reinforcement learning",
+        "max_either": 0.8465
+      },
+      {
+        "index": 145,
+        "text": "how do I delete my account",
+        "intent": "general",
+        "max_tfidf_cosine": 0.8071,
+        "nearest_train_tfidf": "how do i delete a note",
+        "max_char5_jaccard": 0.4194,
+        "nearest_train_jaccard": "how do i delete a note",
+        "max_either": 0.8071
+      },
+      {
+        "index": 153,
+        "text": "are you there?",
+        "intent": "general",
+        "max_tfidf_cosine": 0.8488,
+        "nearest_train_tfidf": "you there?",
+        "max_char5_jaccard": 0.6667,
+        "nearest_train_jaccard": "you there?",
+        "max_either": 0.8488
+      }
+    ]
+  },
+  "test_evaluation_slices": {
+    "full_test": {
+      "n": 160,
+      "tfidf_lr_shipped": {
+        "n": 160,
+        "accuracy": 0.9187,
+        "accuracy_ci95": [
+          0.875,
+          0.9563
+        ],
+        "macro_f1": 0.9181,
+        "macro_f1_ci95": [
+          0.87,
+          0.9553
+        ],
+        "routing_accuracy": 0.9187,
+        "routing_accuracy_ci95": [
+          0.875,
+          0.9563
+        ],
+        "selective_at_0.6": {
+          "threshold": 0.6,
+          "coverage": 0.8812,
+          "accuracy_on_kept": 0.9716
+        }
+      },
+      "keyword_rules": {
+        "n": 160,
+        "accuracy": 0.625,
+        "accuracy_ci95": [
+          0.55,
+          0.6937
+        ],
+        "macro_f1": 0.6571,
+        "macro_f1_ci95": [
+          0.5794,
+          0.7194
+        ],
+        "routing_accuracy": 0.6875,
+        "routing_accuracy_ci95": [
+          0.6186,
+          0.7562
+        ]
+      }
+    },
+    "decontaminated_le_0.80": {
+      "ceiling": 0.8,
+      "removed_count": 3,
+      "n": 157,
+      "tfidf_lr_shipped": {
+        "n": 157,
+        "accuracy": 0.9172,
+        "accuracy_ci95": [
+          0.8726,
+          0.9618
+        ],
+        "macro_f1": 0.9164,
+        "macro_f1_ci95": [
+          0.8684,
+          0.9571
+        ],
+        "routing_accuracy": 0.9172,
+        "routing_accuracy_ci95": [
+          0.8726,
+          0.9618
+        ],
+        "selective_at_0.6": {
+          "threshold": 0.6,
+          "coverage": 0.879,
+          "accuracy_on_kept": 0.971
+        }
+      },
+      "keyword_rules": {
+        "n": 157,
+        "accuracy": 0.6242,
+        "accuracy_ci95": [
+          0.5478,
+          0.7006
+        ],
+        "macro_f1": 0.6535,
+        "macro_f1_ci95": [
+          0.5746,
+          0.7195
+        ],
+        "routing_accuracy": 0.6879,
+        "routing_accuracy_ci95": [
+          0.6178,
+          0.7581
+        ]
+      }
+    },
+    "decontaminated_le_0.70": {
+      "ceiling": 0.7,
+      "removed_count": 8,
+      "n": 152,
+      "tfidf_lr_shipped": {
+        "n": 152,
+        "accuracy": 0.9145,
+        "accuracy_ci95": [
+          0.8684,
+          0.9539
+        ],
+        "macro_f1": 0.9139,
+        "macro_f1_ci95": [
+          0.8643,
+          0.9547
+        ],
+        "routing_accuracy": 0.9145,
+        "routing_accuracy_ci95": [
+          0.8684,
+          0.9539
+        ],
+        "selective_at_0.6": {
+          "threshold": 0.6,
+          "coverage": 0.875,
+          "accuracy_on_kept": 0.9699
+        }
+      },
+      "keyword_rules": {
+        "n": 152,
+        "accuracy": 0.6184,
+        "accuracy_ci95": [
+          0.5395,
+          0.6974
+        ],
+        "macro_f1": 0.6463,
+        "macro_f1_ci95": [
+          0.561,
+          0.716
+        ],
+        "routing_accuracy": 0.6842,
+        "routing_accuracy_ci95": [
+          0.6053,
+          0.7566
+        ]
+      }
+    },
+    "decontaminated_le_0.60": {
+      "ceiling": 0.6,
+      "removed_count": 30,
+      "n": 130,
+      "tfidf_lr_shipped": {
+        "n": 130,
+        "accuracy": 0.9154,
+        "accuracy_ci95": [
+          0.8615,
+          0.9615
+        ],
+        "macro_f1": 0.9135,
+        "macro_f1_ci95": [
+          0.8584,
+          0.9566
+        ],
+        "routing_accuracy": 0.9154,
+        "routing_accuracy_ci95": [
+          0.8615,
+          0.9615
+        ],
+        "selective_at_0.6": {
+          "threshold": 0.6,
+          "coverage": 0.8769,
+          "accuracy_on_kept": 0.9737
+        }
+      },
+      "keyword_rules": {
+        "n": 130,
+        "accuracy": 0.6462,
+        "accuracy_ci95": [
+          0.5615,
+          0.7308
+        ],
+        "macro_f1": 0.664,
+        "macro_f1_ci95": [
+          0.5723,
+          0.7363
+        ],
+        "routing_accuracy": 0.7,
+        "routing_accuracy_ci95": [
+          0.6154,
+          0.7769
+        ]
+      }
+    }
+  }
+}
