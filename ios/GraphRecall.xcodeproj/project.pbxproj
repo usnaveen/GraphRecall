@@ -34,6 +34,7 @@
 		54D62B63DB351CE3DB305053 /* AgentInboxUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C670D511ACB3A69231A7E51 /* AgentInboxUITests.swift */; };
 		56EAEACF6E68918C9A446A00 /* GraphNotePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20B9EC2598A5CFBC611E204C /* GraphNotePanel.swift */; };
 		5D8A719D00E8E4E5BCCEE8F1 /* GraphToolsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D3BF4391B44E6E2469BCD9 /* GraphToolsSheets.swift */; };
+		5DBCE912CF09F6C857490E3D /* ConceptFigureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 027AF4E110315AB89375BB16 /* ConceptFigureView.swift */; };
 		60FF4F0896591B3C7A8F0EF7 /* ChatSSEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0A25E9DDEB6FA4EA9F3A30 /* ChatSSEClient.swift */; };
 		6101AF7D0815012D1D0AFC96 /* APIConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D60F0755297C074FCE2F88D /* APIConfig.swift */; };
 		61B337021FBEEFEBC12CCD2E /* GraphRecallWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 354919E7BDFE313704962EDC /* GraphRecallWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -152,6 +153,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		027AF4E110315AB89375BB16 /* ConceptFigureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConceptFigureView.swift; sourceTree = "<group>"; };
 		07010B2398942B883315389E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		08EF6500A115E505F0EB5B7A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0B6149E4976D7EDB8AFEB78E /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
@@ -456,6 +458,7 @@
 				8595C712596B9A55F19C3046 /* AgentHubSheet.swift */,
 				A122E64F532D4834DD4424ED /* AgentInsightsSheet.swift */,
 				1499585AEC54496196362936 /* CodeSandboxCardBody.swift */,
+				027AF4E110315AB89375BB16 /* ConceptFigureView.swift */,
 				4B897A91DB4533FA1260D81B /* CreativeCardBodies.swift */,
 				A344CF628AA1AEDACD0E9AC4 /* DemoFeedSeed.swift */,
 				D53E4786769C667032C743FF /* FeedCardViews.swift */,
@@ -818,6 +821,7 @@
 				CD0F69AA837E4ECEEE281D46 /* Colors.swift in Sources */,
 				B59A12713BA21EE4FF1F7436 /* ConceptDetailView.swift in Sources */,
 				FE7A11C962F00CC8ECC0E618 /* ConceptDumpModels.swift in Sources */,
+				5DBCE912CF09F6C857490E3D /* ConceptFigureView.swift in Sources */,
 				D2A05657AAACF954D3E49D31 /* ContentView.swift in Sources */,
 				D6C1E3C34FF1FB23F0940C77 /* CreateView.swift in Sources */,
 				C5647F689FA08F3653C6EE35 /* CreativeCardBodies.swift in Sources */,

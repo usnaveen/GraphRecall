@@ -590,6 +590,14 @@ actor APIClient {
         }, auth: auth)
     }
 
+    /// GET raw bytes (figures from the user's sources), with the same auth and refresh as JSON calls.
+    func getData(_ path: String) async throws -> Data {
+        let (data, _) = try await executeData({ token in
+            try buildJSONRequest(path: path, method: "GET", body: nil, token: token, timeout: nil)
+        }, auth: true)
+        return data
+    }
+
     func sendNoContent(
         _ path: String,
         method: String,

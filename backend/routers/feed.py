@@ -131,6 +131,12 @@ async def get_feed(
         await _add_sandbox_card(response, request, pg_client)
         await _add_creative_card(response, request, pg_client)
 
+        # Figures from the user's own sources, on the cards whose concept a caption names. Runs
+        # last so every card (cached, deterministic or freshly generated) passes through it.
+        from backend.services.concept_figures import attach_concept_figures
+
+        await attach_concept_figures(response.items, request.user_id, pg_client)
+
         # Inject Daily Goal & Trigger Durable Pre-gen Buffer
         response.daily_goal = await feed_service.get_daily_goal(request.user_id)
         await enqueue_durable_job(

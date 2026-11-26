@@ -57,6 +57,7 @@ try:
     from backend.routers.leetcode import router as leetcode_router
     from backend.routers.territory import router as territory_router
     from backend.routers.knowledge_map import router as knowledge_map_router
+    from backend.routers.figures import router as figures_router
 except Exception as e:
     import traceback
     traceback.print_exc()
@@ -194,6 +195,7 @@ app.include_router(later_router)     # /api/later - "Show me this later" capture
 app.include_router(leetcode_router)  # /api/leetcode - Pattern/pseudocode/mistake recall
 app.include_router(territory_router) # /api/territory - Map-the-territory cards
 app.include_router(knowledge_map_router)  # /api/knowledge-map, /api/profile - Knowledge map, profile, resume
+app.include_router(figures_router)  # /api/figures - Owner-only figures cropped from the user's sources
 
 # Agent bridge (external always-on agent <-> GraphRecall). Off unless AGENT_BRIDGE_ENABLED=1.
 # See docs/agent-bridge/PROPOSAL.md.

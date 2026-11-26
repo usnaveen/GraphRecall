@@ -137,6 +137,7 @@ struct FeedTypedCard: View {
                     .font(.subheadline)
                     .foregroundStyle(GRColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                revealedFigure
             } else if !revealed {
                 revealButton(title: "Show answer")
             }
@@ -187,6 +188,7 @@ struct FeedTypedCard: View {
                         .foregroundStyle(GRColor.textSecondary)
                         .padding(.top, 4)
                 }
+                revealedFigure
             } else if selectedOptionId != nil {
                 revealButton(title: "Check answer")
             }
@@ -262,6 +264,7 @@ struct FeedTypedCard: View {
                 Text("Answer: \(ans)")
                     .font(.subheadline)
                     .foregroundStyle(Color.green.opacity(0.9))
+                revealedFigure
             }
         }
     }
@@ -307,6 +310,10 @@ struct FeedTypedCard: View {
                 .font(.subheadline)
                 .foregroundStyle(GRColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let figure = item.conceptFigure {
+                ConceptFigureView(figure: figure)
+            }
 
             ForEach(Array(showcaseKeyPoints.enumerated()), id: \.offset) { _, point in
                 HStack(alignment: .top, spacing: 8) {
@@ -487,6 +494,15 @@ struct FeedTypedCard: View {
     }
 
     // MARK: - Shared
+
+    /// Quiz-style cards show the concept's figure only once answered: its caption names the concept.
+    @ViewBuilder
+    private var revealedFigure: some View {
+        if let figure = item.conceptFigure {
+            ConceptFigureView(figure: figure)
+                .padding(.top, 4)
+        }
+    }
 
     private func revealButton(title: String) -> some View {
         Button(action: onReveal) {
