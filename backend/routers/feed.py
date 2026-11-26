@@ -132,6 +132,22 @@ async def get_feed(
                 response.items = merge_into_feed(curated, response.items, max_items)
             except Exception as e:  # never break the core feed
                 logger.warning("Feed: agent-curated items skipped", error=str(e))
+
+        # Native Substack / RSS reading cards matched against the user's graph concepts.
+        if parsed_types is None or FeedItemType.AGENT_CURATED in parsed_types:
+            try:
+                from backend.agent_bridge.feed_integration import merge_into_feed
+                from backend.services.substack_sync import list_substack_feed_items
+
+                substack_cards = await list_substack_feed_items(
+                    pg_client, request.user_id, domains=parsed_domains, limit=2
+                )
+                if substack_cards:
+                    response.items = merge_into_feed(
+                        substack_cards, response.items, max_items, max_curated=2
+                    )
+            except Exception as e:  # never break the core feed
+                logger.warning("Feed: substack reading items skipped", error=str(e))
         
         await _add_territory_card(response, request, neo4j_client)
         await _add_sandbox_card(response, request, pg_client)

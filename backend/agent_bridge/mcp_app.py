@@ -55,12 +55,33 @@ def _principal_from_request(request: Any) -> Optional[AgentPrincipal]:
         return None
 
 
+def _tool_annotations(types: Any, scope: str) -> Any:
+    """MCP ToolAnnotations so ChatGPT/Claude connectors recognize read-only knowledge lookups."""
+    ann_cls = getattr(types, "ToolAnnotations", None)
+    if ann_cls is None:  # pragma: no cover - older SDK fallback
+        return None
+    is_read = scope == "read:knowledge"
+    return ann_cls(
+        readOnlyHint=is_read,
+        destructiveHint=False,
+        idempotentHint=is_read,
+        openWorldHint=False,
+    )
+
+
 def _tool_list(types: Any) -> list:
-    return [
-        types.Tool(name=s.name, description=f"[{s.scope}] {s.description}",
-                   inputSchema=s.input_schema)
-        for s in TOOLS.values()
-    ]
+    out = []
+    for s in TOOLS.values():
+        kwargs: dict[str, Any] = {
+            "name": s.name,
+            "description": f"[{s.scope}] {s.description}",
+            "inputSchema": s.input_schema,
+        }
+        ann = _tool_annotations(types, s.scope)
+        if ann is not None:
+            kwargs["annotations"] = ann
+        out.append(types.Tool(**kwargs))
+    return out
 
 
 def build_lowlevel_server(services_factory: ServicesFactory) -> Any:
@@ -123,8 +144,16 @@ def allowed_hosts_from_env() -> list[str]:
     return hosts
 
 
+DEFAULT_OAUTH_WEB_ORIGINS = [
+    "https://claude.ai",
+    "https://chatgpt.com",
+    "https://chat.openai.com",
+]
+
+
 def allowed_origins_from_env() -> list[str]:
-    return _split_env("AGENT_BRIDGE_ALLOWED_ORIGINS")
+    env_origins = _split_env("AGENT_BRIDGE_ALLOWED_ORIGINS")
+    return list(dict.fromkeys(DEFAULT_OAUTH_WEB_ORIGINS + env_origins))
 
 
 def host_allowed(host: Optional[str], allowed: list[str]) -> bool:
@@ -206,8 +235,15 @@ class AgentBridgeMCPApp:
         services = await self.services_factory()
         principal = await authenticate_agent_key(services.repo, token)
         if principal is None:
+            from backend.agent_bridge.oauth import base_url_from_asgi_scope
+
+            base = base_url_from_asgi_scope(scope)
+            www_auth = (
+                f'Bearer realm="graphrecall-agent", '
+                f'resource_metadata="{base}/.well-known/oauth-protected-resource"'
+            ).encode("latin-1")
             await _json(send, 401, {"error": "invalid_or_missing_agent_key"},
-                        extra=[(b"www-authenticate", b'Bearer realm="graphrecall-agent"')])
+                        extra=[(b"www-authenticate", www_auth)])
             return
         limiter = self.limiter or services.limiter
         if not await limiter.hit(f"mcp:key:{principal.key_id}", limits.mcp_calls_per_min(), 60):

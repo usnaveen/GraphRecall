@@ -457,6 +457,28 @@ extension FeedItem {
         else { return nil }
         return AgentFlashcardBody(front: front, back: back)
     }
+
+    var substackPublicationName: String? { stringContent("publication_name") }
+    var substackAuthor: String? { stringContent("author") }
+    var substackExcerpt: String? { stringContent("excerpt_markdown") }
+    var isSubstackIngested: Bool { (content["ingested"]?.value as? Bool) ?? false }
+
+    struct MatchedGraphConcept: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let state: String
+    }
+
+    var substackMatchedConcepts: [MatchedGraphConcept] {
+        guard let raw = content["matched_concepts"]?.value as? [[String: Any]] else { return [] }
+        return raw.compactMap { entry in
+            guard let id = entry["id"] as? String,
+                  let name = entry["name"] as? String, !name.isEmpty
+            else { return nil }
+            let state = (entry["state"] as? String) ?? "seen"
+            return MatchedGraphConcept(id: id, name: name, state: state)
+        }
+    }
 }
 
 // MARK: - Mock data (previews + demo mode)

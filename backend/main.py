@@ -58,6 +58,7 @@ try:
     from backend.routers.territory import router as territory_router
     from backend.routers.knowledge_map import router as knowledge_map_router
     from backend.routers.figures import router as figures_router
+    from backend.routers.subscriptions import router as subscriptions_router
 except Exception as e:
     import traceback
     traceback.print_exc()
@@ -196,6 +197,7 @@ app.include_router(leetcode_router)  # /api/leetcode - Pattern/pseudocode/mistak
 app.include_router(territory_router) # /api/territory - Map-the-territory cards
 app.include_router(knowledge_map_router)  # /api/knowledge-map, /api/profile - Knowledge map, profile, resume
 app.include_router(figures_router)  # /api/figures - Owner-only figures cropped from the user's sources
+app.include_router(subscriptions_router)  # /api/subscriptions/substack - Native Substack/RSS feed sync
 
 # Agent bridge (external always-on agent <-> GraphRecall). Off unless AGENT_BRIDGE_ENABLED=1.
 # See docs/agent-bridge/PROPOSAL.md.
@@ -204,12 +206,14 @@ from backend.agent_bridge import bridge_enabled as _agent_bridge_enabled
 _agent_bridge_mcp = None
 if _agent_bridge_enabled():
     from backend.agent_bridge.mcp_app import AgentBridgeMCPApp, default_services
+    from backend.agent_bridge.oauth import router as agent_oauth_router
     from backend.agent_bridge.router import router as agent_bridge_router
     from backend.agent_bridge.keys import check_key_config
 
     check_key_config()  # fails startup if ENVIRONMENT=production and no AGENT_KEY_PEPPER
 
     app.include_router(agent_bridge_router)  # /api/agent-bridge - keys, approvals, ask-my-agent
+    app.include_router(agent_oauth_router)   # /.well-known/oauth-* & /oauth/* for claude.ai / ChatGPT
     _agent_bridge_mcp = AgentBridgeMCPApp(default_services)
     app.mount("/mcp/agent", _agent_bridge_mcp)  # MCP streamable HTTP for the agent
 

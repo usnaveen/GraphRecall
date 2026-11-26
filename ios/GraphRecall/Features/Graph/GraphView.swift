@@ -229,20 +229,34 @@ struct GraphView: View {
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                GRChip(title: "All", style: model.filter == .all ? .selected : .plain) {
-                    model.filter = .all
+                GRChip(
+                    title: "All · \(model.graph.nodes.count)",
+                    style: model.isShowingAllClusters ? .selected : .plain
+                ) {
+                    model.selectAllClusters()
+                    GRHaptics.tap()
                 }
                 GRChip(
                     title: "Weak < 40% · \(model.weakNodeIds.count)",
                     systemImage: "target",
                     style: model.filter == .weak ? .selected : .tinted(.accent)
                 ) {
-                    model.filter = model.filter == .weak ? .all : .weak
+                    if model.filter == .weak {
+                        model.filter = .all
+                    } else {
+                        model.activeClusterIds = []
+                        model.filter = .weak
+                    }
                     GRHaptics.tap()
                 }
-                ForEach(model.domains, id: \.self) { domain in
-                    GRChip(title: domain, style: model.filter == .domain(domain) ? .selected : .plain) {
-                        model.filter = model.filter == .domain(domain) ? .all : .domain(domain)
+                ForEach(model.semanticClusters) { cluster in
+                    let isActive = model.activeClusterIds.contains(cluster.id)
+                    GRChip(
+                        title: "\(cluster.title) · \(cluster.count)",
+                        systemImage: isActive ? "checkmark" : "plus",
+                        style: isActive ? .selected : .plain
+                    ) {
+                        model.toggleCluster(cluster.id)
                         GRHaptics.tap()
                     }
                 }

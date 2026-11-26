@@ -15,7 +15,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 USER_TABLES = (r"(notes|chunks|flashcards|quizzes|chat_conversations|chat_messages|user_uploads|saved_responses|"
                r"proficiency_scores|study_sessions|propositions|quiz_candidates|generated_content|communities|"
                r"intent_decisions|later_items|coding_problems|coding_attempts|knowledge_evidence|user_skills|"
-               r"user_profile|user_courses|user_projects|user_resumes|embedding_cache)")
+               r"user_profile|user_courses|user_projects|user_resumes|embedding_cache|"
+               r"substack_subscriptions|substack_feed_articles)")
 
 # Every directory that runs queries. agents/, graphs/ and db/ were added on 2026-11-24 after a review
 # found unscoped concept lookups there that the routers/services-only scan had missed.

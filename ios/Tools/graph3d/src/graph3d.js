@@ -115,13 +115,46 @@ function adaptGraph(raw) {
 
   // Community colour mode uses each concept's most specific (lowest-level) community.
   const communities = ((raw && raw.communities) || []).slice().sort((a, b) => (a.level ?? 0) - (b.level ?? 0));
-  communities.forEach((community, index) => {
+  const leafCommunities = communities.filter((c) => (c.entity_ids || []).length > 0);
+  leafCommunities.forEach((community, index) => {
     for (const id of community.entity_ids || []) {
       const node = byId.get(String(id));
       if (node && node.communityIndex < 0) node.communityIndex = index;
     }
   });
-  return { nodes, links };
+
+  // Ensure every graph has separated semantic clusters even when Neo4j community detection hasn't run yet.
+  const assignedCommunities = new Set(nodes.map((n) => n.communityIndex).filter((i) => i >= 0));
+  let clusterCount = 0;
+  if (assignedCommunities.size >= 2) {
+    const remap = new Map([...assignedCommunities].sort((a, b) => a - b).map((oldIdx, newIdx) => [oldIdx, newIdx]));
+    clusterCount = remap.size;
+    let fallbackCluster = -1;
+    for (const node of nodes) {
+      if (node.communityIndex >= 0 && remap.has(node.communityIndex)) {
+        node.clusterIndex = remap.get(node.communityIndex);
+      } else {
+        if (fallbackCluster < 0) fallbackCluster = clusterCount++;
+        node.clusterIndex = fallbackCluster;
+      }
+    }
+  } else {
+    // Group by domain ordered by concept count so domains form distinct constellations in space.
+    const domainCounts = new Map();
+    for (const node of nodes) domainCounts.set(node.domain, (domainCounts.get(node.domain) || 0) + 1);
+    const orderedDomains = [...domainCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([d]) => d);
+    const domainIdx = new Map(orderedDomains.map((d, i) => [d, i]));
+    clusterCount = Math.max(orderedDomains.length, 1);
+    for (const node of nodes) {
+      const idx = domainIdx.get(node.domain) ?? 0;
+      node.clusterIndex = idx;
+      if (node.communityIndex < 0) node.communityIndex = idx;
+    }
+  }
+
+  return { nodes, links, clusterCount };
 }
 
 /* ---------------------------------------------------------------- layout */
@@ -131,41 +164,82 @@ function adaptGraph(raw) {
 const yieldToPage = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 async function layoutGraph(graph, previous, isStale) {
-  const { nodes, links } = graph;
+  const { nodes, links, clusterCount = 1 } = graph;
   const count = Math.max(nodes.length, 1);
   const golden = Math.PI * (3 - Math.sqrt(5));
-  let reused = 0;
-  nodes.forEach((node, i) => {
-    const prev = previous.get(node.id);
-    if (prev) {
-      node.x = prev.x; node.y = prev.y; node.z = prev.z;
-      reused += 1;
-    } else if (node.seed) {
-      // Backend positions come from a 400-unit spring layout; shrink them into a compact seed.
-      node.x = node.seed.x * 0.25; node.y = node.seed.y * 0.25; node.z = node.seed.z * 0.25;
-    } else {
-      const t = (i + 0.5) / count;
-      const r = 60 * Math.cbrt(t);
-      const phi = Math.acos(1 - 2 * t);
-      node.x = r * Math.sin(phi) * Math.cos(golden * i);
-      node.y = r * Math.sin(phi) * Math.sin(golden * i);
-      node.z = r * Math.cos(phi);
-    }
+
+  // Place semantic communities as separated constellations on a spacious 3D shell.
+  const kClusters = Math.max(clusterCount, 1);
+  const shellRadius = kClusters <= 1
+    ? 0
+    : Math.max(165, 92 * Math.cbrt(kClusters) + Math.sqrt(count) * 4.2);
+
+  const clusterCenters = Array.from({ length: kClusters }, (_, c) => {
+    if (kClusters === 1) return { x: 0, y: 0, z: 0 };
+    const t = (c + 0.5) / kClusters;
+    const phi = Math.acos(1 - 2 * t);
+    const theta = golden * c * 7;
+    return {
+      x: shellRadius * Math.sin(phi) * Math.cos(theta),
+      y: shellRadius * Math.sin(phi) * Math.sin(theta),
+      z: shellRadius * Math.cos(phi) * 0.82,
+    };
   });
 
+  const clusterMembers = new Map();
+  for (const node of nodes) {
+    const idx = node.clusterIndex ?? 0;
+    if (!clusterMembers.has(idx)) clusterMembers.set(idx, []);
+    clusterMembers.get(idx).push(node);
+  }
+
+  let reused = 0;
+  for (const [idx, members] of clusterMembers.entries()) {
+    const center = clusterCenters[idx] || { x: 0, y: 0, z: 0 };
+    const localSpread = Math.max(24, 16 * Math.cbrt(members.length));
+    members.forEach((node, i) => {
+      node.clusterCenter = center;
+      const prev = previous.get(node.id);
+      if (prev) {
+        node.x = prev.x; node.y = prev.y; node.z = prev.z;
+        reused += 1;
+      } else {
+        const t = (i + 0.5) / Math.max(members.length, 1);
+        const r = localSpread * Math.cbrt(t);
+        const phi = Math.acos(1 - 2 * t);
+        node.x = center.x + r * Math.sin(phi) * Math.cos(golden * i);
+        node.y = center.y + r * Math.sin(phi) * Math.sin(golden * i);
+        node.z = center.z + r * Math.cos(phi);
+      }
+    });
+  }
+
+  const crossDistance = Math.max(170, shellRadius * 0.9);
   const simulation = d3.forceSimulation(nodes, 3)
     .stop()
-    .alphaDecay(0.03)
+    .alphaDecay(0.028)
     .alphaMin(0.002)
-    .force('charge', d3.forceManyBody().strength((d) => -45 - Math.min(d.degree, 20) * 4).distanceMax(160))
+    .force('charge', d3.forceManyBody()
+      .strength((d) => -84 - Math.min(d.degree, 20) * 6)
+      .distanceMax(195))
     .force('link', d3.forceLink(links)
-      .distance((l) => 18 + 14 * (1 - Math.min(1, l.weight)))
-      .strength((l) => 0.25 + 0.35 * Math.min(1, l.weight)))
-    .force('collide', d3.forceCollide().radius((d) => nodeRadius(d) + 3).iterations(2))
-    .force('x', d3.forceX(0).strength(0.035))
-    .force('y', d3.forceY(0).strength(0.035))
-    .force('z', d3.forceZ(0).strength(0.035));
-  if (nodes.length && reused === nodes.length) simulation.alpha(0.2);
+      .distance((l) => {
+        const w = Math.min(1, l.weight);
+        return l.source.clusterIndex === l.target.clusterIndex
+          ? 28 + 16 * (1 - w)
+          : crossDistance;
+      })
+      .strength((l) => {
+        const w = Math.min(1, l.weight);
+        return l.source.clusterIndex === l.target.clusterIndex
+          ? 0.24 + 0.30 * w
+          : 0.012;
+      }))
+    .force('collide', d3.forceCollide().radius((d) => nodeRadius(d) + 5.5).iterations(2))
+    .force('x', d3.forceX((d) => d.clusterCenter.x).strength(0.115))
+    .force('y', d3.forceY((d) => d.clusterCenter.y).strength(0.115))
+    .force('z', d3.forceZ((d) => d.clusterCenter.z).strength(0.115));
+  if (nodes.length && reused === nodes.length) simulation.alpha(0.22);
 
   for (let i = 0; i < 500;) {
     const sliceEnd = Math.min(500, i + 25);
@@ -324,7 +398,17 @@ function buildScene(newGraph) {
   disposeScene();
   graph = newGraph;
   for (const node of graph.nodes) {
-    const mesh = new THREE.Mesh(sphereGeometry, new THREE.MeshLambertMaterial({ color: node.color, transparent: true }));
+    const mesh = new THREE.Mesh(
+      sphereGeometry,
+      new THREE.MeshStandardMaterial({
+        color: node.color,
+        emissive: node.color,
+        emissiveIntensity: 0.26,
+        roughness: 0.36,
+        metalness: 0.08,
+        transparent: true,
+      }),
+    );
     mesh.position.set(node.x, node.y, node.z);
     mesh.userData.nodeId = node.id;
     nodeLayer.add(mesh);
@@ -513,7 +597,12 @@ function applyState() {
 
     const isTarget = state.mergeTargetIds.has(node.id);
     obj.dimmed = obj.visible && !focusing && searching && !state.highlightIds.has(node.id);
-    mesh.material.color.set(isTarget ? MERGE_TARGET_COLOR : baseColor(node));
+    const tint = isTarget ? MERGE_TARGET_COLOR : baseColor(node);
+    mesh.material.color.set(tint);
+    if (mesh.material.emissive) {
+      mesh.material.emissive.set(tint);
+      mesh.material.emissiveIntensity = node.id === selectedId ? 0.45 : obj.dimmed ? 0.06 : 0.26;
+    }
     mesh.material.opacity = obj.dimmed ? DIM_OPACITY : 1;
     mesh.material.depthWrite = !obj.dimmed;
     mesh.renderOrder = obj.dimmed ? 0 : 1;
@@ -561,13 +650,16 @@ function rebuildLinks(selectedId, searching) {
       hot.push(link);
     } else if (searching && !(state.highlightIds.has(link.source.id) && state.highlightIds.has(link.target.id))) {
       faint.push(link);
+    } else if (link.source.clusterIndex !== link.target.clusterIndex) {
+      // Cross-community bridges stay whisper-light so separated clusters read cleanly in space.
+      faint.push(link);
     } else {
       idle.push(link);
     }
   }
   // Tinted by type even in the overview, so the variety of connections is visible at a glance.
-  addLinkBatch(faint, 1, 0.06, (link) => relColor(link.type));
-  addLinkBatch(idle, 1.2, 0.42, (link) => relColor(link.type));
+  addLinkBatch(faint, 0.9, 0.055, (link) => relColor(link.type));
+  addLinkBatch(idle, 1.35, 0.5, (link) => relColor(link.type));
   addLinkBatch(hot, 2.4, 0.95, (link) => relColor(link.type));
 }
 
@@ -1059,17 +1151,27 @@ window.setGraphData = async function setGraphData(raw) {
   post({ type: 'layout', running: false, nodes: result.nodes.length });
 };
 
+let lastVisibilityKey = '';
+
 window.setGraphState = function setGraphState(next) {
   next = next || {};
+  const visArr = Array.isArray(next.visibleIds) ? next.visibleIds.slice().sort() : null;
+  const nextVisibilityKey = `${next.domain || '*'}|${visArr ? visArr.join(',') : '*'}`;
+  const visibilityChanged = lastVisibilityKey !== '' && lastVisibilityKey !== nextVisibilityKey;
+  lastVisibilityKey = nextVisibilityKey;
+
   state.selectedId = next.selectedId || null;
   state.highlightIds = new Set(next.highlightIds || []);
-  state.visibleIds = Array.isArray(next.visibleIds) ? new Set(next.visibleIds) : null;
+  state.visibleIds = visArr ? new Set(visArr) : null;
   state.domain = next.domain || null;
   state.minWeight = typeof next.minWeight === 'number' ? next.minWeight : 0;
   state.colorMode = next.colorMode || 'domain';
   state.mergeMode = !!next.mergeMode;
   state.mergeTargetIds = new Set(next.mergeTargetIds || []);
   applyState();
+  if (visibilityChanged && !state.selectedId && graph) {
+    frameAll(true);
+  }
 };
 
 window.setGraphInsets = function setGraphInsets(bottom) {

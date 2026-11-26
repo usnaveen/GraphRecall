@@ -90,7 +90,7 @@ struct FeedTypedCard: View {
 
     private var headerRow: some View {
         HStack(spacing: 8) {
-            Text(item.itemType.displayLabel.uppercased())
+            Text(headerLabel.uppercased())
                 .font(GRType.caption)
                 .foregroundStyle(typeColor)
             if isRevisit {
@@ -116,6 +116,16 @@ struct FeedTypedCard: View {
                     .foregroundStyle(GRColor.textTertiary)
             }
         }
+    }
+
+    private var headerLabel: String {
+        if item.itemType == .agentCurated && item.agentSourceKind == .substack {
+            if let pub = item.substackPublicationName, !pub.isEmpty {
+                return "Substack · \(pub)"
+            }
+            return "Substack Reading"
+        }
+        return item.itemType.displayLabel
     }
 
     private var typeColor: Color {

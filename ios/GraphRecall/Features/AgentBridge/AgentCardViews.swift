@@ -66,8 +66,11 @@ struct AgentCuratedCardBody: View {
     let revealed: Bool
     var onReveal: () -> Void = {}
 
+    @State private var showExcerpt = false
+    @State private var isIngesting = false
+    @State private var didIngest = false
+
     var body: some View {
-        // The card's type header already reads "From your agent", so no second badge here.
         VStack(alignment: .leading, spacing: 12) {
             if let fc = item.agentFlashcard {
                 Text(verbatim: fc.front)
@@ -85,14 +88,40 @@ struct AgentCuratedCardBody: View {
                         .grButton(.ghost, fullWidth: false, compact: true)
                 }
             } else {
+                if item.agentSourceKind == .substack, let author = item.substackAuthor, !author.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "newspaper.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(GRColor.amber)
+                        Text(verbatim: "By \(author)")
+                            .font(GRType.caption.weight(.medium))
+                            .foregroundStyle(GRColor.textTertiary)
+                    }
+                }
+
                 Text(verbatim: item.title)
-                    .font(GRType.headline)
+                    .font(.title3.weight(.bold))
                     .foregroundStyle(GRColor.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
+
                 if let summary = item.agentSummary {
                     Text(verbatim: summary)
                         .font(.subheadline)
                         .foregroundStyle(GRColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !item.substackMatchedConcepts.isEmpty {
+                    substackMatchedConceptsRow
+                }
+
+                if showExcerpt, let excerpt = item.substackExcerpt, !excerpt.isEmpty, excerpt != item.agentSummary {
+                    Text(verbatim: excerpt)
+                        .font(GRType.caption)
+                        .foregroundStyle(GRColor.textSecondary)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(GRColor.fillSubtle, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -100,7 +129,75 @@ struct AgentCuratedCardBody: View {
             if let reason = item.agentReason {
                 AgentReasonRow(reason: reason)
             }
-            AgentSourceLink(kind: item.agentSourceKind, url: item.agentSourceURL)
+
+            HStack(spacing: 10) {
+                AgentSourceLink(kind: item.agentSourceKind, url: item.agentSourceURL)
+                Spacer(minLength: 4)
+                if item.agentSourceKind == .substack {
+                    if let excerpt = item.substackExcerpt, !excerpt.isEmpty, excerpt != item.agentSummary {
+                        Button(showExcerpt ? "Hide preview" : "Preview") {
+                            withAnimation(.easeInOut(duration: 0.2)) { showExcerpt.toggle() }
+                        }
+                        .font(GRType.caption.weight(.semibold))
+                        .foregroundStyle(GRColor.textSecondary)
+                    }
+                    if let url = item.agentSourceURL {
+                        Button {
+                            guard !isIngesting && !didIngest && !item.isSubstackIngested else { return }
+                            isIngesting = true
+                            Task {
+                                _ = try? await APIClient.shared.ingestURL(url.absoluteString)
+                                isIngesting = false
+                                didIngest = true
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                if isIngesting {
+                                    ProgressView().controlSize(.mini).tint(GRColor.canvas)
+                                } else {
+                                    Image(systemName: (didIngest || item.isSubstackIngested) ? "checkmark.circle.fill" : "plus.circle.fill")
+                                        .font(.system(size: 11, weight: .bold))
+                                }
+                                Text((didIngest || item.isSubstackIngested) ? "In Graph" : "Add to Graph")
+                                    .font(GRType.micro.weight(.bold))
+                            }
+                            .foregroundStyle((didIngest || item.isSubstackIngested) ? GRColor.accent : GRColor.canvas)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                (didIngest || item.isSubstackIngested) ? GRColor.accentSoft : GRColor.accent,
+                                in: Capsule()
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private var substackMatchedConceptsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(item.substackMatchedConcepts) { match in
+                    let dotColor: Color = switch match.state {
+                    case "shaky": GRColor.amber
+                    case "strong": GRColor.success
+                    default: GRColor.accentCyan
+                    }
+                    HStack(spacing: 5) {
+                        Circle().fill(dotColor).frame(width: 6, height: 6)
+                        Text(verbatim: match.name)
+                            .font(GRType.micro.weight(.semibold))
+                            .foregroundStyle(GRColor.textPrimary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(GRColor.fillSubtle, in: Capsule())
+                    .overlay(Capsule().stroke(dotColor.opacity(0.45), lineWidth: 1))
+                }
+            }
         }
     }
 }

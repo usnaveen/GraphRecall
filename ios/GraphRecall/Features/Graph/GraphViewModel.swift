@@ -18,8 +18,22 @@ final class GraphViewModel {
     var selectedNodeId: String?
     var searchQuery: String = ""
     var isolateCommunity = false
+    /// Progressive community disclosure: on larger graphs, start focused on the primary community
+    /// and let the user layer additional communities (`+ Community`) or tap `All` to view all clusters.
+    var activeClusterIds: Set<String> = []
+    var userChoseAllClusters = false
     var activeSheet: InspectorSheet?
-    var filter: GraphFilter = .all
+    var filter: GraphFilter = .all {
+        didSet {
+            if case .domain(let d) = filter {
+                activeClusterIds = ["domain:\(d)"]
+                userChoseAllClusters = false
+            } else if filter == .all, oldValue != .all {
+                activeClusterIds = []
+                userChoseAllClusters = true
+            }
+        }
+    }
     var searchResults: [GraphSearchResult] = []
     var isSearching = false
     /// Concept shown in the full-screen Concept detail sheet.
@@ -73,7 +87,15 @@ final class GraphViewModel {
         var id: String { topic }
     }
 
+    struct SemanticCluster: Identifiable, Hashable {
+        let id: String
+        let title: String
+        let nodeIds: Set<String>
+        var count: Int { nodeIds.count }
+    }
+
     static let weakThreshold = 0.4
+    static let autoFocusNodeThreshold = 45
     /// Concepts per `/api/graph3d` request; later pages load in the background like the web.
     static let pageSize = 1000
 
@@ -136,12 +158,91 @@ final class GraphViewModel {
 
     // MARK: - Scene
 
-    /// Members of the selected concept's community while "Isolate community" is on.
-    var isolatedCommunityIds: Set<String>? {
-        guard isolateCommunity, let selectedNodeId, let community = community(containing: selectedNodeId) else {
-            return nil
+    /// Semantic communities available as progressive expansion chips. Uses detected Neo4j communities
+    /// when >=2 non-empty leaf communities exist, otherwise synthesizes clusters from concept domains.
+    var semanticClusters: [SemanticCluster] {
+        let validNodeIds = Set(graph.nodes.map(\.id))
+        let leafComms = graph.communities
+            .filter { comm in
+                !graph.communities.contains(where: { $0.parent == comm.id })
+            }
+            .compactMap { comm -> SemanticCluster? in
+                let ids = Set(comm.entityIds).intersection(validNodeIds)
+                guard !ids.isEmpty else { return nil }
+                let rawTitle = (comm.title ?? comm.label ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let fallbackTitle = dominantDomain(in: ids) ?? "Cluster"
+                return SemanticCluster(
+                    id: "comm:\(comm.id)",
+                    title: rawTitle.isEmpty ? fallbackTitle : rawTitle,
+                    nodeIds: ids
+                )
+            }
+            .sorted { $0.count == $1.count ? $0.title < $1.title : $0.count > $1.count }
+
+        if leafComms.count >= 2 {
+            return leafComms
         }
-        return Set(community.entityIds)
+
+        var byDomain: [String: Set<String>] = [:]
+        for node in graph.nodes {
+            let d = (node.domain ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = d.isEmpty ? "General" : d
+            byDomain[key, default: []].insert(node.id)
+        }
+        return byDomain
+            .map { SemanticCluster(id: "domain:\($0.key)", title: $0.key, nodeIds: $0.value) }
+            .sorted { $0.count == $1.count ? $0.title < $1.title : $0.count > $1.count }
+    }
+
+    private func dominantDomain(in ids: Set<String>) -> String? {
+        var counts: [String: Int] = [:]
+        for id in ids {
+            if let d = nodesById[id]?.domain, !d.isEmpty { counts[d, default: 0] += 1 }
+        }
+        return counts.max(by: { $0.value < $1.value })?.key
+    }
+
+    var isShowingAllClusters: Bool {
+        activeClusterIds.isEmpty && filter == .all
+    }
+
+    func selectAllClusters() {
+        userChoseAllClusters = true
+        activeClusterIds = []
+        filter = .all
+    }
+
+    func toggleCluster(_ clusterId: String) {
+        if filter == .weak { filter = .all }
+        if case .domain = filter { filter = .all }
+        if activeClusterIds.contains(clusterId) {
+            activeClusterIds.remove(clusterId)
+            if activeClusterIds.isEmpty {
+                userChoseAllClusters = true
+            }
+        } else {
+            activeClusterIds.insert(clusterId)
+            userChoseAllClusters = false
+        }
+    }
+
+    /// Members of the selected concept's community while "Isolate community" is on,
+    /// or the union of progressively enabled semantic community chips.
+    var isolatedCommunityIds: Set<String>? {
+        if isolateCommunity, let selectedNodeId {
+            if let community = community(containing: selectedNodeId) {
+                return Set(community.entityIds)
+            }
+            if let cluster = semanticClusters.first(where: { $0.nodeIds.contains(selectedNodeId) }) {
+                return cluster.nodeIds
+            }
+        }
+        guard !activeClusterIds.isEmpty else { return nil }
+        var union = Set<String>()
+        for cluster in semanticClusters where activeClusterIds.contains(cluster.id) {
+            union.formUnion(cluster.nodeIds)
+        }
+        return union.isEmpty ? nil : union
     }
 
     /// Nodes drawn enlarged: search matches first, then the weak-spot lens.
@@ -296,6 +397,17 @@ final class GraphViewModel {
             exitMergeMode()
         }
         mergeTargetIds.formIntersection(ids)
+
+        let validClusterIds = Set(semanticClusters.map(\.id))
+        activeClusterIds.formIntersection(validClusterIds)
+        if activeClusterIds.isEmpty,
+           !userChoseAllClusters,
+           response.nodes.count > Self.autoFocusNodeThreshold,
+           semanticClusters.count >= 2,
+           let primary = semanticClusters.first {
+            // Start in one clean, readable community so large graphs never open as a hairball.
+            activeClusterIds = [primary.id]
+        }
     }
 
     private static func combine(_ current: Graph3DResponse, _ page: Graph3DResponse) -> Graph3DResponse {
@@ -343,7 +455,12 @@ final class GraphViewModel {
             ?? graph.nodes.first { $0.name.caseInsensitiveCompare(needle) == .orderedSame }
             ?? graph.nodes.first { $0.name.localizedCaseInsensitiveContains(needle) }
         guard let match else { return false }
-        filter = .all
+        if !activeClusterIds.isEmpty,
+           let cluster = semanticClusters.first(where: { $0.nodeIds.contains(match.id) }) {
+            activeClusterIds.insert(cluster.id)
+        } else {
+            filter = .all
+        }
         select(nodeId: match.id)
         return true
     }
