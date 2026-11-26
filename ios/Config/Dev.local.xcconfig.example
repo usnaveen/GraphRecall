@@ -6,3 +6,8 @@ DEVELOPMENT_TEAM = ABCDE12345
 // The Mac's address as the phone sees it, for Settings → Developer → "Use local Docker backend".
 // On an iPhone hotspot this is usually 172.20.10.x — check with `ipconfig getifaddr en0`.
 GR_DEV_SERVER_HOST = 172.20.10.2
+
+// Free Apple ID (personal team)? It can't sign Sign in with Apple, so use these variants instead.
+// GR_APP_ENTITLEMENTS = GraphRecall/Resources/GraphRecall.personal.entitlements
+// GR_SHARE_ENTITLEMENTS = GraphRecallShare/GraphRecallShare.personal.entitlements
+// GR_WIDGET_ENTITLEMENTS = GraphRecallWidget/GraphRecallWidget.personal.entitlements

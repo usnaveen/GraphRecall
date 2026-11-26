@@ -922,7 +922,7 @@
 		132C12B2BDF0780C65781365 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = GraphRecallWidget/GraphRecallWidget.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(GR_WIDGET_ENTITLEMENTS)";
 				INFOPLIST_FILE = GraphRecallWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -959,7 +959,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = GraphRecall/Resources/GraphRecall.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(GR_APP_ENTITLEMENTS)";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = GraphRecall/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -976,7 +976,7 @@
 		3952D531BAEDDF65AA38525B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = GraphRecallShare/GraphRecallShare.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(GR_SHARE_ENTITLEMENTS)";
 				INFOPLIST_FILE = GraphRecallShare/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -997,7 +997,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = GraphRecall/Resources/GraphRecall.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(GR_APP_ENTITLEMENTS)";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = GraphRecall/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1099,7 +1099,7 @@
 		B59FC8442363C33395BDD6AE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = GraphRecallShare/GraphRecallShare.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(GR_SHARE_ENTITLEMENTS)";
 				INFOPLIST_FILE = GraphRecallShare/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1179,7 +1179,7 @@
 		CD9951ECF0692EC4817007E6 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = GraphRecallWidget/GraphRecallWidget.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(GR_WIDGET_ENTITLEMENTS)";
 				INFOPLIST_FILE = GraphRecallWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

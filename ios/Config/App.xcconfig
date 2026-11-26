@@ -10,6 +10,12 @@ GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.unconfigured
 DEVELOPMENT_TEAM =
 GR_DEV_SERVER_HOST =
 
+// Entitlements per target. Dev.local.xcconfig swaps in the *.personal.entitlements variants when
+// signing with a free (personal) team, which can't sign Sign in with Apple.
+GR_APP_ENTITLEMENTS = GraphRecall/Resources/GraphRecall.entitlements
+GR_SHARE_ENTITLEMENTS = GraphRecallShare/GraphRecallShare.entitlements
+GR_WIDGET_ENTITLEMENTS = GraphRecallWidget/GraphRecallWidget.entitlements
+
 // Production Release settings live in untracked Release.local.xcconfig — see Release.local.xcconfig.example.
 GR_API_BASE_URL =
 GR_PRIVACY_POLICY_URL =
