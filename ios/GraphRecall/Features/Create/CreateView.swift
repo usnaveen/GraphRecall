@@ -547,7 +547,7 @@ struct CreateView: View {
     private var quickCaptures: some View {
         HStack(spacing: 10) {
             Button { showLater = true; GRHaptics.tap() } label: {
-                Label("Show me later", systemImage: "clock.arrow.circlepath")
+                Label("Remind me", systemImage: "clock.arrow.circlepath")
             }
             .grButton(.secondary, fullWidth: true, compact: true)
             .accessibilityIdentifier("create.later")

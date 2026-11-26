@@ -524,7 +524,7 @@ struct ProfileView: View {
                 libraryTile("Books", count: booksCount, icon: "books.vertical.fill", tone: .amber, route: .library)
                 libraryTile("Saved", count: savedCount, icon: "bookmark.fill", tone: .accent, route: .saved)
                 libraryTile("LeetCode", count: leetcodeCount, icon: "chevron.left.forwardslash.chevron.right", tone: .cyan, route: .leetcode)
-                libraryTile("Later", count: laterCount, icon: "clock.arrow.circlepath", tone: .purple, route: .later)
+                libraryTile("Reminders", count: laterCount, icon: "clock.arrow.circlepath", tone: .purple, route: .later)
             }
         }
     }

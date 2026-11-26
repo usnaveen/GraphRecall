@@ -83,6 +83,21 @@ struct WelcomeView: View {
                         .multilineTextAlignment(.center)
                 }
 
+                #if DEBUG
+                // Development builds: your real data from the backend on this Mac. Without this the only
+                // way in on a free-team build is the offline demo, which never talks to the Mac.
+                Button {
+                    Task {
+                        await auth.useLocalDevSession()
+                        onFinish()
+                    }
+                } label: {
+                    Label("Use this Mac's backend", systemImage: "laptopcomputer.and.iphone")
+                }
+                .grButton(.secondary)
+                .accessibilityIdentifier("welcome.localBackend")
+                #endif
+
                 Button {
                     Task {
                         await auth.useDemoSession()
@@ -91,7 +106,7 @@ struct WelcomeView: View {
                 } label: {
                     Label("Use demo session", systemImage: "play.fill")
                 }
-                .grButton(auth.isGoogleConfigured ? .ghost : .secondary)
+                .grButton(.ghost)
 
                 Text("Your graph syncs across your devices.")
                     .font(GRType.micro)

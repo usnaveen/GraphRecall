@@ -13,7 +13,7 @@ struct SettingsView: View {
 
     @AppStorage(GRSettingsKey.dailyGoal) private var dailyGoal = 0
     @AppStorage(GRSettingsKey.newCardsPerDay) private var newCardsPerDay = 10
-    @AppStorage(GRSettingsKey.feedStyle) private var feedStyle = FeedView.FeedStyle.reels.rawValue
+    @AppStorage(GRSettingsKey.feedStyle) private var feedStyle = FeedView.FeedStyle.posts.rawValue
 
     private let auth = AuthSession.shared
     @State private var studySyncTask: Task<Void, Never>?
@@ -75,8 +75,8 @@ struct SettingsView: View {
                                 tone: .purple
                             ) {
                                 Picker("Feed style", selection: $feedStyle) {
-                                    Text("Reels").tag(FeedView.FeedStyle.reels.rawValue)
                                     Text("Posts").tag(FeedView.FeedStyle.posts.rawValue)
+                                    Text("Reels").tag(FeedView.FeedStyle.reels.rawValue)
                                 }
                                 .labelsHidden()
                                 .pickerStyle(.segmented)
@@ -206,14 +206,14 @@ struct SettingsView: View {
                                     Task {
                                         await auth.useLocalDevSession()
                                         apiBase = AuthSession.localDevBaseURL
-                                        message = "Connected to the local Docker backend as the test user"
+                                        message = "Connected to this Mac's backend as the test user"
                                         NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
                                     }
                                 } label: {
-                                    Label("Use local Docker backend", systemImage: "shippingbox.fill")
+                                    Label("Use this Mac's backend", systemImage: "laptopcomputer.and.iphone")
                                 }
                                 .grButton(.secondary, compact: true)
-                                Text("Runs against `docker compose up` on this Mac (port 8001) with the backend’s test user.")
+                                Text("Your real data from the GraphRecall server on this Mac (port 8001), as the backend’s test user. The phone needs the same Wi-Fi.")
                                     .font(GRType.micro)
                                     .foregroundStyle(GRColor.textTertiary)
                             }

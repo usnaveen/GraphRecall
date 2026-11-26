@@ -1,17 +1,18 @@
 import SwiftUI
 
 /// The feed: content first, no goal rings or counters — those live in Profile now.
-/// Reels (one card at a time) or a scrolling timeline, switchable in Settings and from the
-/// button in the corner.
+/// Posts (cards one after another at their natural height, the default since 2026-11) or reels
+/// (one card per screen), switchable in Settings and from the toolbar.
 struct FeedView: View {
     @State private var model = FeedViewModel()
     @State private var contentReady = false
     @State private var activeSession: SessionLaunch?
     @State private var showAgentHub = false
     @State private var dueLater: [LaterItem] = []
-    @State private var dueCardHeight: CGFloat = 0
     private let agentBridge = AgentBridgeCapability.shared
-    @AppStorage(GRSettingsKey.feedStyle) private var feedStyleRaw = FeedStyle.reels.rawValue
+    @AppStorage(GRSettingsKey.feedStyle) private var feedStyleRaw = FeedStyle.posts.rawValue
+    /// One-time move to posts for installs that stored the old reels default.
+    @AppStorage(GRSettingsKey.feedStylePostsMigrated) private var postsMigrated = false
     @Environment(AppRouter.self) private var router
 
     enum FeedStyle: String {
@@ -19,67 +20,51 @@ struct FeedView: View {
     }
 
     private var style: FeedStyle {
-        FeedStyle(rawValue: feedStyleRaw) ?? .reels
+        FeedStyle(rawValue: feedStyleRaw) ?? .posts
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            GRColor.canvas.ignoresSafeArea()
-            GRBackdropGlow()
+        NavigationStack {
+            ZStack(alignment: .top) {
+                GRColor.canvas.ignoresSafeArea()
+                GRBackdropGlow()
 
-            Group {
-                if model.isLoading && model.queue.isEmpty {
-                    ProgressView()
-                        .tint(GRColor.accent)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if model.queue.isEmpty {
-                    emptyState
-                        .padding(.horizontal, 20)
-                        .frame(maxHeight: .infinity)
-                } else {
-                    switch style {
-                    case .reels:
-                        // Full-bleed under the floating tab bar (no dead black band at the bottom);
-                        // a short fade keeps cards readable where they pass under the glass.
-                        GeometryReader { geo in
-                            FeedReelView(model: model, bottomInset: geo.safeAreaInsets.bottom)
-                                .ignoresSafeArea(edges: .bottom)
-                                .clipped() // only the top edge now: the previous page must not peek under the status bar
-                                .overlay(alignment: .bottom) {
-                                    LinearGradient(
-                                        colors: [GRColor.canvas.opacity(0), GRColor.canvas.opacity(0.7)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                    .frame(height: geo.safeAreaInsets.bottom + 24)
-                                    .allowsHitTesting(false)
+                Group {
+                    if model.isLoading && model.queue.isEmpty {
+                        ProgressView()
+                            .tint(GRColor.accent)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if model.queue.isEmpty {
+                        emptyState
+                            .padding(.horizontal, 20)
+                            .frame(maxHeight: .infinity)
+                    } else {
+                        switch style {
+                        case .posts:
+                            // Scrolls under the system toolbar and tab bar; their own scroll-edge
+                            // effect keeps it readable, so the feed draws no bars or fades of its own.
+                            FeedPostsView(model: model, dueLater: $dueLater)
+                        case .reels:
+                            GeometryReader { geo in
+                                FeedReelView(model: model, bottomInset: geo.safeAreaInsets.bottom)
                                     .ignoresSafeArea(edges: .bottom)
+                            }
+                            // A due reminder sits above the page instead of covering it.
+                            .safeAreaInset(edge: .top, spacing: 0) {
+                                if !dueLater.isEmpty {
+                                    LaterDueCard(items: $dueLater)
+                                        .padding(.horizontal, 16)
+                                        .padding(.bottom, 10)
                                 }
+                            }
                         }
-                    case .posts:
-                        FeedPostsView(model: model)
-                            .contentMargins(.bottom, 16, for: .scrollContent)
                     }
                 }
-            }
-            // A due "later" card pushes the feed down instead of covering the current card.
-            .safeAreaInset(edge: .top, spacing: 0) {
-                Color.clear.frame(height: dueLater.isEmpty ? 0 : dueCardHeight + 10)
-            }
-            .opacity(contentReady ? 1 : 0)
-            .animation(.easeOut(duration: 0.18), value: contentReady)
+                .opacity(contentReady ? 1 : 0)
+                .animation(.easeOut(duration: 0.18), value: contentReady)
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: dueLater)
 
-            VStack(spacing: 10) {
-                topBar
-                if !dueLater.isEmpty {
-                    LaterDueCard(items: $dueLater)
-                        .padding(.horizontal, 16)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dueCardHeight = $0 }
-                }
-            }
-            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: dueLater)
-
-            if let banner = model.softBanner {
+                if let banner = model.softBanner {
                 VStack {
                     Spacer()
                     GRToast(message: banner, isError: Self.isErrorCopy(banner))
@@ -89,6 +74,15 @@ struct FeedView: View {
                 }
                 .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.softBanner)
                 .onTapGesture { model.dismissSoftBanner() }
+            }
+            }
+            .toolbar { feedToolbar }
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .onAppear {
+            if !postsMigrated {
+                feedStyleRaw = FeedStyle.posts.rawValue
+                postsMigrated = true
             }
         }
         .task {
@@ -131,39 +125,51 @@ struct FeedView: View {
 
     // MARK: - Chrome
 
-    /// Floating controls only — the feed itself stays full-bleed.
-    private var topBar: some View {
-        HStack(spacing: 8) {
-            if model.isDemoMode {
+    /// System toolbar: real Liquid Glass buttons, grouped by the system, with the native scroll-edge
+    /// effect where the feed passes under them.
+    @ToolbarContentBuilder
+    private var feedToolbar: some ToolbarContent {
+        if model.isDemoMode {
+            ToolbarItem(placement: .topBarLeading) {
                 Text("Demo cards")
                     .font(GRType.micro)
                     .foregroundStyle(GRColor.accent)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .grGlassEffect(in: Capsule())
+                    .padding(.horizontal, 6)
+                    .accessibilityIdentifier("feed.demoBadge")
             }
-            Spacer()
-            AgentInboxButton(count: agentInboxCount) {
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Button {
                 GRHaptics.tap()
                 showAgentHub = true
+            } label: {
+                Image(systemName: agentInboxCount > 0 ? "tray.full" : "tray")
+                    .foregroundStyle(agentInboxCount > 0 ? GRColor.accent : GRColor.textSecondary)
             }
-            GRIconButton(
-                systemImage: style == .reels ? "rectangle.stack" : "rectangle.portrait.on.rectangle.portrait",
-                tint: GRColor.textSecondary,
-                size: 38,
-                accessibilityLabel: style == .reels ? "Switch to scrolling posts" : "Switch to one card at a time"
-            ) {
+            .badge(agentInboxCount)
+            .accessibilityLabel("Agent Inbox")
+            .accessibilityValue(agentInboxCount > 0 ? "\(agentInboxCount) new" : "")
+            .accessibilityIdentifier("agent.inboxButton")
+
+            Button {
                 withAnimation(.easeOut(duration: 0.2)) {
                     feedStyleRaw = style == .reels ? FeedStyle.posts.rawValue : FeedStyle.reels.rawValue
                 }
                 GRHaptics.tap()
+            } label: {
+                Image(systemName: style == .reels ? "rectangle.grid.1x2" : "rectangle.portrait")
+                    .foregroundStyle(GRColor.textSecondary)
             }
-            GRIconButton(systemImage: "magnifyingglass", tint: GRColor.textSecondary, size: 38, accessibilityLabel: "Search") {
+            .accessibilityLabel(style == .reels ? "Switch to scrolling posts" : "Switch to one card at a time")
+
+            Button {
                 router.showSearch = true
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(GRColor.textSecondary)
             }
+            .accessibilityLabel("Search")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 6)
     }
 
     private var emptyState: some View {

@@ -223,38 +223,6 @@ struct AgentReasonRow: View {
     }
 }
 
-/// Feed top-bar entry to the Agent Inbox (insights + suggestions), with a count of what's new.
-struct AgentInboxButton: View {
-    let count: Int
-    let action: () -> Void
-
-    var body: some View {
-        // An inbox looks like an inbox: the sparkles icon belongs to "Ask about this" on each card.
-        GRIconButton(
-            systemImage: count > 0 ? "tray.full" : "tray",
-            tint: count > 0 ? GRColor.accent : GRColor.textSecondary,
-            size: 38,
-            accessibilityLabel: "Agent Inbox",
-            action: action
-        )
-        .overlay(alignment: .topTrailing) {
-            if count > 0 {
-                Text(count > 99 ? "99+" : "\(count)")
-                    .font(GRType.micro.weight(.bold))
-                    .foregroundStyle(GRColor.canvas)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(GRColor.accent, in: Capsule())
-                    .offset(x: 4, y: -4)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-        }
-        .accessibilityValue(count > 0 ? "\(count) new" : "")
-        .accessibilityIdentifier("agent.inboxButton")
-    }
-}
-
 #if DEBUG
 #Preview("Agent card in feed") {
     ZStack {
@@ -263,14 +231,5 @@ struct AgentInboxButton: View {
             .padding()
     }
     .preferredColorScheme(.dark)
-}
-
-#Preview("Inbox button") {
-    HStack {
-        AgentInboxButton(count: 3) {}
-        AgentInboxButton(count: 0) {}
-    }
-    .padding()
-    .background(GRColor.canvas)
 }
 #endif

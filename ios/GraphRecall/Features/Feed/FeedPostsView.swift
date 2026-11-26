@@ -1,13 +1,19 @@
 import SwiftUI
 
-/// The same cards as a scrolling timeline, for when one-at-a-time feels too narrow.
+/// The default feed: cards one after another, each as tall as its content (like a Reddit or
+/// Instagram timeline), under the system toolbar and tab bar.
 struct FeedPostsView: View {
     let model: FeedViewModel
+    @Binding var dueLater: [LaterItem]
     @Environment(AppRouter.self) private var router
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 22) {
+            LazyVStack(spacing: 12) {
+                // Reminders whose time has come scroll with the feed instead of pinning over it.
+                if !dueLater.isEmpty {
+                    LaterDueCard(items: $dueLater)
+                }
                 ForEach(Array(model.queue.enumerated()), id: \.element.id) { index, item in
                     FeedContentCard(
                         item: item,
@@ -21,10 +27,11 @@ struct FeedPostsView: View {
                     }
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 58) // clears the floating Agent Inbox / style / search buttons
-            .padding(.bottom, 16)
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
         }
-        .scrollIndicators(.hidden)
+        .contentMargins(.bottom, 16, for: .scrollContent)
+        .scrollIndicators(.automatic)
+        .accessibilityIdentifier("feed.posts")
     }
 }

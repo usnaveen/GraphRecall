@@ -26,6 +26,7 @@ struct FeedContentCard: View {
 
     @State private var digestState: DigestState = .idle
     @State private var viewportHeight: CGFloat = 0
+    @State private var showRemind = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,7 +35,7 @@ struct FeedContentCard: View {
                     contentStack
                         .frame(minHeight: viewportHeight, alignment: .center)
                 }
-                .scrollIndicators(.hidden)
+                .scrollIndicators(.automatic)
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(maxHeight: .infinity)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
@@ -47,10 +48,18 @@ struct FeedContentCard: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: fixedHeight)
-        .grGlassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(GRColor.stroke, lineWidth: 1))
+        // Content sits on a plain surface; Liquid Glass is for the controls floating above it
+        // (toolbar, tab bar, the buttons in the bar below), as Apple's guidance has it.
+        .background(GRColor.fillSubtle, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(GRColor.stroke, lineWidth: 1))
         .onChange(of: item.id) { _, _ in
             digestState = .idle
+        }
+        .sheet(isPresented: $showRemind) {
+            LaterCaptureSheet(initialText: item.conceptName ?? item.title) { _ in
+                model.showSoftBanner("I'll bring it back then.")
+            }
+            .presentationDetents([.medium, .large])
         }
     }
 
@@ -88,6 +97,10 @@ struct FeedContentCard: View {
                 Task { await model.toggleSave(for: item) }
             }
             actionButton(systemName: "sparkles", active: false, label: "Ask about this", action: onAsk)
+            actionButton(systemName: "clock.arrow.circlepath", active: false, label: "Remind me") {
+                GRHaptics.tap()
+                showRemind = true
+            }
             ShareLink(item: item.sharePlainText) {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 15, weight: .semibold))

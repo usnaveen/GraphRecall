@@ -427,6 +427,8 @@ enum GRSettingsKey {
     static let newCardsPerDay = "graphrecall.study.newCardsPerDay"
     /// "reels" (one card at a time) or "posts" (scrolling timeline).
     static let feedStyle = "graphrecall.feed.style"
+    /// Set once the feed has moved an install from the old reels default to posts.
+    static let feedStylePostsMigrated = "graphrecall.feed.style.postsMigrated"
 }
 
 // MARK: - Layout

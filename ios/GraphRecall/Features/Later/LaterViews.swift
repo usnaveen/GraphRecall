@@ -90,7 +90,7 @@ struct LaterCaptureSheet: View {
                     Button {
                         Task { await save() }
                     } label: {
-                        if isSaving { ProgressView().tint(GRColor.canvas) } else { Label("Save for later", systemImage: "clock.arrow.circlepath") }
+                        if isSaving { ProgressView().tint(GRColor.canvas) } else { Label("Remind me", systemImage: "clock.arrow.circlepath") }
                     }
                     .grButton(.primary)
                     .disabled(!canSave || isSaving)
@@ -99,7 +99,7 @@ struct LaterCaptureSheet: View {
                 .padding(20)
             }
             .background(GRColor.canvas.ignoresSafeArea())
-            .navigationTitle("Show me later")
+            .navigationTitle("Remind me")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -270,7 +270,7 @@ struct LaterListView: View {
     var body: some View {
         List {
             Section {
-                GRScreenHeader(title: "Later", subtitle: "\(model.items.count) waiting")
+                GRScreenHeader(title: "Reminders", subtitle: "\(model.items.count) waiting")
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
