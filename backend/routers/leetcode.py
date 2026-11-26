@@ -1,5 +1,6 @@
 """LeetCode recall: log problems and attempts; cards and scheduling follow (backend/services/leetcode.py).
 
+GET  /api/leetcode/lookup/{number}          fetch + cache public LeetCode problem metadata
 POST /api/leetcode/problems                 create or update by title
 GET  /api/leetcode/problems                 list, with attempt counts and last outcome
 GET  /api/leetcode/problems/{id}            one problem + attempts + its card ids
@@ -20,15 +21,17 @@ from backend.services import leetcode as lc
 logger = structlog.get_logger()
 router = APIRouter(prefix="/api/leetcode", tags=["LeetCode"])
 
-_PCOLS = ("id::text AS id, title, url, difficulty, pattern, key_insight, pseudocode, solution, language, "
-          "complexity, concept_id, pattern_concept_id, created_at, updated_at")
+_PCOLS = ("id::text AS id, number, title, url, difficulty, pattern, tags, key_insight, pseudocode, "
+          "solution, language, complexity, concept_id, pattern_concept_id, created_at, updated_at")
 
 
 class ProblemIn(BaseModel):
     title: str = Field(..., min_length=2, max_length=200)
+    number: Optional[int] = Field(default=None, ge=1, le=50000)
     url: Optional[str] = Field(default=None, max_length=500)
     difficulty: Optional[Literal["easy", "medium", "hard"]] = None
     pattern: Optional[str] = Field(default=None, max_length=80)
+    tags: Optional[list[str]] = Field(default=None, max_length=30)
     key_insight: Optional[str] = Field(default=None, max_length=1000)
     pseudocode: Optional[str] = Field(default=None, max_length=4000)
     solution: Optional[str] = Field(default=None, max_length=20000)
@@ -65,6 +68,21 @@ async def _get(pg, user_id: str, problem_id: str) -> dict:
     return rows[0]
 
 
+@router.get("/lookup/{number}")
+async def lookup_by_number(number: int, current_user: dict = Depends(get_current_user)):
+    if number < 1:
+        raise HTTPException(status_code=404, detail=f"No LeetCode problem #{number}")
+    pg = await get_postgres_client()
+    try:
+        item = await lc.lookup_problem(pg, number)
+    except lc.LeetCodeUpstreamError as exc:
+        logger.warning("leetcode lookup upstream error", number=number, error=str(exc))
+        raise HTTPException(status_code=502, detail="LeetCode lookup service unavailable")
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"No LeetCode problem #{number}")
+    return item
+
+
 @router.post("/problems")
 async def upsert_problem(body: ProblemIn, current_user: dict = Depends(get_current_user)):
     user_id = str(current_user["id"])
@@ -72,16 +90,22 @@ async def upsert_problem(body: ProblemIn, current_user: dict = Depends(get_curre
         raise HTTPException(status_code=422, detail="url must be http(s)")
     pg = await get_postgres_client()
     data = body.model_dump()
+    clean_tags = [t.strip() for t in (data.get("tags") or []) if t and t.strip()]
+    data["tags"] = clean_tags
+    if not data.get("pattern") and clean_tags:
+        data["pattern"] = lc.suggest_pattern(clean_tags)
     rows = await pg.execute_query(
         f"""
-        INSERT INTO coding_problems (user_id, title, url, difficulty, pattern, key_insight, pseudocode,
+        INSERT INTO coding_problems (user_id, number, title, url, difficulty, pattern, tags, key_insight, pseudocode,
                                      solution, language, complexity)
-        VALUES (CAST(:u AS uuid), :title, :url, :difficulty, :pattern, :key_insight, :pseudocode,
+        VALUES (CAST(:u AS uuid), :number, :title, :url, :difficulty, :pattern, :tags, :key_insight, :pseudocode,
                 :solution, :language, :complexity)
         ON CONFLICT (user_id, lower(title)) DO UPDATE SET
+            number = COALESCE(EXCLUDED.number, coding_problems.number),
             url = COALESCE(EXCLUDED.url, coding_problems.url),
             difficulty = COALESCE(EXCLUDED.difficulty, coding_problems.difficulty),
             pattern = COALESCE(EXCLUDED.pattern, coding_problems.pattern),
+            tags = CASE WHEN cardinality(EXCLUDED.tags) > 0 THEN EXCLUDED.tags ELSE coding_problems.tags END,
             key_insight = COALESCE(EXCLUDED.key_insight, coding_problems.key_insight),
             pseudocode = COALESCE(EXCLUDED.pseudocode, coding_problems.pseudocode),
             solution = COALESCE(EXCLUDED.solution, coding_problems.solution),
@@ -113,7 +137,7 @@ async def list_problems(current_user: dict = Depends(get_current_user)):
     pg = await get_postgres_client()
     rows = await pg.execute_query(
         """
-        SELECT p.id::text AS id, p.title, p.difficulty, p.pattern, p.url, p.updated_at,
+        SELECT p.id::text AS id, p.number, p.title, p.difficulty, p.pattern, p.tags, p.url, p.updated_at,
                count(a.id) AS attempts,
                count(a.id) FILTER (WHERE a.outcome = 'failed') AS failed,
                (array_agg(a.outcome ORDER BY a.created_at DESC))[1] AS last_outcome
