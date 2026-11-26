@@ -759,7 +759,9 @@ struct ChatView: View {
     /// Inline markdown; with sources, "[n]" citation markers become links that open the source.
     /// Headings ("### Why it is faster") become bold lines: inline parsing would print the hashes.
     private static func markdown(_ text: String, linkCitations: Bool) -> AttributedString {
-        var source = text.replacing(/(?m)^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t#]*$/) { match in
+        // Math first, so `_` and `*` inside it aren't read as emphasis and `\[…\]` isn't a citation.
+        let (withoutMath, mathSpans) = ChatMarkdown.stashMath(text)
+        var source = withoutMath.replacing(/(?m)^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t#]*$/) { match in
             "**\(match.1)**"
         }
         // List markers ("* ", "- ", "+ ") become bullets: inline parsing would print them as-is.
@@ -769,10 +771,12 @@ struct ChatView: View {
                 "[\\[\(match.1)\\]](\(citationScheme)://\(match.1))"
             }
         }
-        return (try? AttributedString(
+        var attr = (try? AttributedString(
             markdown: source,
             options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(text)
+        )) ?? AttributedString(source)
+        ChatMarkdown.style(&attr, math: mathSpans)
+        return attr
     }
 }
 
@@ -948,4 +952,182 @@ private struct ConversationHistorySheet: View {
     }
     .environment(AppRouter())
     .preferredColorScheme(.dark)
+}
+
+// MARK: - Math and colour in answers
+
+/// Readable math in chat answers. The model writes LaTeX (`$h_{t-1}$`, `$\frac{QK^T}{\sqrt{d_k}}$`);
+/// this turns it into Unicode (hₜ₋₁, QKᵀ/√dₖ) so it reads naturally while the answer streams, with no
+/// web view. Anything it can't map stays readable (`W_Q` keeps its underscore).
+enum ChatMath {
+    private static let named: [String: String] = [
+        // Greek
+        "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ε", "varepsilon": "ε",
+        "zeta": "ζ", "eta": "η", "theta": "θ", "vartheta": "ϑ", "iota": "ι", "kappa": "κ",
+        "lambda": "λ", "mu": "μ", "nu": "ν", "xi": "ξ", "pi": "π", "rho": "ρ", "sigma": "σ",
+        "tau": "τ", "upsilon": "υ", "phi": "φ", "varphi": "φ", "chi": "χ", "psi": "ψ", "omega": "ω",
+        "Gamma": "Γ", "Delta": "Δ", "Theta": "Θ", "Lambda": "Λ", "Xi": "Ξ", "Pi": "Π",
+        "Sigma": "Σ", "Phi": "Φ", "Psi": "Ψ", "Omega": "Ω",
+        // Operators and relations
+        "times": "×", "cdot": "·", "div": "÷", "pm": "±", "mp": "∓", "sum": "∑", "prod": "∏",
+        "int": "∫", "sqrt": "√", "infty": "∞", "partial": "∂", "nabla": "∇", "leq": "≤", "le": "≤",
+        "geq": "≥", "ge": "≥", "neq": "≠", "ne": "≠", "approx": "≈", "sim": "∼", "propto": "∝",
+        "equiv": "≡", "in": "∈", "notin": "∉", "subset": "⊂", "subseteq": "⊆", "cup": "∪",
+        "cap": "∩", "forall": "∀", "exists": "∃", "to": "→", "rightarrow": "→", "leftarrow": "←",
+        "Rightarrow": "⇒", "implies": "⇒", "iff": "⇔", "mapsto": "↦", "ldots": "…", "cdots": "⋯",
+        "dots": "…", "top": "ᵀ", "intercal": "ᵀ", "odot": "⊙", "otimes": "⊗", "oplus": "⊕",
+        "circ": "∘", "langle": "⟨", "rangle": "⟩", "lVert": "‖", "rVert": "‖", "|": "‖",
+        "log": "log", "exp": "exp", "max": "max", "min": "min", "arg": "arg", "argmax": "argmax",
+        "softmax": "softmax", "sin": "sin", "cos": "cos", "tanh": "tanh", "lim": "lim",
+        // Layout-only commands
+        "left": "", "right": "", "big": "", "Big": "", "bigg": "", "quad": " ", "qquad": "  ",
+        "displaystyle": "", "limits": "",
+    ]
+
+    private static let superscripts: [Character: Character] = [
+        "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+        "+": "⁺", "-": "⁻", "−": "⁻", "=": "⁼", "(": "⁽", ")": "⁾", "a": "ᵃ", "b": "ᵇ", "c": "ᶜ",
+        "d": "ᵈ", "e": "ᵉ", "f": "ᶠ", "g": "ᵍ", "h": "ʰ", "i": "ⁱ", "j": "ʲ", "k": "ᵏ", "l": "ˡ",
+        "m": "ᵐ", "n": "ⁿ", "o": "ᵒ", "p": "ᵖ", "r": "ʳ", "s": "ˢ", "t": "ᵗ", "u": "ᵘ", "v": "ᵛ",
+        "w": "ʷ", "x": "ˣ", "y": "ʸ", "z": "ᶻ", "T": "ᵀ", "A": "ᴬ", "B": "ᴮ", "D": "ᴰ", "E": "ᴱ",
+        "G": "ᴳ", "H": "ᴴ", "I": "ᴵ", "J": "ᴶ", "K": "ᴷ", "L": "ᴸ", "M": "ᴹ", "N": "ᴺ", "O": "ᴼ",
+        "P": "ᴾ", "R": "ᴿ", "U": "ᵁ", "V": "ⱽ", "W": "ᵂ", "*": "*", "'": "′", "ᵀ": "ᵀ",
+    ]
+
+    private static let subscripts: [Character: Character] = [
+        "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
+        "+": "₊", "-": "₋", "−": "₋", "=": "₌", "(": "₍", ")": "₎", "a": "ₐ", "e": "ₑ", "h": "ₕ",
+        "i": "ᵢ", "j": "ⱼ", "k": "ₖ", "l": "ₗ", "m": "ₘ", "n": "ₙ", "o": "ₒ", "p": "ₚ", "r": "ᵣ",
+        "s": "ₛ", "t": "ₜ", "u": "ᵤ", "v": "ᵥ", "x": "ₓ",
+    ]
+
+    static func render(_ latex: String) -> String {
+        var s = latex.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Text-like wrappers keep their contents.
+        s = s.replacing(/\\(?:text|mathrm|mathbf|mathit|mathcal|operatorname|textbf|textit|boldsymbol|mathbb)\{([^{}]*)\}/) {
+            String($0.1)
+        }
+        // Accents.
+        s = s.replacing(/\\hat\{([^{}]*)\}/) { "\($0.1)\u{0302}" }
+        s = s.replacing(/\\(?:bar|overline)\{([^{}]*)\}/) { "\($0.1)\u{0304}" }
+        s = s.replacing(/\\vec\{([^{}]*)\}/) { "\($0.1)\u{20D7}" }
+        s = s.replacing(/\\tilde\{([^{}]*)\}/) { "\($0.1)\u{0303}" }
+        // Spacing commands like \, \; \!
+        s = s.replacing(/\\[,;:! ]/) { _ in " " }
+        // Sub- and superscripts first (single characters, then braced groups), so the fractions and
+        // roots below see plain text inside their braces.
+        s = s.replacing(/\^([A-Za-z0-9+\-=()*'])/) { m in mapped(String(m.1), superscripts) ?? "^\(m.1)" }
+        s = s.replacing(/_([A-Za-z0-9])/) { m in mapped(String(m.1), subscripts) ?? "_\(m.1)" }
+        s = s.replacing(/\^\{([^{}]*)\}/) { m in mapped(String(m.1), superscripts) ?? "^(\(m.1))" }
+        s = s.replacing(/_\{([^{}]*)\}/) { m in mapped(String(m.1), subscripts) ?? "_(\(m.1))" }
+        // Fractions and roots, innermost first.
+        for _ in 0..<4 {
+            s = s.replacing(/\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}/) { "\(wrap(String($0.1)))/\(wrap(String($0.2)))" }
+            s = s.replacing(/\\sqrt\{([^{}]*)\}/) { "√\(wrap(String($0.1)))" }
+        }
+        // Named commands (\alpha, \times, \log …). Unknown ones lose their backslash.
+        s = s.replacing(/\\([A-Za-z]+|\|)/) { named[String($0.1)] ?? String($0.1) }
+        s = s.replacingOccurrences(of: "{", with: "").replacingOccurrences(of: "}", with: "")
+        s = s.replacing(/\s+/) { _ in " " }
+        return s.trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func mapped(_ text: String, _ table: [Character: Character]) -> String? {
+        var out = ""
+        for ch in text where ch != " " {
+            guard let m = table[ch] else { return nil }
+            out.append(m)
+        }
+        return out
+    }
+
+    /// Parenthesise anything longer than one symbol, so a/b stays unambiguous.
+    private static func wrap(_ s: String) -> String {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        return t.count <= 1 || t.allSatisfy({ $0.isLetter || $0.isNumber }) ? t : "(\(t))"
+    }
+}
+
+/// Colour for chat answers: bold terms in the accent green, math in blue, inline code in violet,
+/// italics softly warm. Citations keep the cyan link tint set on the Text.
+enum ChatMarkdown {
+    static let mathColor = Color(red: 0.49, green: 0.74, blue: 1.0)
+    static let codeColor = Color(red: 0.77, green: 0.71, blue: 0.99)
+    static let emphasisColor = Color(red: 1.0, green: 0.82, blue: 0.55)
+
+    private static let open: Character = "\u{E000}"
+    private static let close: Character = "\u{E001}"
+
+    /// Pulls math spans out before markdown parsing (so `_` and `*` inside them aren't read as
+    /// emphasis) and leaves private-use placeholders where they were.
+    static func stashMath(_ text: String) -> (String, [String]) {
+        var spans: [String] = []
+        func token(_ latex: Substring) -> String {
+            spans.append(ChatMath.render(String(latex)))
+            return "\(open)\(spans.count - 1)\(close)"
+        }
+        var s = text
+        s = s.replacing(/\$\$([\s\S]+?)\$\$/) { token($0.1) }
+        s = s.replacing(/\\\[([\s\S]+?)\\\]/) { token($0.1) }
+        s = s.replacing(/\\\(([\s\S]+?)\\\)/) { token($0.1) }
+        s = stashInlineDollars(s, token: token)
+        return (s, spans)
+    }
+
+    /// `$…$` on one line, opening $ followed by a non-space, closing $ preceded by a non-space and
+    /// not followed by a digit, so prices like "$5 and $10" stay as they are.
+    private static func stashInlineDollars(_ s: String, token: (Substring) -> String) -> String {
+        var out = ""
+        var i = s.startIndex
+        while i < s.endIndex {
+            let ch = s[i]
+            let escaped = i > s.startIndex && s[s.index(before: i)] == "\\"
+            if ch == "$", !escaped {
+                let start = s.index(after: i)
+                if start < s.endIndex, !s[start].isWhitespace, !s[start].isNumber {
+                    var j = start
+                    var found: String.Index?
+                    while j < s.endIndex, s[j] != "\n" {
+                        if s[j] == "$", !s[s.index(before: j)].isWhitespace {
+                            let after = s.index(after: j)
+                            if after == s.endIndex || !s[after].isNumber { found = j }
+                            break
+                        }
+                        j = s.index(after: j)
+                    }
+                    if let end = found {
+                        out += token(s[start..<end])
+                        i = s.index(after: end)
+                        continue
+                    }
+                }
+            }
+            out.append(ch)
+            i = s.index(after: i)
+        }
+        return out
+    }
+
+    /// Colours emphasis and code runs, then swaps the math placeholders for styled math.
+    static func style(_ attr: inout AttributedString, math spans: [String]) {
+        for run in attr.runs where run.link == nil {
+            guard let intent = run.inlinePresentationIntent else { continue }
+            if intent.contains(.stronglyEmphasized) {
+                attr[run.range].foregroundColor = GRColor.accent
+            } else if intent.contains(.code) {
+                attr[run.range].foregroundColor = codeColor
+                attr[run.range].font = .system(.callout, design: .monospaced)
+            } else if intent.contains(.emphasized) {
+                attr[run.range].foregroundColor = emphasisColor
+            }
+        }
+        while let start = attr.range(of: String(open)),
+              let end = attr[start.upperBound...].range(of: String(close)) {
+            let index = Int(String(attr[start.upperBound..<end.lowerBound].characters)) ?? -1
+            var math = AttributedString(spans.indices.contains(index) ? spans[index] : "")
+            math.foregroundColor = mathColor
+            math.font = .system(.body, design: .serif)
+            attr.replaceSubrange(start.lowerBound..<end.upperBound, with: math)
+        }
+    }
 }
