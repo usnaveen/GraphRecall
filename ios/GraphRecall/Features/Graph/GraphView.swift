@@ -289,6 +289,8 @@ struct GraphView: View {
                 state: model.sceneState,
                 insetBottom: bottomInset,
                 resetCameraToken: model.resetCameraToken,
+                exitClusterToken: model.exitClusterToken,
+                focusClusterQuery: model.focusClusterQuery,
                 onEvent: handle
             )
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -306,12 +308,13 @@ struct GraphView: View {
                     masteryLegendView.padding(10)
                 }
             }
-            // The key to the graph — always stays visible (even during 3D concept focus) unless controls are expanded.
+            // The key to the graph — visible in Community & Concept Focus modes when edges appear.
             .overlay(alignment: .topTrailing) {
-                if !model.showControls && !model.mergeMode && model.activeSheet == nil {
+                let showsEdges = model.selectedNodeId != nil || model.activeClusterTitle != nil || !model.isShowingAllClusters
+                if !model.showControls && !model.mergeMode && model.activeSheet == nil && (showsEdges || model.usingStub) {
                     VStack(alignment: .trailing, spacing: 6) {
                         if model.usingStub { demoBadge }
-                        relationshipLegend
+                        if showsEdges { relationshipLegend }
                     }
                     .padding(10)
                 }
@@ -394,6 +397,9 @@ struct GraphView: View {
         case .select(let id):
             withAnimation(.easeInOut(duration: 0.22)) { model.select(nodeId: id) }
             if id != nil { GRHaptics.tap() }
+        case .clusterChanged(let title):
+            withAnimation(.easeInOut(duration: 0.22)) { model.activeClusterTitle = title }
+            if title != nil { GRHaptics.tap() }
         case .mergeToggle(let id):
             model.toggleMergeTarget(id)
             GRHaptics.tap()
@@ -438,6 +444,8 @@ struct GraphView: View {
             }
             if model.selectedNodeId != nil && !model.showControls {
                 focusPill
+            } else if let clusterTitle = model.activeClusterTitle, !model.showControls {
+                clusterBackPill(title: clusterTitle)
             }
             if model.showControls {
                 GraphControlsPanel(model: model)
@@ -466,6 +474,25 @@ struct GraphView: View {
         .controlSize(.small)
         .accessibilityLabel("3D focus. Back to full graph")
         .fixedSize()
+    }
+
+    private func clusterBackPill(title: String) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.22)) { model.exitCluster() }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 10, weight: .bold))
+                Text("All groups · \(title)")
+                    .font(GRType.micro.weight(.semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(GRColor.accent)
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
+        .accessibilityLabel("Back to all communities from \(title)")
     }
 
     /// Two columns of swatches, like the legend this screen used to carry — it names the link

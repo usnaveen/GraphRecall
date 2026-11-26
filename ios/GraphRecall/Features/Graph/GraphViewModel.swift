@@ -65,6 +65,9 @@ final class GraphViewModel {
     /// The selected-concept card shows everything instead of the compact summary.
     var cardExpanded = false
     var resetCameraToken = 0
+    var activeClusterTitle: String? = nil
+    var exitClusterToken = 0
+    var focusClusterQuery: String? = ProcessInfo.processInfo.environment["GR_CLUSTER"]?.trimmingCharacters(in: .whitespacesAndNewlines)
 
     // Merge mode (web GraphScreen): the selected concept absorbs the concepts tapped in the graph.
     var mergeMode = false
@@ -490,6 +493,12 @@ final class GraphViewModel {
 
     func resetCamera() {
         resetCameraToken &+= 1
+    }
+
+    func exitCluster() {
+        selectedNodeId = nil
+        activeClusterTitle = nil
+        exitClusterToken &+= 1
     }
 
     // MARK: - Relationships

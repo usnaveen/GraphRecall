@@ -33,6 +33,7 @@ struct GraphSceneState: Equatable {
 
 enum Graph3DEvent {
     case select(String?)
+    case clusterChanged(title: String?)
     case mergeToggle(String)
     /// Long press on empty space — create a concept at this world position.
     case createAt(GraphPoint3D)
@@ -50,6 +51,8 @@ struct Graph3DWebView: UIViewRepresentable {
     /// the focused concept centred in the space above it.
     var insetBottom: Double = 0
     var resetCameraToken = 0
+    var exitClusterToken = 0
+    var focusClusterQuery: String? = nil
     var onEvent: (Graph3DEvent) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -86,6 +89,8 @@ struct Graph3DWebView: UIViewRepresentable {
         coordinator.pendingState = state
         coordinator.pendingInset = insetBottom
         coordinator.pendingResetToken = resetCameraToken
+        coordinator.pendingExitClusterToken = exitClusterToken
+        coordinator.pendingClusterQuery = focusClusterQuery
         coordinator.flush()
     }
 
@@ -104,12 +109,16 @@ struct Graph3DWebView: UIViewRepresentable {
         var pendingState = GraphSceneState()
         var pendingInset = 0.0
         var pendingResetToken = 0
+        var pendingExitClusterToken = 0
+        var pendingClusterQuery: String?
 
         private var pageReady = false
         private var pushedGraphVersion: Int?
         private var pushedState: GraphSceneState?
         private var pushedInset: Double?
         private var pushedResetToken = 0
+        private var pushedExitClusterToken = 0
+        private var pushedClusterQuery: String?
 
         init(onEvent: @escaping (Graph3DEvent) -> Void) {
             self.onEvent = onEvent
@@ -140,6 +149,16 @@ struct Graph3DWebView: UIViewRepresentable {
                 pushedResetToken = pendingResetToken
                 webView.evaluateJavaScript("window.resetCamera(); void 0;")
             }
+            if pushedExitClusterToken != pendingExitClusterToken {
+                pushedExitClusterToken = pendingExitClusterToken
+                webView.evaluateJavaScript("window.exitCluster(); void 0;")
+            }
+            if let query = pendingClusterQuery, !query.isEmpty, pushedClusterQuery != query, !pendingGraph.nodes.isEmpty {
+                pushedClusterQuery = query
+                if let qJson = Self.encode(query) {
+                    webView.evaluateJavaScript("window.enterClusterByTitle(\(qJson)); void 0;")
+                }
+            }
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -156,9 +175,12 @@ struct Graph3DWebView: UIViewRepresentable {
                 pushedState = nil
                 pushedInset = nil
                 pushedResetToken = pendingResetToken
+                pushedExitClusterToken = pendingExitClusterToken
                 flush()
             case "select":
                 onEvent(.select(body["id"] as? String))
+            case "clusterChanged":
+                onEvent(.clusterChanged(title: body["title"] as? String))
             case "mergeToggle":
                 if let id = body["id"] as? String { onEvent(.mergeToggle(id)) }
             case "createAt":
@@ -233,11 +255,12 @@ private struct GraphPayload: Encodable {
 
     struct Community: Encodable {
         let id: String
+        let title: String?
         let level: Int?
         let entityIds: [String]
 
         enum CodingKeys: String, CodingKey {
-            case id, level
+            case id, title, level
             case entityIds = "entity_ids"
         }
     }
@@ -256,7 +279,7 @@ private struct GraphPayload: Encodable {
                  relationshipType: $0.relationshipType, strength: $0.strength)
         }
         communities = graph.communities.map {
-            Community(id: $0.id, level: $0.level, entityIds: $0.entityIds)
+            Community(id: $0.id, title: $0.title ?? $0.label, level: $0.level, entityIds: $0.entityIds)
         }
     }
 }
