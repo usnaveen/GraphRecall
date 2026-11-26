@@ -7,8 +7,11 @@ struct GRScreenHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(GRType.largeTitle)
+                .font(GRType.screenTitle)
+                .tracking(1.5)
                 .foregroundStyle(GRColor.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             if let subtitle, !subtitle.isEmpty {
                 Text(subtitle)
                     .font(GRType.caption)
