@@ -63,6 +63,12 @@ struct ChatView: View {
             consumeRouter()
             await agentBridge.refresh()
             if agentBridge.isAvailable { agentAsk.restore() }
+            // UI-QA: `GR_ASK="question"` asks once per launch, for screenshots of a real answer.
+            if let question = ProcessInfo.processInfo.environment["GR_ASK"], !ChatAutoAsk.done {
+                ChatAutoAsk.done = true
+                model.input = question
+                await model.send()
+            }
         }
         .onChange(of: router.pendingAssistantPrompt) { _, _ in consumeRouter() }
         .onReceive(NotificationCenter.default.publisher(for: .grSessionReady)) { _ in
@@ -598,7 +604,8 @@ struct ChatView: View {
                 .font(GRType.body)
                 .foregroundStyle(GRColor.textPrimary)
                 .padding(.leading, inputFocused ? 2 : 14)
-                .padding(.vertical, 11)
+                .padding(.vertical, 8)
+                .frame(minHeight: 36)
 
             if agentBridge.isAvailable && model.canSend {
                 // Sends the typed question to the user's agent instead of the in-app assistant.
@@ -638,11 +645,11 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(GRColor.textPrimary)
-                        .frame(width: 22, height: 22)
+                        .foregroundStyle(GRColor.canvas)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(GRColor.accent))
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
+                .buttonStyle(.plain)
                 .accessibilityLabel("Stop answer")
             } else {
                 Button {
@@ -650,14 +657,15 @@ struct ChatView: View {
                     GRHaptics.tap()
                     Task { await model.send() }
                 } label: {
+                    // Same 36 pt as the mic and the one-line field, so it sits centred in the bar.
                     Image(systemName: "arrow.up")
                         .font(.system(size: 16, weight: .bold))
-                        .frame(width: 22, height: 22)
+                        .foregroundStyle(GRColor.canvas)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(GRColor.accent))
+                        .opacity(model.canSend ? 1 : 0.55)
                 }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.circle)
-                .tint(GRColor.accent)
-                .foregroundStyle(model.canSend ? GRColor.canvas : GRColor.textTertiary)
+                .buttonStyle(.plain)
                 .disabled(!model.canSend)
                 .accessibilityLabel("Send")
             }
@@ -1141,4 +1149,9 @@ enum ChatMarkdown {
             attr.replaceSubrange(start.lowerBound..<end.upperBound, with: math)
         }
     }
+}
+
+@MainActor
+private enum ChatAutoAsk {
+    static var done = false
 }

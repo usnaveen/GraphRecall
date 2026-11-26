@@ -93,6 +93,16 @@ final class FeedViewModel {
             .sorted { $0.count > $1.count }
     }
 
+    /// UI-QA: `GR_FEED_FOCUS=<item type>` (e.g. `code_sandbox`) moves the first card of that type
+    /// to the top, so a screenshot can show it without scrolling.
+    private static func uiQAFocused(_ items: [FeedItem]) -> [FeedItem] {
+        guard let raw = ProcessInfo.processInfo.environment["GR_FEED_FOCUS"],
+              let index = items.firstIndex(where: { $0.itemType.rawValue == raw }) else { return items }
+        var reordered = items
+        reordered.insert(reordered.remove(at: index), at: 0)
+        return reordered
+    }
+
     func load() async {
         isLoading = true
         errorMessage = nil
@@ -128,7 +138,7 @@ final class FeedViewModel {
                 dueTotal = 0
                 errorMessage = nil
             } else {
-                items = merged
+                items = Self.uiQAFocused(merged)
                 completedToday = feed.completedToday
                 dailyGoal = feed.dailyGoal
                 streak = feed.streakDays

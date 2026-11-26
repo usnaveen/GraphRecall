@@ -28,7 +28,8 @@ struct FeedContentCard: View {
     @State private var viewportHeight: CGFloat = 0
     @State private var showRemind = false
     /// The rating slider stays tucked away until you tap the rate button (or after you've rated).
-    @State private var showGrade = false
+    /// UI-QA: `GR_SHOW_GRADE=1` opens the difficulty meter on every card.
+    @State private var showGrade = ProcessInfo.processInfo.environment["GR_SHOW_GRADE"] == "1"
 
     var body: some View {
         VStack(spacing: 0) {

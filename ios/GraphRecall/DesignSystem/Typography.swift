@@ -23,7 +23,7 @@ enum GRType {
 
 /// The display faces you can pick for screen titles.
 enum GRTitleFont: String, CaseIterable, Identifiable {
-    case orbitron, chintzyCPU, ledLight, platinumSign, alienMushrooms, system
+    case orbitron, chintzyCPU, ledLight, platinumSign, alienMushrooms, retimoa, system
 
     var id: String { rawValue }
 
@@ -34,6 +34,7 @@ enum GRTitleFont: String, CaseIterable, Identifiable {
         case .ledLight: return "LED Light"
         case .platinumSign: return "Platinum Sign"
         case .alienMushrooms: return "Alien Mushrooms"
+        case .retimoa: return "Retimoa"
         case .system: return "System"
         }
     }
@@ -46,6 +47,7 @@ enum GRTitleFont: String, CaseIterable, Identifiable {
         case .ledLight: return ("LEDLight", "LEDLIGHT")
         case .platinumSign: return ("PlatinumSign", "PlatinumSign")
         case .alienMushrooms: return ("AlienMushrooms", "AlienMushrooms")
+        case .retimoa: return ("Retimoa", "Retimoa")
         case .system: return nil
         }
     }
@@ -60,6 +62,7 @@ enum GRTitleFont: String, CaseIterable, Identifiable {
         case .ledLight: return 1.2
         case .platinumSign: return 1.0
         case .alienMushrooms: return 1.05
+        case .retimoa: return 1.1
         default: return 1
         }
     }
@@ -70,7 +73,7 @@ enum GRTitleFont: String, CaseIterable, Identifiable {
 }
 
 /// Fonts that ship in the asset catalog (so no project-file entries are needed) and are registered
-/// once at launch. Three of them are personal-use fonts kept out of the public repo; when one is
+/// once at launch. Four of them are personal-use fonts kept out of the public repo; when one is
 /// missing the title falls back to the system font.
 @MainActor
 enum GRFonts {
