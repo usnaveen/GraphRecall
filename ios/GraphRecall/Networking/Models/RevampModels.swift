@@ -132,11 +132,17 @@ struct CreateNodeBody: Encodable, Sendable {
     }
 }
 
-/// `POST /api/nodes` returns the raw Neo4j record, so the id may sit under `properties`.
+/// `POST /api/nodes` returns the raw Neo4j record plus any auto-applied or pending links.
 struct CreateNodeResponse: Decodable, Sendable {
     let nodeId: String?
+    let linksApplied: [LinkSuggestion]
+    let linksPending: [LinkSuggestion]
 
-    private enum CodingKeys: String, CodingKey { case node }
+    private enum CodingKeys: String, CodingKey {
+        case node
+        case linksApplied = "links_applied"
+        case linksPending = "links_pending"
+    }
 
     private struct NodeRecord: Decodable {
         struct Properties: Decodable { let id: String? }
@@ -148,6 +154,8 @@ struct CreateNodeResponse: Decodable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let node = try c.decodeIfPresent(NodeRecord.self, forKey: .node)
         nodeId = node?.id ?? node?.properties?.id
+        linksApplied = try c.decodeIfPresent([LinkSuggestion].self, forKey: .linksApplied) ?? []
+        linksPending = try c.decodeIfPresent([LinkSuggestion].self, forKey: .linksPending) ?? []
     }
 }
 

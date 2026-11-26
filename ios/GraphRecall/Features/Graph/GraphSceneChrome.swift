@@ -223,7 +223,7 @@ struct CreateConceptSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var description = ""
-    @State private var domain = "General"
+    @State private var domain = ""
     @State private var parentQuery = ""
     @State private var parent: GraphNode?
     @State private var isCreating = false
@@ -231,6 +231,7 @@ struct CreateConceptSheet: View {
     @FocusState private var nameFocused: Bool
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var domainDisplay: String { domain.isEmpty ? "Auto (AI chooses)" : domain }
 
     private var parentMatches: [GraphNode] {
         let q = parentQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -260,20 +261,21 @@ struct CreateConceptSheet: View {
                             .modifier(CreateFieldStyle())
 
                         Menu {
+                            Button("Auto (AI chooses)") { domain = "" }
                             ForEach(model.creatableDomains, id: \.self) { option in
                                 Button(option) { domain = option }
                             }
                         } label: {
                             HStack {
-                                Text(domain)
-                                    .foregroundStyle(GRColor.textPrimary)
+                                Text(domainDisplay)
+                                    .foregroundStyle(domain.isEmpty ? GRColor.textSecondary : GRColor.textPrimary)
                                 Spacer()
                                 Image(systemName: "chevron.down")
                                     .foregroundStyle(GRColor.textTertiary)
                             }
                             .modifier(CreateFieldStyle())
                         }
-                        .accessibilityLabel("Domain, \(domain)")
+                        .accessibilityLabel("Domain, \(domainDisplay)")
 
                         parentPicker
 
@@ -383,7 +385,7 @@ struct CreateConceptSheet: View {
             try await model.createConcept(
                 name: trimmedName,
                 description: description,
-                domain: domain,
+                domain: domain.isEmpty ? nil : domain,
                 parentId: parent?.id,
                 position: draft.position
             )

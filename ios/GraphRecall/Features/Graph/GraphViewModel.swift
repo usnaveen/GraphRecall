@@ -638,11 +638,11 @@ final class GraphViewModel {
         createDraft = CreateConceptDraft(name: name, position: position)
     }
 
-    /// `POST /api/nodes`, then reload and queue link suggestions for the new concept.
+    /// `POST /api/nodes`, then reload and queue link suggestions if auto-linking left items or found none.
     func createConcept(
         name: String,
         description: String,
-        domain: String,
+        domain: String?,
         parentId: String?,
         position: GraphPoint3D?
     ) async throws {
@@ -652,13 +652,16 @@ final class GraphViewModel {
         }
         let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let id = try await APIClient.shared.createNode(
+        let created = try await APIClient.shared.createNode(
             name: trimmedName,
             description: trimmedDescription.isEmpty ? nil : trimmedDescription,
             domain: domain,
             parentConceptId: parentId,
             position: position
         )
+        let id = created.nodeId
+        let appliedCount = created.linksApplied.count
+        let pendingCount = created.linksPending.count
         await reload(selecting: id)
         // MERGE-by-name can return an existing id, or decoding can miss it — land on the concept either way.
         var resolvedId = id
@@ -668,8 +671,12 @@ final class GraphViewModel {
             }?.id
             if let resolvedId { selectedNodeId = resolvedId }
         }
-        showToast("Added \(trimmedName)")
-        if let resolvedId {
+        if appliedCount > 0 {
+            showToast("Added \(trimmedName) · linked to \(appliedCount)")
+        } else {
+            showToast("Added \(trimmedName)")
+        }
+        if let resolvedId, (appliedCount == 0 || pendingCount > 0) {
             pendingLinkSuggestionsId = resolvedId
         }
     }

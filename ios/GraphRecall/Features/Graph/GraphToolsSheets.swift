@@ -35,7 +35,22 @@ struct LinkSuggestionsSheet: View {
                         } else if let errorMessage {
                             GRBanner(systemImage: "exclamationmark.triangle.fill", title: "Couldn’t suggest links", subtitle: errorMessage, tone: .warning)
                         } else if suggestions.isEmpty {
-                            GRBanner(systemImage: "checkmark.seal.fill", title: "No new links", subtitle: "This concept already looks well connected.", tone: .accent)
+                            let existingLinks = model.neighbors(of: node.id).count
+                            if existingLinks > 0 {
+                                GRBanner(
+                                    systemImage: "checkmark.seal.fill",
+                                    title: "No new links",
+                                    subtitle: "Already connected to \(existingLinks) concept\(existingLinks == 1 ? "" : "s").",
+                                    tone: .accent
+                                )
+                            } else {
+                                GRBanner(
+                                    systemImage: "link.badge.plus",
+                                    title: "No automatic links found",
+                                    subtitle: "Add a brief description or connect it manually from Connections.",
+                                    tone: .accent
+                                )
+                            }
                         }
 
                         ForEach(suggestions) { suggestion in

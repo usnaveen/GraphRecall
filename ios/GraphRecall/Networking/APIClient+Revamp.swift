@@ -55,15 +55,15 @@ extension APIClient {
     }
 
     /// POST `/api/nodes` — create a concept, optionally under a parent and at a 3D position.
-    /// Returns the new concept's id when the backend reports it.
+    /// Returns the created concept id together with any auto-applied or pending links.
     func createNode(
         name: String,
         description: String?,
         domain: String?,
         parentConceptId: String?,
         position: GraphPoint3D?
-    ) async throws -> String? {
-        let response: CreateNodeResponse = try await post(
+    ) async throws -> CreateNodeResponse {
+        try await post(
             "/api/nodes",
             body: CreateNodeBody(
                 name: name,
@@ -74,7 +74,6 @@ extension APIClient {
             ),
             timeout: 120
         )
-        return response.nodeId
     }
 
     // MARK: Import review (HITL)

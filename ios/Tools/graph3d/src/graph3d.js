@@ -233,8 +233,8 @@ async function layoutGraph(graph, previous, isStale) {
   const byPlace = [...Array(kClusters).keys()].sort((a, b) => (sizes.get(b) || 0) - (sizes.get(a) || 0));
   const islandRadius = (n) => Math.max(24, 16 * Math.cbrt(n || 1));
 
-  // Wide portrait-balanced 3D spacing so cluster orbs look distinct and separate in overview.
-  const spacing = Math.max(250, 9.2 * Math.max(...byPlace.map((c) => islandRadius(sizes.get(c))), 26));
+  // Wide portrait-balanced 3D spacing so cluster nebulae look distinct and separate in overview.
+  const spacing = Math.max(290, 10.2 * Math.max(...byPlace.map((c) => islandRadius(sizes.get(c))), 28));
   const clusterCenters = new Array(kClusters);
   byPlace.forEach((c, i) => {
     if (kClusters === 1) { clusterCenters[c] = { x: 0, y: 0, z: 0 }; return; }
@@ -436,7 +436,7 @@ scene.add(starLayer, haloLayer, clusterEntityLayer, linkLayer, arrowLayer, nodeL
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.30, 0.45, 0.28);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.45, 0.30);
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
 
@@ -454,10 +454,60 @@ const haloTexture = (() => {
   return new THREE.CanvasTexture(canvas);
 })();
 
+const starDotTexture = (() => {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.28, 'rgba(255,255,255,0.75)');
+  g.addColorStop(0.65, 'rgba(255,255,255,0.16)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+})();
+
+function createNebulaShellMaterial(colour) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: colour.clone() },
+      uOpacity: { value: 1.0 },
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      void main() {
+        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+        vNormal = normalize(normalMatrix * normal);
+        vViewDir = normalize(-mvPos.xyz);
+        gl_Position = projectionMatrix * mvPos;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uOpacity;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      void main() {
+        float fresnel = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 2.2);
+        float alpha = (0.045 + fresnel * 0.34) * uOpacity;
+        vec3 col = mix(uColor, vec3(1.0), fresnel * 0.28);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.FrontSide,
+  });
+}
+
 const sphereGeometry = new THREE.SphereGeometry(1, 20, 14);
 const ringGeometry = new THREE.RingGeometry(1.3, 1.6, 48);
-const ARROW_HEIGHT = 1.25;
-const arrowGeometry = new THREE.ConeGeometry(0.42, ARROW_HEIGHT, 10);
+const ARROW_HEIGHT = 1.0;
+const arrowGeometry = new THREE.ConeGeometry(0.24, ARROW_HEIGHT, 8);
 
 let width = 1;
 let height = 1;
@@ -625,6 +675,16 @@ function buildClusterViews() {
     view.sprite.material.dispose();
     clusterEntityLayer.remove(view.orb);
     view.orb.material.dispose();
+    if (view.stars) {
+      clusterEntityLayer.remove(view.stars);
+      view.stars.geometry.dispose();
+      view.stars.material.dispose();
+    }
+    if (view.constellationLines) {
+      clusterEntityLayer.remove(view.constellationLines);
+      view.constellationLines.geometry.dispose();
+      view.constellationLines.material.dispose();
+    }
     view.label.remove();
   }
   clusterViews = [];
@@ -644,31 +704,94 @@ function buildClusterViews() {
     centre.divideScalar(members.length);
     const distances = members.map((n) => centre.distanceTo(new THREE.Vector3(n.x, n.y, n.z))).sort((a, b) => a - b);
     const radius = Math.max(24, distances[Math.floor(distances.length * 0.85)] || 24);
-    const orbRadius = THREE.MathUtils.clamp(9 + Math.cbrt(members.length) * 3.2, 10, 20);
+    const maxDist = Math.max(distances[distances.length - 1] || 24, 1);
+    const orbRadius = THREE.MathUtils.clamp(15 + Math.cbrt(members.length) * 4.8, 17, 31);
     const colourHex = stableColor(members[0].colorKey || String(index));
     const colour = new THREE.Color(colourHex);
 
-    const orb = new THREE.Mesh(
-      sphereGeometry,
-      new THREE.MeshLambertMaterial({
-        color: colour,
-        emissive: colour,
-        emissiveIntensity: 0.42,
-        transparent: true,
-        opacity: 0.96,
-      }),
-    );
+    const orb = new THREE.Mesh(sphereGeometry, createNebulaShellMaterial(colour));
     orb.position.copy(centre);
     orb.scale.setScalar(orbRadius);
     orb.userData.clusterIndex = index;
     clusterEntityLayer.add(orb);
 
+    // Inner glowing star-cluster points + gossamer constellation filaments inside each translucent nebula.
+    const starPositions = new Float32Array(members.length * 3);
+    const starColors = new Float32Array(members.length * 3);
+    const memberMiniPos = new Map();
+    const starCol = new THREE.Color();
+    const innerScale = (orbRadius * 0.78) / maxDist;
+    members.forEach((n, i) => {
+      const mx = centre.x + (n.x - centre.x) * innerScale;
+      const my = centre.y + (n.y - centre.y) * innerScale;
+      const mz = centre.z + (n.z - centre.z) * innerScale;
+      starPositions[i * 3] = mx;
+      starPositions[i * 3 + 1] = my;
+      starPositions[i * 3 + 2] = mz;
+      memberMiniPos.set(n.id, [mx, my, mz]);
+
+      const brightness = Math.min(1, (n.degree || 0) / 8);
+      starCol.copy(colour).lerp(new THREE.Color('#ffffff'), 0.45 + 0.35 * brightness);
+      starColors[i * 3] = starCol.r;
+      starColors[i * 3 + 1] = starCol.g;
+      starColors[i * 3 + 2] = starCol.b;
+    });
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+    const stars = new THREE.Points(
+      starGeo,
+      new THREE.PointsMaterial({
+        map: starDotTexture,
+        size: 5.5,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.92,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        sizeAttenuation: true,
+      }),
+    );
+    stars.raycast = () => {};
+    clusterEntityLayer.add(stars);
+
+    const intraPairs = [];
+    for (const link of graph.links) {
+      if (intraPairs.length >= 45) break;
+      const a = memberMiniPos.get(link.source.id);
+      const b = memberMiniPos.get(link.target.id);
+      if (a && b) intraPairs.push([a, b]);
+    }
+    let constellationLines = null;
+    if (intraPairs.length > 0) {
+      const linePositions = new Float32Array(intraPairs.length * 6);
+      intraPairs.forEach(([a, b], i) => {
+        const o = i * 6;
+        linePositions[o] = a[0]; linePositions[o + 1] = a[1]; linePositions[o + 2] = a[2];
+        linePositions[o + 3] = b[0]; linePositions[o + 4] = b[1]; linePositions[o + 5] = b[2];
+      });
+      const lineGeo = new THREE.BufferGeometry();
+      lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+      constellationLines = new THREE.LineSegments(
+        lineGeo,
+        new THREE.LineBasicMaterial({
+          color: colour,
+          transparent: true,
+          opacity: 0.16,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      constellationLines.raycast = () => {};
+      clusterEntityLayer.add(constellationLines);
+    }
+
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: haloTexture, color: colour, transparent: true, opacity: 0.48,
+      map: haloTexture, color: colour, transparent: true, opacity: 0.24,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }));
     sprite.position.copy(centre);
-    sprite.scale.setScalar(orbRadius * 3.8);
+    sprite.scale.setScalar(orbRadius * 2.9);
     sprite.renderOrder = -5;
     haloLayer.add(sprite);
 
@@ -685,6 +808,8 @@ function buildClusterViews() {
     const view = {
       index,
       orb,
+      stars,
+      constellationLines,
       sprite,
       label,
       titleText,
@@ -913,9 +1038,11 @@ function applyState() {
     const showOrb = overview && anyFilterPass;
     const isIsolatedCloud = !overview && !focusing && activeView && view.index === activeView.index;
     view.orb.visible = showOrb;
+    if (view.stars) view.stars.visible = showOrb;
+    if (view.constellationLines) view.constellationLines.visible = showOrb;
     view.sprite.visible = showOrb || isIsolatedCloud;
-    view.sprite.material.opacity = showOrb ? 0.48 : 0.10;
-    view.sprite.scale.setScalar(showOrb ? view.orbRadius * 3.8 : (view.expandedRadius || view.radius) * 2.1);
+    view.sprite.material.opacity = showOrb ? 0.24 : 0.08;
+    view.sprite.scale.setScalar(showOrb ? view.orbRadius * 2.9 : (view.expandedRadius || view.radius) * 2.0);
     if (!showOrb) {
       view.label.style.opacity = '0';
       view.label.style.pointerEvents = 'none';
@@ -992,12 +1119,12 @@ function rebuildLinks(selectedId, searching, overview, activeSet) {
   if (!graph || overview) return; // Overview shows clean orbs only — zero hairball edges.
 
   if (focusView) {
-    addLinkBatch(focusView.links, 2.2, 0.90, (link) => relColor(link.type));
+    addLinkBatch(focusView.links, 1.8, 0.80, (link) => relColor(link.type));
     for (const link of focusView.links) {
       if (UNDIRECTED_TYPES.has(link.type)) continue; // RELATED_TO never gets an arrowhead.
       const mesh = new THREE.Mesh(
         arrowGeometry,
-        new THREE.MeshBasicMaterial({ color: relColor(link.type), transparent: true, opacity: 0.94 }),
+        new THREE.MeshBasicMaterial({ color: relColor(link.type), transparent: true, opacity: 0.78 }),
       );
       mesh.raycast = () => {};
       arrowLayer.add(mesh);
@@ -1023,13 +1150,13 @@ function rebuildLinks(selectedId, searching, overview, activeSet) {
   }
 
   addLinkBatch(faint, 0.9, 0.10, (link) => relColor(link.type));
-  addLinkBatch(idle, 1.5, 0.72, (link) => relColor(link.type));
+  addLinkBatch(idle, 1.2, 0.58, (link) => relColor(link.type));
   let budget = MAX_ARROWS;
   for (const link of idle) {
     if (budget-- <= 0) break;
     const mesh = new THREE.Mesh(
       arrowGeometry,
-      new THREE.MeshBasicMaterial({ color: relColor(link.type), transparent: true, opacity: 0.78 }),
+      new THREE.MeshBasicMaterial({ color: relColor(link.type), transparent: true, opacity: 0.58 }),
     );
     mesh.raycast = () => {};
     arrowLayer.add(mesh);
@@ -1085,9 +1212,9 @@ function updateArrows() {
     if (length < 0.001) continue;
     arrowDirection.divideScalar(length);
     const worldPerPx = target.mesh.scale.x / Math.max(target.pxRadius, 0.001);
-    const headLength = (focusView ? 12 : 8) * worldPerPx;
+    const headLength = (focusView ? 7.2 : 4.8) * worldPerPx;
     mesh.scale.setScalar(headLength / ARROW_HEIGHT);
-    const back = target.mesh.scale.x + headLength * 0.65;
+    const back = target.mesh.scale.x + headLength * 0.58;
     mesh.position.copy(target.mesh.position).addScaledVector(arrowDirection, -back);
     mesh.quaternion.setFromUnitVectors(arrowUp, arrowDirection);
   }

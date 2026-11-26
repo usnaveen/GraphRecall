@@ -26,6 +26,8 @@ _CANDIDATE_LIMIT = 40
 # concept without being the same idea, so cutting at 0.72 would hide exactly the
 # links worth drawing.
 _CANDIDATE_MIN_SCORE = 0.45
+# Safe JSON character budget sent to the LLM (keeps payload valid JSON instead of slicing mid-string).
+_MAX_PROMPT_CHARS = 14000
 
 
 class LinkSuggestionState(TypedDict, total=False):
@@ -61,50 +63,78 @@ async def fetch_context_node(state: LinkSuggestionState) -> dict:
         if hasattr(node, "_properties"):
             node = dict(node._properties)
 
+        # Exclude already-connected neighbors so suggestions propose genuinely new links.
+        neighbor_rows = await neo4j.execute_query(
+            """
+            MATCH (c:Concept {id: $id, user_id: $user_id})--(n:Concept {user_id: $user_id})
+            RETURN DISTINCT n.id AS id
+            """,
+            {"id": node_id, "user_id": user_id},
+        )
+        exclude_ids = [node_id] + [
+            r["id"] for r in (neighbor_rows or []) if r.get("id") and r["id"] != node_id
+        ]
+
         # Candidates are the concepts nearest in meaning, not an arbitrary slice.
-        # A flat LIMIT 60 meant that past 60 concepts the true neighbours were
-        # usually not even shown to the model, and placement quality fell off a
-        # cliff exactly as the graph became worth having.
-        candidates = await similar_to_embedding(
+        vector_candidates = await similar_to_embedding(
             user_id,
             node.get("embedding") or [],
             limit=_CANDIDATE_LIMIT,
             min_score=_CANDIDATE_MIN_SCORE,
-            # No margin gate here: this is a shortlist for the model to reason
-            # over, not a set of matches to act on. A prerequisite is related
-            # without being a near-duplicate, so the standing-clear test that
-            # ingestion needs would hide exactly the links worth drawing.
             min_margin=0.0,
-            exclude_ids=[node_id],
+            exclude_ids=exclude_ids,
         )
 
-        if not candidates:
-            # No embedding on the node, or nothing near it: fall back to a slice
-            # of the same graph, which is still a better guess than none.
-            candidates = await neo4j.execute_query(
-                """
-                MATCH (c:Concept {user_id: $user_id})
-                WHERE c.id <> $id
-                RETURN c.id AS id, c.name AS name, c.definition AS definition,
-                       c.domain AS domain
-                ORDER BY coalesce(c.domain, '') = coalesce($domain, '') DESC,
-                         c.created_at DESC
-                LIMIT $limit
-                """,
-                {
-                    "user_id": user_id,
-                    "id": node_id,
-                    "domain": node.get("domain"),
-                    "limit": _CANDIDATE_LIMIT,
-                },
-            )
-            logger.info(
-                "LinkSuggestion: no vector candidates, used recency fallback",
-                node_id=node_id,
-                candidates=len(candidates),
-            )
+        # Reserve slots for domain/hub concepts (e.g. legacy nodes without embeddings
+        # such as canonical hub concepts like "Machine Learning") and always check for
+        # same-domain hubs even when vector search returned sparse or full hits.
+        fallback_rows = await neo4j.execute_query(
+            """
+            MATCH (c:Concept {user_id: $user_id})
+            WHERE NOT c.id IN $exclude_ids
+            WITH c,
+                 CASE WHEN toLower(coalesce(c.name, '')) = toLower(coalesce($domain, '')) THEN 2
+                      WHEN coalesce(c.domain, '') = coalesce($domain, '') THEN 1
+                      ELSE 0 END AS domain_rank,
+                 COUNT { (c)--() } AS degree
+            RETURN c.id AS id, c.name AS name, c.definition AS definition,
+                   c.domain AS domain, domain_rank
+            ORDER BY domain_rank DESC, degree DESC, c.created_at DESC
+            LIMIT $limit
+            """,
+            {
+                "user_id": user_id,
+                "exclude_ids": exclude_ids,
+                "domain": node.get("domain"),
+                "limit": _CANDIDATE_LIMIT,
+            },
+        )
 
-        return {"node": node, "candidates": candidates}
+        domain_hubs = [r for r in (fallback_rows or []) if r.get("domain_rank") == 2]
+        remaining_fallback = [r for r in (fallback_rows or []) if r.get("domain_rank") != 2]
+
+        # Order: exact domain-name hub(s) first, then top vector matches (up to 25 if
+        # we still have same-domain/high-degree fallback concepts to include), then
+        # remaining domain/hub concepts up to _CANDIDATE_LIMIT.
+        vec_cap = 25 if remaining_fallback else _CANDIDATE_LIMIT
+        merged: list[dict] = []
+        seen_ids: set[str] = set()
+
+        def _append_unique(items: list[dict], cap: int) -> None:
+            for item in items:
+                if len(merged) >= cap:
+                    break
+                cid = item.get("id")
+                if not cid or cid in seen_ids:
+                    continue
+                seen_ids.add(cid)
+                merged.append(item)
+
+        _append_unique(domain_hubs, _CANDIDATE_LIMIT)
+        _append_unique(vector_candidates[:vec_cap], _CANDIDATE_LIMIT)
+        _append_unique(remaining_fallback, _CANDIDATE_LIMIT)
+
+        return {"node": node, "candidates": merged}
 
     except Exception as e:
         logger.error("LinkSuggestion: fetch_context failed", error=str(e))
@@ -123,36 +153,50 @@ async def generate_links_node(state: LinkSuggestionState) -> dict:
 
     llm = get_chat_model(temperature=0.2, json_mode=True)
 
-    # Trim definitions before serializing: the payload is truncated at 6000
-    # chars, and a few verbose candidates used to push the rest of the list past
-    # the cut, so the model never saw them.
-    prompt = {
-        "node": {
-            "id": node.get("id"),
-            "name": node.get("name"),
-            "definition": (node.get("definition") or "")[:300],
-            "domain": node.get("domain", "General"),
-        },
-        "candidates": [
-            {
-                "id": c.get("id"),
-                "name": c.get("name"),
-                "definition": (c.get("definition") or "")[:160],
-                "domain": c.get("domain", "General"),
-            }
-            for c in candidates
-        ],
+    node_payload = {
+        "id": node.get("id"),
+        "name": node.get("name"),
+        "definition": (node.get("definition") or "")[:300],
+        "domain": node.get("domain", "General"),
     }
+    base_len = len(json.dumps({"node": node_payload, "candidates": []}))
+    running_len = base_len
+    trimmed_candidates: list[dict] = []
+    for c in candidates:
+        entry = {
+            "id": c.get("id"),
+            "name": c.get("name"),
+            "definition": (c.get("definition") or "")[:140],
+            "domain": c.get("domain", "General"),
+        }
+        entry_len = len(json.dumps(entry)) + 2
+        if running_len + entry_len > _MAX_PROMPT_CHARS and trimmed_candidates:
+            break
+        trimmed_candidates.append(entry)
+        running_len += entry_len
+
+    prompt = {
+        "node": node_payload,
+        "candidates": trimmed_candidates,
+    }
+    payload_json = json.dumps(prompt)
     system = (
         "You are a graph linking assistant. Given a node and candidate concepts, "
-        "return up to 5 suggested links with relationship_type and strength (0-1). "
-        "Use relationship types: PREREQUISITE_OF, RELATED_TO, SUBTOPIC_OF, PART_OF, BUILDS_ON. "
+        "return up to 5 suggested links directed from `node` -> `target_id` with "
+        "relationship_type and strength (0-1). "
+        "Use relationship types:\n"
+        "- SUBTOPIC_OF: `node` is a subtopic or branch of `target_id` "
+        "(e.g., Supervised Learning SUBTOPIC_OF Machine Learning).\n"
+        "- PART_OF: `node` is a component of `target_id`.\n"
+        "- BUILDS_ON: `node` builds on `target_id`.\n"
+        "- PREREQUISITE_OF: `node` is a prerequisite needed before learning `target_id`.\n"
+        "- RELATED_TO: peer or closely related concept.\n"
         "Return JSON: {\"links\": [{\"target_id\": \"...\", \"relationship_type\": \"...\", "
         "\"strength\": 0.7, \"reason\": \"...\"}]}"
     )
 
     try:
-        response = await llm.ainvoke(f"{system}\n\nData:\n{json.dumps(prompt)[:6000]}")
+        response = await llm.ainvoke(f"{system}\n\nData:\n{payload_json}")
         raw = response.text.strip()
         if raw.startswith("```json"):
             raw = raw.split("```json")[1].split("```")[0].strip()
