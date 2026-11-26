@@ -209,6 +209,8 @@ async def get_3d_graph(
                 FROM proficiency_scores
                 WHERE user_id = :user_id
                   AND concept_id = ANY(:concept_ids)
+                  -- New concepts get a 0.10 placeholder row to schedule them; that is not a review.
+                  AND COALESCE(total_reviews, 0) > 0
                 """,
                 {"user_id": user_id, "concept_ids": concept_ids},
             )

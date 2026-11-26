@@ -74,6 +74,15 @@ def main() -> None:
     args = ap.parse_args()
     if (urlparse(args.api).hostname or "") not in {"localhost", "127.0.0.1"}:
         raise SystemExit("refusing: local API only")
+    # One "Claude Code" key: revoke the ones earlier runs made.
+    listing = urllib.request.Request(f"{args.api}/api/agent-bridge/keys",
+                                     headers={"Authorization": "Bearer showcase-token"})
+    with urllib.request.urlopen(listing, timeout=30) as r:
+        for key in json.load(r).get("keys", []):
+            if key.get("name") == "Claude Code" and not key.get("revoked_at"):
+                urllib.request.urlopen(urllib.request.Request(
+                    f"{args.api}/api/agent-bridge/keys/{key['id']}", method="DELETE",
+                    headers={"Authorization": "Bearer showcase-token"}), timeout=30).close()
     created = _post(args.api, "/api/agent-bridge/keys",
                     {"name": "Claude Code", "scopes": ["read:knowledge", "write:feed"], "expires_in_days": 30})
     print("key", created["key"]["key_prefix"], created["key"]["scopes"])

@@ -371,17 +371,24 @@ class SpacedRepetitionService:
 
         if result:
             row = result[0]
+            # `or`, not .get defaults: ingestion inserts placeholder rows (score 0.10, every other
+            # column NULL) and .get(key, default) returns None for a NULL column. The first grade
+            # of every newly imported concept failed validation with a 500.
+            def val(key, default):
+                v = row.get(key)
+                return default if v is None else v
+
             sm2_data = SM2Data(
                 item_id=item_id,
                 item_type=item_type,
                 user_id=user_id,
-                easiness_factor=row.get("easiness_factor", 2.5),
-                interval=row.get("interval_days", 1),
-                repetition=row.get("repetition_count", 0),
+                easiness_factor=float(val("easiness_factor", 2.5)),
+                interval=int(val("interval_days", 1)),
+                repetition=int(val("repetition_count", 0)),
                 last_review=row.get("last_review"),
-                next_review=row.get("next_review", datetime.now(timezone.utc)),
-                total_reviews=row.get("total_reviews", 0),
-                correct_streak=row.get("correct_streak", 0),
+                next_review=val("next_review", datetime.now(timezone.utc)),
+                total_reviews=int(val("total_reviews", 0)),
+                correct_streak=int(val("correct_streak", 0)),
             )
             # Attach FSRS fields as extra attributes
             sm2_data._fsrs_stability = row.get("stability")

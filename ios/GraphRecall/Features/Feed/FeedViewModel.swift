@@ -253,8 +253,12 @@ final class FeedViewModel {
 
     /// Records the difficulty-slider grade for a specific card without moving the feed.
     func grade(_ item: FeedItem, difficulty: ReviewDifficulty) async {
+        let alreadyGraded = gradedIds.contains(item.id)
         grades[item.id] = difficulty
         gradedIds.insert(item.id)
+        // A second grade on the same card only changes what the card shows: posting it again
+        // would count one recall twice in spaced repetition and in today's total.
+        guard !alreadyGraded else { return }
         // Revisit cards are local reminders, not scheduled reviews.
         guard !isRevisit(item) else { return }
         await submitGrade(for: item, difficulty: difficulty)
@@ -357,6 +361,12 @@ final class FeedViewModel {
             dumpBannerCount = await OfflineReviewStore.shared.loadDumpItems().count
             return result
         } catch {
+            // Only queue grades that never reached the server. A server that answered with an
+            // error would reject the replay too, and that review was retried on every launch.
+            guard Self.isConnectivityFailure(error) || isOffline else {
+                showSoftBanner(APIError.userFacing(error, resource: "review"))
+                return nil
+            }
             let pending = PendingOfflineReview(
                 itemId: item.id,
                 itemType: itemType,
@@ -411,12 +421,19 @@ final class FeedViewModel {
         }
     }
 
+    /// Feed loads overlap (launch, pull to refresh, session restored): one flush at a time, or
+    /// every queued review is sent twice.
+    private var isFlushingOfflineQueue = false
+
     func flushOfflineQueue() async {
+        guard !isFlushingOfflineQueue else { return }
+        isFlushingOfflineQueue = true
+        defer { isFlushingOfflineQueue = false }
         let pending = await OfflineReviewStore.shared.load()
         guard !pending.isEmpty else { return }
 
         var remaining: [PendingOfflineReview] = []
-        for review in pending {
+        for var review in pending {
             do {
                 _ = try await APIClient.shared.submitReview(
                     itemId: review.itemId,
@@ -425,7 +442,12 @@ final class FeedViewModel {
                     conceptId: review.conceptId
                 )
             } catch {
-                remaining.append(review)
+                // Still offline: keep it. Answered with an error: the server won't take it, and a
+                // few tries cover a server that was restarting.
+                review.attempts = (review.attempts ?? 0) + 1
+                if Self.isConnectivityFailure(error) || review.attempts! < 3 {
+                    remaining.append(review)
+                }
             }
         }
         await OfflineReviewStore.shared.replaceAll(remaining)
@@ -433,6 +455,11 @@ final class FeedViewModel {
         if remaining.isEmpty {
             isOffline = false
         }
+    }
+
+    static func isConnectivityFailure(_ error: Error) -> Bool {
+        if case APIError.transport = error { return true }
+        return error is URLError
     }
 
     // MARK: - NAV-34 Like / Save / soft banner

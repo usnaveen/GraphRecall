@@ -48,13 +48,14 @@ class KnowledgeService:
             return {}
         if concept_ids is None:
             rows = await self.pg.execute_query(
-                "SELECT concept_id, score FROM proficiency_scores WHERE user_id = :user_id",
+                "SELECT concept_id, score FROM proficiency_scores WHERE user_id = :user_id "
+                "AND COALESCE(total_reviews, 0) > 0",  # placeholder rows for new concepts aren't reviews
                 {"user_id": user_id},
             )
         else:
             rows = await self.pg.execute_query(
                 "SELECT concept_id, score FROM proficiency_scores "
-                "WHERE user_id = :user_id AND concept_id = ANY(:cids)",
+                "WHERE user_id = :user_id AND concept_id = ANY(:cids) AND COALESCE(total_reviews, 0) > 0",
                 {"user_id": user_id, "cids": concept_ids},
             )
         return {r["concept_id"]: float(r["score"] or 0) for r in rows}

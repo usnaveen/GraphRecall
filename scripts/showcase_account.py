@@ -43,7 +43,9 @@ ID_NAMESPACE = uuid.UUID("7d6c3f0e-9a41-4f7b-8d1e-5b0c2a9e4f11")
 
 # Per-user tables the showcase may hold; purged before every run (child tables first).
 PURGE = ("study_sessions", "knowledge_evidence", "proficiency_scores", "flashcards", "quizzes",
-         "daily_stats", "user_skills", "user_resumes", "saved_responses", "later_items")
+         "daily_stats", "user_skills", "user_resumes", "saved_responses", "later_items",
+         "chat_conversations",  # messages cascade
+         "agent_audit_log", "agent_requests", "agent_daily_digests", "agent_feed_items", "agent_api_keys")
 
 # Subject groups: (probability a concept has been reviewed, mean score, spread).
 STRONG = {"Natural Language Processing", "Deep Learning", "Large Language Models", "Information Retrieval",
@@ -96,6 +98,9 @@ def main() -> None:
                                               os.environ.get("NEO4J_PASSWORD", "graphrecall-dev")))
     src = str(uuid.UUID(args.source_user))
     rng = random.Random(args.seed)
+    # Due dates draw from their own generator so the scores, and everything published from them
+    # (launch-page samples, screenshots), stay the same when the spread of due dates changes.
+    due_rng = random.Random(args.seed + 1)
     now = datetime.now(timezone.utc)
 
     with pg.begin() as c:
@@ -135,9 +140,10 @@ def main() -> None:
         score = min(0.98, max(0.05, rng.gauss(mean, spread)))
         reviews = rng.randint(2, 8)
         last = now - timedelta(days=rng.randint(0, 12), hours=rng.randint(0, 20))
-        due = now + timedelta(days=due_offset(rng))
+        planned = now + timedelta(days=rng.randint(-2, 9))   # the interval SM-2 had planned
+        due = now + timedelta(days=due_offset(due_rng), hours=due_rng.randint(0, 6))
         scores.append({"c": ids[r["id"]], "s": round(score, 2), "n": reviews, "last": last, "due": due,
-                       "iv": max(1, (due - last).days), "streak": rng.randint(0, 4)})
+                       "iv": max(1, (planned - last).days), "streak": rng.randint(0, 4)})
     by_group = Counter(group(r["p"].get("domain")) for r in concepts)
     print(f"subjects: {dict(by_group)}; reviewed concepts: {len(scores)}")
 

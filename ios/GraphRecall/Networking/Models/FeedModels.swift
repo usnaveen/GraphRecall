@@ -979,6 +979,8 @@ struct PendingOfflineReview: Codable, Sendable, Identifiable, Hashable {
     let queuedAt: Date
     /// Optional so reviews queued by older builds still decode.
     var conceptId: String? = nil
+    /// Failed replays so far; the queue gives up on a review the server keeps rejecting.
+    var attempts: Int? = nil
 }
 
 struct FeedLikeResponse: Codable, Sendable {

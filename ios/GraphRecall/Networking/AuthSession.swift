@@ -257,6 +257,8 @@ final class AuthSession {
     func seedSessionForTesting(accessToken: String, refreshToken: String, expiresIn: Int,
                                name: String = "Test User") async {
         await ensureTokenProviderRegistered()
+        // Switching accounts: grades queued by the previous one must not be sent as this one.
+        if AppAuthKeychain.loadMeta()?.name != name { await OfflineReviewStore.shared.clear() }
         let expiresAt = Date().addingTimeInterval(TimeInterval(expiresIn))
         currentAccessToken = accessToken
         accessTokenExpiresAt = expiresAt
@@ -326,6 +328,7 @@ final class AuthSession {
         AppAuthKeychain.clear()
         GRSharedAuth.clear()
         ResumeFileStore.removeAll() // the original resume PDF is personal and stays with the account
+        await OfflineReviewStore.shared.clear() // queued grades belong to the account that made them
         await APIClient.shared.setAccessToken(nil)
         state = .signedOut
     }
