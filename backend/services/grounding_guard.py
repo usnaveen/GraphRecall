@@ -148,7 +148,18 @@ _QUESTION_STOPWORDS: frozenset[str] = frozenset({
     "can", "could", "should", "would", "explain", "describe", "tell", "about", "between",
     "difference", "different", "use", "using", "make", "work", "works", "get", "best", "way",
     "please", "vs", "versus", "s", "there", "their", "them", "they", "we", "our", "if", "than",
+    "did", "don", "doesn", "didn", "isn", "aren", "wasn",
 })
+# The question is about the user's own material ("themes across my notes", "what did I add
+# recently"), so it can't be off-topic even when it has no topical terms.
+_CORPUS_REFERENCE_RE = re.compile(
+    r"\b(?:my|our)\s+(?:own\s+)?(?:notes?|library|books?|papers?|reading|readings|material|sources?|"
+    r"knowledge(?:\s+graph)?|graph|uploads?|documents?|highlights?)\b"
+    r"|\bi(?:'ve|\s+have)\s+(?:added|saved|uploaded|read|studied|written|imported|noted)\b"
+    r"|\bi\s+(?:added|saved|uploaded|studied|wrote|imported|noted)\b"
+    r"|\b(?:did|have)\s+i\s+(?:recently\s+|just\s+)?(?:add|save|upload|read|study|write|import|note)\b",
+    re.IGNORECASE,
+)
 _TERM_RE = re.compile(r"[a-z0-9]+")
 
 # Calibrated on GraphRecall's own corpus (10 in-domain vs 10 off-topic questions, Nov 2026):
@@ -156,6 +167,9 @@ _TERM_RE = re.compile(r"[a-z0-9]+")
 # >= 0.5, off-topic 0.0 for all ten; concept-name coverage in-domain > 0, off-topic 0.0.
 _STRONG_SIMILARITY = 0.66
 _MIN_TERM_COVERAGE = 0.6
+# Half the query's terms must name retrieved concepts; one shared word is not enough
+# ("electrical transformer" vs the Transformer concept: 0.2; "attention deficit disorder": 0.33).
+_MIN_CONCEPT_COVERAGE = 0.5
 
 
 def query_terms(query: str) -> list[str]:
@@ -189,6 +203,9 @@ def evaluate_retrieval_confidence(
     query: str = "",
     min_vector_score: float = _STRONG_SIMILARITY,
     min_term_coverage: float = _MIN_TERM_COVERAGE,
+    *,
+    scoped: bool = False,
+    global_summary: bool = False,
 ) -> GroundingDecision:
     """Decide whether retrieved chunks and graph concepts justify answering or abstaining.
 
@@ -196,6 +213,10 @@ def evaluate_retrieval_confidence(
     naming a retrieved concept, and too few query terms in the retrieved passages. RRF and the
     reranker score are deliberately not used: RRF is rank-based (whatever ranks first scores
     1/(k+1) however irrelevant), and the reranker min-max normalises within the candidate set.
+
+    Never off-topic: a turn scoped to sources the user picked (``scoped``), or one answered from
+    corpus-wide community summaries (``global_summary``, e.g. "summarize my notes"); both are about
+    the user's material by construction and have no topical terms to check.
     """
     valid_chunk_indices = set(range(1, len(chunks) + 1))
     valid_graph_ids = {f"G{i}" for i in range(1, len(graph_concepts) + 1)}
@@ -229,6 +250,13 @@ def evaluate_retrieval_confidence(
             "to answer this reliably. Try adding notes on this topic or rephrasing your question."
         ))
 
+    if global_summary:
+        return decide(False, "medium", "global_summary_support")
+    if scoped:
+        return decide(False, "medium", "scoped_sources")
+    if _CORPUS_REFERENCE_RE.search(query or ""):
+        return decide(False, "medium", "corpus_reference")
+
     semantic_ok = best_vector is not None and best_vector >= min_vector_score
     terms = query_terms(query)
 
@@ -241,8 +269,10 @@ def evaluate_retrieval_confidence(
 
     term_cov = _coverage(terms, [_chunk_text(c) for c in chunks if isinstance(c, dict)]) if chunks else 0.0
     concept_cov = _coverage(terms, [str(c.get("name") or "") for c in graph_concepts if isinstance(c, dict)])
-    lexical_ok = term_cov >= min_term_coverage
-    concept_ok = concept_cov > 0.0
+    # Passages found by keyword search alone carry no cosine; with no semantic signal to lean on,
+    # any query term in them counts (full-text search already required a match to return them).
+    lexical_ok = term_cov >= min_term_coverage or (best_vector is None and term_cov > 0.0)
+    concept_ok = concept_cov >= _MIN_CONCEPT_COVERAGE
 
     if not (semantic_ok or lexical_ok or concept_ok):
         return decide(True, "low", "off_topic", term_cov, concept_cov, _LOW_RELEVANCE_MESSAGE)

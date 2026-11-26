@@ -395,3 +395,30 @@ def test_verify_citations_leaves_code_and_indexing_alone():
     for kept in ("        seen[x] = i\n", "    return [0, 1]\n", "`dp[10] = dp[9] + dp[8]`", "nums[0]",
                  "return [seen[target - x], i]", "grid[2][9]"):
         assert kept in audit.cleaned_text, kept
+
+
+def test_scoped_and_corpus_wide_questions_are_never_off_topic() -> None:
+    weak = [{"content": "unrelated", "similarity": 0.5}]
+    assert evaluate_retrieval_confidence(weak, [], "explain", query="What is the key idea here?", scoped=True).reason == "scoped_sources"
+    assert evaluate_retrieval_confidence(weak, [], "summarize", query="Summarize everything", global_summary=True).should_abstain is False
+    for q in ("What are the main themes across my notes?", "What did I add most recently?", "What have I read about LSTMs?"):
+        d = evaluate_retrieval_confidence(weak, [], "explain", query=q)
+        assert d.should_abstain is False and d.reason == "corpus_reference", q
+    # A how-to that merely contains "I read" / "I add" is still checked.
+    assert evaluate_retrieval_confidence(weak, [], "explain", query="How do I read a CSV file in pandas?").should_abstain is True
+
+
+def test_one_shared_word_with_a_concept_name_is_not_enough() -> None:
+    """Near-domain questions from the calibration run: one word matches a concept name."""
+    concepts = [{"name": "Transformer"}, {"name": "Attention"}, {"name": "Multi-Head Attention"}]
+    chunks = [{"content": "Self-attention lets each token weigh every other token.", "similarity": 0.60}]
+    for q in ("How does an electrical transformer step down voltage?", "What is attention deficit disorder?"):
+        d = evaluate_retrieval_confidence(chunks, concepts, "explain", query=q)
+        assert d.should_abstain is True, q
+    assert evaluate_retrieval_confidence(chunks, concepts, "explain", query="What is multi-head attention?").should_abstain is False
+
+
+def test_keyword_only_passages_count_any_term_match() -> None:
+    chunks = [{"content": "pgvector HNSW uses iterative scan for filtered queries.", "_rrf_score": 0.03}]
+    assert evaluate_retrieval_confidence(chunks, [], "explain", query="How does filtered ANN work?").should_abstain is False
+    assert evaluate_retrieval_confidence(chunks, [], "explain", query="How do volcanoes form?").should_abstain is True

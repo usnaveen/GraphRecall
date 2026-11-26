@@ -7,7 +7,7 @@
   "rrf": 0.040984,
   "rerank": 0.49124,
   "cov_chunk": 1.0,
-  "cov_concept": 0.67,
+  "cov_concept": 0.6666666666666666,
   "graph": 15,
   "abstain": false,
   "reason": "graph_and_chunk_support"
@@ -49,7 +49,7 @@
   "cov_concept": 0.25,
   "graph": 16,
   "abstain": false,
-  "reason": "graph_and_chunk_support"
+  "reason": "chunk_support_sufficient"
  },
  {
   "set": "IN",
@@ -85,7 +85,7 @@
   "rrf": 0.030328,
   "rerank": 0.487191,
   "cov_chunk": 1.0,
-  "cov_concept": 0.67,
+  "cov_concept": 0.6666666666666666,
   "graph": 16,
   "abstain": false,
   "reason": "graph_and_chunk_support"
@@ -99,7 +99,7 @@
   "rerank": 0.457914,
   "cov_chunk": 1.0,
   "cov_concept": 1.0,
-  "graph": 17,
+  "graph": 18,
   "abstain": false,
   "reason": "graph_and_chunk_support"
  },
@@ -136,8 +136,8 @@
   "vec": 0.5857787639215366,
   "rrf": 0.016393,
   "rerank": 0.15,
-  "cov_chunk": 0.0,
-  "cov_concept": 0.0,
+  "cov_chunk": null,
+  "cov_concept": null,
   "graph": 0,
   "abstain": false,
   "reason": "general_intent_bypass"
@@ -266,7 +266,7 @@
   "vec": 0.765426976333412,
   "rrf": 0.027049,
   "rerank": 0.153259,
-  "cov_chunk": 0.83,
+  "cov_chunk": 0.8888888888888888,
   "cov_concept": 0.0,
   "graph": 15,
   "abstain": false,
@@ -279,7 +279,7 @@
   "vec": 0.7593672955738482,
   "rrf": 0.016393,
   "rerank": 0.338614,
-  "cov_chunk": 0.86,
+  "cov_chunk": 0.8571428571428571,
   "cov_concept": 0.0,
   "graph": 0,
   "abstain": false,
@@ -292,11 +292,11 @@
   "vec": 0.7699348903903299,
   "rrf": 0.026281,
   "rerank": 0.190703,
-  "cov_chunk": 0.56,
-  "cov_concept": 0.11,
+  "cov_chunk": 0.5555555555555556,
+  "cov_concept": 0.1111111111111111,
   "graph": 16,
   "abstain": false,
-  "reason": "graph_and_chunk_support"
+  "reason": "chunk_support_sufficient"
  },
  {
   "set": "HOUT",
@@ -336,5 +336,122 @@
   "graph": 0,
   "abstain": true,
   "reason": "off_topic"
+ },
+ {
+  "set": "GLOBAL",
+  "q": "Summarize my notes",
+  "intent": "summarize",
+  "vec": 0.7225680656535557,
+  "rrf": 0.016393,
+  "rerank": 0.15,
+  "cov_chunk": null,
+  "cov_concept": null,
+  "graph": 16,
+  "abstain": false,
+  "reason": "corpus_reference"
+ },
+ {
+  "set": "GLOBAL",
+  "q": "What are the main themes across my notes?",
+  "intent": "summarize",
+  "vec": 0.6596157945373436,
+  "rrf": 0.016393,
+  "rerank": 0.15,
+  "cov_chunk": null,
+  "cov_concept": null,
+  "graph": 16,
+  "abstain": false,
+  "reason": "corpus_reference"
+ },
+ {
+  "set": "GLOBAL",
+  "q": "What did I add most recently?",
+  "intent": "find",
+  "vec": 0.6359089803380495,
+  "rrf": 0.026511,
+  "rerank": 0.309961,
+  "cov_chunk": null,
+  "cov_concept": null,
+  "graph": 16,
+  "abstain": false,
+  "reason": "corpus_reference"
+ },
+ {
+  "set": "NEAR",
+  "q": "How does an electrical transformer step down",
+  "intent": "explain",
+  "vec": 0.5913305625043753,
+  "rrf": 0.016393,
+  "rerank": 0.15,
+  "cov_chunk": 0.0,
+  "cov_concept": 0.2,
+  "graph": 15,
+  "abstain": true,
+  "reason": "off_topic"
+ },
+ {
+  "set": "NEAR",
+  "q": "How do I clear my browser cache?",
+  "intent": "explain",
+  "vec": 0.6008417400065129,
+  "rrf": 0.016393,
+  "rerank": 0.177086,
+  "cov_chunk": 0.3333333333333333,
+  "cov_concept": 0.0,
+  "graph": 0,
+  "abstain": true,
+  "reason": "off_topic"
+ },
+ {
+  "set": "NEAR",
+  "q": "What is attention deficit disorder?",
+  "intent": "explain",
+  "vec": 0.6056783733102514,
+  "rrf": 0.016393,
+  "rerank": 0.211035,
+  "cov_chunk": 0.3333333333333333,
+  "cov_concept": 0.3333333333333333,
+  "graph": 15,
+  "abstain": true,
+  "reason": "off_topic"
+ },
+ {
+  "set": "NEAR",
+  "q": "How do I search for cheap flights?",
+  "intent": "path",
+  "vec": 0.6014109766839472,
+  "rrf": 0.016393,
+  "rerank": 0.15,
+  "cov_chunk": 0.0,
+  "cov_concept": 0.0,
+  "graph": 17,
+  "abstain": true,
+  "reason": "off_topic"
+ },
+ {
+  "set": "SCOPED",
+  "q": "Summarize this",
+  "intent": "summarize",
+  "vec": 0.6293130417486963,
+  "rrf": 0.029094,
+  "rerank": 0.15,
+  "cov_chunk": null,
+  "cov_concept": null,
+  "graph": 0,
+  "abstain": false,
+  "reason": "scoped_sources"
+ },
+ {
+  "set": "SCOPED",
+  "q": "What is the key idea here?",
+  "intent": "explain",
+  "vec": 0.6442855415025912,
+  "rrf": 0.016393,
+  "rerank": 0.156256,
+  "cov_chunk": null,
+  "cov_concept": null,
+  "graph": 0,
+  "abstain": false,
+  "reason": "scoped_sources"
  }
 ]

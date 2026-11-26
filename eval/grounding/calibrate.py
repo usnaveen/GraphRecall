@@ -9,7 +9,7 @@ decision. IN/OUT were used to pick thresholds; HIN/HOUT are held out.
 import asyncio, json, sys
 from langchain_core.messages import HumanMessage
 import importlib; cg = importlib.import_module("backend.graphs.chat_graph")
-from backend.services.grounding_guard import evaluate_retrieval_confidence, _extract_chunk_scores
+from backend.services.grounding_guard import evaluate_retrieval_confidence, _extract_chunk_scores, query_terms
 
 
 import os
@@ -25,36 +25,47 @@ OUT = ["How do I make a sourdough starter?", "Who won the 1998 FIFA World Cup?",
        "What are the rules of cricket's LBW?", "How do I fix a leaking kitchen tap?",
        "What is the best time to visit Kyoto?"]
 
-async def probe(q):
+async def probe(q, focused=None):
     st = {"messages": [HumanMessage(content=q)], "user_id": USER}
+    if focused:
+        st["focused_source_ids"] = focused
     st.update(await cg.analyze_query_node(st))
     ctx = await cg.get_context_node(st)
     rag = cg.pack_context_chunks(ctx.get("rag_context", []), max_chars=cg._CHAT_RAG_CHAR_BUDGET)
     concepts = ctx.get("graph_context", {}).get("concepts", [])
     v, r, rr = _extract_chunk_scores(rag)
-    d = evaluate_retrieval_confidence(rag, concepts, st.get("intent", "general"), query=st.get("retrieval_query") or q)
+    gctx = ctx.get("graph_context", {})
+    d = evaluate_retrieval_confidence(
+        rag, concepts, st.get("intent", "general"), query=st.get("retrieval_query") or q,
+        scoped=bool(focused), global_summary=bool(gctx.get("global_summary")))
     sims = sorted([float(c["similarity"]) for c in rag if c.get("similarity") is not None], reverse=True)
-    from backend.services.reranker import _tokenize, _chunk_text
-    STOP = {"a","an","and","are","as","at","be","by","do","does","for","from","has","have","how","in","is","it","its","of","on","or","that","the","this","to","was","were","what","when","where","which","who","why","will","with","i","me","my","you","your","can","could","should","would","explain","describe","tell","about","between","difference","different","use","using","make","work","works","get","best","way","please","vs","versus","s"}
-    terms = [t for t in dict.fromkeys(_tokenize(q)) if t not in STOP]
-    chunk_toks = set(); [chunk_toks.update(_tokenize(_chunk_text(c))) for c in rag]
-    concept_toks = set(); [concept_toks.update(_tokenize(str(c.get("name") or ""))) for c in concepts]
-    cov_chunk = sum(t in chunk_toks for t in terms) / max(1, len(terms))
-    cov_concept = sum(t in concept_toks for t in terms) / max(1, len(terms))
-    return dict(q=q[:44], terms=terms, cov_chunk=round(cov_chunk, 2), cov_concept=round(cov_concept, 2), intent=st.get("intent"), n=len(rag), nsim=len(sims), vec=v, rrf=r, rerank=rr,
+    terms = query_terms(st.get("retrieval_query") or q)  # exactly what the guard checks
+    return dict(q=q[:44], terms=terms, cov_chunk=d.term_coverage, cov_concept=d.concept_coverage,
+                global_mode=gctx.get("search_mode"), intent=st.get("intent"), n=len(rag), nsim=len(sims), vec=v, rrf=r, rerank=rr,
                 graph=len(concepts), abstain=d.should_abstain, reason=d.reason)
 
 HOLD_IN = ["Why is generating text one token at a time slow if you don't store earlier results?",
            "How do recurrent nets keep information over long sequences?",
            "What trick lets several attention heads share the same keys and values?"]
 HOLD_OUT = ["How do I bake banana bread?", "What causes the northern lights?", "How do I renew a UK passport?"]
+# Corpus-wide questions: no topical terms; answered from community summaries when they exist.
+GLOBAL = ["Summarize my notes", "What are the main themes across my notes?", "What did I add most recently?"]
+# Shares vocabulary with the corpus but asks about something else.
+NEAR = ["How does an electrical transformer step down voltage?", "How do I clear my browser cache?",
+        "What is attention deficit disorder?", "How do I search for cheap flights?"]
+# Scoped to one note (GR_EVAL_SCOPED_NOTE_ID): the user chose the source, so never off-topic.
+SCOPED = ["Summarize this", "What is the key idea here?"]
 
 async def main():
     rows = []
-    for label, qs in (("IN", IN), ("OUT", OUT), ("HIN", HOLD_IN), ("HOUT", HOLD_OUT)):
+    scoped_note = os.environ.get("GR_EVAL_SCOPED_NOTE_ID")
+    sets = [("IN", IN), ("OUT", OUT), ("HIN", HOLD_IN), ("HOUT", HOLD_OUT), ("GLOBAL", GLOBAL), ("NEAR", NEAR)]
+    if scoped_note:
+        sets.append(("SCOPED", SCOPED))
+    for label, qs in sets:
         for q in qs:
             try:
-                x = await probe(q); x["set"] = label; rows.append(x)
+                x = await probe(q, [scoped_note] if label == "SCOPED" else None); x["set"] = label; rows.append(x)
                 print(json.dumps(x, default=lambda o: round(o, 4) if isinstance(o, float) else str(o)), flush=True)
             except Exception as e:
                 print(label, q[:40], "ERROR", repr(e)[:200], flush=True)

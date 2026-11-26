@@ -372,6 +372,11 @@ def test_response_cache_blocks_topic_swaps_even_when_embeddings_are_close() -> N
         assert await cache.get("u", "Time complexity of mergesort", "explain", query_embedding=[0.04, 0.999, 0.0]) is None
         # Same topic words, different framing and inflection: a semantic hit.
         assert await cache.get("u", "Explain precision", "explain", query_embedding=near) == {"ans": "precision"}
+        # Same words, reversed comparison (measured 0.929 for GRU/LSTM, above the 0.92 bar): a miss.
+        await cache.set("u", "How does GloVe improve on word2vec?", "compare", {"ans": "glove>w2v"},
+                        query_embedding=[0.0, 0.0, 1.0])
+        assert await cache.get("u", "How does word2vec improve on GloVe?", "compare",
+                               query_embedding=[0.0, 0.03, 0.999]) is None
 
     asyncio.run(scenario())
-    assert cache.stats()["entity_guard_blocks"] == 2
+    assert cache.stats()["entity_guard_blocks"] == 3

@@ -134,11 +134,12 @@ def normalize_query(query: str) -> str:
     return " ".join((query or "").strip().split()).lower()
 
 
-def _content_terms(query: str) -> frozenset[str]:
-    """Every topical word of the question (framing words like "what is" / "explain" dropped)."""
+def _content_terms(query: str) -> tuple[str, ...]:
+    """Every topical word of the question, in order (framing words like "what is" dropped).
+    Order matters: "GloVe improve on word2vec" and "word2vec improve on GloVe" share a set."""
     from backend.services.grounding_guard import query_terms
 
-    return frozenset(_light_stem(t) for t in query_terms(query))
+    return tuple(dict.fromkeys(_light_stem(t) for t in query_terms(query)))
 
 
 def _light_stem(term: str) -> str:
@@ -537,7 +538,7 @@ class CorpusVersionedResponseCache:
                 except Exception:
                     entries = []
                 if isinstance(entries, list) and entries:
-                    query_terms_set = _content_terms(query)
+                    query_terms_seq = _content_terms(query)
                     scored: list[tuple[float, dict[str, Any]]] = []
                     for entry in entries:
                         if not isinstance(entry, dict):
@@ -551,11 +552,12 @@ class CorpusVersionedResponseCache:
 
                     scored.sort(key=lambda item: item[0], reverse=True)
                     for _, entry in scored:
-                        # Same topic words or no hit: "precision" vs "recall", "GPT-3" vs "GPT-4" and
-                        # "use" vs "not use" all differ here even when the embeddings are close.
-                        # Entries written before this guard have no content_terms and never match.
+                        # Same topic words in the same order or no hit: "precision" vs "recall",
+                        # "GPT-3" vs "GPT-4", "use" vs "not use" and swapped comparisons all differ
+                        # here even when the embeddings are close. Entries without content_terms
+                        # (written before this guard) never match.
                         cached_terms = entry.get("content_terms")
-                        if cached_terms is None or frozenset(cached_terms) != query_terms_set:
+                        if cached_terms is None or tuple(cached_terms) != query_terms_seq:
                             self._entity_guard_blocks += 1
                             continue
                         if "response" in entry:
@@ -589,7 +591,7 @@ class CorpusVersionedResponseCache:
             new_entry = {
                 "norm_query": norm_q,
                 "entity_tokens": sorted(extract_entity_tokens(query)),
-                "content_terms": sorted(_content_terms(query)),
+                "content_terms": list(_content_terms(query)),
                 "embedding": [float(x) for x in query_embedding],
                 "response": response,
             }

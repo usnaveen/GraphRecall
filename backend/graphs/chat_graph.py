@@ -917,7 +917,11 @@ async def generate_response_node(state: ChatState) -> dict:
     guard_query = state.get("retrieval_query") or (
         _extract_text(messages[-1].content) if messages and hasattr(messages[-1], "content") else ""
     )
-    decision = evaluate_retrieval_confidence(packed_rag, graph_concepts, intent, query=guard_query)
+    decision = evaluate_retrieval_confidence(
+        packed_rag, graph_concepts, intent, query=guard_query,
+        scoped=bool(state.get("focused_source_ids")),
+        global_summary=bool(graph_context.get("global_summary")),
+    )
     record(
         "chat.grounding_guard",
         0.0,
@@ -1065,12 +1069,17 @@ async def generate_response_node(state: ChatState) -> dict:
 
         response_content = strip_prompt_echo(response.text)
 
+        # Off-topic: the retrieved passages are the nearest misses, not support. Showing them as
+        # sources, citations, related concepts or figures under "your notes don't cover this"
+        # reads as broken, so all of them are dropped.
+        off_topic = decision.should_abstain and decision.reason == "off_topic"
+
         citation_audit = None
-        if decision.valid_chunk_indices or decision.valid_graph_ids:
+        if off_topic or decision.valid_chunk_indices or decision.valid_graph_ids:
             citation_audit = verify_citations(
                 response_content,
-                decision.valid_chunk_indices,
-                decision.valid_graph_ids,
+                set() if off_topic else decision.valid_chunk_indices,
+                set() if off_topic else decision.valid_graph_ids,
             )
             response_content = citation_audit.cleaned_text
             if citation_audit.invalid_refs:
@@ -1081,7 +1090,7 @@ async def generate_response_node(state: ChatState) -> dict:
                     grounded_ratio=citation_audit.grounded_ratio,
                 )
 
-        if all_image_urls:
+        if all_image_urls and not off_topic:
             missing_images = [
                 img for img in all_image_urls
                 if img["url"] not in response_content
@@ -1102,7 +1111,7 @@ async def generate_response_node(state: ChatState) -> dict:
 
         logger.info("generate_response_node: Complete", images_in_response=len(all_image_urls))
 
-        related_concepts = [
+        related_concepts = [] if off_topic else [
             {"id": str(c.get("id")) if c.get("id") else None, "name": c.get("name")}
             for c in graph_concepts
         ]
@@ -1123,7 +1132,7 @@ async def generate_response_node(state: ChatState) -> dict:
                 "matched_by": n.get("_matched_by", []),
                 "rrf_score": n.get("_rrf_score"),
             }
-            for n in packed_rag
+            for n in ([] if off_topic else packed_rag)
         ]
         metadata = {
             "intent": intent,
