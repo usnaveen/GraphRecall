@@ -3,6 +3,8 @@ import Foundation
 extension Notification.Name {
     static let grDumpCompleted = Notification.Name("gr.dump.completed")
     static let grFeedShouldReload = Notification.Name("gr.feed.shouldReload")
+    /// The saved session was restored (or seeded) after tabs had already loaded signed out.
+    static let grSessionReady = Notification.Name("gr.session.ready")
 }
 
 /// Queues SM-2 reviews when offline and caches dump teach cards for Today.

@@ -127,6 +127,7 @@ struct ContentView: View {
             // Tabs may have loaded before the token was restored or seeded.
             if AuthSession.shared.isSignedIn {
                 NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
+                NotificationCenter.default.post(name: .grSessionReady, object: nil)
             }
             await ShareInboxDrainer.shared.drainIfNeeded()
         }

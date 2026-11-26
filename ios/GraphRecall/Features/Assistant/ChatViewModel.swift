@@ -47,7 +47,7 @@ final class ChatViewModel {
             messages = [
                 ChatMessageUI(
                     role: .assistant,
-                    content: "Ask anything about your knowledge graph — I’ll stream GraphRAG answers here."
+                    content: "Ask anything you’ve been learning. Answers come from your own graph and notes, with sources."
                 )
             ]
         }
@@ -278,7 +278,7 @@ final class ChatViewModel {
         messages = [
             ChatMessageUI(
                 role: .assistant,
-                content: "Ask anything about your knowledge graph — I’ll stream GraphRAG answers here."
+                content: "Ask anything you’ve been learning. Answers come from your own graph and notes, with sources."
             )
         ]
         savedMessageIds = []

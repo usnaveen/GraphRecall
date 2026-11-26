@@ -64,6 +64,9 @@ struct ChatView: View {
             if agentBridge.isAvailable { agentAsk.restore() }
         }
         .onChange(of: router.pendingAssistantPrompt) { _, _ in consumeRouter() }
+        .onReceive(NotificationCenter.default.publisher(for: .grSessionReady)) { _ in
+            Task { await model.loadSuggestions() }
+        }
         .onChange(of: router.pendingConversationId) { _, _ in consumeRouter() }
         .onDisappear { dictation.stop() }
         .sheet(isPresented: $bindable.showHistory) {

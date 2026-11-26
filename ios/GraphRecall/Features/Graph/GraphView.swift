@@ -39,6 +39,10 @@ struct GraphView: View {
             applyPendingFocus()
         }
         .onChange(of: router.pendingGraphFocus) { _, _ in applyPendingFocus() }
+        .onReceive(NotificationCenter.default.publisher(for: .grSessionReady)) { _ in
+            // Loaded before the session came back: swap the sample graph for the real one.
+            if model.usingStub || model.showsLoadFailure { Task { await model.retryNow() } }
+        }
         .onChange(of: model.searchQuery) { _, _ in model.updateSearch() }
         .sheet(item: $bindable.detailNode) { node in
             ConceptDetailView(node: node, graph: model)
@@ -299,6 +303,10 @@ struct GraphView: View {
                     .padding(16)
                     .grGlassEffect(in: Capsule())
                     .frame(maxHeight: .infinity)
+            } else if model.showsLoadFailure {
+                loadFailureCard
+                    .padding(.horizontal, 24)
+                    .frame(maxHeight: .infinity)
             }
 
             VStack(spacing: 8) {
@@ -319,6 +327,25 @@ struct GraphView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { canvasHeight = $0 }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var loadFailureCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Couldn\u{2019}t load your graph", systemImage: "exclamationmark.triangle")
+                    .font(GRType.headline)
+                    .foregroundStyle(GRColor.textPrimary)
+                Text(model.errorMessage ?? "Something went wrong.")
+                    .font(GRType.body)
+                    .foregroundStyle(GRColor.textSecondary)
+                Button {
+                    Task { await model.retryNow() }
+                } label: {
+                    Label("Try again", systemImage: "arrow.clockwise")
+                }
+                .grButton(.ghost, fullWidth: false, compact: true)
+            }
+        }
     }
 
     @ViewBuilder

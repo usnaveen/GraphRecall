@@ -299,6 +299,10 @@ struct GlobalSearchView: View {
         do {
             concepts = try await APIClient.shared.searchConcepts(q, limit: 20)
         } catch {
+            guard !AuthSession.shared.isSignedIn else {
+                concepts = []
+                return
+            }
             concepts = GraphViewModel.stubGraph().nodes
                 .filter { $0.name.localizedCaseInsensitiveContains(q) }
                 .map { GraphSearchResult(id: $0.id, name: $0.name, domain: $0.domain, color: $0.color) }

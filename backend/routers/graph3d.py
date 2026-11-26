@@ -276,25 +276,20 @@ async def get_3d_graph(
             for e in edges_result
         ]
         
-        # Build networkx graph for layout
-        import networkx as nx
-        G = nx.Graph()
-        
-        # Add nodes
-        for node in nodes:
-            G.add_node(node.id)
-            
         # Layout only sees edges whose both ends are on this page. Cross-page
         # edges are still returned; the other concept is not in this response.
+        # NumPy-only force layout: networkx needs SciPy from 500 nodes on (not a dependency).
+        from backend.services.graph_layout import spring_layout_3d
+
         page_ids = set(node_ids)
-        for edge in edges:
-            if edge.source in page_ids and edge.target in page_ids:
-                G.add_edge(edge.source, edge.target, weight=edge.strength)
-            
-        # Calculate layout
-        # usage of spring_layout for 3D
-        # k=None (default 1/sqrt(n)), iterations=50
-        pos = nx.spring_layout(G, dim=3, seed=42, iterations=50, scale=400)
+        pos = spring_layout_3d(
+            [node.id for node in nodes],
+            [(e.source, e.target, e.strength) for e in edges
+             if e.source in page_ids and e.target in page_ids],
+            iterations=50,
+            scale=400,
+            seed=42,
+        )
         
         # Assign positions back to nodes (respect stored positions if present)
         for node in nodes:

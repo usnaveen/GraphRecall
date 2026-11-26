@@ -101,6 +101,10 @@ final class GraphViewModel {
     }
 
     var statsLabel: String {
+        if graph.nodes.isEmpty {
+            if isLoading { return "Loading your graph\u{2026}" }
+            if errorMessage != nil { return "Not loaded" }
+        }
         let comm = graph.communities.isEmpty ? "" : " · \(graph.communities.count) communities"
         return "\(graph.totalNodes) concepts · \(graph.totalEdges) links\(comm)"
     }
@@ -243,9 +247,43 @@ final class GraphViewModel {
             // A failed background page keeps what is already on screen.
             guard !hasFirstPage else { return }
             errorMessage = Self.sanitizeError(error)
-            graph = Self.stubGraph()
-            usingStub = true
+            if AuthSession.shared.isSignedIn {
+                // Never swap a signed-in user's graph for sample data: keep what was on screen,
+                // say it failed, and try again on our own a few times.
+                usingStub = false
+                scheduleRetry(generation: generation)
+            } else {
+                graph = Self.stubGraph()
+                usingStub = true
+            }
         }
+        if errorMessage == nil { retryAttempt = 0 }
+    }
+
+    /// Failed first loads retry after 2, 5 and 12 seconds; Retry in the error card resets this.
+    private var retryAttempt = 0
+    private static let retryDelays: [UInt64] = [2, 5, 12]
+
+    private func scheduleRetry(generation: Int) {
+        guard retryAttempt < Self.retryDelays.count else { return }
+        let delay = Self.retryDelays[retryAttempt]
+        retryAttempt += 1
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+            guard let self, generation == self.loadGeneration, self.errorMessage != nil else { return }
+            await self.load()
+        }
+    }
+
+    /// The error card's Retry: a fresh set of automatic retries too.
+    func retryNow() async {
+        retryAttempt = 0
+        await load()
+    }
+
+    /// Signed in, nothing loaded, and the last load failed.
+    var showsLoadFailure: Bool {
+        errorMessage != nil && !usingStub && graph.nodes.isEmpty && !isLoading
     }
 
     private func apply(_ response: Graph3DResponse) {
