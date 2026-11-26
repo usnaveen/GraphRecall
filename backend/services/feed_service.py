@@ -25,6 +25,13 @@ from backend.models.feed_schemas import (
     FeedFilterRequest,
 )
 from backend.feed_ranker import CandidateCard, FeedRanker, load_graph_signals
+from backend.services.feed_pacing import (
+    cap_cards_per_concept,
+    load_daily_concept_ledger,
+    record_feed_impressions,
+    resolve_daily_concept_cap,
+    select_daily_focus_concepts,
+)
 from backend.services.spaced_repetition import SpacedRepetitionService
 
 from backend.agents.content_generator import ContentGeneratorAgent
@@ -1309,6 +1316,19 @@ class FeedService:
                 c for c in due_concepts
                 if c.get("domain") in request.domains
             ]
+
+        # ---------------------------------------------------------------
+        # ADHD Working-Memory Pacing: bound distinct active concepts/day
+        # so a 500-concept library never dumps 20 unrelated topics at once.
+        # ---------------------------------------------------------------
+        daily_cap = resolve_daily_concept_cap()
+        daily_ledger = await load_daily_concept_ledger(
+            self.pg_client,
+            request.user_id,
+            daily_concept_cap=daily_cap,
+        )
+        if due_concepts:
+            due_concepts = select_daily_focus_concepts(due_concepts, daily_ledger)
         
         # Determine content type distribution
         allowed_types = request.item_types or list(FeedItemType)
@@ -1338,10 +1358,10 @@ class FeedService:
                 limit=cached_limit,
             )
             if use_neurofeed:
-                feed_items.extend(cached_items[:cached_limit])
+                feed_items.extend(cap_cards_per_concept(cached_items[:cached_limit]))
             else:
                 random.shuffle(cached_items)
-                feed_items.extend(cached_items[:request.max_items])
+                feed_items.extend(cap_cards_per_concept(cached_items)[:request.max_items])
             logger.info(
                 "FeedService: Loaded cached DB items",
                 count=len(feed_items),
@@ -1573,7 +1593,16 @@ class FeedService:
         ]
         
         # Prepend the demo items to the feed
-        feed_items = demo_items + feed_items
+        feed_items = (demo_items + feed_items)[:request.max_items]
+
+        # Record today's concept impressions so subsequent pulls & Profile/MCP know
+        # exactly which concepts the user was exposed to today.
+        newly_shown = await record_feed_impressions(
+            self.pg_client,
+            request.user_id,
+            feed_items,
+        )
+        shown_today_ids = list(dict.fromkeys([*daily_ledger.shown_concept_ids, *newly_shown]))
         
         # Get metadata
         sr_stats = await self.sr_service.get_user_stats(request.user_id)
@@ -1582,11 +1611,14 @@ class FeedService:
         domains = await self.get_user_domains(request.user_id)
         
         return FeedResponse(
-            items=feed_items[:request.max_items],
+            items=feed_items,
             total_due_today=sr_stats.get("due_today", 0),
             completed_today=completed_today,
             streak_days=streak,
             domains=domains,
+            active_concepts_today=len(shown_today_ids),
+            daily_concept_cap=daily_ledger.effective_cap,
+            concepts_shown_today=shown_today_ids,
         )
     
     async def record_interaction(

@@ -9,6 +9,7 @@ struct FeedContentCard: View {
 
     let item: FeedItem
     let model: FeedViewModel
+    var showsInlineDifficulty: Bool = true
     var onAsk: () -> Void
     var onGraded: () -> Void = {}
 
@@ -37,11 +38,9 @@ struct FeedContentCard: View {
                 onToggleHint: { model.toggleHint(item.id) }
             )
 
-            Divider().overlay(GRColor.stroke)
-
             if item.isAgentCurated {
+                Divider().overlay(GRColor.stroke)
                 // Agent cards are reading suggestions, not SM-2 cards: no toughness slider.
-                // TODO(agent-bridge-ios): POST a seen/dismiss interaction once the backend has one.
                 HStack(alignment: .center, spacing: 8) {
                     Text("Approved by you")
                         .font(GRType.caption)
@@ -53,7 +52,8 @@ struct FeedContentCard: View {
                         onGraded()
                     }
                 }
-            } else {
+            } else if showsInlineDifficulty {
+                Divider().overlay(GRColor.stroke)
                 FeedDifficultySlider(graded: model.grades[item.id]) { difficulty in
                     Task {
                         await model.grade(item, difficulty: difficulty)

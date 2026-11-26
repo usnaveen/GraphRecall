@@ -11,6 +11,9 @@ final class FeedViewModel {
     var streak: Int = 0
     var completedToday: Int = 0
     var dailyGoal: Int = 20
+    /// Working-memory anti-overwhelm budget reported by `/api/feed`.
+    var activeConceptsToday: Int = 0
+    var dailyConceptCap: Int = 7
     var isLoading = false
     var isOffline = false
     var isDemoMode = false
@@ -130,6 +133,8 @@ final class FeedViewModel {
                 dailyGoal = feed.dailyGoal
                 streak = feed.streakDays
                 domains = feed.domains
+                activeConceptsToday = max(feed.activeConceptsToday, Set(merged.compactMap(\.conceptId)).count)
+                dailyConceptCap = max(feed.dailyConceptCap, 3)
                 dueTotal = max(due?.total ?? feed.totalDueToday, items.count)
                 stats = userStats
                 isOffline = false
@@ -261,10 +266,19 @@ final class FeedViewModel {
         do {
             let graph = try await APIClient.shared.fetchGraph(limit: 300)
             let dueConcepts = Set(items.compactMap(\.conceptId))
+            let activeDomains = Set(items.compactMap(\.domain))
+            // Keep the revisit pool bounded to a calm cluster (at most `dailyConceptCap` concepts,
+            // preferring today's active domains) so scrolling past due cards never dumps 60 new topics.
+            let maxRevisit = max(4, min(dailyConceptCap, 8))
             revisitPool = graph.nodes
                 .filter { !dueConcepts.contains($0.id) }
-                .sorted { ($0.masteryLevel ?? 0) < ($1.masteryLevel ?? 0) }
-                .prefix(60)
+                .sorted { lhs, rhs in
+                    let lhsInDomain = lhs.domain.map(activeDomains.contains) ?? false
+                    let rhsInDomain = rhs.domain.map(activeDomains.contains) ?? false
+                    if lhsInDomain != rhsInDomain { return lhsInDomain && !rhsInDomain }
+                    return (lhs.masteryLevel ?? 0) < (rhs.masteryLevel ?? 0)
+                }
+                .prefix(maxRevisit)
                 .map { node in
                     var content: [String: AnyCodable] = ["title": AnyCodable(node.name)]
                     if let definition = node.definition, !definition.isEmpty {

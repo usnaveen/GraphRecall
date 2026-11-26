@@ -29,6 +29,12 @@ from backend.models.feed_schemas import (
     UserStats,
 )
 from backend.services.feed_service import FeedService
+from backend.services.feed_pacing import (
+    load_daily_concept_ledger,
+    record_daily_concept_review,
+    record_feed_impressions,
+    resolve_daily_concept_cap,
+)
 from backend.services.spaced_repetition import SpacedRepetitionService
 from backend.services.review_target import UnresolvableReviewTarget, resolve_review_concept
 from backend.services import creative_cards
@@ -170,8 +176,15 @@ async def _add_territory_card(response, request, neo4j_client) -> None:
         if not options:
             return
         in_feed = {i.concept_id for i in response.items if i.concept_id}
+        shown_today = set(response.concepts_shown_today or [])
         option = next((t for t in options if t["id"] in in_feed), None)
         if option is None:
+            option = next((t for t in options if t["id"] in shown_today), None)
+        if option is None:
+            # Respect the daily anti-overwhelm concept cap: don't sneak an extra unrelated
+            # territory concept into the feed if today's concept budget is already full.
+            if response.active_concepts_today >= response.daily_concept_cap and in_feed:
+                return
             import random
 
             option = random.choice(options)
@@ -680,6 +693,12 @@ async def record_review(
         )
 
         updated_data = await sr_service.record_review(review)
+        await record_daily_concept_review(
+            pg_client,
+            user_id,
+            concept_id=target,
+            difficulty=difficulty.value,
+        )
         try:
             from backend.services.knowledge_map import REVIEW_SIGNAL, add_evidence
 
@@ -966,6 +985,42 @@ async def get_due_count(
     except Exception as e:
         logger.error("Feed: Error getting due count", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/today-concepts")
+async def get_today_concepts(
+    current_user: dict = Depends(get_current_user),
+):
+    """Inspect today's active concept ledger & working-memory anti-overwhelm cap."""
+    pg_client = await get_postgres_client()
+    user_id = str(current_user["id"])
+    raw_settings = current_user.get("settings_json") or {}
+    if isinstance(raw_settings, str):
+        try:
+            raw_settings = json.loads(raw_settings)
+        except Exception:
+            raw_settings = {}
+    cap = resolve_daily_concept_cap(raw_settings if isinstance(raw_settings, dict) else None)
+    ledger = await load_daily_concept_ledger(pg_client, user_id, daily_concept_cap=cap)
+    return {
+        "date": ledger.exposure_date.isoformat(),
+        "daily_concept_cap": ledger.effective_cap,
+        "shown_count": len(ledger.entries),
+        "consolidated_count": len(ledger.consolidated_ids),
+        "active_unconsolidated_count": len(ledger.active_unconsolidated_ids),
+        "concepts": [
+            {
+                "concept_id": e.concept_id,
+                "concept_name": e.concept_name,
+                "domain": e.domain,
+                "shown_count": e.shown_count,
+                "graded_count": e.graded_count,
+                "last_difficulty": e.last_difficulty,
+                "consolidated_today": e.is_consolidated_today,
+            }
+            for e in ledger.entries.values()
+        ],
+    }
 @router.post("/{item_id}/like")
 async def toggle_like(
     item_id: str,

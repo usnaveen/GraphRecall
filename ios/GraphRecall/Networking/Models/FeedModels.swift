@@ -118,6 +118,9 @@ struct FeedResponse: Codable, Sendable {
     let dailyGoal: Int
     let streakDays: Int
     let domains: [String]
+    let activeConceptsToday: Int
+    let dailyConceptCap: Int
+    let conceptsShownToday: [String]
 
     enum CodingKeys: String, CodingKey {
         case items
@@ -126,15 +129,31 @@ struct FeedResponse: Codable, Sendable {
         case dailyGoal = "daily_goal"
         case streakDays = "streak_days"
         case domains
+        case activeConceptsToday = "active_concepts_today"
+        case dailyConceptCap = "daily_concept_cap"
+        case conceptsShownToday = "concepts_shown_today"
     }
 
-    init(items: [FeedItem] = [], totalDueToday: Int = 0, completedToday: Int = 0, dailyGoal: Int = 20, streakDays: Int = 0, domains: [String] = []) {
+    init(
+        items: [FeedItem] = [],
+        totalDueToday: Int = 0,
+        completedToday: Int = 0,
+        dailyGoal: Int = 20,
+        streakDays: Int = 0,
+        domains: [String] = [],
+        activeConceptsToday: Int = 0,
+        dailyConceptCap: Int = 7,
+        conceptsShownToday: [String] = []
+    ) {
         self.items = items
         self.totalDueToday = totalDueToday
         self.completedToday = completedToday
         self.dailyGoal = dailyGoal
         self.streakDays = streakDays
         self.domains = domains
+        self.activeConceptsToday = activeConceptsToday
+        self.dailyConceptCap = dailyConceptCap
+        self.conceptsShownToday = conceptsShownToday
     }
 
     init(from decoder: Decoder) throws {
@@ -145,6 +164,9 @@ struct FeedResponse: Codable, Sendable {
         dailyGoal = try c.decodeIfPresent(Int.self, forKey: .dailyGoal) ?? 20
         streakDays = try c.decodeIfPresent(Int.self, forKey: .streakDays) ?? 0
         domains = try c.decodeIfPresent([String].self, forKey: .domains) ?? []
+        activeConceptsToday = try c.decodeIfPresent(Int.self, forKey: .activeConceptsToday) ?? 0
+        dailyConceptCap = try c.decodeIfPresent(Int.self, forKey: .dailyConceptCap) ?? 7
+        conceptsShownToday = try c.decodeIfPresent([String].self, forKey: .conceptsShownToday) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -155,6 +177,9 @@ struct FeedResponse: Codable, Sendable {
         try c.encode(dailyGoal, forKey: .dailyGoal)
         try c.encode(streakDays, forKey: .streakDays)
         try c.encode(domains, forKey: .domains)
+        try c.encode(activeConceptsToday, forKey: .activeConceptsToday)
+        try c.encode(dailyConceptCap, forKey: .dailyConceptCap)
+        try c.encode(conceptsShownToday, forKey: .conceptsShownToday)
     }
 }
 

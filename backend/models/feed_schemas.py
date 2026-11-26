@@ -223,6 +223,18 @@ class FeedResponse(BaseModel):
     daily_goal: int = 20
     streak_days: int
     domains: list[str] = Field(default_factory=list, description="Available domains to filter")
+    active_concepts_today: int = Field(
+        default=0,
+        description="Distinct concepts shown or reviewed today in the learner's working-memory ledger",
+    )
+    daily_concept_cap: int = Field(
+        default=7,
+        description="Daily distinct-concept anti-overwhelm cap",
+    )
+    concepts_shown_today: list[str] = Field(
+        default_factory=list,
+        description="Concept IDs shown or reviewed today",
+    )
 
 
 class FeedFilterRequest(BaseModel):
