@@ -206,7 +206,7 @@ async def merge_concepts(
             # Transfer NoteSource EXPLAINS relationships
             await neo4j.execute_query(
                 """
-                MATCH (n:NoteSource)-[r:EXPLAINS]->(src:Concept {id: $src_id, user_id: $uid})
+                MATCH (n:NoteSource {user_id: $uid})-[r:EXPLAINS]->(src:Concept {id: $src_id, user_id: $uid})
                 MATCH (tgt:Concept {id: $tgt_id, user_id: $uid})
                 MERGE (n)-[r2:EXPLAINS]->(tgt)
                 ON CREATE SET r2.relevance = r.relevance
