@@ -16,6 +16,10 @@ struct ConceptFigure: Equatable, Sendable {
     /// Shape of the full-width panel the figure sits on: its own width over height, clamped so a
     /// tall architecture diagram stays about 170pt high (the grading slider must stay on screen in
     /// the reel; tap for the full figure) and a thin strip still gets room.
+    /// Made by Gemini's image model for this card (backend/scripts/generate_concept_illustrations.py),
+    /// drawn on the card's own colour, so it needs no white paper panel.
+    var isGeneratedIllustration: Bool { label.hasPrefix("Illustration") }
+
     var panelAspectRatio: CGFloat {
         guard width > 0, height > 0 else { return 2.0 }
         return min(max(CGFloat(width) / CGFloat(height), 2.0), 3.2)
@@ -128,7 +132,7 @@ struct ConceptFigureView: View {
     }
 
     private var figureFrame: some View {
-        Color.white
+        (figure.isGeneratedIllustration ? Color.clear : Color.white)
             .aspectRatio(figure.panelAspectRatio, contentMode: .fit)
             .frame(maxWidth: .infinity)
             .overlay {
@@ -137,7 +141,7 @@ struct ConceptFigureView: View {
                         .resizable()
                         .interpolation(.high)
                         .scaledToFit()
-                        .padding(10)
+                        .padding(figure.isGeneratedIllustration ? 0 : 10)
                         .transition(.opacity)
                 } else {
                     ProgressView()

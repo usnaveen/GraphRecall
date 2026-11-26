@@ -133,8 +133,23 @@ struct CodeSandboxCardBody: View {
                     .foregroundStyle(GRColor.accentCyan)
             }
 
-            SandboxCodeTextEditor(text: $code)
-                .focused($editorFocused)
+            ZStack(alignment: .topLeading) {
+                SandboxCodeTextEditor(text: $code)
+                    .focused($editorFocused)
+                    // Stays tappable underneath the coloured copy; visible while you type.
+                    .opacity(editorFocused ? 1 : 0.02)
+                if !editorFocused {
+                    ScrollView {
+                        Text(SandboxCodeHighlighter.highlight(code))
+                            .font(.system(.footnote, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 8)
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
                 .frame(minHeight: 155, maxHeight: 230)
                 .padding(8)
                 .background(
@@ -256,9 +271,8 @@ struct CodeSandboxCardBody: View {
                 .font(GRType.micro)
                 .foregroundStyle(GRColor.accent)
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(solution)
+                Text(SandboxCodeHighlighter.highlight(solution))
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(GRColor.accent)
                     .textSelection(.enabled)
             }
         }
@@ -461,5 +475,59 @@ private struct SandboxRunnerWebView: UIViewRepresentable {
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             target?.userContentController(userContentController, didReceive: message)
         }
+    }
+}
+
+// MARK: - Syntax colours
+
+/// Editor-style colours for the Python and JavaScript in code cards: keywords violet, built-ins
+/// cyan, function names lime, strings green, numbers orange, comments grey.
+enum SandboxCodeHighlighter {
+    private static let base = Color(red: 0.90, green: 0.91, blue: 0.93)
+    private static let keyword = Color(red: 0.78, green: 0.57, blue: 0.92)
+    private static let builtin = Color(red: 0.18, green: 0.90, blue: 0.86)
+    private static let function = Color(red: 0.71, green: 1.0, blue: 0.18)
+    private static let string = Color(red: 0.76, green: 0.91, blue: 0.55)
+    private static let number = Color(red: 0.97, green: 0.55, blue: 0.42)
+    private static let comment = Color(red: 0.47, green: 0.50, blue: 0.55)
+
+    private static let keywords = [
+        "def", "class", "return", "if", "elif", "else", "for", "while", "in", "not", "and", "or", "is",
+        "None", "True", "False", "import", "from", "as", "with", "try", "except", "finally", "raise",
+        "lambda", "yield", "pass", "break", "continue", "global", "nonlocal", "async", "await",
+        "function", "const", "let", "var", "new", "this", "null", "undefined", "typeof", "true", "false",
+        "of", "switch", "case", "default", "throw", "catch",
+    ]
+    private static let builtins = [
+        "print", "len", "range", "int", "str", "float", "list", "dict", "set", "tuple", "sorted", "min",
+        "max", "sum", "enumerate", "zip", "map", "filter", "abs", "any", "all", "isinstance", "reversed",
+        "self", "console", "Math", "Array", "Object", "JSON", "Number", "String", "Map", "Set",
+    ]
+
+    private static let stringPattern =
+        #"("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`[^`]*`)"#
+
+    static func highlight(_ code: String) -> AttributedString {
+        var out = AttributedString(code)
+        out.foregroundColor = base
+        let ns = code as NSString
+        func paint(_ pattern: String, _ color: Color, group: Int = 0) {
+            guard let re = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else { return }
+            for m in re.matches(in: code, range: NSRange(location: 0, length: ns.length)) {
+                let r = m.range(at: group)
+                guard r.location != NSNotFound, let range = Range(r, in: code),
+                      let lower = AttributedString.Index(range.lowerBound, within: out),
+                      let upper = AttributedString.Index(range.upperBound, within: out) else { continue }
+                out[lower..<upper].foregroundColor = color
+            }
+        }
+        paint(#"\b("# + keywords.joined(separator: "|") + #")\b"#, keyword)
+        paint(#"\b("# + builtins.joined(separator: "|") + #")\b"#, builtin)
+        paint(#"\b(?:def|function|class)\s+([A-Za-z_][A-Za-z0-9_]*)"#, function, group: 1)
+        paint(#"\b\d+(?:\.\d+)?\b"#, number)
+        // Strings and comments last, so nothing inside them keeps another colour.
+        paint(stringPattern, string)
+        paint(#"(#[^\n]*|//[^\n]*)$"#, comment)
+        return out
     }
 }
