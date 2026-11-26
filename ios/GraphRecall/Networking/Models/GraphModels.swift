@@ -56,7 +56,7 @@ struct GraphNode: Decodable, Identifiable, Hashable {
     let color: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, definition, domain, confidence, x, y, z, size, color
+        case id, name, definition, domain, confidence, x, y, z, size, color, reviewed
         case complexityScore = "complexity_score"
         case masteryLevel = "mastery_level"
     }
@@ -68,7 +68,10 @@ struct GraphNode: Decodable, Identifiable, Hashable {
         definition = try c.decodeIfPresent(String.self, forKey: .definition)
         domain = try c.decodeIfPresent(String.self, forKey: .domain)
         complexityScore = try c.decodeIfPresent(Double.self, forKey: .complexityScore)
-        masteryLevel = try c.decodeIfPresent(Double.self, forKey: .masteryLevel)
+        // The server sends 0 for concepts never reviewed; nil keeps "untested" apart from "scored 0".
+        let reviewed = try c.decodeIfPresent(Bool.self, forKey: .reviewed)
+        let level = try c.decodeIfPresent(Double.self, forKey: .masteryLevel)
+        masteryLevel = reviewed == false ? nil : level
         confidence = try c.decodeIfPresent(Double.self, forKey: .confidence)
         x = try c.decodeIfPresent(Double.self, forKey: .x)
         y = try c.decodeIfPresent(Double.self, forKey: .y)

@@ -13,7 +13,7 @@ struct ConceptDetailView: View {
     @State private var showQuiz = false
 
     private var mastery: Double { focus?.center.masteryLevel ?? node.masteryLevel ?? 0 }
-    private var isWeak: Bool { mastery < GraphViewModel.weakThreshold }
+    private var isWeak: Bool { node.masteryLevel != nil && mastery < GraphViewModel.weakThreshold }
     private var nodeColor: Color { Color(hex: node.color ?? "") ?? GRColor.accent }
 
     private var definition: String {

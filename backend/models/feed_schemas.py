@@ -419,6 +419,7 @@ class Graph3DNode(BaseModel):
     domain: str
     complexity_score: float
     mastery_level: float = Field(default=0.0, ge=0.0, le=1.0)
+    reviewed: bool = Field(default=False, description="Has a review score: mastery_level 0 with reviewed=false means untested, not weak")
     confidence: Optional[float] = Field(default=None, description="Extraction confidence 0-1")
 
     # 3D positioning (optional, can be calculated client-side)

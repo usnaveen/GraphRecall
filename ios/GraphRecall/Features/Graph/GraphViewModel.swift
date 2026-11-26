@@ -125,7 +125,8 @@ final class GraphViewModel {
     }
 
     var weakNodeIds: Set<String> {
-        Set(graph.nodes.filter { ($0.masteryLevel ?? 0) < Self.weakThreshold }.map(\.id))
+        // Weak means reviewed and scored low; untested concepts are not weak, just new.
+        Set(graph.nodes.filter { ($0.masteryLevel ?? 1) < Self.weakThreshold }.map(\.id))
     }
 
     var selectedDomain: String? {

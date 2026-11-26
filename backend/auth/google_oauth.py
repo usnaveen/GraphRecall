@@ -18,6 +18,24 @@ _http_session = http_requests.Session()
 _google_request = google_requests.Request(session=_http_session)
 
 
+_DEBUG_IDENTITIES = {
+    "test-token": {
+        "google_id": "test-google-id",
+        "email": "test@example.com",
+        "email_verified": True,
+        "name": "Test User",
+        "profile_picture": None,
+    },
+    "showcase-token": {
+        "google_id": "showcase-google-id",
+        "email": "jordan.avery@example.com",
+        "email_verified": True,
+        "name": "Jordan Avery",
+        "profile_picture": None,
+    },
+}
+
+
 async def verify_google_token(token: str) -> dict:
     """
     Verify a Google ID token and return user information.
@@ -32,16 +50,12 @@ async def verify_google_token(token: str) -> dict:
         HTTPException: If the token is invalid or expired.
     """
     try:
-        # If we're in debug mode and token is 'test-token', return a mock user
-        if (os.getenv("DEBUG") == "true" and token == "test-token"
+        # Debug backends only: fixed local identities. 'test-token' is the developer's own test
+        # account; 'showcase-token' is a fictional learner for screenshots and demo videos
+        # (scripts/showcase_account.py), kept apart so recording never touches real data.
+        if (os.getenv("DEBUG") == "true" and token in _DEBUG_IDENTITIES
                 and os.getenv("ENVIRONMENT", "development") != "production"):
-            return {
-                "google_id": "test-google-id",
-                "email": "test@example.com",
-                "email_verified": True,
-                "name": "Test User",
-                "profile_picture": None,
-            }
+            return dict(_DEBUG_IDENTITIES[token])
 
         idinfo = await asyncio.to_thread(
             id_token.verify_oauth2_token,

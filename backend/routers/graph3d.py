@@ -232,6 +232,7 @@ async def get_3d_graph(
                 domain=domain,
                 complexity_score=complexity,
                 mastery_level=mastery,
+                reviewed=concept_id in mastery_levels,
                 confidence=concept.get("confidence"),
                 size=calculate_node_size(complexity, rel_count),
                 color=get_domain_color(domain),
