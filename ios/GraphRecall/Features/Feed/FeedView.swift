@@ -161,6 +161,8 @@ struct FeedView: View {
                 }
             }
         }
+        // A title, not a control: no Liquid Glass pill behind it, so it reads like the other tabs.
+        .sharedBackgroundVisibility(.hidden)
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
                 GRHaptics.tap()
