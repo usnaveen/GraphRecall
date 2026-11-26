@@ -357,3 +357,21 @@ def test_response_cache_entity_guard_allows_matching_entity_paraphrase_and_caps_
 
     asyncio.run(scenario())
     assert cache.stats()["semantic_hits"] == 1
+
+
+def test_response_cache_blocks_topic_swaps_even_when_embeddings_are_close() -> None:
+    """The old guard compared only entity-looking tokens (digits, CAPS, CamelCase), so
+    "precision" vs "recall" (both empty) slipped through on cosine alone."""
+    cache = CorpusVersionedResponseCache(InMemoryTTLCache(), semantic_threshold=0.92)
+    near = [0.999, 0.04, 0.0]
+
+    async def scenario() -> None:
+        await cache.set("u", "What is precision?", "explain", {"ans": "precision"}, query_embedding=[1.0, 0.0, 0.0])
+        await cache.set("u", "Time complexity of quicksort", "explain", {"ans": "qs"}, query_embedding=[0.0, 1.0, 0.0])
+        assert await cache.get("u", "What is recall?", "explain", query_embedding=near) is None
+        assert await cache.get("u", "Time complexity of mergesort", "explain", query_embedding=[0.04, 0.999, 0.0]) is None
+        # Same topic words, different framing and inflection: a semantic hit.
+        assert await cache.get("u", "Explain precision", "explain", query_embedding=near) == {"ans": "precision"}
+
+    asyncio.run(scenario())
+    assert cache.stats()["entity_guard_blocks"] == 2

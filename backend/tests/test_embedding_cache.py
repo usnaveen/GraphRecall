@@ -42,3 +42,30 @@ async def test_no_owner_or_non_uuid_owner_bypasses_cache():
     with patch("backend.db.postgres_client.get_postgres_client", AsyncMock(side_effect=AssertionError("no db"))):
         assert await svc.embed_batch(["x"]) == [[1.0] * 4]
         assert await svc.embed_batch(["x"], owner="default_user") == [[1.0] * 4]
+
+
+def test_failed_query_embedding_is_not_retried_within_the_ttl(monkeypatch):
+    """One chat turn embeds the query in two nodes; when the first attempt fails the second
+    returns None at once instead of waiting out another timeout."""
+    import asyncio
+    import importlib
+
+    cg = importlib.import_module("backend.graphs.chat_graph")
+    calls = {"n": 0}
+
+    class _Failing:
+        async def aembed_query(self, text, output_dimensionality=None):
+            calls["n"] += 1
+            raise TimeoutError("embedding backend down")
+
+    monkeypatch.setattr(cg, "get_embeddings", lambda: _Failing())
+    cg._EMBED_FAILURES.clear()
+    cg._EMBED_CACHE.clear()
+
+    async def run():
+        assert await cg._embed_query_cached("what is a kv cache") is None
+        assert await cg._embed_query_cached("What is a  KV cache") is None
+
+    asyncio.run(run())
+    assert calls["n"] == 1
+    cg._EMBED_FAILURES.clear()

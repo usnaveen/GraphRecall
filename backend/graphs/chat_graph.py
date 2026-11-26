@@ -12,6 +12,7 @@ START → analyze_query → (conditional) → [tools] → get_context → genera
 """
 
 import os
+import time
 import re
 from typing import Annotated, Literal, Optional
 
@@ -25,7 +26,7 @@ from langchain_core.messages import (
     BaseMessage,
 )
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from backend.config.llm import get_fast_model, get_chat_model, get_embeddings, get_embedding_dims
+from backend.config.llm import DEFAULT_EMBEDDING_MODEL, get_fast_model, get_chat_model, get_embeddings, get_embedding_dims
 from backend.telemetry import elapsed_ms, now, record
 import asyncio
 from langgraph.graph import StateGraph, START, END
@@ -197,7 +198,9 @@ def _create_embedding_cache() -> _ChatEmbeddingCache:
     return _ChatEmbeddingCache(
         backend=_build_cache_backend(),
         ttl_s=3600,
-        model_tag=f"dims_{get_embedding_dims()}",
+        # Model and width: vectors from two models (or one model at two widths) are not comparable,
+        # and a shared Redis cache outlives a model switch.
+        model_tag=f"{DEFAULT_EMBEDDING_MODEL.rsplit('/', 1)[-1]}:{get_embedding_dims()}",
     )
 
 
@@ -258,6 +261,12 @@ async def bump_user_corpus_version(user_id: str) -> int:
     return await get_response_cache().bump_corpus_version(str(user_id))
 
 
+# Failed query embeddings are remembered briefly: one turn embeds the same query in two nodes, and
+# during an outage or a 429 storm the second attempt only adds another timeout and burns quota.
+_EMBED_FAILURE_TTL_S = float(os.getenv("CHAT_EMBED_FAILURE_TTL_S", "30"))
+_EMBED_FAILURES: dict[str, float] = {}
+
+
 async def _embed_query_cached(query: str) -> Optional[list[float]]:
     clean = (query or "").strip()
     if not clean:
@@ -268,6 +277,12 @@ async def _embed_query_cached(query: str) -> Optional[list[float]]:
     cached = await _EMBED_CACHE.get(clean)
     if cached is not None and len(cached) == dims:
         return cached
+
+    fail_key = " ".join(clean.lower().split())
+    failed_at = _EMBED_FAILURES.get(fail_key)
+    if failed_at is not None and time.monotonic() - failed_at < _EMBED_FAILURE_TTL_S:
+        record("chat.embed_query_skipped", 0.0)
+        return None
 
     try:
         started = now()
@@ -280,7 +295,12 @@ async def _embed_query_cached(query: str) -> Optional[list[float]]:
         logger.warning("chat_graph: query embedding failed", error=str(e))
         vector = None
 
-    if vector is not None:
+    if vector is None:
+        if len(_EMBED_FAILURES) > 512:
+            _EMBED_FAILURES.clear()
+        _EMBED_FAILURES[fail_key] = time.monotonic()
+    else:
+        _EMBED_FAILURES.pop(fail_key, None)
         await _EMBED_CACHE.set(clean, vector)
     return vector
 

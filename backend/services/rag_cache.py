@@ -134,6 +134,27 @@ def normalize_query(query: str) -> str:
     return " ".join((query or "").strip().split()).lower()
 
 
+def _content_terms(query: str) -> frozenset[str]:
+    """Every topical word of the question (framing words like "what is" / "explain" dropped)."""
+    from backend.services.grounding_guard import query_terms
+
+    return frozenset(_light_stem(t) for t in query_terms(query))
+
+
+def _light_stem(term: str) -> str:
+    """Strip -ing/-ed/-s until stable, on both sides of the comparison ("indexing" == "index",
+    "caches" == "cache"). Crude on purpose: a wrong stem can only cause a cache miss."""
+    changed = True
+    while changed:
+        changed = False
+        for suffix in ("ing", "ed", "s"):
+            if len(term) > len(suffix) + 3 and term.endswith(suffix):
+                term = term[: -len(suffix)]
+                changed = True
+                break
+    return term
+
+
 def extract_entity_tokens(query: str) -> frozenset[str]:
     """Extract distinguishing alphanumeric, numeric, acronym, and technical tokens.
 
@@ -435,7 +456,10 @@ class CorpusVersionedResponseCache:
         self,
         backend: CacheBackend,
         ttl_s: int = 900,
-        semantic_threshold: float = 0.96,
+        # Measured with gemini-embedding-001 @768 (Nov 2026): real paraphrases 0.86-0.96, one-entity
+        # swaps 0.63-0.84 (BFS/DFS 0.75, MQA/GQA 0.84). The content-term guard below blocks swaps
+        # regardless of cosine, so the threshold only has to admit paraphrases.
+        semantic_threshold: float = 0.92,
         max_semantic_entries_per_tenant: int = 64,
     ) -> None:
         self._backend = backend
@@ -513,7 +537,7 @@ class CorpusVersionedResponseCache:
                 except Exception:
                     entries = []
                 if isinstance(entries, list) and entries:
-                    query_entities = extract_entity_tokens(query)
+                    query_terms_set = _content_terms(query)
                     scored: list[tuple[float, dict[str, Any]]] = []
                     for entry in entries:
                         if not isinstance(entry, dict):
@@ -527,8 +551,11 @@ class CorpusVersionedResponseCache:
 
                     scored.sort(key=lambda item: item[0], reverse=True)
                     for _, entry in scored:
-                        cached_entities = frozenset(entry.get("entity_tokens") or ())
-                        if query_entities != cached_entities:
+                        # Same topic words or no hit: "precision" vs "recall", "GPT-3" vs "GPT-4" and
+                        # "use" vs "not use" all differ here even when the embeddings are close.
+                        # Entries written before this guard have no content_terms and never match.
+                        cached_terms = entry.get("content_terms")
+                        if cached_terms is None or frozenset(cached_terms) != query_terms_set:
                             self._entity_guard_blocks += 1
                             continue
                         if "response" in entry:
@@ -562,6 +589,7 @@ class CorpusVersionedResponseCache:
             new_entry = {
                 "norm_query": norm_q,
                 "entity_tokens": sorted(extract_entity_tokens(query)),
+                "content_terms": sorted(_content_terms(query)),
                 "embedding": [float(x) for x in query_embedding],
                 "response": response,
             }
