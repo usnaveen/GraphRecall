@@ -134,6 +134,8 @@ struct FeedView: View {
                 Text("Demo cards")
                     .font(GRType.micro)
                     .foregroundStyle(GRColor.accent)
+                    .lineLimit(1)
+                    .fixedSize() // the toolbar otherwise squeezes it into a circle ("Dem / o / car…")
                     .padding(.horizontal, 6)
                     .accessibilityIdentifier("feed.demoBadge")
             }
@@ -145,8 +147,20 @@ struct FeedView: View {
             } label: {
                 Image(systemName: agentInboxCount > 0 ? "tray.full" : "tray")
                     .foregroundStyle(agentInboxCount > 0 ? GRColor.accent : GRColor.textSecondary)
+                    // `.badge` doesn't draw on a toolbar button (checked on device), so the count is drawn here.
+                    .overlay(alignment: .topTrailing) {
+                        if agentInboxCount > 0 {
+                            Text(agentInboxCount > 99 ? "99+" : "\(agentInboxCount)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(GRColor.canvas)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(GRColor.accent, in: Capsule())
+                                .offset(x: 9, y: -7)
+                                .accessibilityHidden(true)
+                        }
+                    }
             }
-            .badge(agentInboxCount)
             .accessibilityLabel("Agent Inbox")
             .accessibilityValue(agentInboxCount > 0 ? "\(agentInboxCount) new" : "")
             .accessibilityIdentifier("agent.inboxButton")
