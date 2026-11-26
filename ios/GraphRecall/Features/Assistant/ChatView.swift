@@ -764,6 +764,10 @@ struct ChatView: View {
         var source = withoutMath.replacing(/(?m)^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t#]*$/) { match in
             "**\(match.1)**"
         }
+        // Horizontal rules ("---", "***", "___") become a divider; inline parsing would print them.
+        source = source.replacing(/(?m)^[ \t]{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$/) { _ in
+            String(ChatMarkdown.divider)
+        }
         // List markers ("* ", "- ", "+ ") become bullets: inline parsing would print them as-is.
         source = source.replacing(/(?m)^([ \t]*)[*+-][ \t]+/) { match in "\(match.1)• " }
         if linkCitations {
@@ -1057,6 +1061,8 @@ enum ChatMarkdown {
 
     private static let open: Character = "\u{E000}"
     private static let close: Character = "\u{E001}"
+    /// Placeholder for a markdown horizontal rule, drawn as a thin line.
+    static let divider: Character = "\u{E002}"
 
     /// Pulls math spans out before markdown parsing (so `_` and `*` inside them aren't read as
     /// emphasis) and leaves private-use placeholders where they were.
@@ -1120,6 +1126,11 @@ enum ChatMarkdown {
             } else if intent.contains(.emphasized) {
                 attr[run.range].foregroundColor = emphasisColor
             }
+        }
+        while let rule = attr.range(of: String(divider)) {
+            var line = AttributedString(String(repeating: "─", count: 22))
+            line.foregroundColor = GRColor.textTertiary
+            attr.replaceSubrange(rule, with: line)
         }
         while let start = attr.range(of: String(open)),
               let end = attr[start.upperBound...].range(of: String(close)) {
