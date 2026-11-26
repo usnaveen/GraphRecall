@@ -74,7 +74,9 @@ struct ConceptClue: View {
 
     var body: some View {
         if let map = clueMap {
-            ConceptMapView(map: map, masked: true)
+            // Hide the name only when it is the answer: a question that already says it
+            // ("What does LoRA change…") just gets the ordinary picture.
+            ConceptMapView(map: map, masked: !item.prompt.localizedCaseInsensitiveContains(map.center))
                 .id(item.id)
         }
     }
@@ -88,7 +90,8 @@ struct ConceptClue: View {
             .filter { !$0.isEmpty && $0.split(separator: " ").count <= 6 }
         let nodes = map.nodes.filter { node in
             let name = node.name.lowercased()
-            return !answers.contains { $0.contains(name) || name.contains($0) }
+            // Containment only for answers of 4+ characters: "2" or "a" would match everything.
+            return !answers.contains { $0 == name || ($0.count >= 4 && ($0.contains(name) || name.contains($0))) }
         }
         return nodes.isEmpty ? nil : ConceptMap(center: map.center, nodes: nodes)
     }
