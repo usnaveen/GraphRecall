@@ -27,16 +27,22 @@
 GraphRecall is a native iOS 26 app (SwiftUI, Liquid Glass) on a FastAPI + PostgreSQL/pgvector + Neo4j backend with Gemini models.
 
 ### 1. Put anything in
+<p align="center"><img src="docs/media/app-create.png" width="230" alt="Create: concepts, text, URL, YouTube, chat, file, scan and voice, plus Remind me and LeetCode"></p>
+
 Type concepts or text, paste a URL or a YouTube video, import a chat history, upload files and whole books, scan pages and photos, or just talk. You can also share to GraphRecall from any app.
 
 ### 2. It becomes your graph
-Concepts are extracted. Each one **merges into a node you already have or becomes a new one**, linked with typed, directed edges: *prerequisite of*, *subtopic of*, *builds on*. Communities are detected and named. Tap a concept and you see only what it needs, what it's part of and what it unlocks.
+<p align="center">
+  <img src="docs/media/app-graph.png" width="230" alt="Graph: named communities spread apart">
+  <img src="docs/media/app-graph-cluster.png" width="230" alt="Graph: inside one community, with typed links">
+  <img src="docs/media/app-graph-focus.png" width="230" alt="Graph: Transformer with only its nearest prerequisites, subtopics and what it unlocks">
+</p>
+
+Concepts are extracted. Each one **merges into a node you already have or becomes a new one**, linked with typed, directed edges: *prerequisite of*, *subtopic of*, *builds on*. Communities are detected and named. Tap a community to go inside it; tap a concept and you see only what it needs, what it's part of and what it unlocks.
 
 ### 3. It comes back as a feed you actually open
 <p align="center">
-  <img src="docs/media/feed-posts.png" width="210" alt="Feed: concept cards one after another">
-  <img src="docs/media/feed-video-card.png" width="210" alt="Feed: a YouTube video from a followed channel, matched to concepts in your graph">
-  <img src="docs/media/graph-focus-neural-network.png" width="210" alt="Graph: one concept with its closest prerequisites and subtopics">
+  <img src="docs/media/app-feed.png" width="230" alt="Feed: a YouTube video from a channel you follow, matched to concepts in your graph">
 </p>
 
 - **A one-stop daily view.** Concept showcases, quizzes, term cards and runnable code cards (with syntax colours), plus videos and articles from sources you follow (YouTube, Substack, Medium, RSS), each matched to concepts you're learning.
@@ -47,16 +53,14 @@ Concepts are extracted. Each one **merges into a node you already have or become
 <p align="center"><img src="docs/media/nano-banana-transformer.jpg" width="330" alt="The Transformer architecture, redrawn from the original paper's figure in GraphRecall's style"></p>
 
 ### 4. An assistant that knows what you know
-<p align="center">
-  <img src="docs/media/assistant.png" width="210" alt="Assistant: answers from your notes with citations">
-  <img src="docs/media/create.png" width="210" alt="Create: many ways to add content, plus Remind me and LeetCode">
-  <img src="docs/media/resume-skills.png" width="210" alt="Resume: each claimed skill checked against your evidence">
-</p>
+<p align="center"><img src="docs/media/app-assistant.png" width="230" alt="Assistant: grounded in your graph and notes, with suggested questions"></p>
 
 - **GraphRAG answers from your own notes, with numbered citations.** Math renders readably.
 - **"Ask next" suggestions come from your graph, not a model**: a prerequisite you're shaky on, a subtopic you haven't studied, what the concept unlocks. About 0.2 s, zero tokens.
 
 ### 5. Your profile, measured
+<p align="center"><img src="docs/media/app-profile.png" width="230" alt="Profile: knowledge map by status, resume, education, projects, LeetCode and today's progress"></p>
+
 Education, resume, projects and LeetCode progress. Log a problem by its number: type 146, and title, difficulty, topics and pattern fill in. Every concept's status (strong, shaky, seen or new) comes from evidence. **The resume scan marks each claimed skill** by whether you could defend it.
 
 ### 6. Your knowledge as context for any AI agent (MCP)
