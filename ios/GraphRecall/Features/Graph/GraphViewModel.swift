@@ -314,7 +314,10 @@ final class GraphViewModel {
         for edge in edges {
             guard isVisible(edgeEndpoint: edge.source), isVisible(edgeEndpoint: edge.target) else { continue }
             if minRelationshipWeight > 0, (edge.strength ?? 0.6) < minRelationshipWeight { continue }
-            counts[GraphRelationshipStyle.normalized(edge.relationshipType), default: 0] += 1
+            let type = GraphRelationshipStyle.normalized(edge.relationshipType)
+            // The overview hides undirected "related" links (graph3d.js rebuildLinks); so does the key.
+            if selectedNodeId == nil && type == "RELATED_TO" { continue }
+            counts[type, default: 0] += 1
         }
         return counts
             .sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }

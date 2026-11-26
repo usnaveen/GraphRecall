@@ -27,7 +27,6 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import * as d3 from 'd3-force-3d';
 
@@ -65,6 +64,7 @@ const LABEL_CAP_MIN = 40;
 const LABEL_CAP_MAX = 80;
 const LABEL_LOD_NODE_COUNT = 350; // above this, gate browsing labels by importance + distance
 const DIM_OPACITY = 0.14;
+const MAX_OVERVIEW_ARROWS = 700; // arrowheads are one mesh each; enough for a community or two
 /// 2D focus layout: ring radius, extra ring spacing when crowded, and how fast things settle.
 const FOCUS = { radius: 48, ringGap: 30, lerp: 0.16, perRing: 7 };
 
@@ -97,6 +97,7 @@ function adaptGraph(raw) {
       ? { x: n.x, y: n.y, z: n.z }
       : null,
     communityIndex: -1,
+    colorKey: n.domain || 'General',
     degree: 0,
   }));
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -121,9 +122,13 @@ function adaptGraph(raw) {
   const communities = ((raw && raw.communities) || []).slice().sort((a, b) => (a.level ?? 0) - (b.level ?? 0));
   const leafCommunities = communities.filter((c) => (c.entity_ids || []).length > 0);
   leafCommunities.forEach((community, index) => {
+    const key = String(community.id ?? community.title ?? index);
     for (const id of community.entity_ids || []) {
       const node = byId.get(String(id));
-      if (node && node.communityIndex < 0) node.communityIndex = index;
+      if (node && node.communityIndex < 0) {
+        node.communityIndex = index;
+        node.colorKey = key;
+      }
     }
   });
 
@@ -313,37 +318,12 @@ const ringLayer = new THREE.Group();
 scene.add(linkLayer, arrowLayer, nodeLayer, ringLayer);
 
 /* ---------------------------------------------------------------- space look */
-// The web graph's look: a quiet starfield behind the concepts, a soft bloom on the glowing
-// spheres, and a faint halo with a name around each community so clusters read as places.
-
-const starfield = (() => {
-  const count = 1600;
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  const tints = [new THREE.Color('#ffffff'), new THREE.Color('#9fe8ff'), new THREE.Color('#d7ff9a'), new THREE.Color('#c9b8ff')];
-  for (let i = 0; i < count; i++) {
-    const r = 1400 + Math.random() * 1400;
-    const u = Math.random() * 2 - 1;
-    const theta = Math.random() * Math.PI * 2;
-    const s = Math.sqrt(1 - u * u);
-    positions.set([r * s * Math.cos(theta), r * s * Math.sin(theta), r * u], i * 3);
-    const c = tints[i % tints.length].clone().multiplyScalar(0.12 + Math.random() * 0.3); // under the bloom threshold
-    colors.set([c.r, c.g, c.b], i * 3);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const material = new THREE.PointsMaterial({ size: 2.2, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.75, depthWrite: false });
-  const points = new THREE.Points(geometry, material);
-  points.renderOrder = -10;
-  return points;
-})();
-scene.add(starfield);
+// Flat look: no starfield, bloom or glowing halos. Communities read as places through their names,
+// drawn in the community's own colour.
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.35, 0.42);
-composer.addPass(bloomPass);
+// No bloom either: concepts are flat, concrete colours.
 composer.addPass(new OutputPass());
 
 const haloTexture = (() => {
@@ -365,15 +345,14 @@ let clusterViews = [];       // { index, sprite, label, centre, radius, members 
 
 const sphereGeometry = new THREE.SphereGeometry(1, 20, 14);
 const ringGeometry = new THREE.RingGeometry(1.3, 1.6, 48);
-const arrowGeometry = new THREE.ConeGeometry(0.42, 1.25, 10);
+const ARROW_HEIGHT = 1.25;
+const arrowGeometry = new THREE.ConeGeometry(0.42, ARROW_HEIGHT, 10);
 
 let width = 1;
 let height = 1;
 let needsRender = true;
 const invalidate = () => { needsRender = true; };
 controls.addEventListener('change', invalidate);
-controls.addEventListener('start', () => { lastInteraction = performance.now() + 60000; });
-controls.addEventListener('end', () => { lastInteraction = performance.now(); });
 
 /* ---------------------------------------------------------------- state */
 
@@ -388,7 +367,6 @@ let cameraFlight = null;     // { target, position, onArrive }
 let viewShift = 0;
 let insetBottom = 0;
 let settling = false;        // node positions are animating
-let lastInteraction = performance.now();
 
 /// 2D focus: { id, targets: Map<id, Vector3>, members: Set<id>, links: [], radius }
 let focusView = null;
@@ -430,10 +408,21 @@ function linkPasses(link) {
   return !!source && !!target && isVisibleNode(link.source) && isVisibleNode(link.target);
 }
 
+/// The same community (or domain) gets the same colour every time the graph loads: the colour
+/// comes from its identity, not from where it happens to sit in today's list.
+function stableColor(key) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return COMMUNITY_PALETTE[(h >>> 0) % COMMUNITY_PALETTE.length];
+}
+
 function baseColor(node) {
   if (state.colorMode === 'mastery') return masteryColor(node.mastery);
   if (state.colorMode === 'community') {
-    return node.communityIndex >= 0 ? COMMUNITY_PALETTE[node.communityIndex % COMMUNITY_PALETTE.length] : MASTERY_COLORS.unseen;
+    return node.communityIndex >= 0 ? stableColor(node.colorKey) : MASTERY_COLORS.unseen;
   }
   return node.color;
 }
@@ -476,12 +465,8 @@ function buildScene(newGraph) {
   for (const node of graph.nodes) {
     const mesh = new THREE.Mesh(
       sphereGeometry,
-      new THREE.MeshStandardMaterial({
+      new THREE.MeshLambertMaterial({
         color: node.color,
-        emissive: node.color,
-        emissiveIntensity: 0.26,
-        roughness: 0.36,
-        metalness: 0.08,
         transparent: true,
       }),
     );
@@ -527,9 +512,10 @@ function buildClusterViews() {
     centre.divideScalar(members.length);
     const distances = members.map((n) => centre.distanceTo(new THREE.Vector3(n.x, n.y, n.z))).sort((a, b) => a - b);
     const radius = Math.max(18, distances[Math.floor(distances.length * 0.8)] || 18);
-    const colour = new THREE.Color(COMMUNITY_PALETTE[index % COMMUNITY_PALETTE.length]);
+    const colour = new THREE.Color(stableColor(members[0].colorKey || String(index)));
+    // The sprite stays as the cluster's anchor for hit-testing and placement, but draws nothing.
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: haloTexture, color: colour, transparent: true, opacity: 0.16,
+      map: haloTexture, color: colour, transparent: true, opacity: 0,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }));
     sprite.position.copy(centre);
@@ -578,7 +564,6 @@ function placeClusterLabels() {
       if (obj && obj.visible && !obj.dimmed) { anyVisible = true; break; }
     }
     view.sprite.visible = anyVisible && !focusView;
-    view.sprite.material.opacity = state.selectedId ? 0.06 : 0.16;
     const dist = camera.position.distanceTo(view.centre);
     const show = overview && anyVisible && dist > view.radius * 3.2 && view.label.textContent;
     if (!show) { view.label.style.opacity = '0'; continue; }
@@ -771,8 +756,9 @@ function applyState() {
     const tint = isTarget ? MERGE_TARGET_COLOR : baseColor(node);
     mesh.material.color.set(tint);
     if (mesh.material.emissive) {
+      // Flat colour; only the selected concept is lifted a little so it reads as chosen.
       mesh.material.emissive.set(tint);
-      mesh.material.emissiveIntensity = node.id === selectedId ? 0.45 : obj.dimmed ? 0.06 : 0.26;
+      mesh.material.emissiveIntensity = node.id === selectedId ? 0.22 : 0;
     }
     mesh.material.opacity = obj.dimmed ? DIM_OPACITY : 1;
     mesh.material.depthWrite = !obj.dimmed;
@@ -819,6 +805,10 @@ function rebuildLinks(selectedId, searching) {
     if (!linkPasses(link)) continue;
     if (selectedId && (link.source.id === selectedId || link.target.id === selectedId)) {
       hot.push(link);
+    } else if (link.type === 'RELATED_TO') {
+      // Undirected "related" links are most of the graph and say little: they made the overview a
+      // hairball. They appear only around the concept you select.
+      continue;
     } else if (searching && !(state.highlightIds.has(link.source.id) && state.highlightIds.has(link.target.id))) {
       faint.push(link);
     } else if (link.source.clusterIndex !== link.target.clusterIndex) {
@@ -829,9 +819,23 @@ function rebuildLinks(selectedId, searching) {
     }
   }
   // Tinted by type even in the overview, so the variety of connections is visible at a glance.
-  addLinkBatch(faint, 0.9, 0.055, (link) => relColor(link.type));
-  addLinkBatch(idle, 1.35, 0.5, (link) => relColor(link.type));
+  addLinkBatch(faint, 0.9, 0.08, (link) => relColor(link.type));
+  addLinkBatch(idle, 1.6, 0.75, (link) => relColor(link.type));
   addLinkBatch(hot, 2.4, 0.95, (link) => relColor(link.type));
+  // Every directed connection shows its direction: prerequisite → concept, subtopic → parent.
+  let arrowBudget = MAX_OVERVIEW_ARROWS;
+  for (const [batch, opacity] of [[hot, 0.95], [idle, 0.8]]) {
+    for (const link of batch) {
+      if (link.type === 'RELATED_TO' || arrowBudget-- <= 0) continue;
+      const mesh = new THREE.Mesh(
+        arrowGeometry,
+        new THREE.MeshBasicMaterial({ color: relColor(link.type), transparent: true, opacity }),
+      );
+      mesh.raycast = () => {};
+      arrowLayer.add(mesh);
+      arrows.push({ mesh, link });
+    }
+  }
 }
 
 function addLinkBatch(links, linewidth, opacity, colorOf) {
@@ -881,12 +885,14 @@ function updateArrows() {
     const length = arrowDirection.length();
     if (length < 0.001) continue;
     arrowDirection.divideScalar(length);
+    // A fixed on-screen size, so direction reads from the overview as well as up close.
+    const worldPerPx = target.mesh.scale.x / Math.max(target.pxRadius, 0.001);
+    const headLength = (focusView ? 13 : 9) * worldPerPx;
+    mesh.scale.setScalar(headLength / ARROW_HEIGHT);
     // Sit just off the target node so the head stays visible.
-    const back = target.mesh.scale.x + 2.4;
+    const back = target.mesh.scale.x + headLength * 0.6;
     mesh.position.copy(target.mesh.position).addScaledVector(arrowDirection, -back);
     mesh.quaternion.setFromUnitVectors(arrowUp, arrowDirection);
-    const scale = Math.max(1, target.pxRadius / 6);
-    mesh.scale.setScalar(scale);
   }
 }
 
@@ -1096,22 +1102,6 @@ function updateViewShift() {
   return true;
 }
 
-let drift = null; // { offset, t0 } while swaying
-const driftAxisY = new THREE.Vector3(0, 1, 0);
-const driftAxisX = new THREE.Vector3(1, 0, 0);
-function updateDrift() {
-  const idle = !focusView && !state.selectedId && !cameraFlight && performance.now() - lastInteraction > 6000;
-  if (!idle) { drift = null; return false; }
-  if (!drift) drift = { offset: camera.position.clone().sub(controls.target), t0: performance.now() };
-  const t = (performance.now() - drift.t0) / 1000;
-  const yaw = 0.32 * Math.sin((t * 2 * Math.PI) / 26);
-  const pitch = 0.1 * Math.sin((t * 2 * Math.PI) / 38);
-  const offset = drift.offset.clone().applyAxisAngle(driftAxisY, yaw).applyAxisAngle(driftAxisX, pitch);
-  camera.position.copy(controls.target).add(offset);
-  camera.lookAt(controls.target);
-  return true;
-}
-
 function tick() {
   requestAnimationFrame(tick);
   let animating = animatePositions();
@@ -1125,10 +1115,7 @@ function tick() {
     }
     animating = true;
   }
-  // A slow sway while nobody touches the overview, so the graph feels alive. Communities lie on
-  // a near-flat disc, so it sways (about ±18° and a little tilt) rather than orbiting, which would
-  // turn the disc edge-on. Any touch stops it where it is.
-  if (updateDrift()) animating = true;
+  // No idle motion: the graph holds still until you move it.
   const moved = controls.update();
   if (updateViewShift()) animating = true;
   // Render only while something changes — a still graph costs no GPU or battery.
@@ -1304,7 +1291,6 @@ function resize() {
   height = Math.max(1, container.clientHeight);
   renderer.setSize(width, height, false);
   composer.setSize(width, height);
-  bloomPass.resolution.set(width / 2, height / 2); // half-resolution bloom: plenty on a phone, cheap on the GPU
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   applyViewOffset();
