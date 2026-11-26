@@ -313,6 +313,7 @@ final class AuthSession {
         UserDefaults.standard.set(false, forKey: Self.localDevKey)
         AppAuthKeychain.clear()
         GRSharedAuth.clear()
+        ResumeFileStore.removeAll() // the original resume PDF is personal and stays with the account
         await APIClient.shared.setAccessToken(nil)
         state = .signedOut
     }

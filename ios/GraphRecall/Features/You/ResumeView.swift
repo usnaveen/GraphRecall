@@ -2,9 +2,10 @@ import SwiftUI
 import PDFKit
 import UniformTypeIdentifiers
 
-/// Your resume, read against your knowledge map: every skill it mentions is highlighted green
-/// (strong), amber (shaky), cyan (seen but untested) or grey (new to you). Text is extracted on
-/// the phone with PDFKit; the server strips contact details before storing it.
+/// Your resume, read against your knowledge map. The original PDF is shown with every skill
+/// marked green to red by how it held up when tested (neutral when never tested), above the skill
+/// groups. Text is extracted on the phone with PDFKit and the server strips contact details before
+/// storing it; the PDF itself stays on this phone (ResumeFileStore).
 @MainActor
 @Observable
 final class ResumeViewModel {
@@ -15,6 +16,17 @@ final class ResumeViewModel {
     var focus: KnowledgeStatus?
 
     var skills: [ResumeSkill] { overview?.skills ?? [] }
+
+    /// The original document, when this phone imported the current resume.
+    var documentURL: URL? { ResumeFileStore.existingURL(for: overview?.id) }
+
+    var documentAspectRatio: CGFloat {
+        guard let url = documentURL, let doc = PDFDocument(url: url), let page = doc.page(at: 0) else { return 0.77 }
+        let box = page.bounds(for: .mediaBox)
+        guard box.height > 0 else { return 0.77 }
+        let ratio = box.width / box.height
+        return doc.pageCount > 1 ? ratio * 0.85 : ratio
+    }
 
     func counts() -> [KnowledgeStatus: Int] {
         Dictionary(uniqueKeysWithValues: KnowledgeStatus.allCases.map { s in (s, skills.filter { $0.status == s }.count) })
@@ -37,6 +49,8 @@ final class ResumeViewModel {
         isUploading = true
         defer { isUploading = false }
         // PDF text extraction can take a while on long files: keep it off the main actor.
+        // Kept to show the original pages with their highlights; it never leaves the phone.
+        let original = try? Data(contentsOf: url)
         let extracted: String? = await Task.detached(priority: .userInitiated) {
             guard let doc = PDFDocument(url: url) else { return nil }
             return (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }.joined(separator: "\n")
@@ -50,7 +64,11 @@ final class ResumeViewModel {
             return
         }
         do {
-            overview = try await APIClient.shared.uploadResume(text: String(text.prefix(60000)), fileName: url.lastPathComponent)
+            let uploaded = try await APIClient.shared.uploadResume(text: String(text.prefix(60000)), fileName: url.lastPathComponent)
+            if let original, let id = uploaded.id {
+                try? ResumeFileStore.save(original, id: id)
+            }
+            overview = uploaded
             errorMessage = nil
             GRHaptics.success()
         } catch {
@@ -84,6 +102,7 @@ struct ResumeView: View {
     @State private var model = ResumeViewModel()
     @State private var showImporter = false
     @State private var selected: KnowledgeAssessment?
+    @State private var showDocument = false
 
     var body: some View {
         ScrollView {
@@ -107,6 +126,14 @@ struct ResumeView: View {
 
                 if let o = model.overview, !o.isEmpty {
                     summaryCard(o).padding(.horizontal, 20)
+                    if let url = model.documentURL {
+                        documentCard(url: url, text: o.text ?? "").padding(.horizontal, 20)
+                    } else {
+                        Label("Import the PDF again on this phone to see your original pages with the skills marked.",
+                              systemImage: "doc.richtext")
+                            .font(GRType.caption).foregroundStyle(GRColor.textTertiary)
+                            .padding(.horizontal, 20)
+                    }
                     skillGroups.padding(.horizontal, 20)
                     resumeText.padding(.horizontal, 20)
                 } else if !model.isLoading && !model.isUploading {
@@ -135,6 +162,14 @@ struct ResumeView: View {
         }
         .task { await model.load() }
         .refreshable { await model.load() }
+        .fullScreenCover(isPresented: $showDocument) {
+            if let url = model.documentURL {
+                ResumeDocumentViewer(url: url, text: model.overview?.text ?? "", skills: model.skills) { skill in
+                    showDocument = false
+                    open(skill)
+                }
+            }
+        }
         .sheet(item: $selected) { a in
             KnowledgeDetailSheet(assessment: a) { _ in Task { await model.load() } }
                 .presentationDetents([.medium, .large])
@@ -149,7 +184,7 @@ struct ResumeView: View {
                     .font(GRType.title).foregroundStyle(GRColor.textPrimary)
                 Text("Import a PDF. Every skill it mentions is coloured by what GraphRecall knows about you: strong, shaky, studied but untested, or new. Skills it can't judge become quick questions.")
                     .font(GRType.body).foregroundStyle(GRColor.textSecondary)
-                Label("Text is read on your phone. Email, phone and profile links are removed before anything is stored.",
+                Label("Text is read on your phone and your PDF stays on it. Email, phone and profile links are removed before anything is stored.",
                       systemImage: "lock.shield")
                     .font(GRType.caption).foregroundStyle(GRColor.textTertiary)
                 Button { showImporter = true } label: { Label("Import resume PDF", systemImage: "square.and.arrow.down") }
@@ -202,9 +237,7 @@ struct ResumeView: View {
                         GRFlowLayout(spacing: 6) {
                             ForEach(group) { skill in
                                 Button {
-                                    Task {
-                                        if let a = try? await APIClient.shared.assessKnowledge([skill.name]).first { selected = a }
-                                    }
+                                    open(skill)
                                 } label: {
                                     Text(skill.name)
                                         .font(GRType.caption.weight(.semibold))
@@ -218,6 +251,42 @@ struct ResumeView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private func open(_ skill: ResumeSkill) {
+        Task {
+            if let a = try? await APIClient.shared.assessKnowledge([skill.name]).first { selected = a }
+        }
+    }
+
+    /// The original pages, every skill marked by strength. Tap a mark for that skill; expand to read.
+    private func documentCard(url: URL, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                GRSectionHeader(title: "Your resume")
+                Spacer()
+                Button {
+                    showDocument = true
+                } label: {
+                    Label("Full screen", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .font(GRType.caption.weight(.semibold))
+                }
+                .buttonStyle(.glass)
+                .accessibilityIdentifier("resume.document.expand")
+            }
+            ResumeStrengthLegend(skills: model.skills)
+            ResumePDFView(url: url, text: text, skills: model.skills) { open($0) }
+                .aspectRatio(model.documentAspectRatio, contentMode: .fit)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(GRColor.stroke, lineWidth: 1))
+                .accessibilityIdentifier("resume.document")
+            if model.skills.allSatisfy({ ResumeStrength($0) == .untested }) {
+                Text("Nothing here has been tested yet, so every mark is neutral. Skills turn green or red as you answer feed cards and quick questions on them.")
+                    .font(GRType.caption).foregroundStyle(GRColor.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
