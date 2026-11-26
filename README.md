@@ -18,40 +18,65 @@
 
 ---
 
-## GraphRecall in one minute (November 2026)
+## GraphRecall in one minute
 
-**Live showcase:** [https://usnaveen.github.io/graphrecall-site/](https://usnaveen.github.io/graphrecall-site/) · **65s Demo video:** [Watch the walkthrough](https://usnaveen.github.io/graphrecall-site/#demo)
+> **Graphs are everywhere.** LinkedIn and Reddit are full of beautiful knowledge graphs, and most of them, like most piles of notes, never get opened again. **GraphRecall builds an *active* graph of every concept you've been exposed to, and brings it back to you.**
 
-**You forget most of what you learn, and neither you nor your AI tools can see what you actually know.** GraphRecall turns what you read — PDFs, notes, links, YouTube — into a personal knowledge graph, then brings it back as a feed you scroll like social media instead of homework. The same graph tells your AI agents what you know, so they can explain things in terms you already have.
+📄 **[What makes it special](docs/GraphRecall-What-Makes-It-Special.pdf)** · 🛠️ **[Technical report](docs/TECHNICAL-REPORT.md)** ([PDF](docs/GraphRecall-Technical-Report.pdf)) · 🌐 **[graphrecall.online](https://graphrecall.online)**
 
-It runs as a native iOS 26 app (SwiftUI, Liquid Glass) on a FastAPI + PostgreSQL/pgvector + Neo4j backend.
+GraphRecall is a native iOS 26 app (SwiftUI, Liquid Glass) on a FastAPI + PostgreSQL/pgvector + Neo4j backend with Gemini models.
 
+### 1. Put anything in
+Type concepts or text, paste a URL or a YouTube video, import a chat history, upload files and whole books, scan pages and photos, or just talk. You can also share to GraphRecall from any app.
+
+### 2. It becomes your graph
+Concepts are extracted. Each one **merges into a node you already have or becomes a new one**, linked with typed, directed edges: *prerequisite of*, *subtopic of*, *builds on*. Communities are detected and named. Tap a concept and you see only what it needs, what it's part of and what it unlocks.
+
+### 3. It comes back as a feed you actually open
 <p align="center">
-  <img src="docs/media/feed-posts.png" width="200" alt="Feed: cards one after another, graded with Apple's native slider">
-  <img src="docs/media/graph-focus-neural-network.png" width="200" alt="Graph: a concept with its closest prerequisites and subtopics, typed arrows">
-  <img src="docs/media/assistant.png" width="200" alt="Assistant: GraphRAG answer with citations and Ask-next suggestions">
-  <img src="docs/media/create.png" width="200" alt="Create: concepts, text, URL, YouTube, scan, voice, Remind me, LeetCode">
+  <img src="docs/media/feed-posts.png" width="210" alt="Feed: concept cards one after another">
+  <img src="docs/media/feed-video-card.png" width="210" alt="Feed: a YouTube video from a followed channel, matched to concepts in your graph">
+  <img src="docs/media/graph-focus-neural-network.png" width="210" alt="Graph: one concept with its closest prerequisites and subtopics">
 </p>
 
-### What's built
-- **Your knowledge as a graph.** Concepts with typed, directed links (prerequisite → concept, subtopic → parent, builds on), grouped into named communities. On the author's account: 507 concepts, about 2,184 links, 23 communities. The graph view keeps communities apart and labelled; tapping a concept shows only its closest neighbours. Backend also serves zoomable subject → community → concept hierarchy views and a color-annotated recall-outline tree (`GET /api/graph3d/hierarchy`, `GET /api/graph3d/recall-outline`, enriched `/focus/{id}` in `backend/services/graph_hierarchy.py`).
-- **Live dictation-to-graph SSE streaming (backend).** Parses spoken concept lists, emits existing graph edges first, and streams inferred typed edges (`PREREQUISITE_OF`, `SUBTOPIC_OF`, `BUILDS_ON`, `APPLIES_TO`) via `POST /api/graph3d/dictate/stream` (`backend/services/dictation_graph.py`).
-- **GraphRAG assistant with citations.** Answers come from your own notes and graph, with numbered sources.
-- **Intent routing without an LLM call.** A trained classifier routes each message when it is confident and falls back to one LLM call when it isn't; every decision is logged (`backend/services/intent_router/`).
-- **Corpus-versioned answer cache.** Cached answers are partitioned by a corpus version, so a deleted note's text is never served from cache.
-- **"Ask next": follow-ups chosen by the graph, not a model.** Around the concepts that grounded the answer, it picks a prerequisite you're shaky on, a part you haven't studied and what the concept unlocks — about 0.2 s and zero tokens (`backend/services/followups.py`). Taps are logged per suggestion kind for click-through evaluation.
-- **A feed, not homework.** Quiz, term, concept and code-sandbox cards with spaced repetition; you rate recall on Apple's native slider, and any card can come back later with "Remind me".
-- **Generalized links, RSS feeds & signed newsletter ingestion (backend).** Supports Substack, Medium profiles/publications, YouTube channel feeds, HTML `<link rel="alternate">` discovery (`/api/subscriptions/feeds`), HMAC-SHA256 verified inbound newsletter webhook splitting multi-story digests (`POST /api/ingest/email`), and chronological "Where I learned this" provenance (`GET /api/concepts/{id}/provenance`).
-- **Overnight batch pipeline with cost telemetry (backend).** Runs low-cost batch jobs (`digest_links_and_newsletters`, `leetcode_pattern_summary`, `resume_gap_recommendations`, `build_next_day_feed_plan`), logging token counts and estimated USD cost per night to `overnight_job_runs` + `usage_daily` (`POST /api/v2/agent/overnight/run`, `GET /api/v2/agent/overnight/report`).
-- **Resume vs. what you know.** Each skill on your resume is checked against evidence in your graph: strong, shaky, seen or new.
-- **LeetCode by number.** Type 146: title, difficulty, topics and a suggested pattern fill in from LeetCode's public API; attempts schedule reviews.
-- **Illustrations from Gemini's image model (Nano Banana)** on concept cards, clearly attributed (`backend/scripts/generate_concept_illustrations.py`).
-- **MCP server with per-query knowledge frontier & session write-back.** Claude, Cursor and other MCP clients can read your knowledge profile and per-query knowledge frontier (`get_knowledge_frontier`: strong anchors, shaky frontier, gaps, misconceptions, provenance, resume claims at risk, plus a cacheable profile prefix hash) and record session exposures (`record_exposure`) with scoped keys (`backend/agent_bridge/`); OAuth 2.1 with PKCE is implemented (not yet publicly hosted).
+- **A one-stop daily view.** Concept showcases, quizzes, term cards and runnable code cards (with syntax colours), plus videos and articles from sources you follow (YouTube, Substack, Medium, RSS), each matched to concepts you're learning.
+- **ADHD-friendly by design.** It scrolls like social media: no goal rings, no streak guilt, and a daily limit instead of a backlog. You rate how well you knew each card on Apple's native slider, and "Remind me" brings any card back later.
+- **Real spaced repetition.** FSRS schedules every concept. When recall slips, it **backtracks to the shaky prerequisites underneath**.
+- **Pictures that teach.** Figures from your own papers and books appear on cards. Where there's no figure, a Gemini image model (Nano Banana) redraws the real reference diagram in the app's style:
 
-<p align="center"><img src="docs/media/nano-banana-multi-head-attention.jpg" width="520" alt="A Nano Banana illustration of Multi-Head Attention for concept cards"></p>
+<p align="center"><img src="docs/media/nano-banana-transformer.jpg" width="330" alt="The Transformer architecture, redrawn from the original paper's figure in GraphRecall's style"></p>
+
+### 4. An assistant that knows what you know
+<p align="center">
+  <img src="docs/media/assistant.png" width="210" alt="Assistant: answers from your notes with citations">
+  <img src="docs/media/create.png" width="210" alt="Create: many ways to add content, plus Remind me and LeetCode">
+  <img src="docs/media/resume-skills.png" width="210" alt="Resume: each claimed skill checked against your evidence">
+</p>
+
+- **GraphRAG answers from your own notes, with numbered citations.** Math renders readably.
+- **"Ask next" suggestions come from your graph, not a model**: a prerequisite you're shaky on, a subtopic you haven't studied, what the concept unlocks. About 0.2 s, zero tokens.
+
+### 5. Your profile, measured
+Education, resume, projects and LeetCode progress. Log a problem by its number: type 146, and title, difficulty, topics and pattern fill in. Every concept's status (strong, shaky, seen or new) comes from evidence. **The resume scan marks each claimed skill** by whether you could defend it.
+
+### 6. Your knowledge as context for any AI agent (MCP)
+Paste a research paper into Claude and ask it to explain:
+1. Claude calls GraphRecall's MCP server and gets your **knowledge frontier**: what you know well, the prerequisites you're shaky on, and what you've never seen.
+2. It refreshes the shaky parts, then explains the new ideas at your level.
+3. It records what you learned back into your graph.
+
+There are 15 tools in all (`get_knowledge_frontier`, `get_knowledge_profile`, `search_concepts`, `record_exposure`, …), with scoped keys and OAuth 2.1. It works today with Claude Code. Public connectors for claude.ai and ChatGPT come with hosting.
+
+### Under the hood (details in the [technical report](docs/TECHNICAL-REPORT.md))
+- **Hybrid GraphRAG retrieval:** pgvector + Postgres full-text + a graph boost, fused with reciprocal rank fusion, then reranked, diversified (MMR) and ordered against "lost in the middle". Community-summary map-reduce runs for summary questions only.
+- **Intent routing without an LLM call:** a TF-IDF and logistic-regression classifier in pure numpy, with an LLM fallback when unsure. Every decision is logged.
+- **Caching with correctness rules:** an embedding cache, and an answer cache partitioned by a version of your notes, so a deleted note is never served. Agents get a stable profile hash they can cache as a prompt prefix.
+- **Cost discipline:** small models by default, zero-token components where a model isn't needed, and per-day usage tracking.
 
 ### What's next
-iOS UI wiring for the new hierarchy, dictation-stream, and overnight telemetry views · live Cloudflare domain/Email Routing & public OAuth hosting · server-side Resume PDF storage · published retrieval evals (pending paid Gemini billing).
+Hold "+" to dictate concepts and watch the graph wire itself up (the streaming backend exists) · open the graph on subjects, then communities, then concepts · keep resume PDFs on the server · public hosting for agent connectors · newsletter email routing · published retrieval evaluation scores.
+
+---
 
 The rest of this README documents the system in depth (architecture, API, schema, workflows); parts of it describe the earlier React web client.
 
