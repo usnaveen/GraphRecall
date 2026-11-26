@@ -25,6 +25,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import * as d3 from 'd3-force-3d';
 
 /* ---------------------------------------------------------------- constants */
@@ -126,9 +130,11 @@ function adaptGraph(raw) {
   // Ensure every graph has separated semantic clusters even when Neo4j community detection hasn't run yet.
   const assignedCommunities = new Set(nodes.map((n) => n.communityIndex).filter((i) => i >= 0));
   let clusterCount = 0;
+  const clusterTitles = [];
   if (assignedCommunities.size >= 2) {
     const remap = new Map([...assignedCommunities].sort((a, b) => a - b).map((oldIdx, newIdx) => [oldIdx, newIdx]));
     clusterCount = remap.size;
+    for (const [oldIdx, newIdx] of remap) clusterTitles[newIdx] = shortClusterTitle(leafCommunities[oldIdx]?.title);
     let fallbackCluster = -1;
     for (const node of nodes) {
       if (node.communityIndex >= 0 && remap.has(node.communityIndex)) {
@@ -147,6 +153,7 @@ function adaptGraph(raw) {
       .map(([d]) => d);
     const domainIdx = new Map(orderedDomains.map((d, i) => [d, i]));
     clusterCount = Math.max(orderedDomains.length, 1);
+    orderedDomains.forEach((d, i) => { clusterTitles[i] = d; });
     for (const node of nodes) {
       const idx = domainIdx.get(node.domain) ?? 0;
       node.clusterIndex = idx;
@@ -154,7 +161,15 @@ function adaptGraph(raw) {
     }
   }
 
-  return { nodes, links, clusterCount };
+  return { nodes, links, clusterCount, clusterTitles };
+}
+
+/** "Machine Learning: Adam, Tensor, Decoder" -> "Adam · Tensor · Decoder" (the domain is the colour). */
+function shortClusterTitle(title) {
+  const t = String(title || '').trim();
+  if (!t) return '';
+  const tail = t.includes(':') ? t.slice(t.indexOf(':') + 1) : t;
+  return tail.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 2).join(' · ');
 }
 
 /* ---------------------------------------------------------------- layout */
@@ -174,16 +189,20 @@ async function layoutGraph(graph, previous, isStale) {
     ? 0
     : Math.max(165, 92 * Math.cbrt(kClusters) + Math.sqrt(count) * 4.2);
 
-  const clusterCenters = Array.from({ length: kClusters }, (_, c) => {
-    if (kClusters === 1) return { x: 0, y: 0, z: 0 };
-    const t = (c + 0.5) / kClusters;
-    const phi = Math.acos(1 - 2 * t);
-    const theta = golden * c * 7;
-    return {
-      x: shellRadius * Math.sin(phi) * Math.cos(theta),
-      y: shellRadius * Math.sin(phi) * Math.sin(theta),
-      z: shellRadius * Math.cos(phi) * 0.82,
-    };
+  // Communities sit side by side like islands (a flattened sunflower, largest in the middle), each
+  // ring far enough out that neighbouring clusters never overlap from the default view; a little
+  // depth keeps it 3D when you orbit.
+  const sizes = new Map();
+  for (const node of nodes) sizes.set(node.clusterIndex ?? 0, (sizes.get(node.clusterIndex ?? 0) || 0) + 1);
+  const byPlace = [...Array(kClusters).keys()].sort((a, b) => (sizes.get(b) || 0) - (sizes.get(a) || 0));
+  const islandRadius = (n) => Math.max(24, 16 * Math.cbrt(n || 1));
+  const spacing = 3.0 * Math.max(...byPlace.map((c) => islandRadius(sizes.get(c))), 24);
+  const clusterCenters = new Array(kClusters);
+  byPlace.forEach((c, i) => {
+    if (kClusters === 1) { clusterCenters[c] = { x: 0, y: 0, z: 0 }; return; }
+    const r = spacing * Math.sqrt(i) * 0.92;
+    const theta = i * golden;
+    clusterCenters[c] = { x: r * Math.cos(theta), y: r * Math.sin(theta) * 0.82, z: ((i * 37) % 11 - 5) * 7 };
   });
 
   const clusterMembers = new Map();
@@ -236,9 +255,9 @@ async function layoutGraph(graph, previous, isStale) {
           : 0.012;
       }))
     .force('collide', d3.forceCollide().radius((d) => nodeRadius(d) + 5.5).iterations(2))
-    .force('x', d3.forceX((d) => d.clusterCenter.x).strength(0.115))
-    .force('y', d3.forceY((d) => d.clusterCenter.y).strength(0.115))
-    .force('z', d3.forceZ((d) => d.clusterCenter.z).strength(0.115));
+    .force('x', d3.forceX((d) => d.clusterCenter.x).strength(0.15))
+    .force('y', d3.forceY((d) => d.clusterCenter.y).strength(0.15))
+    .force('z', d3.forceZ((d) => d.clusterCenter.z).strength(0.15));
   if (nodes.length && reused === nodes.length) simulation.alpha(0.22);
 
   for (let i = 0; i < 500;) {
@@ -266,6 +285,9 @@ renderer.setClearColor(BACKGROUND, 1);
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
+// Through the bloom composer the clear colour alone came out grey; a scene background goes
+// through the same colour management as everything else and stays near-black.
+scene.background = new THREE.Color(BACKGROUND);
 const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 5000);
 camera.position.set(0, 0, 220);
 scene.add(camera);
@@ -290,6 +312,57 @@ const arrowLayer = new THREE.Group();
 const ringLayer = new THREE.Group();
 scene.add(linkLayer, arrowLayer, nodeLayer, ringLayer);
 
+/* ---------------------------------------------------------------- space look */
+// The web graph's look: a quiet starfield behind the concepts, a soft bloom on the glowing
+// spheres, and a faint halo with a name around each community so clusters read as places.
+
+const starfield = (() => {
+  const count = 1600;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const tints = [new THREE.Color('#ffffff'), new THREE.Color('#9fe8ff'), new THREE.Color('#d7ff9a'), new THREE.Color('#c9b8ff')];
+  for (let i = 0; i < count; i++) {
+    const r = 1400 + Math.random() * 1400;
+    const u = Math.random() * 2 - 1;
+    const theta = Math.random() * Math.PI * 2;
+    const s = Math.sqrt(1 - u * u);
+    positions.set([r * s * Math.cos(theta), r * s * Math.sin(theta), r * u], i * 3);
+    const c = tints[i % tints.length].clone().multiplyScalar(0.12 + Math.random() * 0.3); // under the bloom threshold
+    colors.set([c.r, c.g, c.b], i * 3);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const material = new THREE.PointsMaterial({ size: 2.2, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.75, depthWrite: false });
+  const points = new THREE.Points(geometry, material);
+  points.renderOrder = -10;
+  return points;
+})();
+scene.add(starfield);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.35, 0.42);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
+
+const haloTexture = (() => {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.45, 'rgba(255,255,255,0.16)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+})();
+const haloLayer = new THREE.Group();
+scene.add(haloLayer);
+let clusterViews = [];       // { index, sprite, label, centre, radius, members }
+
 const sphereGeometry = new THREE.SphereGeometry(1, 20, 14);
 const ringGeometry = new THREE.RingGeometry(1.3, 1.6, 48);
 const arrowGeometry = new THREE.ConeGeometry(0.42, 1.25, 10);
@@ -299,6 +372,8 @@ let height = 1;
 let needsRender = true;
 const invalidate = () => { needsRender = true; };
 controls.addEventListener('change', invalidate);
+controls.addEventListener('start', () => { lastInteraction = performance.now() + 60000; });
+controls.addEventListener('end', () => { lastInteraction = performance.now(); });
 
 /* ---------------------------------------------------------------- state */
 
@@ -313,6 +388,7 @@ let cameraFlight = null;     // { target, position, onArrive }
 let viewShift = 0;
 let insetBottom = 0;
 let settling = false;        // node positions are animating
+let lastInteraction = performance.now();
 
 /// 2D focus: { id, targets: Map<id, Vector3>, members: Set<id>, links: [], radius }
 let focusView = null;
@@ -426,7 +502,102 @@ function buildScene(newGraph) {
       ring: null,
     });
   }
+  buildClusterViews();
   applyState();
+}
+
+function buildClusterViews() {
+  for (const view of clusterViews) {
+    haloLayer.remove(view.sprite);
+    view.sprite.material.dispose();
+    view.label.remove();
+  }
+  clusterViews = [];
+  if (!graph || (graph.clusterCount || 0) < 2) return;
+  const groups = new Map();
+  for (const node of graph.nodes) {
+    const idx = node.clusterIndex ?? 0;
+    if (!groups.has(idx)) groups.set(idx, []);
+    groups.get(idx).push(node);
+  }
+  for (const [index, members] of groups) {
+    if (members.length < 3) continue;
+    const centre = new THREE.Vector3();
+    for (const n of members) centre.add(new THREE.Vector3(n.x, n.y, n.z));
+    centre.divideScalar(members.length);
+    const distances = members.map((n) => centre.distanceTo(new THREE.Vector3(n.x, n.y, n.z))).sort((a, b) => a - b);
+    const radius = Math.max(18, distances[Math.floor(distances.length * 0.8)] || 18);
+    const colour = new THREE.Color(COMMUNITY_PALETTE[index % COMMUNITY_PALETTE.length]);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: haloTexture, color: colour, transparent: true, opacity: 0.16,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    sprite.position.copy(centre);
+    sprite.scale.setScalar(radius * 2.6);
+    sprite.renderOrder = -5;
+    haloLayer.add(sprite);
+    const label = document.createElement('div');
+    label.className = 'cluster-label';
+    label.textContent = (graph.clusterTitles && graph.clusterTitles[index]) || '';
+    label.style.cssText = 'position:absolute;left:0;top:0;transform:translate(-50%,-50%);white-space:nowrap;'
+      + 'font:600 9.5px -apple-system,system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;'
+      + `color:#${colour.getHexString()};opacity:0;text-shadow:0 0 10px rgba(0,0,0,.9);pointer-events:none;transition:opacity .25s`;
+    labelsEl.appendChild(label);
+    clusterViews.push({ index, sprite, label, centre, radius, members: new Set(members.map((n) => n.id)) });
+  }
+}
+
+/** Communities with at least one concept on screen; with one or two, concept names take over. */
+function visibleClusterCount() {
+  let count = 0;
+  for (const view of clusterViews) {
+    for (const id of view.members) {
+      const obj = objects.get(id);
+      if (obj && obj.visible && !obj.dimmed) { count += 1; break; }
+    }
+  }
+  return count;
+}
+
+function clusterOf(nodeId) {
+  for (const view of clusterViews) if (view.members.has(nodeId)) return view;
+  return null;
+}
+
+const clusterScreen = new THREE.Vector3();
+const clusterUp = new THREE.Vector3();
+/** Community names float over their halos in the overview; they step aside for focus and close-ups. */
+function placeClusterLabels() {
+  const overview = !focusView && !state.selectedId;
+  const placedRects = [];
+  const ordered = clusterViews.slice().sort((a, b) => b.members.size - a.members.size);
+  for (const view of ordered) {
+    let anyVisible = false;
+    for (const id of view.members) {
+      const obj = objects.get(id);
+      if (obj && obj.visible && !obj.dimmed) { anyVisible = true; break; }
+    }
+    view.sprite.visible = anyVisible && !focusView;
+    view.sprite.material.opacity = state.selectedId ? 0.06 : 0.16;
+    const dist = camera.position.distanceTo(view.centre);
+    const show = overview && anyVisible && dist > view.radius * 3.2 && view.label.textContent;
+    if (!show) { view.label.style.opacity = '0'; continue; }
+    // Just under the island, so the name never sits on top of its concepts.
+    clusterUp.copy(camera.up).applyQuaternion(camera.quaternion).multiplyScalar(-view.radius * 0.95);
+    clusterScreen.copy(view.centre).add(clusterUp).project(camera);
+    if (clusterScreen.z > 1) { view.label.style.opacity = '0'; continue; }
+    const x = (clusterScreen.x * 0.5 + 0.5) * width;
+    const y = (-clusterScreen.y * 0.5 + 0.5) * height + 8;
+    const w = view.label.offsetWidth || 80;
+    const h = 14;
+    const rect = { l: x - w / 2 - 4, r: x + w / 2 + 4, t: y - h / 2 - 3, b: y + h / 2 + 3 };
+    const offscreen = rect.l < 2 || rect.r > width - 2 || rect.t < 2 || rect.b > height - 2;
+    const clash = placedRects.some((o) => rect.l < o.r && rect.r > o.l && rect.t < o.b && rect.b > o.t);
+    if (offscreen || clash) { view.label.style.opacity = '0'; continue; }
+    placedRects.push(rect);
+    view.label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+    view.label.style.opacity = '0.9';
+  }
 }
 
 function setTargetRing(obj, on) {
@@ -796,6 +967,10 @@ function placeLabels() {
     if (selectedId && !focusView && !protectedLabel) continue;
     if (focusView && !protectedLabel && !focusView.members.has(id)) continue;
 
+    if (!protectedLabel && !selectedId && !focusView && visibleClusterCount() >= 3) {
+      const view = clusterOf(id);
+      if (view && camera.position.distanceTo(view.centre) > view.radius * 3.2) continue;
+    }
     if (!protectedLabel) {
       if (lod) {
         const depth = Math.max(0.1, labelDepth.copy(obj.mesh.position).sub(camera.position).dot(forward));
@@ -898,8 +1073,9 @@ function render() {
   }
   for (const batch of linkBatches) writeLinkPositions(batch);
   updateArrows();
-  renderer.render(scene, camera);
+  composer.render();
   placeLabels();
+  placeClusterLabels();
 }
 
 function applyViewOffset() {
@@ -933,6 +1109,9 @@ function tick() {
     }
     animating = true;
   }
+  // A slow drift while nobody touches the overview, so the graph feels alive; any touch stops it.
+  controls.autoRotate = !focusView && !state.selectedId && !cameraFlight && performance.now() - lastInteraction > 6000;
+  controls.autoRotateSpeed = 0.35;
   const moved = controls.update();
   if (updateViewShift()) animating = true;
   // Render only while something changes — a still graph costs no GPU or battery.
@@ -1107,6 +1286,8 @@ function resize() {
   width = Math.max(1, container.clientWidth);
   height = Math.max(1, container.clientHeight);
   renderer.setSize(width, height, false);
+  composer.setSize(width, height);
+  bloomPass.resolution.set(width / 2, height / 2); // half-resolution bloom: plenty on a phone, cheap on the GPU
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   applyViewOffset();

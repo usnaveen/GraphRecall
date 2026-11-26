@@ -5,8 +5,19 @@ import Observation
 @Observable
 final class GraphViewModel {
     var graph = Graph3DResponse() {
-        didSet { graphVersion &+= 1 }
+        didSet {
+            graphVersion &+= 1
+            // Computed once per graph: both are read for every concept on every view update, and
+            // rebuilding them each time froze the main thread once communities existed.
+            let byId = Dictionary(graph.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            nodesById = byId
+            semanticClusters = Self.buildSemanticClusters(graph, nodesById: byId)
+        }
     }
+    private(set) var nodesById: [String: GraphNode] = [:]
+    /// Semantic communities available as progressive expansion chips. Uses detected Neo4j communities
+    /// when >=2 non-empty leaf communities exist, otherwise synthesizes clusters from concept domains.
+    private(set) var semanticClusters: [SemanticCluster] = []
     /// Bumped on every graph replacement so the 3D page only re-runs its layout for new data.
     private(set) var graphVersion = 0
     var isLoading = false
@@ -43,7 +54,13 @@ final class GraphViewModel {
 
     // Graph Controls (web Controls.tsx)
     var showControls = false
-    var colorMode: GraphColorMode = .domain
+    var colorMode: GraphColorMode = .domain {
+        didSet { if !settingColorAutomatically { userChoseColorMode = true } }
+    }
+    /// Until the user picks a colouring, detected communities colour the graph: each cluster reads
+    /// as its own place. Domains are the fallback when communities haven't been computed.
+    private var userChoseColorMode = false
+    private var settingColorAutomatically = false
     var minRelationshipWeight = 0.0
     /// The selected-concept card shows everything instead of the compact summary.
     var cardExpanded = false
@@ -118,16 +135,15 @@ final class GraphViewModel {
             .sorted { ($0.strength ?? 0) > ($1.strength ?? 0) }
     }
 
-    var nodesById: [String: GraphNode] {
-        Dictionary(graph.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-    }
 
     var statsLabel: String {
         if graph.nodes.isEmpty {
             if isLoading { return "Loading your graph\u{2026}" }
             if errorMessage != nil { return "Not loaded" }
         }
-        let comm = graph.communities.isEmpty ? "" : " · \(graph.communities.count) communities"
+        // The finest communities: the ones the chips list (coarser levels group them).
+        let leafCount = semanticClusters.filter { $0.id.hasPrefix("comm:") }.count
+        let comm = leafCount == 0 ? "" : " · \(leafCount) communities"
         return "\(graph.totalNodes) concepts · \(graph.totalEdges) links\(comm)"
     }
 
@@ -158,19 +174,16 @@ final class GraphViewModel {
 
     // MARK: - Scene
 
-    /// Semantic communities available as progressive expansion chips. Uses detected Neo4j communities
-    /// when >=2 non-empty leaf communities exist, otherwise synthesizes clusters from concept domains.
-    var semanticClusters: [SemanticCluster] {
+    private static func buildSemanticClusters(_ graph: Graph3DResponse, nodesById: [String: GraphNode]) -> [SemanticCluster] {
         let validNodeIds = Set(graph.nodes.map(\.id))
+        let parentIds = Set(graph.communities.compactMap(\.parent))
         let leafComms = graph.communities
-            .filter { comm in
-                !graph.communities.contains(where: { $0.parent == comm.id })
-            }
+            .filter { !parentIds.contains($0.id) }
             .compactMap { comm -> SemanticCluster? in
                 let ids = Set(comm.entityIds).intersection(validNodeIds)
                 guard !ids.isEmpty else { return nil }
                 let rawTitle = (comm.title ?? comm.label ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                let fallbackTitle = dominantDomain(in: ids) ?? "Cluster"
+                let fallbackTitle = dominantDomain(in: ids, nodesById: nodesById) ?? "Cluster"
                 return SemanticCluster(
                     id: "comm:\(comm.id)",
                     title: rawTitle.isEmpty ? fallbackTitle : rawTitle,
@@ -194,7 +207,7 @@ final class GraphViewModel {
             .sorted { $0.count == $1.count ? $0.title < $1.title : $0.count > $1.count }
     }
 
-    private func dominantDomain(in ids: Set<String>) -> String? {
+    private static func dominantDomain(in ids: Set<String>, nodesById: [String: GraphNode]) -> String? {
         var counts: [String: Int] = [:]
         for id in ids {
             if let d = nodesById[id]?.domain, !d.isEmpty { counts[d, default: 0] += 1 }
@@ -389,6 +402,11 @@ final class GraphViewModel {
     }
 
     private func apply(_ response: Graph3DResponse) {
+        if !userChoseColorMode {
+            settingColorAutomatically = true
+            colorMode = response.communities.filter { !$0.entityIds.isEmpty }.count >= 2 ? .community : .domain
+            settingColorAutomatically = false
+        }
         graph = response
         usingStub = false
         let ids = Set(response.nodes.map(\.id))
