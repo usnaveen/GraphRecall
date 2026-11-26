@@ -153,9 +153,8 @@ struct FeedContentCard: View {
         if item.isAgentCurated {
             // Agent cards are reading suggestions you approved, not SM-2 cards: no grading.
             digestChip
-            GRChip(title: "Done", systemImage: "checkmark", style: .outline, compact: true) {
-                onGraded()
-            }
+                .fixedSize()
+            actionButton(systemName: "checkmark", active: false, label: "Done") { onGraded() }
         } else if item.usesRecallGrading && !gradesInline {
             if showsInlineDifficulty {
                 FeedHoldGradeRail(graded: model.grades[item.id]) { difficulty in

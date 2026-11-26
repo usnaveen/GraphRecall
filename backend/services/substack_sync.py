@@ -526,7 +526,7 @@ def _media_kind(url: str) -> dict[str, Any]:
             "source_kind": "youtube",
             "label": "YouTube",
             "video_id": video_id,
-            "thumbnail_url": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+            "thumbnail_url": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
         }
     if host.endswith("substack.com") or "substack" in host:
         return {"item_kind": "article", "source_kind": "substack", "label": "Substack"}
