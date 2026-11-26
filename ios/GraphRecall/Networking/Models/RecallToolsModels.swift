@@ -174,9 +174,11 @@ struct CodingProblemDetail: Decodable, Identifiable, Sendable {
     let complexity: String?
     let attempts: [CodingAttempt]?
     let cards: [RecallCardPreview]?
+    var number: Int? = nil
+    var solution: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, title, url, difficulty, pattern, pseudocode, complexity, attempts, cards
+        case id, title, url, difficulty, pattern, pseudocode, complexity, attempts, cards, number, solution
         case keyInsight = "key_insight"
     }
 }
@@ -189,10 +191,31 @@ struct CodingProblemBody: Encodable, Sendable {
     let keyInsight: String?
     let pseudocode: String?
     let complexity: String?
+    /// LeetCode's own problem number and topic tags, from `/api/leetcode/lookup/{number}`.
+    var number: Int? = nil
+    var tags: [String]? = nil
+    /// Your pasted solution code.
+    var solution: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case title, url, difficulty, pattern, pseudocode, complexity
+        case title, url, difficulty, pattern, pseudocode, complexity, number, tags, solution
         case keyInsight = "key_insight"
+    }
+}
+
+/// GET `/api/leetcode/lookup/{number}`: LeetCode's public metadata for one problem number.
+struct LeetCodeLookup: Decodable, Equatable, Sendable {
+    let number: Int
+    let title: String
+    let url: String
+    let difficulty: String
+    let tags: [String]
+    let pattern: String?
+    let paidOnly: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case number, title, url, difficulty, tags, pattern
+        case paidOnly = "paid_only"
     }
 }
 

@@ -122,54 +122,45 @@ struct LeetCodeEditorSheet: View {
     var onSaved: ((CodingProblemSaved) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+    // Number-first: the rest fills in from LeetCode.
+    @State private var numberText = ""
+    @State private var found: LeetCodeLookup?
+    @State private var isLookingUp = false
+    @State private var lookupMessage: String?
+    @State private var lookupTask: Task<Void, Never>?
+    @State private var outcome: CodingOutcome?
+    @State private var code = ""
+    // Filled by the lookup for new problems; typed for old ones or when the lookup can't help.
     @State private var title = ""
     @State private var link = ""
     @State private var difficulty: CodingDifficulty?
+    @State private var tags: [String] = []
     @State private var pattern = ""
     @State private var insight = ""
     @State private var pseudocode = ""
     @State private var complexity = ""
+    @State private var showsMore = false
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @FocusState private var numberFocused: Bool
+
+    private var isNew: Bool { existing == nil }
+    private var number: Int? { Int(numberText.trimmingCharacters(in: .whitespaces)) }
+    private var canSave: Bool { title.trimmingCharacters(in: .whitespaces).count >= 2 && !isSaving && !isLookingUp }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Problem") {
-                    TextField("Title, e.g. Longest Substring Without Repeating Characters", text: $title)
-                        .accessibilityIdentifier("leetcode.title")
-                    TextField("Link (optional)", text: $link)
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Picker("Difficulty", selection: $difficulty) {
-                        Text("Not set").tag(CodingDifficulty?.none)
-                        ForEach(CodingDifficulty.allCases) { Text($0.title).tag(CodingDifficulty?.some($0)) }
-                    }
+                if isNew {
+                    numberSection
+                    if found != nil || lookupMessage != nil { outcomeSection }
+                } else {
+                    manualProblemSection
                 }
-                Section {
-                    TextField("Pattern", text: $pattern)
-                        .accessibilityIdentifier("leetcode.pattern")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(commonPatterns, id: \.self) { p in
-                                GRChip(title: p, style: pattern == p ? .selected : .plain, compact: true) { pattern = p }
-                            }
-                        }
-                    }
-                    TextField("The one insight that cracks it", text: $insight, axis: .vertical)
-                        .lineLimit(2...4)
-                    TextField("Complexity, e.g. O(n) time, O(k) space", text: $complexity)
-                } header: { Text("How it's solved") } footer: {
-                    Text("This becomes a “which pattern, and why?” card.")
-                }
-                Section {
-                    TextEditor(text: $pseudocode)
-                        .font(.system(.footnote, design: .monospaced))
-                        .frame(minHeight: 160)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier("leetcode.pseudocode")
-                } header: { Text("Pseudocode") } footer: {
-                    Text("Three or more lines: the three most important ones are hidden on the card for you to fill in.")
+                if found != nil || !isNew || lookupMessage != nil {
+                    patternSection
+                    notesSection
+                    moreSection
                 }
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundStyle(GRColor.warning) }
@@ -177,7 +168,7 @@ struct LeetCodeEditorSheet: View {
             }
             .scrollContentBackground(.hidden)
             .background(GRColor.canvas.ignoresSafeArea())
-            .navigationTitle(existing == nil ? "New problem" : "Edit problem")
+            .navigationTitle(isNew ? "Log a problem" : "Edit problem")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
@@ -185,14 +176,205 @@ struct LeetCodeEditorSheet: View {
                     Button { Task { await save() } } label: {
                         if isSaving { ProgressView() } else { Text("Save").bold() }
                     }
-                    .disabled(title.trimmingCharacters(in: .whitespaces).count < 2 || isSaving)
+                    .disabled(!canSave)
                     .accessibilityIdentifier("leetcode.save")
                 }
             }
         }
         .preferredColorScheme(.dark)
         .tint(GRColor.accent)
-        .onAppear(perform: prefill)
+        .onAppear {
+            prefill()
+            if isNew { numberFocused = true }
+        }
+        .onDisappear { lookupTask?.cancel() }
+    }
+
+    // MARK: Sections
+
+    private var numberSection: some View {
+        Section {
+            HStack(spacing: 10) {
+                Text("#")
+                    .font(.system(.title2, design: .monospaced).weight(.semibold))
+                    .foregroundStyle(GRColor.textTertiary)
+                TextField("Problem number", text: $numberText)
+                    .font(.system(.title2, design: .monospaced).weight(.semibold))
+                    .keyboardType(.numberPad)
+                    .focused($numberFocused)
+                    .accessibilityIdentifier("leetcode.number")
+                    .onChange(of: numberText) { _, _ in scheduleLookup() }
+                if isLookingUp { ProgressView() }
+            }
+            if let found {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(found.title)
+                        .font(GRType.headline)
+                        .foregroundStyle(GRColor.textPrimary)
+                    HStack(spacing: 6) {
+                        if let d = CodingDifficulty(rawValue: found.difficulty) {
+                            GRChip(title: d.title, style: .tinted(d.tone), compact: true)
+                        }
+                        if found.paidOnly {
+                            GRChip(title: "Premium", systemImage: "lock.fill", style: .outline, compact: true)
+                        }
+                        Link(destination: URL(string: found.url) ?? URL(string: "https://leetcode.com")!) {
+                            Label("Open", systemImage: "arrow.up.right.square")
+                                .font(GRType.caption)
+                        }
+                    }
+                    if !found.tags.isEmpty {
+                        Text(found.tags.joined(separator: " · "))
+                            .font(GRType.micro)
+                            .foregroundStyle(GRColor.textTertiary)
+                    }
+                }
+                .padding(.vertical, 2)
+                .accessibilityIdentifier("leetcode.found")
+            } else if let lookupMessage {
+                Text(lookupMessage)
+                    .font(GRType.caption)
+                    .foregroundStyle(GRColor.warning)
+                TextField("Title instead", text: $title)
+                    .accessibilityIdentifier("leetcode.title")
+            }
+        } header: {
+            Text("LeetCode problem")
+        } footer: {
+            if found == nil && lookupMessage == nil {
+                Text("Just the number. Title, link, difficulty and topics come from LeetCode.")
+            }
+        }
+    }
+
+    private var outcomeSection: some View {
+        Section("How did it go?") {
+            HStack(spacing: 8) {
+                ForEach(CodingOutcome.allCases) { o in
+                    GRChip(title: o.title, style: outcome == o ? .selected : .plain, compact: true) {
+                        outcome = (outcome == o) ? nil : o
+                        GRHaptics.tap()
+                    }
+                }
+            }
+            .accessibilityIdentifier("leetcode.outcome")
+        }
+    }
+
+    private var manualProblemSection: some View {
+        Section("Problem") {
+            if let n = existing?.number {
+                LabeledContent("Number", value: "#\(n)")
+            }
+            TextField("Title, e.g. Longest Substring Without Repeating Characters", text: $title)
+                .accessibilityIdentifier("leetcode.title")
+            TextField("Link (optional)", text: $link)
+                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Picker("Difficulty", selection: $difficulty) {
+                Text("Not set").tag(CodingDifficulty?.none)
+                ForEach(CodingDifficulty.allCases) { Text($0.title).tag(CodingDifficulty?.some($0)) }
+            }
+        }
+    }
+
+    private var patternSection: some View {
+        Section {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(commonPatterns, id: \.self) { p in
+                        GRChip(title: p, style: pattern == p ? .selected : .plain, compact: true) { pattern = p }
+                    }
+                }
+            }
+            TextField("Pattern", text: $pattern)
+                .accessibilityIdentifier("leetcode.pattern")
+        } header: { Text("Pattern") } footer: {
+            if found?.pattern != nil && pattern == found?.pattern {
+                Text("Suggested from LeetCode's topics. Change it if you solved it another way.")
+            }
+        }
+    }
+
+    private var notesSection: some View {
+        Section {
+            TextField("The one insight that cracks it", text: $insight, axis: .vertical)
+                .lineLimit(2...4)
+            TextEditor(text: $code)
+                .font(.system(.footnote, design: .monospaced))
+                .frame(minHeight: 120)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("leetcode.code")
+                .overlay(alignment: .topLeading) {
+                    if code.isEmpty {
+                        Text("Paste your solution (optional)")
+                            .font(.system(.footnote, design: .monospaced))
+                            .foregroundStyle(GRColor.textTertiary)
+                            .padding(.top, 8).padding(.leading, 5)
+                            .allowsHitTesting(false)
+                    }
+                }
+        } header: { Text("Your notes") } footer: {
+            Text("The insight becomes a “which pattern, and why?” card.")
+        }
+    }
+
+    private var moreSection: some View {
+        Section {
+            DisclosureGroup("For recall cards", isExpanded: $showsMore) {
+                TextField("Complexity, e.g. O(n) time, O(k) space", text: $complexity)
+                TextEditor(text: $pseudocode)
+                    .font(.system(.footnote, design: .monospaced))
+                    .frame(minHeight: 140)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityIdentifier("leetcode.pseudocode")
+                Text("Three or more lines of pseudocode: the three most important ones are hidden on a card for you to fill in.")
+                    .font(GRType.micro)
+                    .foregroundStyle(GRColor.textTertiary)
+            }
+        }
+    }
+
+    // MARK: Lookup
+
+    /// Looks the number up a moment after typing stops; a newer keystroke cancels the older lookup.
+    private func scheduleLookup() {
+        lookupTask?.cancel()
+        found = nil
+        lookupMessage = nil
+        guard let n = number, n > 0 else {
+            isLookingUp = false
+            return
+        }
+        isLookingUp = true
+        lookupTask = Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            do {
+                let result = try await APIClient.shared.lookupLeetCode(number: n)
+                guard !Task.isCancelled, number == n else { return }
+                apply(result)
+                GRHaptics.tap()
+            } catch {
+                guard !Task.isCancelled, number == n else { return }
+                if case APIError.http(404, _) = error {
+                    lookupMessage = "No LeetCode problem #\(n). Check the number, or type the title."
+                } else {
+                    lookupMessage = "Couldn't reach LeetCode just now. Type the title and save anyway."
+                }
+            }
+            if number == n { isLookingUp = false }
+        }
+    }
+
+    private func apply(_ r: LeetCodeLookup) {
+        found = r
+        title = r.title
+        link = r.url
+        difficulty = CodingDifficulty(rawValue: r.difficulty)
+        tags = r.tags
+        if pattern.isEmpty, let suggested = r.pattern { pattern = suggested }
     }
 
     private func prefill() {
@@ -204,12 +386,16 @@ struct LeetCodeEditorSheet: View {
         insight = p.keyInsight ?? ""
         pseudocode = p.pseudocode ?? ""
         complexity = p.complexity ?? ""
+        code = p.solution ?? ""
+        showsMore = !(p.pseudocode ?? "").isEmpty
     }
 
     private func blankToNil(_ s: String) -> String? {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? nil : t
     }
+
+    // MARK: Save
 
     private func save() async {
         isSaving = true
@@ -222,8 +408,18 @@ struct LeetCodeEditorSheet: View {
                 pattern: blankToNil(pattern),
                 keyInsight: blankToNil(insight),
                 pseudocode: blankToNil(pseudocode),
-                complexity: blankToNil(complexity)
+                complexity: blankToNil(complexity),
+                number: found?.number ?? existing?.number,
+                tags: tags.isEmpty ? nil : tags,
+                solution: blankToNil(code)
             ))
+            if let outcome {
+                // How it went is an attempt, so the problem is scheduled like any other.
+                _ = try? await APIClient.shared.logCodingAttempt(
+                    problemId: saved.id,
+                    CodingAttemptBody(outcome: outcome.rawValue, mistake: nil, mistakeTag: nil, minutes: nil)
+                )
+            }
             GRHaptics.success()
             onSaved?(saved)
             dismiss()

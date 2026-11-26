@@ -49,6 +49,11 @@ extension APIClient {
         try await get("/api/leetcode/problems/\(idPath(id))")
     }
 
+    /// GET `/api/leetcode/lookup/{number}` — title, link, difficulty, tags and a suggested pattern.
+    func lookupLeetCode(number: Int) async throws -> LeetCodeLookup {
+        try await get("/api/leetcode/lookup/\(number)")
+    }
+
     /// POST `/api/leetcode/problems` — create, or update the problem with the same title.
     func saveCodingProblem(_ body: CodingProblemBody) async throws -> CodingProblemSaved {
         try await post("/api/leetcode/problems", body: body)
