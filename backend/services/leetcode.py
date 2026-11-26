@@ -16,7 +16,12 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
+
+import httpx
+import structlog
+
+logger = structlog.get_logger()
 
 GRAPH = "Coding Interviews"
 BLANK = "[___]"
@@ -34,6 +39,195 @@ MISTAKE_TAGS = {
     "forgot": "couldn't recall the approach",
     "other": "other",
 }
+
+# Ordered from most specific algorithmic pattern to broader data-structure families.
+# Target pattern names match iOS LeetCodeViews.commonPatterns so suggestions snap cleanly.
+TAG_TO_PATTERN: tuple[tuple[str, str], ...] = (
+    ("sliding window", "Sliding Window"),
+    ("two pointers", "Two Pointers"),
+    ("monotonic stack", "Monotonic Stack"),
+    ("topological sort", "Topological Sort"),
+    ("union find", "Union-Find"),
+    ("trie", "Trie"),
+    ("backtracking", "Backtracking"),
+    ("dynamic programming", "Dynamic Programming"),
+    ("binary search", "Binary Search"),
+    ("prefix sum", "Prefix Sum"),
+    ("heap (priority queue)", "Heap"),
+    ("breadth-first search", "BFS"),
+    ("depth-first search", "DFS"),
+    ("greedy", "Greedy"),
+    ("linked list", "Linked List"),
+    ("doubly-linked list", "Linked List"),
+    ("bit manipulation", "Bit Manipulation"),
+    ("hash table", "Hash Map"),
+)
+
+_LEETCODE_GRAPHQL_URL = "https://leetcode.com/graphql"
+_LEETCODE_QUERY = """
+query questionList($filters: QuestionListFilterInput) {
+  questionList(categorySlug: "", limit: 20, skip: 0, filters: $filters) {
+    questions: data {
+      questionFrontendId
+      title
+      titleSlug
+      difficulty
+      isPaidOnly
+      topicTags {
+        name
+      }
+    }
+  }
+}
+""".strip()
+
+
+class LeetCodeUpstreamError(RuntimeError):
+    """Raised when leetcode.com cannot be reached or returns an invalid payload."""
+
+
+def suggest_pattern(tags: list[str] | tuple[str, ...] | None) -> Optional[str]:
+    """Deterministically map LeetCode topic tags to GraphRecall's pattern taxonomy (no LLM)."""
+    if not tags:
+        return None
+    lowered = {t.strip().lower() for t in tags if t and t.strip()}
+    for tag_key, pattern_name in TAG_TO_PATTERN:
+        if tag_key in lowered:
+            return pattern_name
+    return None
+
+
+def parse_graphql_question(payload: dict[str, Any], number: int) -> Optional[dict[str, Any]]:
+    """Extract an exact questionFrontendId match from LeetCode's GraphQL response."""
+    if not isinstance(payload, dict) or "data" not in payload or not isinstance(payload["data"], dict):
+        raise LeetCodeUpstreamError("Malformed GraphQL response from LeetCode")
+    data = payload["data"]
+    qlist = data.get("questionList") or data.get("problemsetQuestionList")
+    if not isinstance(qlist, dict):
+        raise LeetCodeUpstreamError("Missing questionList in LeetCode GraphQL response")
+    questions = qlist.get("questions") or qlist.get("data") or []
+    target = str(number)
+    for q in questions:
+        fid = str(q.get("questionFrontendId") or q.get("frontendQuestionId") or "").strip()
+        if fid != target:
+            continue
+        title = str(q.get("title") or "").strip()
+        slug = str(q.get("titleSlug") or "").strip()
+        if not title or not slug:
+            continue
+        diff = str(q.get("difficulty") or "medium").strip().lower()
+        if diff not in {"easy", "medium", "hard"}:
+            diff = "medium"
+        raw_tags = q.get("topicTags") or []
+        tags = [str(t["name"]).strip() for t in raw_tags if isinstance(t, dict) and str(t.get("name") or "").strip()]
+        paid_val = q.get("isPaidOnly") if "isPaidOnly" in q else q.get("paidOnly", False)
+        return {
+            "number": int(number),
+            "title": title,
+            "slug": slug,
+            "url": f"https://leetcode.com/problems/{slug}/",
+            "difficulty": diff,
+            "tags": tags,
+            "pattern": suggest_pattern(tags),
+            "paid_only": bool(paid_val),
+        }
+    return None
+
+
+async def fetch_leetcode_problem(
+    number: int,
+    *,
+    transport: Optional[httpx.AsyncBaseTransport] = None,
+) -> Optional[dict[str, Any]]:
+    """Query LeetCode's public GraphQL endpoint for problem metadata by frontend number."""
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://leetcode.com/problemset/",
+    }
+    body = {"query": _LEETCODE_QUERY, "variables": {"filters": {"searchKeywords": str(number)}}}
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0), transport=transport) as client:
+            resp = await client.post(_LEETCODE_GRAPHQL_URL, json=body, headers=headers)
+    except httpx.HTTPError as exc:
+        raise LeetCodeUpstreamError(f"LeetCode request failed: {exc}") from exc
+
+    if resp.status_code >= 400:
+        raise LeetCodeUpstreamError(f"LeetCode returned HTTP {resp.status_code}")
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise LeetCodeUpstreamError("LeetCode returned non-JSON response") from exc
+    return parse_graphql_question(payload, number)
+
+
+async def lookup_problem(
+    pg: Any,
+    number: int,
+    *,
+    transport: Optional[httpx.AsyncBaseTransport] = None,
+) -> Optional[dict[str, Any]]:
+    """Return cached LeetCode metadata from Postgres `leetcode_catalog` or fetch & cache once."""
+    if number < 1:
+        return None
+    cache_available = True
+    try:
+        rows = await pg.execute_query(
+            "SELECT number, title, slug, url, difficulty, tags, paid_only FROM leetcode_catalog WHERE number = :n",
+            {"n": number},
+        )
+        if rows:
+            r = dict(rows[0])
+            tags = list(r.get("tags") or [])
+            return {
+                "number": int(r["number"]),
+                "title": r["title"],
+                "slug": r["slug"],
+                "url": r["url"],
+                "difficulty": r["difficulty"],
+                "tags": tags,
+                "pattern": suggest_pattern(tags),
+                "paid_only": bool(r.get("paid_only", False)),
+            }
+    except Exception as exc:
+        logger.debug("leetcode_catalog read skipped", error=str(exc))
+        cache_available = False
+
+    item = await fetch_leetcode_problem(number, transport=transport)
+    if item is None:
+        return None
+
+    if cache_available:
+        try:
+            await pg.execute_update(
+                """
+                INSERT INTO leetcode_catalog (number, title, slug, url, difficulty, tags, paid_only, fetched_at)
+                VALUES (:number, :title, :slug, :url, :difficulty, :tags, :paid_only, now())
+                ON CONFLICT (number) DO UPDATE SET
+                    title = EXCLUDED.title,
+                    slug = EXCLUDED.slug,
+                    url = EXCLUDED.url,
+                    difficulty = EXCLUDED.difficulty,
+                    tags = EXCLUDED.tags,
+                    paid_only = EXCLUDED.paid_only,
+                    fetched_at = now()
+                """,
+                {
+                    "number": item["number"],
+                    "title": item["title"],
+                    "slug": item["slug"],
+                    "url": item["url"],
+                    "difficulty": item["difficulty"],
+                    "tags": item["tags"],
+                    "paid_only": item["paid_only"],
+                },
+            )
+        except Exception as exc:
+            logger.debug("leetcode_catalog write skipped", error=str(exc))
+    return item
 
 
 @dataclass
