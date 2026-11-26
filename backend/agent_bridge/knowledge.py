@@ -77,23 +77,31 @@ class KnowledgeService:
             {"user_id": user_id},
         )
         mastery = await self._mastery_map(user_id)
-        domains: dict[str, list[float]] = {}
+        # Only reviewed concepts have a mastery. Counting the never-reviewed ones as 0 made
+        # "weak_concepts" a list of untested concepts, and dragged every domain average down.
+        domains: dict[str, dict] = {}
         scored = []
         for c in concepts:
-            score = mastery.get(c["id"], 0.0)
-            domains.setdefault(c.get("domain") or "General", []).append(score)
+            d = domains.setdefault(c.get("domain") or "General", {"concepts": 0, "scores": []})
+            d["concepts"] += 1
+            score = mastery.get(c["id"])
+            if score is None:
+                continue
+            d["scores"].append(score)
             scored.append({"id": c["id"], "name": c.get("name"),
                            "domain": c.get("domain") or "General", "mastery": round(score, 2)})
         scored.sort(key=lambda x: x["mastery"])
         due = await self.sr.get_due_items(user_id=user_id, limit=200, include_overdue=True)
         return {
             "total_concepts": len(concepts),
+            "reviewed_concepts": len(scored),
             "domains": [
-                {"domain": d, "concepts": len(v), "avg_mastery": round(sum(v) / len(v), 2)}
-                for d, v in sorted(domains.items(), key=lambda kv: -len(kv[1]))
+                {"domain": name, "concepts": d["concepts"], "untested": d["concepts"] - len(d["scores"]),
+                 "avg_mastery": round(sum(d["scores"]) / len(d["scores"]), 2) if d["scores"] else None}
+                for name, d in sorted(domains.items(), key=lambda kv: -kv[1]["concepts"])
             ],
             "weak_concepts": [c for c in scored if c["mastery"] < WEAK_THRESHOLD][:limit],
-            "strong_concepts": list(reversed(scored))[:limit],
+            "strong_concepts": [c for c in reversed(scored) if c["mastery"] >= WEAK_THRESHOLD][:limit],
             "due_review_count": len(due),
             # TODO(agent-bridge): add exam/goal context once GraphRecall stores goals
             # (e.g. users.settings_json["goals"]) so the agent can prioritise exam topics.

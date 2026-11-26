@@ -531,3 +531,29 @@ def test_knowledge_map_tools_registered_with_scopes():
     assert TOOLS["suggest_for_later"].scope == SCOPE_WRITE_FEED
     props = TOOLS["assess_concepts"].input_schema["properties"]
     assert "user_id" not in props and "names" in props
+
+
+async def test_knowledge_profile_weak_means_reviewed_and_low():
+    """Concepts never reviewed are untested, not weak: they must not crowd out real weak spots."""
+    from backend.agent_bridge.knowledge import KnowledgeService
+
+    class Neo:
+        async def execute_query(self, q, params=None):
+            return [{"id": f"c{i}", "name": f"Concept {i}", "domain": "ML"} for i in range(6)]
+
+    class SR:
+        async def get_due_items(self, **kw):
+            return []
+
+    svc = KnowledgeService.__new__(KnowledgeService)
+    svc.neo4j, svc.sr = Neo(), SR()
+
+    async def mastery_map(user_id):
+        return {"c4": 0.2, "c5": 0.9}
+
+    svc._mastery_map = mastery_map
+    prof = await svc.get_knowledge_profile("u", limit=10)
+    assert [c["id"] for c in prof["weak_concepts"]] == ["c4"]
+    assert [c["id"] for c in prof["strong_concepts"]] == ["c5"]
+    assert prof["reviewed_concepts"] == 2
+    assert prof["domains"] == [{"domain": "ML", "concepts": 6, "untested": 4, "avg_mastery": 0.55}]
