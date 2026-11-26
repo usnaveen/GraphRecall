@@ -29,7 +29,8 @@ from backend.services.ingestion.article_extract import canonicalize_url
 
 logger = structlog.get_logger()
 
-MAX_FEED_BYTES = 2 * 1024 * 1024  # 2 MiB RSS cap
+# Full-text Substack feeds (e.g. Ahead of AI) run to several MB; still capped and streamed.
+MAX_FEED_BYTES = 8 * 1024 * 1024  # 8 MiB RSS cap
 MAX_ITEMS_PER_SYNC = 15
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
@@ -203,7 +204,7 @@ class ParsedSubstackFeed:
 def parse_rss_or_atom(xml_bytes: bytes, fallback_site_url: str) -> ParsedSubstackFeed:
     """Safely parse RSS 2.0 or Atom XML (rejects DTD / entity declarations to prevent XXE)."""
     if len(xml_bytes) > MAX_FEED_BYTES:
-        raise SubstackSyncError("Feed XML exceeds 2 MiB safety limit")
+        raise SubstackSyncError("Feed XML exceeds the 8 MiB safety limit")
     head = xml_bytes[:4096].upper()
     if b"<!DOCTYPE" in head or b"<!ENTITY" in head:
         raise SubstackSyncError("XML DTD/ENTITY declarations are rejected for security")
@@ -423,7 +424,7 @@ async def load_user_concepts_with_mastery(pg_client: Any, neo4j_client: Any, use
     )
     prof_rows = await pg_client.execute_query(
         """
-        SELECT concept_id, score, review_count
+        SELECT concept_id, score, COALESCE(total_reviews, repetition_count, 0) AS review_count
         FROM proficiency_scores
         WHERE user_id = CAST(:user_id AS uuid)
         """,
@@ -471,6 +472,7 @@ def article_row_to_feed_item(row: dict[str, Any]) -> FeedItem:
     pub = row.get("publication_name") or "Substack"
     author = row.get("author")
     domain = matches[0].get("domain") if matches and isinstance(matches[0], dict) else "Reading"
+    media = _media_kind(row["article_url"])
 
     return FeedItem(
         id=f"substack:{row['id']}",
@@ -485,8 +487,10 @@ def article_row_to_feed_item(row: dict[str, Any]) -> FeedItem:
             "excerpt_markdown": row.get("excerpt_markdown") or row["summary"],
             "reason": build_reason_line(pub, matches),
             "source_url": row["article_url"],
-            "source_kind": "substack",
-            "item_kind": "article",
+            "source_kind": media["source_kind"],
+            "item_kind": media["item_kind"],
+            "video_id": media.get("video_id"),
+            "thumbnail_url": media.get("thumbnail_url"),
             "publication_name": pub,
             "author": author,
             "substack_article_id": str(row["id"]),
@@ -494,11 +498,41 @@ def article_row_to_feed_item(row: dict[str, Any]) -> FeedItem:
             "matched_concepts": matches,
             "concept_ids": concept_ids,
             "provenance": {
-                "curated_by": "substack_subscription",
-                "label": f"Substack · {pub}",
+                "curated_by": "feed_subscription",
+                "label": f"{media['label']} · {pub}",
             },
         },
     )
+
+
+def _media_kind(url: str) -> dict[str, Any]:
+    """Videos from YouTube get a thumbnail and play in the YouTube app; everything else is an article."""
+    import re as _re
+    from urllib.parse import parse_qs, urlparse
+
+    parsed = urlparse(url or "")
+    host = (parsed.hostname or "").lower()
+    video_id = None
+    if host.endswith("youtube.com"):
+        video_id = (parse_qs(parsed.query).get("v") or [None])[0]
+        if not video_id:
+            m = _re.match(r"^/(?:shorts|embed|live)/([A-Za-z0-9_-]{6,})", parsed.path or "")
+            video_id = m.group(1) if m else None
+    elif host == "youtu.be":
+        video_id = (parsed.path or "/").strip("/").split("/")[0] or None
+    if video_id:
+        return {
+            "item_kind": "video",
+            "source_kind": "youtube",
+            "label": "YouTube",
+            "video_id": video_id,
+            "thumbnail_url": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+        }
+    if host.endswith("substack.com") or "substack" in host:
+        return {"item_kind": "article", "source_kind": "substack", "label": "Substack"}
+    if host.endswith("medium.com"):
+        return {"item_kind": "article", "source_kind": "article", "label": "Medium"}
+    return {"item_kind": "article", "source_kind": "article", "label": host.removeprefix("www.") or "Article"}
 
 
 async def list_substack_feed_items(
@@ -520,9 +554,20 @@ async def list_substack_feed_items(
         ORDER BY a.relevance_score DESC, COALESCE(a.published_at, a.created_at) DESC
         LIMIT :limit
         """,
-        {"user_id": user_id, "limit": max(1, min(limit * 3, 20))},
+        {"user_id": user_id, "limit": max(1, min(limit * 8, 40))},
     )
-    items = [article_row_to_feed_item(dict(r)) for r in rows]
+    ranked = [article_row_to_feed_item(dict(r)) for r in rows]
+    # Mix the kinds (a video, then an article, …), each in relevance order, so the feed isn't
+    # all articles from one prolific newsletter.
+    by_kind: dict[str, list[FeedItem]] = {}
+    for it in ranked:
+        by_kind.setdefault(it.content.get("item_kind") or "article", []).append(it)
+    items = []
+    queues = [by_kind[k] for k in ("video", "article") if k in by_kind]
+    while any(queues):
+        for q in queues:
+            if q:
+                items.append(q.pop(0))
     if domains:
         wanted = set(domains)
         items = [

@@ -88,6 +88,30 @@ struct AgentCuratedCardBody: View {
                         .grButton(.ghost, fullWidth: false, compact: true)
                 }
             } else {
+                if item.isAgentVideo, let thumb = item.agentThumbnailURL {
+                    Link(destination: item.agentSourceURL ?? thumb) {
+                        AsyncImage(url: thumb) { phase in
+                            if let image = phase.image {
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } else {
+                                GRColor.fillSubtle
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(16 / 9, contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(16)
+                                .background(.black.opacity(0.55), in: Circle())
+                        }
+                    }
+                    .accessibilityLabel("Play on YouTube")
+                    .accessibilityIdentifier("feed.videoThumbnail")
+                }
+
                 if item.agentSourceKind == .substack, let author = item.substackAuthor, !author.isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "newspaper.fill")
@@ -133,7 +157,7 @@ struct AgentCuratedCardBody: View {
             HStack(spacing: 10) {
                 AgentSourceLink(kind: item.agentSourceKind, url: item.agentSourceURL)
                 Spacer(minLength: 4)
-                if item.agentSourceKind == .substack {
+                if [.substack, .youtube, .article].contains(item.agentSourceKind) {
                     if let excerpt = item.substackExcerpt, !excerpt.isEmpty, excerpt != item.agentSummary {
                         Button(showExcerpt ? "Hide preview" : "Preview") {
                             withAnimation(.easeInOut(duration: 0.2)) { showExcerpt.toggle() }

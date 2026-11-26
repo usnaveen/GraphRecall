@@ -118,7 +118,8 @@ async def subscribe_substack(
     except SubstackSyncError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    rows = await pg.execute_insert(
+    # execute_query, not execute_insert: we need the whole RETURNING row (execute_insert gives the id).
+    rows = await pg.execute_query(
         """
         INSERT INTO substack_subscriptions (user_id, feed_url, site_url, title, author, active, last_synced_at)
         VALUES (CAST(:user_id AS uuid), :feed_url, :site_url, :title, :author, TRUE, CURRENT_TIMESTAMP)

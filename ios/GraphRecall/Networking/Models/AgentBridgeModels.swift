@@ -94,6 +94,8 @@ enum AgentFeedItemStatus: String, Codable, Sendable, CaseIterable {
 
 enum AgentSourceKind: String, Codable, Sendable {
     case email, substack, web, exam, calendar, other
+    /// Followed sources in the feed: a YouTube channel's videos, or any blog/Medium article.
+    case youtube, article
 
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
@@ -107,6 +109,8 @@ enum AgentSourceKind: String, Codable, Sendable {
         case .web: return "Web"
         case .exam: return "Exam"
         case .calendar: return "Calendar"
+        case .youtube: return "YouTube"
+        case .article: return "Article"
         case .other: return "Other"
         }
     }
@@ -118,6 +122,8 @@ enum AgentSourceKind: String, Codable, Sendable {
         case .web: return "globe"
         case .exam: return "graduationcap.fill"
         case .calendar: return "calendar"
+        case .youtube: return "play.rectangle.fill"
+        case .article: return "doc.text.fill"
         case .other: return "sparkles"
         }
     }
@@ -451,6 +457,9 @@ extension FeedItem {
     var agentSourceKind: AgentSourceKind {
         AgentSourceKind(rawValue: stringContent("source_kind") ?? "") ?? .other
     }
+    /// A video from a followed YouTube channel (thumbnail + play) rather than an article.
+    var isAgentVideo: Bool { stringContent("item_kind") == "video" }
+    var agentThumbnailURL: URL? { AgentBridgeURL.safe(stringContent("thumbnail_url")) }
     var agentFlashcard: AgentFlashcardBody? {
         guard let fc = content["flashcard"]?.value as? [String: Any],
               let front = fc["front"] as? String, let back = fc["back"] as? String
