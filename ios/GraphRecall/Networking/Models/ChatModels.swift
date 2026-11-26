@@ -77,6 +77,49 @@ struct ChatSourceRef: Codable, Hashable, Identifiable {
     }
 }
 
+/// How an answer was grounded, as the web chat showed it: what the question was taken as, and how
+/// many notes and concepts were pulled in.
+struct ChatRetrieval: Hashable, Sendable {
+    var intent: String?
+    var documents: Int?
+    var concepts: Int?
+    var entities: [String]
+
+    init(intent: String? = nil, documents: Int? = nil, concepts: Int? = nil, entities: [String] = []) {
+        self.intent = intent
+        self.documents = documents
+        self.concepts = concepts
+        self.entities = entities
+    }
+
+    /// Accepts both the live stream's metadata keys and the saved summary's.
+    init?(_ raw: Any?) {
+        guard let d = raw as? [String: Any] else { return nil }
+        func int(_ keys: String...) -> Int? {
+            for k in keys {
+                if let n = d[k] as? Int { return n }
+                if let n = d[k] as? NSNumber { return n.intValue }
+            }
+            return nil
+        }
+        self.init(
+            intent: (d["intent"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            documents: int("documents", "documents_retrieved"),
+            concepts: int("concepts", "nodes_retrieved"),
+            entities: (d["entities"] as? [Any] ?? []).compactMap { $0 as? String }
+        )
+    }
+
+    /// "Explained from 3 notes · 15 concepts"
+    var summary: String {
+        var parts: [String] = []
+        if let documents, documents > 0 { parts.append("\(documents) note\(documents == 1 ? "" : "s")") }
+        if let concepts, concepts > 0 { parts.append("\(concepts) concept\(concepts == 1 ? "" : "s")") }
+        let lead = intent.map { $0.replacingOccurrences(of: "_", with: " ").capitalized } ?? "Grounded"
+        return parts.isEmpty ? lead : "\(lead) · from " + parts.joined(separator: " · ")
+    }
+}
+
 struct ChatMessageUI: Identifiable, Hashable {
     let id: String
     var role: ChatRole
@@ -84,6 +127,7 @@ struct ChatMessageUI: Identifiable, Hashable {
     var status: String?
     var sources: [ChatSourceRef]
     var relatedConcepts: [String]
+    var retrieval: ChatRetrieval? = nil
     var serverId: String?
     var isStreaming: Bool
 
@@ -122,6 +166,7 @@ enum ChatSSEEvent: Equatable {
         var relatedConcepts: [String]
         var messageId: String?
         var conversationId: String?
+        var retrieval: ChatRetrieval? = nil
     }
 }
 
@@ -270,11 +315,14 @@ struct ChatHistoryMessageDTO: Codable, Hashable, Sendable {
     let content: String
     let sourcesJson: [AnyCodable]?
     let createdAt: String?
+    var relatedConcepts: [String] = []
+    var retrieval: AnyCodable? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, role, content
+        case id, role, content, retrieval
         case sourcesJson = "sources_json"
         case createdAt = "created_at"
+        case relatedConcepts = "related_concepts"
     }
 
     init(from decoder: Decoder) throws {
@@ -304,14 +352,17 @@ struct ChatHistoryMessageDTO: Codable, Hashable, Sendable {
     func asUIMessage() -> ChatMessageUI {
         let mappedRole = ChatRole(rawValue: role) ?? .assistant
         let sources: [ChatSourceRef] = (sourcesJson ?? []).map { ChatSourceRef(from: $0.value) }
-        return ChatMessageUI(
+        var message = ChatMessageUI(
             id: id,
             role: mappedRole,
             content: content,
             sources: sources,
+            relatedConcepts: relatedConcepts,
             serverId: mappedRole == .assistant ? id : nil,
             isStreaming: false
         )
+        message.retrieval = ChatRetrieval(retrieval?.value)
+        return message
     }
 }
 

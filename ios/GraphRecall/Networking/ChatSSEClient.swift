@@ -154,7 +154,8 @@ actor ChatSSEClient {
                 sources: sources,
                 relatedConcepts: concepts,
                 messageId: messageId,
-                conversationId: conversationId
+                conversationId: conversationId,
+                retrieval: ChatRetrieval(obj["metadata"])
             ))
         default:
             return .unknown

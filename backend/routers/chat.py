@@ -24,6 +24,26 @@ from langchain_core.messages import HumanMessage
 logger = structlog.get_logger()
 
 
+
+def message_meta(related_concepts: list, metadata: dict) -> dict:
+    """The part of a chat answer's grounding worth keeping: concept names and a retrieval summary.
+    No scores, document text or internal stats."""
+    names = []
+    for c in related_concepts or []:
+        name = c.get("name") if isinstance(c, dict) else c
+        if isinstance(name, str) and name.strip() and name not in names:
+            names.append(name.strip())
+    md = metadata or {}
+    return {
+        "related_concepts": names[:12],
+        "retrieval": {
+            "intent": md.get("intent"),
+            "documents": md.get("documents_retrieved"),
+            "concepts": md.get("nodes_retrieved"),
+            "entities": [e for e in (md.get("entities") or []) if isinstance(e, str)][:8],
+        },
+    }
+
 router = APIRouter(prefix="/api/chat", tags=["Chat Assistant"])
 
 
@@ -279,7 +299,7 @@ async def get_conversation(
         # Get messages
         messages_result = await pg_client.execute_query(
             """
-            SELECT id, role, content, sources_json, created_at
+            SELECT id, role, content, sources_json, meta_json, created_at
             FROM chat_messages
             WHERE conversation_id = :conversation_id
             ORDER BY created_at ASC
@@ -294,6 +314,8 @@ async def get_conversation(
                 "role": m["role"],
                 "content": m["content"],
                 "sources_json": m.get("sources_json") or [],
+                "related_concepts": (m.get("meta_json") or {}).get("related_concepts", []),
+                "retrieval": (m.get("meta_json") or {}).get("retrieval"),
                 "created_at": str(m.get("created_at", "")),
             }
             for m in messages_result
@@ -410,14 +432,15 @@ async def add_message_to_conversation(
         import json
         await pg_client.execute_insert(
             """
-            INSERT INTO chat_messages (conversation_id, role, content, sources_json)
-            VALUES (:conversation_id, 'assistant', :content, :sources)
+            INSERT INTO chat_messages (conversation_id, role, content, sources_json, meta_json)
+            VALUES (:conversation_id, 'assistant', :content, :sources, CAST(:meta AS jsonb))
             RETURNING id
             """,
             {
                 "conversation_id": conversation_id,
                 "content": response_text,
                 "sources": json.dumps(sources),
+                "meta": json.dumps(message_meta(result.get("related_concepts", []), result.get("metadata") or {}), default=str),
             },
         )
         
@@ -1002,17 +1025,18 @@ async def stream_chat(
                 return obj
 
             persist_start = now()
-            # Persist assistant message
+            # Persist assistant message, with what grounded it (shown again when the thread reopens).
             assistant_message_id = await pg_client.execute_insert(
                 """
-                INSERT INTO chat_messages (conversation_id, role, content, sources_json)
-                VALUES (:conversation_id, 'assistant', :content, :sources)
+                INSERT INTO chat_messages (conversation_id, role, content, sources_json, meta_json)
+                VALUES (:conversation_id, 'assistant', :content, :sources, CAST(:meta AS jsonb))
                 RETURNING id
                 """,
                 {
                     "conversation_id": conversation_id,
                     "content": full_content,
                     "sources": json.dumps(sources),
+                    "meta": json.dumps(message_meta(related_concepts, values.get("metadata") or {}), default=str),
                 },
             )
 

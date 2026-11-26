@@ -11,6 +11,7 @@ struct ChatView: View {
     /// Whether the conversation is scrolled to (or near) the latest message.
     @State private var isNearBottom = true
     @FocusState private var inputFocused: Bool
+    @State private var expandedRetrieval: Set<String> = []
     @Environment(AppRouter.self) private var router
 
     private static let bottomAnchor = "chat.bottom"
@@ -331,11 +332,8 @@ struct ChatView: View {
                         .font(GRType.micro)
                         .foregroundStyle(GRColor.accent)
                 }
-            } else if !sourceGroups.isEmpty || !message.relatedConcepts.isEmpty {
-                Label(Self.groundingLine(concepts: message.relatedConcepts.count, sources: sourceGroups.count),
-                      systemImage: "sparkles")
-                .font(GRType.micro)
-                .foregroundStyle(GRColor.textTertiary)
+            } else if message.retrieval != nil || !sourceGroups.isEmpty || !message.relatedConcepts.isEmpty {
+                retrievalHeader(message, sources: sourceGroups.count)
             }
 
             if !message.content.isEmpty {
@@ -354,14 +352,34 @@ struct ChatView: View {
                     })
             }
 
-            if !message.relatedConcepts.isEmpty {
-                GRFlowLayout(spacing: 6, lineSpacing: 6) {
-                    ForEach(message.relatedConcepts, id: \.self) { concept in
-                        GRChip(title: concept, style: .tinted(.accent), compact: true) {
-                            router.focusInGraph(concept)
+            if !message.relatedConcepts.isEmpty && !message.isStreaming {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("CONCEPTS IN THIS ANSWER")
+                        .font(GRType.micro)
+                        .foregroundStyle(GRColor.textTertiary)
+                    GRFlowLayout(spacing: 6, lineSpacing: 6) {
+                        ForEach(message.relatedConcepts, id: \.self) { concept in
+                            // Tap: ask the next question about this concept. Hold: see it in the graph.
+                            GRChip(title: concept, style: .tinted(.accent), compact: true) {
+                                model.focusTopic = concept
+                                inputFocused = true
+                                GRHaptics.tap()
+                            }
+                            .contextMenu {
+                                Button { router.focusInGraph(concept) } label: {
+                                    Label("Show in graph", systemImage: "point.3.connected.trianglepath.dotted")
+                                }
+                                Button {
+                                    model.focusTopic = concept
+                                    inputFocused = true
+                                } label: {
+                                    Label("Ask about \(concept)", systemImage: "sparkles")
+                                }
+                            }
                         }
                     }
                 }
+                .padding(.top, 2)
             }
 
             if !sourceGroups.isEmpty {
@@ -667,6 +685,42 @@ struct ChatView: View {
             .trimmingCharacters(in: .whitespaces)
     }
 
+    /// What grounded the answer, as the web chat showed it: "Explain · from 3 notes · 15 concepts",
+    /// tap to see which concepts the question was matched to.
+    private func retrievalHeader(_ message: ChatMessageUI, sources: Int) -> some View {
+        let expanded = expandedRetrieval.contains(message.id)
+        let summary = message.retrieval?.summary
+            ?? Self.groundingLine(concepts: message.relatedConcepts.count, sources: sources)
+        let matched = (message.retrieval?.entities.isEmpty == false)
+            ? message.retrieval!.entities : message.relatedConcepts
+        return VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    if expanded { expandedRetrieval.remove(message.id) } else { expandedRetrieval.insert(message.id) }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "sparkles")
+                    Text(summary)
+                    if !matched.isEmpty {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                }
+                .font(GRType.micro)
+                .foregroundStyle(GRColor.accent.opacity(0.85))
+            }
+            .buttonStyle(.plain)
+            .disabled(matched.isEmpty)
+            if expanded && !matched.isEmpty {
+                Text("Matched: " + matched.prefix(8).joined(separator: ", "))
+                    .font(GRType.micro)
+                    .foregroundStyle(GRColor.textTertiary)
+                    .transition(.opacity)
+            }
+        }
+    }
+
     /// "Grounded in 15 concepts · 2 sources", leaving out a count of zero.
     private static func groundingLine(concepts: Int, sources: Int) -> String {
         var parts: [String] = []
@@ -681,6 +735,8 @@ struct ChatView: View {
         var source = text.replacing(/(?m)^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t#]*$/) { match in
             "**\(match.1)**"
         }
+        // List markers ("* ", "- ", "+ ") become bullets: inline parsing would print them as-is.
+        source = source.replacing(/(?m)^([ \t]*)[*+-][ \t]+/) { match in "\(match.1)• " }
         if linkCitations {
             source = source.replacing(/\[(\d{1,2})\](?!\()/) { match in
                 "[\\[\(match.1)\\]](\(citationScheme)://\(match.1))"

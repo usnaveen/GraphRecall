@@ -354,6 +354,7 @@ final class ChatViewModel {
             updateAssistant(assistantId) { msg in
                 msg.sources = payload.sources
                 msg.relatedConcepts = payload.relatedConcepts
+                msg.retrieval = payload.retrieval
                 msg.serverId = payload.messageId
                 msg.isStreaming = false
                 msg.status = nil
