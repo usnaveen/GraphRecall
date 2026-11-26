@@ -14,6 +14,7 @@ START → fetch_resources → check_sufficiency → (conditional)
 """
 
 import json
+import os
 import uuid
 from typing import Annotated, Literal, Optional
 
@@ -147,40 +148,42 @@ async def search_knowledge_for_quiz(topic: str) -> str:
         return f"Error searching: {str(e)}"
 
 
+_LOGGED_MISSING_TAVILY = False
+
+
+def _has_tavily() -> bool:
+    global _LOGGED_MISSING_TAVILY
+    ok = TAVILY_AVAILABLE and bool(os.getenv("TAVILY_API_KEY", "").strip())
+    if not ok and not _LOGGED_MISSING_TAVILY:
+        _LOGGED_MISSING_TAVILY = True
+        logger.info("quiz_graph: TAVILY_API_KEY unset or Tavily unavailable; skipping web search")
+    return ok
+
+
 @tool
 async def web_search_for_topic(query: str) -> str:
     """
     Search the web for information when local knowledge is insufficient.
-    
-    Uses Tavily search if available, otherwise returns a placeholder.
-    
-    Args:
-        query: Search query for web research
-    
-    Returns:
-        Search results as formatted string
+    Returns empty string silently if web search is unconfigured.
     """
+    if not _has_tavily():
+        return ""
     logger.info("web_search_for_topic: Searching", query=query)
-    
-    if TAVILY_AVAILABLE:
-        try:
-            tavily = TavilySearch(max_results=3)
-            results = await tavily.ainvoke(query)
-            
-            output = "## Web Research Results:\n\n"
-            for r in results:
-                output += f"**{r.get('title', 'No title')}**\n"
-                output += f"{r.get('content', '')[:300]}...\n"
-                output += f"Source: {r.get('url', 'Unknown')}\n\n"
-            
-            return output
-            
-        except Exception as e:
-            logger.error("web_search: Tavily failed", error=str(e))
-            return f"Web search failed: {str(e)}"
-    
-    else:
-        return f"Web search unavailable. Please install langchain-community with Tavily support."
+    try:
+        tavily = TavilySearch(max_results=3)
+        results = await tavily.ainvoke(query)
+
+        output = "## Web Research Results:\n\n"
+        for r in results:
+            output += f"**{r.get('title', 'No title')}**\n"
+            output += f"{r.get('content', '')[:300]}...\n"
+            output += f"Source: {r.get('url', 'Unknown')}\n\n"
+
+        return output
+
+    except Exception as e:
+        logger.warning("web_search: Tavily skipped after error", error=str(e))
+        return ""
 
 
 # Tools for ToolNode
@@ -274,11 +277,10 @@ async def research_node(state: QuizState) -> dict:
     """
     topic = state.get("topic", "")
     
-    logger.info("research_node: Researching", topic=topic)
-    
-    if not TAVILY_AVAILABLE:
-        logger.warning("research_node: Tavily not available")
+    if not _has_tavily():
         return {"research_results": []}
+
+    logger.info("research_node: Researching", topic=topic)
     
     try:
         tavily = TavilySearch(max_results=5)
@@ -298,7 +300,7 @@ async def research_node(state: QuizState) -> dict:
         return {"research_results": research_results}
         
     except Exception as e:
-        logger.error("research_node: Failed", error=str(e))
+        logger.warning("research_node: Tavily skipped after error", error=str(e))
         return {"research_results": []}
 
 

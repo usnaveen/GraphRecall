@@ -20,6 +20,8 @@
 
 ## GraphRecall in one minute (November 2026)
 
+**Live showcase:** [https://usnaveen.github.io/graphrecall-site/](https://usnaveen.github.io/graphrecall-site/) · **65s Demo video:** [Watch the walkthrough](https://usnaveen.github.io/graphrecall-site/#demo)
+
 **You forget most of what you learn, and neither you nor your AI tools can see what you actually know.** GraphRecall turns what you read — PDFs, notes, links, YouTube — into a personal knowledge graph, then brings it back as a feed you scroll like social media instead of homework. The same graph tells your AI agents what you know, so they can explain things in terms you already have.
 
 It runs as a native iOS 26 app (SwiftUI, Liquid Glass) on a FastAPI + PostgreSQL/pgvector + Neo4j backend.
@@ -43,7 +45,7 @@ It runs as a native iOS 26 app (SwiftUI, Liquid Glass) on a FastAPI + PostgreSQL
 - **Illustrations from Gemini's image model (Nano Banana)** on concept cards, clearly attributed (`backend/scripts/generate_concept_illustrations.py`).
 - **MCP server for agents.** Claude, Cursor and other MCP clients can read your knowledge profile with scoped keys; OAuth 2.1 with PKCE is implemented (not yet publicly hosted).
 
-<p align="center"><img src="docs/media/nano-banana-transformer.jpg" width="520" alt="A Nano Banana illustration of the Transformer on a concept card"></p>
+<p align="center"><img src="docs/media/nano-banana-multi-head-attention.jpg" width="520" alt="A Nano Banana illustration of Multi-Head Attention for concept cards"></p>
 
 ### What's next
 Dictate concepts and watch the graph wire them up live · zoomable subject → community → concept levels · newsletter and any-link ingestion · overnight batch jobs on the cheapest model · per-question "knowledge frontier" context for agents (what you know well, what's shaky, what's missing) · published retrieval evals.

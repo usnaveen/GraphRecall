@@ -1253,9 +1253,9 @@ async def generate_topic_quiz_stream(
             if existing_questions:
                 yield sse({"type": "status", "content": f"✅ Found {len(existing_questions)} existing questions from your notes"})
 
-            # Step 3: Web research via Tavily (only if user consented)
+            # Step 3: Web research via Tavily (only if user consented and TAVILY_API_KEY is configured)
             research_result = {}
-            if request.allow_web_search:
+            if request.allow_web_search and os.getenv("TAVILY_API_KEY", "").strip():
                 yield sse({"type": "status", "content": "🌐 Searching the web for quiz material..."})
                 try:
                     from backend.agents.research_agent import WebResearchAgent
@@ -1270,10 +1270,10 @@ async def generate_topic_quiz_stream(
                     else:
                         yield sse({"type": "status", "content": "📝 Using available resources..."})
                 except Exception as e:
-                    logger.warning("Quiz stream: research failed", error=str(e))
-                    yield sse({"type": "status", "content": "⚠️ Web search unavailable — using local resources"})
+                    logger.warning("Quiz stream: research skipped", error=str(e))
+                    yield sse({"type": "status", "content": "📚 Using your local notes and graph"})
             else:
-                yield sse({"type": "status", "content": "📚 Using your notes only (web search skipped)"})
+                yield sse({"type": "status", "content": "📚 Using your local notes and graph"})
 
             # Step 4: Generate new questions
             need_new = max(0, request.target_pool_size - len(existing_questions))

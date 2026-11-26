@@ -11,6 +11,7 @@ This is the most interview-ready pattern for showing modern
 agentic LLM applications.
 """
 
+import os
 import uuid
 from typing import Optional
 
@@ -39,21 +40,27 @@ logger = structlog.get_logger()
 # ============================================================================
 
 
+_LOGGED_MISSING_TAVILY = False
+
+
+def _has_tavily() -> bool:
+    global _LOGGED_MISSING_TAVILY
+    ok = TAVILY_AVAILABLE and bool(os.getenv("TAVILY_API_KEY", "").strip())
+    if not ok and not _LOGGED_MISSING_TAVILY:
+        _LOGGED_MISSING_TAVILY = True
+        logger.info("research_graph: TAVILY_API_KEY unset or Tavily unavailable; skipping web search")
+    return ok
+
+
 @tool
 async def search_web(query: str) -> str:
     """
     Search the web for information using Tavily.
-    
-    Args:
-        query: Search query
-    
-    Returns:
-        Search results as formatted string
+    Returns empty string silently if Tavily is unconfigured.
     """
+    if not _has_tavily():
+        return ""
     logger.info("search_web: Executing", query=query)
-    
-    if not TAVILY_AVAILABLE:
-        return "Web search unavailable. Tavily is not installed."
     
     try:
         tavily = TavilySearch(max_results=5)
@@ -68,8 +75,8 @@ async def search_web(query: str) -> str:
         return output
         
     except Exception as e:
-        logger.error("search_web: Failed", error=str(e))
-        return f"Search failed: {str(e)}"
+        logger.warning("search_web: Tavily skipped after error", error=str(e))
+        return ""
 
 
 @tool
@@ -205,8 +212,8 @@ def create_research_agent():
         save_research_note,
     ]
     
-    # Add web search if available
-    if TAVILY_AVAILABLE:
+    # Add web search only when Tavily is installed and configured
+    if _has_tavily():
         tools.append(search_web)
     
     # Create the model (Gemini)

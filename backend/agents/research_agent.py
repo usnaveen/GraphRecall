@@ -8,6 +8,7 @@ This agent:
 """
 
 import json
+import os
 import uuid
 import re
 from datetime import datetime
@@ -26,7 +27,8 @@ try:
     TAVILY_AVAILABLE = True
 except ImportError:
     TAVILY_AVAILABLE = False
-    logger.warning("Tavily not available, will use simulated search")
+
+_LOGGED_MISSING_TAVILY = False
 
 
 class ResearchResult(BaseModel):
@@ -62,10 +64,20 @@ class WebResearchAgent:
         self.llm = get_chat_model(temperature=0.3)
         self.synthesizer = get_chat_model(temperature=0.2)
         
-        # Initialize search tool
-        if TAVILY_AVAILABLE:
-            self.search_tool = TavilySearch(max_results=max_results)
+        # Initialize search tool only when TAVILY_API_KEY is configured
+        global _LOGGED_MISSING_TAVILY
+        if TAVILY_AVAILABLE and os.getenv("TAVILY_API_KEY", "").strip():
+            try:
+                self.search_tool = TavilySearch(max_results=max_results)
+            except Exception as exc:
+                if not _LOGGED_MISSING_TAVILY:
+                    _LOGGED_MISSING_TAVILY = True
+                    logger.info("WebResearchAgent: Tavily unavailable; skipping web search", error=str(exc))
+                self.search_tool = None
         else:
+            if not _LOGGED_MISSING_TAVILY:
+                _LOGGED_MISSING_TAVILY = True
+                logger.info("WebResearchAgent: TAVILY_API_KEY unset; skipping web search")
             self.search_tool = None
     
     async def check_resources_sufficient(
@@ -140,14 +152,7 @@ class WebResearchAgent:
             List of search results with url, title, content
         """
         if not self.search_tool:
-            # Simulate search for development
-            logger.warning("Using simulated search (Tavily not configured)")
-            return [{
-                "url": f"https://example.com/{query.replace(' ', '-')}",
-                "title": f"About {query}",
-                "content": f"This is simulated content about {query}. "
-                          f"In production, this would be real web content.",
-            }]
+            return []
         
         try:
             results = await self.search_tool.ainvoke(query)

@@ -21,6 +21,9 @@ try:
 except ImportError:
     TAVILY_AVAILABLE = False
 
+_LOGGED_MISSING_TAVILY = False
+
+
 class WebQuizAgent:
     """
     Agent that searches the web for quiz/interview questions 
@@ -28,17 +31,22 @@ class WebQuizAgent:
     """
     
     def __init__(self):
+        global _LOGGED_MISSING_TAVILY
         self.llm = get_chat_model(temperature=0.2, json_mode=True)
         # Initialize search tool - expects TAVILY_API_KEY in env
-        if not TAVILY_AVAILABLE:
-            logger.warning("WebQuizAgent: langchain_tavily not installed, web search disabled")
+        if not TAVILY_AVAILABLE or not os.getenv("TAVILY_API_KEY", "").strip():
+            if not _LOGGED_MISSING_TAVILY:
+                _LOGGED_MISSING_TAVILY = True
+                logger.info("WebQuizAgent: Tavily unavailable or TAVILY_API_KEY unset; skipping web search")
             self.search = None
             return
 
         try:
             self.search = TavilySearch(max_results=3)
         except Exception as e:
-            logger.warning("WebQuizAgent: Tavily not configured", error=str(e))
+            if not _LOGGED_MISSING_TAVILY:
+                _LOGGED_MISSING_TAVILY = True
+                logger.warning("WebQuizAgent: Tavily not configured", error=str(e))
             self.search = None
 
     async def _get_cached_search(self, query: str) -> Optional[List[dict]]:
