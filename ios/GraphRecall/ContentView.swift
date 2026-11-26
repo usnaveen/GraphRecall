@@ -109,10 +109,13 @@ struct ContentView: View {
                let seedRefresh = env["GR_SEED_REFRESH_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines),
                !seedAccess.isEmpty, !seedRefresh.isEmpty {
                 let expiresIn = env["GR_SEED_EXPIRES_IN"].flatMap(Int.init) ?? 3600
+                // GR_SEED_NAME: the showcase learner (showcase-token) is "Jordan Avery", not "Test User".
+                let seedName = env["GR_SEED_NAME"]?.trimmingCharacters(in: .whitespacesAndNewlines)
                 await AuthSession.shared.seedSessionForTesting(
                     accessToken: seedAccess,
                     refreshToken: seedRefresh,
-                    expiresIn: expiresIn
+                    expiresIn: expiresIn,
+                    name: seedName?.isEmpty == false ? seedName! : "Test User"
                 )
             }
             if let seedURL = env["GR_SEED_SHARE_URL"]?
@@ -128,6 +131,7 @@ struct ContentView: View {
             if AuthSession.shared.isSignedIn {
                 NotificationCenter.default.post(name: .grFeedShouldReload, object: nil)
                 NotificationCenter.default.post(name: .grSessionReady, object: nil)
+                Task { await AgentBridgeCapability.shared.refresh(force: true) }
             }
             await ShareInboxDrainer.shared.drainIfNeeded()
         }

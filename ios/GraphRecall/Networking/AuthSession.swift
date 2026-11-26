@@ -254,17 +254,18 @@ final class AuthSession {
         await clearSessionLocally()
     }
 
-    func seedSessionForTesting(accessToken: String, refreshToken: String, expiresIn: Int) async {
+    func seedSessionForTesting(accessToken: String, refreshToken: String, expiresIn: Int,
+                               name: String = "Test User") async {
         await ensureTokenProviderRegistered()
         let expiresAt = Date().addingTimeInterval(TimeInterval(expiresIn))
         currentAccessToken = accessToken
         accessTokenExpiresAt = expiresAt
         AppAuthKeychain.save(
             refreshToken: refreshToken,
-            meta: StoredSessionMeta(provider: "apple", name: "Test User", email: nil, expiresAt: expiresAt)
+            meta: StoredSessionMeta(provider: "apple", name: name, email: nil, expiresAt: expiresAt)
         )
         await APIClient.shared.setAccessToken(accessToken)
-        state = .apple(name: "Test User", email: nil)
+        state = .apple(name: name, email: nil)
     }
     #endif
 

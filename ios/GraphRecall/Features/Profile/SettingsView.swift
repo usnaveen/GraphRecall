@@ -231,6 +231,8 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            // Re-check the agent connection here: a failed check otherwise stuck until the Feed reloaded.
+            .task { await agentBridge.refresh(force: agentBridge.serverState != .enabled) }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -279,20 +281,33 @@ struct SettingsView: View {
         }
     }
 
+    private var shownName: String {
+        let typed = displayName.trimmingCharacters(in: .whitespaces)
+        return typed.isEmpty ? (auth.accountName ?? (auth.isSignedIn ? "You" : "Guest")) : typed
+    }
+
+    /// How you're signed in, without repeating the name shown right above it.
+    private var accountLine: String {
+        let suffix = " · \(shownName)"
+        let label = auth.statusLabel
+        return label.hasSuffix(suffix) ? String(label.dropLast(suffix.count)) : label
+    }
+
     private var accountCard: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
-                    Text(String((displayName.isEmpty ? "G" : displayName).prefix(1)).uppercased())
+                    Text(String(shownName.prefix(1)).uppercased())
                         .font(GRType.headline)
                         .foregroundStyle(GRColor.accent)
                         .frame(width: 44, height: 44)
                         .background(GRColor.accentSoft, in: Circle())
                     VStack(alignment: .leading, spacing: 2) {
-                        TextField("Your name", text: $displayName)
+                        // The account's own name until you type another one.
+                        TextField(auth.accountName ?? "Your name", text: $displayName)
                             .font(GRType.headline)
                             .foregroundStyle(GRColor.textPrimary)
-                        Text(auth.statusLabel)
+                        Text(accountLine)
                             .font(GRType.caption)
                             .foregroundStyle(GRColor.textSecondary)
                     }

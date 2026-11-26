@@ -158,16 +158,17 @@ struct ConceptMapView: View {
             .background(GRColor.fillSubtle, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 
             if !nodes(.related).isEmpty {
-                HStack(spacing: 6) {
+                // Wraps instead of squeezing: long names were hyphenated mid-word ("Autoregres-sive").
+                GRFlowLayout(spacing: 6) {
                     Text("related")
                         .font(GRType.micro)
                         .foregroundStyle(GRColor.textTertiary)
+                        .frame(minHeight: 28)
                     ForEach(Array(nodes(.related).enumerated()), id: \.element.id) { i, node in
-                        chip(node, dashed: true)
+                        chip(node, dashed: true, wraps: false)
                             .popIn(appeared, delay: 0.35 + 0.05 * Double(i))
                     }
                 }
-                .lineLimit(1)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -227,11 +228,12 @@ struct ConceptMapView: View {
         }
     }
 
-    private func chip(_ node: ConceptMap.Node, dashed: Bool) -> some View {
+    private func chip(_ node: ConceptMap.Node, dashed: Bool, wraps: Bool = true) -> some View {
         Text(node.name)
             .font(GRType.caption.weight(.semibold))
             .foregroundStyle(GRColor.textPrimary)
-            .lineLimit(2)
+            .lineLimit(wraps ? 2 : 1)
+            .fixedSize(horizontal: !wraps, vertical: false)
             .multilineTextAlignment(.center)
             .minimumScaleFactor(0.85)
             .padding(.horizontal, 9)

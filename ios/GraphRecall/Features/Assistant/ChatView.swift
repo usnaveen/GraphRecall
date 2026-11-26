@@ -87,8 +87,10 @@ struct ChatView: View {
     }
 
     private var showsSuggestions: Bool {
+        // Only before the first question: a loaded thread of one question and one answer also has
+        // two messages, and the chips then sat on top of the answer.
         !model.suggestions.isEmpty
-            && model.messages.count <= 2
+            && !model.messages.contains(where: { $0.role == .user })
             && !model.isStreaming
             && model.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -330,10 +332,8 @@ struct ChatView: View {
                         .foregroundStyle(GRColor.accent)
                 }
             } else if !sourceGroups.isEmpty || !message.relatedConcepts.isEmpty {
-                Label(
-                    "Grounded in \(message.relatedConcepts.count) concept\(message.relatedConcepts.count == 1 ? "" : "s") · \(sourceGroups.count) source\(sourceGroups.count == 1 ? "" : "s")",
-                    systemImage: "sparkles"
-                )
+                Label(Self.groundingLine(concepts: message.relatedConcepts.count, sources: sourceGroups.count),
+                      systemImage: "sparkles")
                 .font(GRType.micro)
                 .foregroundStyle(GRColor.textTertiary)
             }
@@ -455,7 +455,7 @@ struct ChatView: View {
             .disabled(busy || saved)
 
             if agentBridge.isAvailable, let question = userQuestion(before: message) {
-                GRChip(title: "Ask my agent", systemImage: "sparkles", style: .tinted(.cyan), compact: true) {
+                GRChip(title: "Ask agent", systemImage: "sparkles", style: .tinted(.cyan), compact: true) {
                     handOffToAgent(question)
                 }
                 .accessibilityIdentifier("chat.askAgent")
@@ -658,11 +658,31 @@ struct ChatView: View {
         }
     }
 
+    /// One line of an answer for a list: markdown markers ("**", "#", "`") and citations removed.
+    static func plainPreview(_ text: String) -> String {
+        var s = text.replacing(/[*_`#>]+/, with: "")
+        s = s.replacing(/\[\d{1,2}\]/, with: "")
+        return s.split(whereSeparator: \.isNewline).joined(separator: " ")
+            .replacing(/\ {2,}/, with: " ")
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// "Grounded in 15 concepts · 2 sources", leaving out a count of zero.
+    private static func groundingLine(concepts: Int, sources: Int) -> String {
+        var parts: [String] = []
+        if concepts > 0 { parts.append("\(concepts) concept\(concepts == 1 ? "" : "s")") }
+        if sources > 0 { parts.append("\(sources) source\(sources == 1 ? "" : "s")") }
+        return "Grounded in " + parts.joined(separator: " · ")
+    }
+
     /// Inline markdown; with sources, "[n]" citation markers become links that open the source.
+    /// Headings ("### Why it is faster") become bold lines: inline parsing would print the hashes.
     private static func markdown(_ text: String, linkCitations: Bool) -> AttributedString {
-        var source = text
+        var source = text.replacing(/(?m)^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t#]*$/) { match in
+            "**\(match.1)**"
+        }
         if linkCitations {
-            source = text.replacing(/\[(\d{1,2})\](?!\()/) { match in
+            source = source.replacing(/\[(\d{1,2})\](?!\()/) { match in
                 "[\\[\(match.1)\\]](\(citationScheme)://\(match.1))"
             }
         }
@@ -820,7 +840,7 @@ private struct ConversationHistorySheet: View {
                     } label: {
                         GRListRow(
                             title: conv.displayTitle,
-                            subtitle: conv.lastMessage ?? conv.displaySubtitle,
+                            subtitle: conv.lastMessage.map(ChatView.plainPreview) ?? conv.displaySubtitle,
                             meta: model.conversationId == conv.id ? "Open" : nil,
                             metaColor: GRColor.accent,
                             systemImage: "bubble.left.and.bubble.right.fill",

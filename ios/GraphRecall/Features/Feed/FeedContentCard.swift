@@ -27,20 +27,12 @@ struct FeedContentCard: View {
     @State private var digestState: DigestState = .idle
     @State private var viewportHeight: CGFloat = 0
 
-    /// Question cards read like a flashcard: the question sits in the middle of the card.
-    private var centersContent: Bool {
-        switch item.itemType {
-        case .flashcard, .mcq, .fillBlank: return true
-        default: return false
-        }
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             if fixedHeight != nil {
                 ScrollView {
                     contentStack
-                        .frame(minHeight: viewportHeight, alignment: centersContent ? .center : .top)
+                        .frame(minHeight: viewportHeight, alignment: .center)
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
