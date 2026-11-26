@@ -284,9 +284,6 @@ final class FeedViewModel {
                     if let definition = node.definition, !definition.isEmpty {
                         content["definition"] = AnyCodable(definition)
                     }
-                    if let domain = node.domain, !domain.isEmpty {
-                        content["tagline"] = AnyCodable(domain)
-                    }
                     return FeedItem(
                         id: "revisit-\(node.id)",
                         itemType: .showcase,

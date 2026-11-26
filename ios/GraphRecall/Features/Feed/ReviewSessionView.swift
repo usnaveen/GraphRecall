@@ -85,6 +85,7 @@ final class ReviewSessionModel {
     init(feed: FeedViewModel, items: [FeedItem]) {
         self.feed = feed
         self.queue = items
+        self.revealed = !(items.first?.requiresExplicitReveal ?? true)
     }
 
     var current: FeedItem? { queue.indices.contains(index) ? queue[index] : nil }
@@ -139,7 +140,7 @@ final class ReviewSessionModel {
     }
 
     private func resetCard() {
-        revealed = false
+        revealed = !(current?.requiresExplicitReveal ?? true)
         selectedOptionId = nil
         fillAnswer = ""
         showHint = false

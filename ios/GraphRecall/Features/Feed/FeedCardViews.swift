@@ -302,7 +302,9 @@ struct FeedTypedCard: View {
                     .font(GRType.headline)
                     .foregroundStyle(GRColor.textPrimary)
             }
-            if let tagline = item.stringContent("tagline") {
+            if let tagline = item.stringContent("tagline"),
+               tagline.caseInsensitiveCompare(item.domain ?? "") != .orderedSame,
+               tagline.caseInsensitiveCompare(item.conceptName ?? "") != .orderedSame {
                 Text("“\(tagline)”")
                     .font(GRType.caption)
                     .italic()
@@ -342,10 +344,6 @@ struct FeedTypedCard: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(GRColor.fillSubtle, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-
-            if !revealed {
-                revealButton(title: "Continue")
             }
         }
     }
@@ -426,14 +424,6 @@ struct FeedTypedCard: View {
             .frame(maxWidth: .infinity)
             .padding(14)
             .background(GRColor.fillSubtle, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            if revealed, !code.isEmpty {
-                Text(code)
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(GRColor.textTertiary)
-            } else if !revealed {
-                revealButton(title: "Show diagram code")
-            }
         }
     }
 
@@ -476,10 +466,6 @@ struct FeedTypedCard: View {
                     .font(GRType.micro)
                     .foregroundStyle(GRColor.textTertiary)
                 FlowWrap(items: item.linkedConcepts, tint: Color(red: 1, green: 0.42, blue: 0.42))
-            }
-
-            if !revealed {
-                revealButton(title: "Mark reviewed")
             }
         }
     }

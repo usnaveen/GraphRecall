@@ -52,7 +52,7 @@ struct FeedContentCard: View {
                         onGraded()
                     }
                 }
-            } else if showsInlineDifficulty {
+            } else if showsInlineDifficulty && item.usesRecallGrading {
                 Divider().overlay(GRColor.stroke)
                 FeedDifficultySlider(graded: model.grades[item.id]) { difficulty in
                     Task {
@@ -133,7 +133,7 @@ struct FeedContentCard: View {
     private var topRow: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                if let name = item.conceptName, !name.isEmpty {
+                if item.itemType != .showcase, let name = item.conceptName, !name.isEmpty {
                     Text(name)
                         .font(GRType.caption.weight(.semibold))
                         .foregroundStyle(GRColor.textSecondary)

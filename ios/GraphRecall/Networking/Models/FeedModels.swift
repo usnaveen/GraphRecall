@@ -234,6 +234,32 @@ struct FeedItem: Codable, Sendable, Identifiable, Hashable {
         id.hasPrefix("demo-") || domain?.caseInsensitiveCompare("Demo") == .orderedSame
     }
 
+    /// True only for cards that hide an answer or require an explicit check step before grading.
+    /// Open reading cards (`showcase`, `diagram`, `screenshot`, `infographic`, plain `agentCurated`)
+    /// show all of their content upfront and never need a "Continue" button.
+    var requiresExplicitReveal: Bool {
+        switch itemType {
+        case .showcase, .diagram, .screenshot, .infographic, .unknown:
+            return false
+        case .agentCurated:
+            return agentFlashcard != nil
+        case .flashcard, .mcq, .fillBlank, .codeChallenge, .codeSandbox,
+             .territory, .spotTheBug, .tradeoffDuel, .diagramOcclusion:
+            return true
+        }
+    }
+
+    /// Passive showcase / upload cards and `revisit-*` padding cards have no test prompt to grade.
+    var usesRecallGrading: Bool {
+        if id.hasPrefix("revisit-") || isAgentCurated { return false }
+        switch itemType {
+        case .showcase, .screenshot, .infographic, .diagram, .agentCurated, .unknown:
+            return false
+        default:
+            return true
+        }
+    }
+
     var title: String {
         if let name = conceptName, !name.isEmpty { return name }
         if let front = stringContent("front") { return front }

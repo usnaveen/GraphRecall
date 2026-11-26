@@ -51,7 +51,8 @@ struct FeedReelView: View {
 
                     // Right-rail press-and-hold vertical difficulty slider anchored above the
                     // ScrollView so vertical thumb scrubbing never fights Reel paging.
-                    if let active = activeItem, !active.isAgentCurated {
+                    // Only shown on active-recall cards (not passive Showcases / Revisit cards).
+                    if let active = activeItem, active.usesRecallGrading {
                         FeedHoldGradeRail(graded: model.grades[active.id]) { difficulty in
                             let gradedId = active.id
                             Task {

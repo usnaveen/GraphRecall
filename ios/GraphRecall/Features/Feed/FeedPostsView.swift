@@ -22,7 +22,7 @@ struct FeedPostsView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.top, 46) // clears the floating style / search buttons
+            .padding(.top, 58) // clears the floating Agent Inbox / style / search buttons
             .padding(.bottom, 16)
         }
         .scrollIndicators(.hidden)
