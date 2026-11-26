@@ -474,3 +474,38 @@ async def dump_concepts(
             status_code=500,
             detail=user_facing_error(e, resource="concept dump"),
         )
+
+
+@router.get("/{concept_id}/provenance")
+async def get_concept_provenance(
+    concept_id: str,
+    current_user: dict = Depends(get_current_user),
+    limit: int = 25,
+):
+    """Return 'Where I learned this' chronological provenance across notes, feeds, emails, and agents."""
+    from backend.services.graph_hierarchy import load_concept_provenance
+
+    user_id = str(current_user["id"])
+    neo4j = await get_neo4j_client()
+    pg_client = await get_postgres_client()
+    res = await neo4j.execute_query(
+        "MATCH (c:Concept {id: $id, user_id: $uid}) RETURN c.name AS name",
+        {"id": concept_id, "uid": user_id},
+    )
+    if not res:
+        raise HTTPException(status_code=404, detail="Concept not found")
+    cname = res[0].get("name") or concept_id
+    timeline = await load_concept_provenance(
+        user_id,
+        concept_id,
+        concept_name=cname,
+        neo4j=neo4j,
+        pg=pg_client,
+        limit=max(1, min(limit, 100)),
+    )
+    return {
+        "concept_id": concept_id,
+        "concept_name": cname,
+        "total_sources": len(timeline),
+        "timeline": timeline,
+    }

@@ -47,7 +47,7 @@ try:
     from backend.routers.concepts import router as concepts_router
     from backend.routers.nodes import router as nodes_router
     from backend.routers.graphs import router as graphs_router
-    from backend.routers.ingest_v2 import router as ingest_v2_router
+    from backend.routers.ingest_v2 import router as ingest_v2_router, email_ingest_router
     from backend.routers.auth import router as auth_router
     from backend.routers.images import router as images_router
     from backend.routers.knowledge import router as knowledge_router
@@ -58,7 +58,7 @@ try:
     from backend.routers.territory import router as territory_router
     from backend.routers.knowledge_map import router as knowledge_map_router
     from backend.routers.figures import router as figures_router
-    from backend.routers.subscriptions import router as subscriptions_router
+    from backend.routers.subscriptions import router as subscriptions_router, feeds_router
 except Exception as e:
     import traceback
     traceback.print_exc()
@@ -198,6 +198,8 @@ app.include_router(territory_router) # /api/territory - Map-the-territory cards
 app.include_router(knowledge_map_router)  # /api/knowledge-map, /api/profile - Knowledge map, profile, resume
 app.include_router(figures_router)  # /api/figures - Owner-only figures cropped from the user's sources
 app.include_router(subscriptions_router)  # /api/subscriptions/substack - Native Substack/RSS feed sync
+app.include_router(feeds_router)          # /api/subscriptions/feeds - Generalized RSS/Medium/YouTube/blog feeds
+app.include_router(email_ingest_router)   # /api/ingest/email - Signed newsletter inbound webhook
 
 # Agent bridge (external always-on agent <-> GraphRecall). Off unless AGENT_BRIDGE_ENABLED=1.
 # See docs/agent-bridge/PROPOSAL.md.

@@ -22,7 +22,7 @@ import zipfile
 import structlog
 
 from backend.graphs.thread_ids import ingest_thread_id, thread_belongs_to
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from backend.auth.middleware import get_current_user
 from backend.services.quota import require_quota
@@ -1102,5 +1102,51 @@ async def health_check():
             "processed_zip_background_ingestion",
             "youtube_links",
             "chat_transcript_ingestion",
+            "signed_email_newsletter_ingestion",
         ],
     }
+
+
+email_ingest_router = APIRouter(tags=["Email Newsletter Ingestion"])
+
+
+@router.post("/ingest/email")
+@email_ingest_router.post("/api/ingest/email")
+async def ingest_email_webhook(
+    request: Request,
+    x_graphrecall_signature: Optional[str] = Header(default=None),
+    x_webhook_signature: Optional[str] = Header(default=None),
+):
+    """Receive signed forwarded newsletter payloads (Cloudflare Email Worker -> POST /api/ingest/email)."""
+    import json
+    from backend.db.neo4j_client import get_neo4j_client
+    from backend.services.email_ingest import ingest_email_newsletter, verify_email_webhook_signature
+
+    raw_body = await request.body()
+    secret = os.getenv("EMAIL_INGEST_WEBHOOK_SECRET", "").strip()
+    sig = x_graphrecall_signature or x_webhook_signature
+    if not verify_email_webhook_signature(raw_body, sig, secret):
+        raise HTTPException(status_code=401, detail="Invalid or missing webhook signature")
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+    user_id = str(payload.get("user_id") or os.getenv("DEFAULT_EMAIL_INGEST_USER_ID", "")).strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+
+    pg_client = await get_postgres_client()
+    neo4j_client = await get_neo4j_client()
+    return await ingest_email_newsletter(
+        pg_client,
+        neo4j_client,
+        user_id,
+        subject=str(payload.get("subject") or ""),
+        sender=str(payload.get("sender") or payload.get("from") or ""),
+        publication_name=payload.get("publication_name"),
+        html=str(payload.get("html") or ""),
+        text=str(payload.get("text") or ""),
+        message_id=payload.get("message_id"),
+    )

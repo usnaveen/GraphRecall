@@ -8,6 +8,11 @@ leaves GraphRecall and goes to an external agent.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import hashlib
+import json
+import re
+import uuid
 from typing import Any, Optional
 
 import structlog
@@ -227,3 +232,250 @@ class KnowledgeService:
 
     async def owned_concept_ids(self, user_id: str, concept_ids: list[str]) -> set[str]:
         return set((await self._concepts_by_ids(user_id, concept_ids)).keys())
+
+    async def get_knowledge_frontier(
+        self,
+        user_id: str,
+        query: str,
+        concept_names: Optional[list[str]] = None,
+        max_hops: int = 2,
+    ) -> dict[str, Any]:
+        """Return a prompt-cache-friendly profile prefix hash + per-query knowledge frontier."""
+        from backend.services import knowledge_map as km
+        from backend.services.graph_hierarchy import load_concept_provenance
+
+        max_hops = max(1, min(int(max_hops), 3))
+        all_concepts = await km._user_concepts(self.neo4j, user_id)
+
+        # Stable cacheable prefix hash over compact domain summary
+        profile = await self.get_knowledge_profile(user_id, limit=12)
+        stable_prefix = {
+            "total_concepts": profile.get("total_concepts", 0),
+            "reviewed_concepts": profile.get("reviewed_concepts", 0),
+            "domains": profile.get("domains", []),
+        }
+        profile_prefix_hash = hashlib.sha256(
+            json.dumps(stable_prefix, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+
+        # Resolve candidate names from explicit list + query tokens/substrings
+        requested_names = [n.strip() for n in (concept_names or []) if n and n.strip()]
+        query_lower = (query or "").strip().lower()
+        seed_concepts: dict[str, dict] = {}
+        unmatched_names: list[str] = []
+
+        for name in requested_names:
+            hit = km.match_concept(name, all_concepts)
+            if hit:
+                seed_concepts[hit["id"]] = hit
+            else:
+                unmatched_names.append(name)
+
+        query_terms = [t for t in re.findall(r"[a-z0-9+#-]{3,}", query_lower)]
+        for c in all_concepts:
+            cname = (c.get("name") or "").lower()
+            if cname and (cname in query_lower or any(t in cname for t in query_terms)):
+                seed_concepts[c["id"]] = c
+
+        seed_ids = list(seed_concepts.keys())[:15]
+        neighbor_concepts: dict[str, dict] = dict(seed_concepts)
+        if seed_ids:
+            rel_rows = await self.neo4j.execute_query(
+                f"""
+                MATCH (s:Concept {{user_id: $user_id}})-[r*1..{max_hops}]-(n:Concept {{user_id: $user_id}})
+                WHERE s.id IN $seed_ids AND n.id <> s.id
+                RETURN DISTINCT n.id AS id, n.name AS name, n.domain AS domain, n.definition AS definition
+                LIMIT 40
+                """,
+                {"user_id": user_id, "seed_ids": seed_ids},
+            )
+            for r in rel_rows or []:
+                cid = r.get("id")
+                if cid and cid not in neighbor_concepts:
+                    k = km.skill_key(r.get("name") or "")
+                    neighbor_concepts[cid] = {**dict(r), "_key": k, "_words": set(k.split())}
+
+        assess_names = [c["name"] for c in neighbor_concepts.values() if c.get("name")] + unmatched_names
+        assess_names = list(dict.fromkeys(assess_names))[:60]
+        assessments = (
+            await km.assess(
+                user_id,
+                assess_names,
+                pg=self.pg,
+                neo4j=self.neo4j,
+                concepts=all_concepts,
+                max_names=60,
+            )
+            if assess_names
+            else []
+        )
+
+        anchors, frontier, gaps, seen_untested = [], [], [], []
+        assessed_ids: list[str] = []
+        shaky_or_gap_keys: set[str] = set()
+        for a in assessments:
+            entry = {
+                "name": a.name,
+                "concept_id": a.concept_id,
+                "concept_name": a.concept_name,
+                "domain": a.domain,
+                "status": a.status,
+                "mastery": a.mastery,
+                "confidence": a.confidence,
+                "basis": a.basis,
+            }
+            if a.concept_id:
+                assessed_ids.append(a.concept_id)
+            if a.status == "strong":
+                anchors.append(entry)
+            elif a.status == "shaky":
+                frontier.append(entry)
+                shaky_or_gap_keys.add(a.key)
+            elif a.status == "seen":
+                seen_untested.append(entry)
+            else:
+                gaps.append(entry)
+                shaky_or_gap_keys.add(a.key)
+
+        # Misconceptions (low-signal test evidence or low review scores)
+        misconceptions: list[dict[str, Any]] = []
+        if assessed_ids:
+            try:
+                ev_rows = await self.pg.execute_query(
+                    """
+                    SELECT concept_id, kind, signal, detail, created_at
+                    FROM knowledge_evidence
+                    WHERE user_id = CAST(:u AS uuid)
+                      AND concept_id = ANY(:cids)
+                      AND kind IN ('quiz', 'review', 'territory', 'leetcode')
+                      AND signal < 0.45
+                    ORDER BY created_at DESC
+                    LIMIT 10
+                    """,
+                    {"u": user_id, "cids": assessed_ids},
+                )
+                id_to_name = {c["id"]: c.get("name") for c in neighbor_concepts.values()}
+                for r in ev_rows or []:
+                    ca = r.get("created_at")
+                    misconceptions.append({
+                        "concept_id": r["concept_id"],
+                        "concept_name": id_to_name.get(r["concept_id"]),
+                        "kind": r["kind"],
+                        "signal": round(float(r["signal"]), 2),
+                        "detail": r.get("detail") if isinstance(r.get("detail"), dict) else {},
+                        "at": ca.isoformat() if hasattr(ca, "isoformat") else ca,
+                    })
+            except Exception:
+                pass
+
+        # Provenance across top seed concepts
+        provenance: list[dict[str, Any]] = []
+        for cid in seed_ids[:5]:
+            cname = seed_concepts[cid].get("name")
+            items = await load_concept_provenance(
+                user_id, cid, concept_name=cname, neo4j=self.neo4j, pg=self.pg, limit=4
+            )
+            for it in items:
+                provenance.append({"concept_id": cid, "concept_name": cname, **it})
+
+        # Resume claims overlapping query/frontier whose mastery is shaky or unexposed
+        resume_claims_at_risk: list[dict[str, Any]] = []
+        try:
+            res_rows = await self.pg.execute_query(
+                "SELECT skills FROM user_resumes WHERE user_id = CAST(:u AS uuid) ORDER BY created_at DESC LIMIT 1",
+                {"u": user_id},
+            )
+            raw_skills = (res_rows[0].get("skills") if res_rows else None) or []
+            if isinstance(raw_skills, str):
+                raw_skills = json.loads(raw_skills)
+            for sk in raw_skills:
+                sname = (sk.get("name") if isinstance(sk, dict) else str(sk)) or ""
+                skey = km.skill_key(sname)
+                if skey and (skey in shaky_or_gap_keys or any(t in sname.lower() for t in query_terms)):
+                    resume_claims_at_risk.append({"skill": sname, "section": sk.get("section") if isinstance(sk, dict) else None})
+        except Exception:
+            pass
+
+        return {
+            "query": query,
+            "profile_prefix_hash": profile_prefix_hash,
+            "stable_profile_summary": stable_prefix,
+            "anchors": anchors[:12],
+            "frontier": frontier[:12],
+            "gaps": gaps[:12],
+            "seen_untested": seen_untested[:12],
+            "misconceptions": misconceptions,
+            "provenance": provenance[:12],
+            "resume_claims_at_risk": resume_claims_at_risk[:10],
+        }
+
+    async def record_exposure(
+        self,
+        user_id: str,
+        concept: str,
+        context: str,
+        *,
+        source: str = "agent_session",
+        confidence: float = 0.5,
+        source_url: Optional[str] = None,
+        create_if_missing: bool = False,
+    ) -> dict[str, Any]:
+        """Write back an exposure signal from an external agent session into knowledge_evidence & user_skills."""
+        from backend.services import knowledge_map as km
+
+        concepts = await km._user_concepts(self.neo4j, user_id)
+        hit = km.match_concept(concept, concepts)
+        concept_id = hit["id"] if hit else None
+        created_node = False
+
+        if concept_id is None and create_if_missing:
+            concept_id = str(uuid.uuid4())
+            created_node = True
+            await self.neo4j.execute_query(
+                """
+                CREATE (c:Concept {
+                    id: $id,
+                    user_id: $user_id,
+                    name: $name,
+                    name_normalized: $norm,
+                    domain: 'General',
+                    complexity_score: 5,
+                    created_at: datetime()
+                })
+                """,
+                {"id": concept_id, "user_id": user_id, "name": concept.strip(), "norm": km.skill_key(concept)},
+            )
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        detail = {
+            "context": context[:600],
+            "source": source,
+            "source_url": source_url,
+            "recorded_at": now_iso,
+        }
+        await km.add_evidence(
+            self.pg,
+            user_id,
+            kind="agent",
+            signal=max(0.0, min(1.0, float(confidence))),
+            weight=0.5,
+            concept_id=concept_id,
+            skill_name=concept.strip(),
+            source_id=source,
+            detail=detail,
+        )
+        await km.upsert_skill(
+            self.pg,
+            user_id,
+            concept.strip(),
+            source="agent",
+            concept_id=concept_id,
+        )
+        return {
+            "ok": True,
+            "concept": hit["name"] if hit else concept.strip(),
+            "concept_id": concept_id,
+            "matched_existing": hit is not None,
+            "created_node": created_node,
+            "recorded_at": now_iso,
+        }

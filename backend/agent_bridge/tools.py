@@ -106,6 +106,26 @@ class BlueprintArgs(_Args):
     pass
 
 
+class FrontierArgs(_Args):
+    query: str = Field(..., min_length=1, max_length=400)
+    concept_names: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=30)
+    max_hops: int = Field(2, ge=1, le=3)
+
+
+class RecordExposureArgs(_Args):
+    concept: str = Field(..., min_length=1, max_length=160)
+    context: str = Field(..., min_length=1, max_length=600)
+    source: str = Field("agent_session", min_length=1, max_length=80)
+    confidence: float = Field(0.5, ge=0.0, le=1.0)
+    source_url: Optional[str] = Field(None, max_length=2048)
+    create_if_missing: bool = False
+
+    @field_validator("source_url")
+    @classmethod
+    def _url(cls, v: Optional[str]) -> Optional[str]:
+        return _check_url(v or None)
+
+
 class LaterArgs(_Args):
     text: str = Field(..., min_length=1, max_length=1000)
     url: Optional[str] = Field(None, max_length=2000)
@@ -245,6 +265,27 @@ async def _assess(p: AgentPrincipal, s: BridgeServices, a: AssessArgs) -> dict:
                        "shaky": "struggled when tested, or self-rated low",
                        "seen": "studied or claimed, never tested",
                        "unexposed": "no evidence the user has met this"}}
+
+
+async def _frontier(p: AgentPrincipal, s: BridgeServices, a: FrontierArgs) -> dict:
+    return await s.knowledge.get_knowledge_frontier(
+        p.user_id,
+        a.query,
+        concept_names=a.concept_names,
+        max_hops=a.max_hops,
+    )
+
+
+async def _record_exposure(p: AgentPrincipal, s: BridgeServices, a: RecordExposureArgs) -> dict:
+    return await s.knowledge.record_exposure(
+        p.user_id,
+        a.concept,
+        a.context,
+        source=a.source,
+        confidence=a.confidence,
+        source_url=a.source_url,
+        create_if_missing=a.create_if_missing,
+    )
 
 
 async def _blueprint(p: AgentPrincipal, s: BridgeServices, a: BlueprintArgs) -> dict:
@@ -455,6 +496,14 @@ TOOLS: dict[str, ToolSpec] = {t.name: t for t in [
     ToolSpec("get_capability_blueprint", SCOPE_READ_KNOWLEDGE,
              "The user's education, courses with grades and topics, projects with skills, and a knowledge "
              "summary by status and domain. Never includes resume text or note bodies.", BlueprintArgs, _blueprint),
+    ToolSpec("get_knowledge_frontier", SCOPE_READ_KNOWLEDGE,
+             "Given a question/topic and optional concept names, returns anchors (strong), frontier (shaky), "
+             "gaps (unexposed), misconceptions, provenance, resume claims at risk, and a cacheable profile prefix hash.",
+             FrontierArgs, _frontier),
+    ToolSpec("record_exposure", SCOPE_WRITE_FEED,
+             "Record that the user encountered or discussed a concept in an external agent session, updating "
+             "knowledge_evidence and user_skills provenance without overwriting test mastery.",
+             RecordExposureArgs, _record_exposure),
     ToolSpec("suggest_for_later", SCOPE_WRITE_FEED,
              "Queue an article, paper or topic in the user's 'Later' list so it returns in their feed at a "
              "chosen time ('tomorrow', 'this weekend', 'in 3 days'). Labelled as from their agent.",
@@ -508,6 +557,12 @@ def audit_counts(name: str, data: Any) -> dict:
         out["status"] = data.get("status")
     if name == "get_knowledge_profile":
         out["total_concepts"] = data.get("total_concepts")
+    if name == "get_knowledge_frontier":
+        out["anchors_count"] = len(data.get("anchors") or [])
+        out["frontier_count"] = len(data.get("frontier") or [])
+        out["gaps_count"] = len(data.get("gaps") or [])
+    if name == "record_exposure":
+        out["matched_existing"] = bool(data.get("matched_existing"))
     return out
 
 

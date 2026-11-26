@@ -34,21 +34,24 @@ It runs as a native iOS 26 app (SwiftUI, Liquid Glass) on a FastAPI + PostgreSQL
 </p>
 
 ### What's built
-- **Your knowledge as a graph.** Concepts with typed, directed links (prerequisite → concept, subtopic → parent, builds on), grouped into named communities. On the author's account: 507 concepts, about 2,184 links, 23 communities. The graph view keeps communities apart and labelled; tapping a concept shows only its closest neighbours.
+- **Your knowledge as a graph.** Concepts with typed, directed links (prerequisite → concept, subtopic → parent, builds on), grouped into named communities. On the author's account: 507 concepts, about 2,184 links, 23 communities. The graph view keeps communities apart and labelled; tapping a concept shows only its closest neighbours. Backend also serves zoomable subject → community → concept hierarchy views and a color-annotated recall-outline tree (`GET /api/graph3d/hierarchy`, `GET /api/graph3d/recall-outline`, enriched `/focus/{id}` in `backend/services/graph_hierarchy.py`).
+- **Live dictation-to-graph SSE streaming (backend).** Parses spoken concept lists, emits existing graph edges first, and streams inferred typed edges (`PREREQUISITE_OF`, `SUBTOPIC_OF`, `BUILDS_ON`, `APPLIES_TO`) via `POST /api/graph3d/dictate/stream` (`backend/services/dictation_graph.py`).
 - **GraphRAG assistant with citations.** Answers come from your own notes and graph, with numbered sources.
 - **Intent routing without an LLM call.** A trained classifier routes each message when it is confident and falls back to one LLM call when it isn't; every decision is logged (`backend/services/intent_router/`).
 - **Corpus-versioned answer cache.** Cached answers are partitioned by a corpus version, so a deleted note's text is never served from cache.
 - **"Ask next": follow-ups chosen by the graph, not a model.** Around the concepts that grounded the answer, it picks a prerequisite you're shaky on, a part you haven't studied and what the concept unlocks — about 0.2 s and zero tokens (`backend/services/followups.py`). Taps are logged per suggestion kind for click-through evaluation.
 - **A feed, not homework.** Quiz, term, concept and code-sandbox cards with spaced repetition; you rate recall on Apple's native slider, and any card can come back later with "Remind me".
+- **Generalized links, RSS feeds & signed newsletter ingestion (backend).** Supports Substack, Medium profiles/publications, YouTube channel feeds, HTML `<link rel="alternate">` discovery (`/api/subscriptions/feeds`), HMAC-SHA256 verified inbound newsletter webhook splitting multi-story digests (`POST /api/ingest/email`), and chronological "Where I learned this" provenance (`GET /api/concepts/{id}/provenance`).
+- **Overnight batch pipeline with cost telemetry (backend).** Runs low-cost batch jobs (`digest_links_and_newsletters`, `leetcode_pattern_summary`, `resume_gap_recommendations`, `build_next_day_feed_plan`), logging token counts and estimated USD cost per night to `overnight_job_runs` + `usage_daily` (`POST /api/v2/agent/overnight/run`, `GET /api/v2/agent/overnight/report`).
 - **Resume vs. what you know.** Each skill on your resume is checked against evidence in your graph: strong, shaky, seen or new.
 - **LeetCode by number.** Type 146: title, difficulty, topics and a suggested pattern fill in from LeetCode's public API; attempts schedule reviews.
 - **Illustrations from Gemini's image model (Nano Banana)** on concept cards, clearly attributed (`backend/scripts/generate_concept_illustrations.py`).
-- **MCP server for agents.** Claude, Cursor and other MCP clients can read your knowledge profile with scoped keys; OAuth 2.1 with PKCE is implemented (not yet publicly hosted).
+- **MCP server with per-query knowledge frontier & session write-back.** Claude, Cursor and other MCP clients can read your knowledge profile and per-query knowledge frontier (`get_knowledge_frontier`: strong anchors, shaky frontier, gaps, misconceptions, provenance, resume claims at risk, plus a cacheable profile prefix hash) and record session exposures (`record_exposure`) with scoped keys (`backend/agent_bridge/`); OAuth 2.1 with PKCE is implemented (not yet publicly hosted).
 
 <p align="center"><img src="docs/media/nano-banana-multi-head-attention.jpg" width="520" alt="A Nano Banana illustration of Multi-Head Attention for concept cards"></p>
 
 ### What's next
-Dictate concepts and watch the graph wire them up live · zoomable subject → community → concept levels · newsletter and any-link ingestion · overnight batch jobs on the cheapest model · per-question "knowledge frontier" context for agents (what you know well, what's shaky, what's missing) · published retrieval evals.
+iOS UI wiring for the new hierarchy, dictation-stream, and overnight telemetry views · live Cloudflare domain/Email Routing & public OAuth hosting · server-side Resume PDF storage · published retrieval evals (pending paid Gemini billing).
 
 The rest of this README documents the system in depth (architecture, API, schema, workflows); parts of it describe the earlier React web client.
 

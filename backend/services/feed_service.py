@@ -1694,16 +1694,22 @@ class FeedService:
             # Count ad-hoc completed (Created today)
             adhoc_completed = 0
             try:
-                # Check quizzes (approximation)
+                # Check quizzes against study_sessions via concept_id (study_sessions stores concept_id, not item_id)
                 q_res = await self.pg_client.execute_query(
                     """
-                    SELECT COUNT(*) as cnt 
+                    SELECT COUNT(*) as cnt
                     FROM study_sessions s
-                    JOIN quizzes q ON (s.item_id = q.id AND s.item_type='quiz')
-                    WHERE s.user_id = :uid 
+                    WHERE s.user_id = :uid
+                      AND s.item_type = 'quiz'
                       AND s.reviewed_at >= :today
-                      AND q.created_at >= :today
-                      AND q.source = 'batch_gen'
+                      AND EXISTS (
+                          SELECT 1
+                          FROM quizzes q
+                          WHERE q.user_id = s.user_id
+                            AND q.concept_id = s.concept_id
+                            AND q.created_at >= :today
+                            AND q.source = 'batch_gen'
+                      )
                     """,
                     {"uid": user_id, "today": today_start}
                 )

@@ -23,6 +23,7 @@ from backend.agent_v2.protocols import (
     RunLogger,
 )
 from backend.auth.middleware import get_current_user
+from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
 
 router = APIRouter(prefix="/api/v2/agent", tags=["Always-On Agent v2"])
@@ -243,3 +244,39 @@ async def list_runs(
     """Inspect recent agent execution telemetry for the authenticated user."""
     items = await runs.list_for_user(str(current_user["id"]), limit=limit)
     return RunListResponse(runs=items, total=len(items))
+
+
+class OvernightRunRequest(BaseModel):
+    jobs: Optional[list[str]] = None
+    dry_run: bool = False
+
+
+@router.post("/overnight/run")
+async def run_overnight_jobs(
+    body: OvernightRunRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Execute overnight batch jobs on the cheapest model and record usage_daily cost telemetry."""
+    from backend.services.overnight_pipeline import run_overnight_pipeline
+
+    pg = await get_postgres_client()
+    neo4j = await get_neo4j_client()
+    return await run_overnight_pipeline(
+        str(current_user["id"]),
+        pg,
+        neo4j,
+        jobs=body.jobs,
+        dry_run=body.dry_run,
+    )
+
+
+@router.get("/overnight/report")
+async def get_overnight_cost_report(
+    days: int = Query(default=7, ge=1, le=90),
+    current_user: dict = Depends(get_current_user),
+):
+    """Return cost-per-night and token breakdown from overnight_job_runs + usage_daily."""
+    from backend.services.overnight_pipeline import get_overnight_report
+
+    pg = await get_postgres_client()
+    return await get_overnight_report(str(current_user["id"]), pg, days=days)

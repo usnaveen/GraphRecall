@@ -1,9 +1,12 @@
 """Graph 3D Router - Endpoints for 3D Knowledge Graph Visualization."""
 
-from typing import Optional
+import json
+from typing import Literal, Optional
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from backend.auth.middleware import get_current_user
 
 from backend.db.neo4j_client import get_neo4j_client
@@ -490,34 +493,67 @@ async def focus_on_concept(
 
         mastery_map = {r["concept_id"]: r["score"] for r in mastery_result}
 
-        # Build response
+        from backend.services.graph_hierarchy import (
+            _status_map_for_concepts,
+            load_concept_provenance,
+            normalize_edge_type,
+            normalize_subject,
+        )
+
+        # Compute knowledge_map statuses and "Where I learned this" provenance
+        focus_concepts = [center] + [c["connected"] for c in connected_result]
+        status_map = await _status_map_for_concepts(pg_client, user_id, focus_concepts)
+        center_status = status_map.get(concept_id, {"status": "seen", "mastery": mastery_map.get(concept_id)})
+        center_subject = normalize_subject(center.get("domain", "General"))
+        provenance = await load_concept_provenance(
+            user_id,
+            concept_id,
+            concept_name=center.get("name"),
+            neo4j=neo4j_client,
+            pg=pg_client,
+        )
+
+        def _conn_payload(item: dict) -> dict:
+            cid = item["connected"]["id"]
+            st = status_map.get(cid, {"status": "seen"})
+            raw_type = item["relationship"]
+            norm_type, norm_dir = normalize_edge_type(raw_type)
+            return {
+                "concept": {
+                    "id": cid,
+                    "name": item["connected"]["name"],
+                    "definition": item["connected"].get("definition", "")[:100],
+                    "domain": item["connected"].get("domain", "General"),
+                    "mastery_level": mastery_map.get(cid, 0),
+                    "status": st["status"],
+                    "color_key": normalize_subject(item["connected"].get("domain", "General")),
+                },
+                "relationship": raw_type,
+                "raw_type": raw_type,
+                "normalized_type": norm_type,
+                "normalized_direction": norm_dir,
+                "direction": item["direction"],
+                "strength": item["strength"],
+            }
+
+        # Build response (preserving all legacy keys while adding v3 focus fields)
         return {
             "center": {
                 "id": center["id"],
                 "name": center["name"],
                 "definition": center.get("definition", ""),
                 "domain": center.get("domain", "General"),
+                "subject": center_subject,
+                "color_key": center_subject,
+                "status": center_status["status"],
                 "complexity_score": center.get("complexity_score", 5),
                 "mastery_level": mastery_map.get(concept_id, 0),
                 "color": get_domain_color(center.get("domain", "General")),
             },
-            "connections": [
-                {
-                    "concept": {
-                        "id": c["connected"]["id"],
-                        "name": c["connected"]["name"],
-                        "definition": c["connected"].get("definition", "")[:100],
-                        "domain": c["connected"].get("domain", "General"),
-                        "mastery_level": mastery_map.get(c["connected"]["id"], 0),
-                    },
-                    "relationship": c["relationship"],
-                    "direction": c["direction"],
-                    "strength": c["strength"],
-                }
-                for c in connected_result
-            ],
+            "connections": [_conn_payload(c) for c in connected_result],
             "prerequisite_path": prereq_path[0]["path_nodes"] if prereq_path else [],
             "linked_notes": linked_notes,
+            "provenance": provenance,
             "total_connections": len(connected_result),
         }
         
@@ -599,3 +635,93 @@ async def recompute_communities(
             status_code=500,
             detail=user_facing_error(e, resource="communities"),
         )
+
+
+@router.get("/hierarchy")
+async def get_graph_hierarchy(
+    level: Literal["universe", "galaxy", "concepts"] = Query(default="universe"),
+    domain: Optional[str] = Query(default=None),
+    community_id: Optional[str] = Query(default=None),
+    include_related: bool = Query(default=False),
+    current_user: dict = Depends(get_current_user),
+):
+    """Return one hierarchical zoom level (universe -> galaxy -> concepts) with typed directed edges."""
+    try:
+        from backend.services.graph_hierarchy import get_hierarchy
+
+        neo4j_client = await get_neo4j_client()
+        pg_client = await get_postgres_client()
+        return await get_hierarchy(
+            str(current_user["id"]),
+            level,
+            domain=domain,
+            community_id=community_id,
+            include_related=include_related,
+            neo4j=neo4j_client,
+            pg=pg_client,
+        )
+    except Exception as e:
+        logger.error("Graph3D: hierarchy query failed", error=str(e))
+        raise HTTPException(status_code=500, detail=user_facing_error(e, resource="graph hierarchy"))
+
+
+@router.get("/recall-outline")
+async def get_recall_outline(
+    domain: Optional[str] = Query(default=None),
+    root_concept_id: Optional[str] = Query(default=None),
+    max_depth: int = Query(default=4, ge=1, le=6),
+    current_user: dict = Depends(get_current_user),
+):
+    """Return a recall outline tree annotated with strong/shaky/seen/unexposed colors."""
+    try:
+        from backend.services.graph_hierarchy import build_recall_outline
+
+        neo4j_client = await get_neo4j_client()
+        pg_client = await get_postgres_client()
+        return await build_recall_outline(
+            str(current_user["id"]),
+            domain=domain,
+            root_concept_id=root_concept_id,
+            max_depth=max_depth,
+            neo4j=neo4j_client,
+            pg=pg_client,
+        )
+    except Exception as e:
+        logger.error("Graph3D: recall-outline failed", error=str(e))
+        raise HTTPException(status_code=500, detail=user_facing_error(e, resource="recall outline"))
+
+
+class DictateGraphRequest(BaseModel):
+    transcript: str = Field(..., min_length=1, max_length=2000)
+    domain: Optional[str] = Field(default=None, max_length=120)
+    commit: bool = True
+
+
+@router.post("/dictate/stream")
+async def dictate_to_graph_stream(
+    body: DictateGraphRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Stream dictated concepts, existing edges first, and inferred typed edges via SSE."""
+    from backend.services.dictation_graph import stream_dictation_to_graph
+
+    neo4j_client = await get_neo4j_client()
+    pg_client = await get_postgres_client()
+    user_id = str(current_user["id"])
+
+    async def event_generator():
+        try:
+            async for item in stream_dictation_to_graph(
+                user_id,
+                body.transcript,
+                domain=body.domain,
+                commit=body.commit,
+                neo4j=neo4j_client,
+                pg=pg_client,
+            ):
+                yield f"event: {item['event']}\ndata: {json.dumps(item['data'])}\n\n"
+        except Exception as exc:
+            logger.error("Graph3D: dictate stream failed", error=str(exc))
+            yield f"event: error\ndata: {json.dumps({'detail': user_facing_error(exc, resource='dictation graph')})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

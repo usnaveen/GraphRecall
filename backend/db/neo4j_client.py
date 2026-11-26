@@ -589,6 +589,21 @@ class Neo4jClient:
         result = await self.execute_query(query, {"name": name, "user_id": user_id})
         return [r["c"] for r in result]
 
+    @staticmethod
+    def _serialize_value(value):
+        """Convert Neo4j temporal and container types into JSON/Pydantic-safe primitives."""
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if hasattr(value, "iso_format"):
+            return value.iso_format()
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        if isinstance(value, dict):
+            return {k: Neo4jClient._serialize_value(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [Neo4jClient._serialize_value(v) for v in value]
+        return str(value)
+
     async def get_graph_for_user(self, user_id: str, depth: int = 2) -> dict:
         """Get the knowledge graph structure for visualization."""
         query = """
@@ -608,7 +623,7 @@ class Neo4jClient:
         } AS node
         """
         result = await self.execute_query(query, {"user_id": user_id})
-        nodes = [r["node"] for r in result]
+        nodes = [self._serialize_value(r["node"]) for r in result]
 
         # Build edges from relationships
         edges = []
@@ -618,7 +633,7 @@ class Neo4jClient:
                     "source": node["id"],
                     "target": rel["target"],
                     "type": rel["type"],
-                    "properties": rel.get("properties", {}),
+                    "properties": self._serialize_value(rel.get("properties", {})),
                 })
 
         return {

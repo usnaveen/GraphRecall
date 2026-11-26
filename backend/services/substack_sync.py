@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
 from typing import Any, Callable, Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 import structlog
@@ -40,11 +40,31 @@ class SubstackSyncError(ValueError):
     pass
 
 
-def normalize_substack_feed_url(raw: str) -> tuple[str, str]:
-    """Normalize a Substack handle, post URL, publication URL, or RSS URL -> (feed_url, site_url)."""
+_YT_CHANNEL_RE = re.compile(r"^/channel/(UC[a-zA-Z0-9_-]{10,})", re.I)
+_FEED_LINK_RE = re.compile(
+    r"<link\b(?=[^>]*\brel=['\"]?[^'\">]*\balternate\b)"
+    r"(?=[^>]*\btype=['\"]?application/(?:rss|atom)\+xml)"
+    r"[^>]*\bhref=['\"]([^'\"]+)['\"][^>]*>",
+    re.I,
+)
+
+
+def discover_feed_url_from_html(html: str, base_url: str) -> Optional[str]:
+    """Extract an alternate RSS/Atom feed link from a web page's HTML head."""
+    if not html:
+        return None
+    m = _FEED_LINK_RE.search(html[:65536])
+    if not m:
+        return None
+    href = unescape(m.group(1).strip())
+    return urljoin(base_url, href) if href else None
+
+
+def normalize_feed_url(raw: str) -> tuple[str, str]:
+    """Normalize a Substack handle, Medium profile/pub, YouTube channel, blog URL, or RSS URL -> (feed_url, site_url)."""
     val = (raw or "").strip()
     if not val:
-        raise SubstackSyncError("Publication URL or Substack handle is required")
+        raise SubstackSyncError("Publication URL or feed handle is required")
 
     m = _HANDLE_RE.match(val)
     if m and "." not in val and "/" not in val:
@@ -73,15 +93,43 @@ def normalize_substack_feed_url(raw: str) -> tuple[str, str]:
             site = f"https://{handle}.substack.com"
             return f"{site}/feed", site
 
+    # Medium profiles and publications
+    if host in {"medium.com", "www.medium.com"}:
+        parts = [p for p in parsed.path.split("/") if p]
+        if parts:
+            if parts[0] == "feed" and len(parts) >= 2:
+                return f"https://medium.com/feed/{parts[1]}", f"https://medium.com/{parts[1]}"
+            target = parts[0]
+            return f"https://medium.com/feed/{target}", f"https://medium.com/{target}"
+
+    # YouTube channel feeds (no YouTube Data API key needed for public channel RSS)
+    if host in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+        if parsed.path.startswith("/feeds/videos.xml") and parsed.query:
+            return f"https://www.youtube.com{parsed.path}?{parsed.query}", "https://www.youtube.com"
+        yt_m = _YT_CHANNEL_RE.match(parsed.path)
+        if yt_m:
+            cid = yt_m.group(1)
+            return (
+                f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}",
+                f"https://www.youtube.com/channel/{cid}",
+            )
+
     if host.startswith("www.") and host.endswith(".substack.com"):
         host = host[4:]
 
     port_suffix = f":{parsed.port}" if parsed.port and parsed.port not in (80, 443) else ""
     site = f"{scheme}://{host}{port_suffix}"
     path = parsed.path.rstrip("/")
-    if path.endswith(("/feed", "/rss", "/rss.xml", "/feed.xml", "/atom.xml")):
+    if path.endswith(("/feed", "/rss", "/rss.xml", "/feed.xml", "/atom.xml", "/index.xml", ".xml", ".atom", ".rss")):
         return f"{site}{path}", site
+    if path:
+        return f"{site}{path}/feed", f"{site}{path}"
     return f"{site}/feed", site
+
+
+def normalize_substack_feed_url(raw: str) -> tuple[str, str]:
+    """Backwards-compatible alias for ``normalize_feed_url``."""
+    return normalize_feed_url(raw)
 
 
 def assert_public_url(url: str) -> None:

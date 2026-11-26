@@ -7,6 +7,7 @@ from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field
 
 from backend.auth.middleware import get_current_user
@@ -257,3 +258,17 @@ async def dismiss_substack_article(
     if not rows:
         raise HTTPException(status_code=404, detail="Article not found")
     return {"dismissed": True}
+
+
+# Generalized Links & Feeds router (/api/subscriptions/feeds) sharing the exact same handlers
+feeds_router = APIRouter(prefix="/api/subscriptions/feeds", tags=["Link & Feed Subscriptions"])
+for _route in router.routes:
+    if isinstance(_route, APIRoute):
+        _sub_path = _route.path[len(router.prefix):] if _route.path.startswith(router.prefix) else _route.path
+        feeds_router.add_api_route(
+            _sub_path,
+            _route.endpoint,
+            methods=list(_route.methods or ["GET"]),
+            status_code=_route.status_code,
+            name=f"feeds_{_route.name}",
+        )
