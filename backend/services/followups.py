@@ -2,7 +2,8 @@
 
 Chat apps usually make a second model call after the answer ("suggest 3 follow-up questions").
 Here the graph decides *what* to suggest, so it costs no tokens and every suggestion points at a
-real gap in what this user knows. Around the concepts the answer was grounded in:
+real gap in what this user knows. Around the concepts the question names (then the ones the
+answer was grounded in):
 
 - **prerequisite**: something the concept needs, preferring ones the user is shaky on or has
   never been tested on  ((p)-[:PREREQUISITE_OF]->(seed))
@@ -29,6 +30,15 @@ logger = structlog.get_logger()
 MAX_SEEDS = 3
 MAX_SUGGESTIONS = 3
 TIMEOUT_S = 1.5
+
+# Concepts the question names outright ("Explain Multi-Query Attention"), longest names first.
+MENTIONED_QUERY = """
+MATCH (c:Concept {user_id: $u})
+WHERE size(c.name) >= 3 AND $q CONTAINS toLower(c.name)
+RETURN c.id AS id, c.name AS name
+ORDER BY size(c.name) DESC
+LIMIT $limit
+"""
 
 NEIGHBOURS_QUERY = """
 UNWIND $ids AS sid
@@ -108,8 +118,8 @@ def pick(
                     "seed_name": seed,
                     "reason": _REASON.get((kind, status), "What this unlocks" if kind == "next" else "Related"),
                 }))
-    # Greedy: best first, at most one per kind, each concept once.
-    candidates.sort(key=lambda t: t[:3])
+    # Greedy: the question's own concept first, then by priority; one per kind, each concept once.
+    candidates.sort(key=lambda t: (t[1], t[0], t[2]))
     out, kinds, used = [], set(), set()
     for _, _, _, s in candidates:
         if s["kind"] in kinds or s["concept_id"] in used:
@@ -125,7 +135,16 @@ def pick(
 async def _suggest(user_id: str, question: str, related_concepts: list[dict], neo4j, pg) -> list[dict]:
     from backend.services import knowledge_map
 
-    seed_ids = [c["id"] for c in related_concepts or [] if isinstance(c, dict) and c.get("id")][:MAX_SEEDS]
+    # Seeds: what the question is about first, then what grounded the answer (retrieval order).
+    mentioned = await neo4j.execute_query(
+        MENTIONED_QUERY, {"u": user_id, "q": (question or "").lower(), "limit": MAX_SEEDS}
+    ) or []
+    seed_ids: list[str] = []
+    for c in [*mentioned, *(related_concepts or [])]:
+        cid = c.get("id") if isinstance(c, dict) else None
+        if cid and cid not in seed_ids:
+            seed_ids.append(cid)
+    seed_ids = seed_ids[:MAX_SEEDS]
     if not seed_ids:
         return []
     rows = await neo4j.execute_query(NEIGHBOURS_QUERY, {"ids": seed_ids, "u": user_id})

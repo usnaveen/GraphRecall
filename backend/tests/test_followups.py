@@ -66,3 +66,28 @@ def test_click_meta_keeps_only_kind_and_concept():
         "kind": "subtopic", "concept_id": "c1"}
     assert suggestion_click_meta({"kind": "nope"}) is None
     assert suggestion_click_meta(None) is None
+
+
+def test_seeds_start_with_the_concept_the_question_names(monkeypatch):
+    """Asked about MQA, suggestions come from MQA's neighbours, not whatever retrieval listed first."""
+    from backend.services import followups, knowledge_map
+
+    seen = {}
+
+    class FakeNeo:
+        async def execute_query(self, query, params):
+            if "CONTAINS toLower(c.name)" in query:
+                assert params["q"] == "explain multi-query attention"
+                return [{"id": "mqa", "name": "Multi-Query Attention"}]
+            seen["ids"] = params["ids"]
+            return [_row(seed_id="mqa", seed="Multi-Query Attention", subs=[("c1", "Shared KV Heads")])]
+
+    async def fake_assess(user_id, names, **kw):
+        return []
+
+    monkeypatch.setattr(knowledge_map, "assess", fake_assess)
+    related = [{"id": "kv", "name": "KV Cache"}, {"id": "mqa", "name": "Multi-Query Attention"}]
+    out = asyncio.run(followups.suggest_followups("u", "Explain Multi-Query Attention", related,
+                                                  neo4j=FakeNeo(), pg=object()))
+    assert seen["ids"] == ["mqa", "kv"]
+    assert out[0]["seed_name"] == "Multi-Query Attention"

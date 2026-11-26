@@ -304,6 +304,8 @@ struct FeedDifficultySlider: View {
     /// 0 = Again (No idea) … 3 = Easy. Starts on "Got it" so a stray tap never records "No idea".
     @State private var step: Double = 2
     @State private var isScrubbing = false
+    /// Where a touch started, so a brush of the thumb while scrolling doesn't record a review.
+    @State private var touchStart: (index: Int, at: Date)?
 
     private static var bands: [GRDifficultyBand] { GRDifficultyBand.bottomToTop }
 
@@ -340,8 +342,16 @@ struct FeedDifficultySlider: View {
                 onEditingChanged: { editing in
                     if editing {
                         isScrubbing = true
+                        touchStart = (index, Date())
                     } else {
                         isScrubbing = false
+                        let start = touchStart
+                        touchStart = nil
+                        // Commit when you moved to a band, or held the thumb deliberately (to keep
+                        // "Got it"); a quick touch that changes nothing is a scroll, not a grade.
+                        let moved = start.map { $0.index != index } ?? true
+                        let held = start.map { Date().timeIntervalSince($0.at) >= 0.35 } ?? false
+                        guard moved || held else { return }
                         GRHaptics.success()
                         onCommit(Self.bands[index].difficulty)
                     }
