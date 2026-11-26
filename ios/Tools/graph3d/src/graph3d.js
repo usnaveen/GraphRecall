@@ -1096,6 +1096,22 @@ function updateViewShift() {
   return true;
 }
 
+let drift = null; // { offset, t0 } while swaying
+const driftAxisY = new THREE.Vector3(0, 1, 0);
+const driftAxisX = new THREE.Vector3(1, 0, 0);
+function updateDrift() {
+  const idle = !focusView && !state.selectedId && !cameraFlight && performance.now() - lastInteraction > 6000;
+  if (!idle) { drift = null; return false; }
+  if (!drift) drift = { offset: camera.position.clone().sub(controls.target), t0: performance.now() };
+  const t = (performance.now() - drift.t0) / 1000;
+  const yaw = 0.32 * Math.sin((t * 2 * Math.PI) / 26);
+  const pitch = 0.1 * Math.sin((t * 2 * Math.PI) / 38);
+  const offset = drift.offset.clone().applyAxisAngle(driftAxisY, yaw).applyAxisAngle(driftAxisX, pitch);
+  camera.position.copy(controls.target).add(offset);
+  camera.lookAt(controls.target);
+  return true;
+}
+
 function tick() {
   requestAnimationFrame(tick);
   let animating = animatePositions();
@@ -1109,9 +1125,10 @@ function tick() {
     }
     animating = true;
   }
-  // A slow drift while nobody touches the overview, so the graph feels alive; any touch stops it.
-  controls.autoRotate = !focusView && !state.selectedId && !cameraFlight && performance.now() - lastInteraction > 6000;
-  controls.autoRotateSpeed = 0.35;
+  // A slow sway while nobody touches the overview, so the graph feels alive. Communities lie on
+  // a near-flat disc, so it sways (about ±18° and a little tilt) rather than orbiting, which would
+  // turn the disc edge-on. Any touch stops it where it is.
+  if (updateDrift()) animating = true;
   const moved = controls.update();
   if (updateViewShift()) animating = true;
   // Render only while something changes — a still graph costs no GPU or battery.
