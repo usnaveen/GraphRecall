@@ -99,10 +99,56 @@ of these out-of-distribution phrasings and triggers **0 false `quiz` jobs**.*
    personal study queries via `python3 eval/router/label.py --write` (`data/human.jsonl`) plus shadow
    traffic remains the definitive clean evaluation.
 
+## Calibration & risk-coverage (`eval/router/calibration.py` -> `results/calibration.json`)
+
+Scored strictly from predicted probabilities of the shipped artifact (`tfidf-lr-v1`,
+`artifact_sha256=ced416ac2f76...`, `threshold=0.6`) with zero per-item error inspection
+(`"frozen_errors_inspected": false` on `test` and `heldout_v2`).
+
+### 1. Summary calibration & selective-prediction metrics
+
+| split | n | acc | routing acc | mean conf | ECE-10 | MCE-10 | Brier | NLL | AURC (8-cls / oracle) | AURC (routing) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `dev` | 120 | 0.850 | 0.858 | 0.844 | **0.0458** | 0.3571 | 0.1979 | 0.4061 | 0.0308 / 0.0125 | 0.0270 |
+| `test` (frozen) | 160 | 0.919 | 0.919 | 0.866 | **0.0572** | 0.1648 | 0.1264 | 0.2867 | 0.0097 / 0.0036 | 0.0097 |
+| `heldout_v2` (frozen OOD) | 57 | 0.316 | 0.386 | 0.590 | **0.2745** | 0.6445 | 0.9495 | 2.3347 | 0.6117 / 0.3261 | 0.5754 |
+
+### 2. 10-bin reliability table (`avg conf` vs. `empirical acc`, `gap = conf - acc`)
+
+| bin | dev (`n`, `conf` -> `acc`, `gap`) | test (`n`, `conf` -> `acc`, `gap`) | heldout_v2 (`n`, `conf` -> `acc`, `gap`) |
+|---|---|---|---|
+| `[0.2, 0.3)` | 1: 0.262 -> 0.000 (+0.262) | — | 3: 0.250 -> 0.000 (+0.250) |
+| `[0.3, 0.4)` | 3: 0.357 -> 0.000 (+0.357) | 5: 0.364 -> 0.400 (-0.036) | 10: 0.344 -> 0.200 (+0.144) |
+| `[0.4, 0.5)` | 7: 0.452 -> 0.429 (+0.023) | 3: 0.446 -> 0.333 (+0.112) | 10: 0.448 -> 0.200 (+0.248) |
+| `[0.5, 0.6)` | 8: 0.561 -> 0.625 (-0.064) | 11: 0.539 -> 0.636 (-0.097) | 10: 0.550 -> 0.500 (+0.050) |
+| `[0.6, 0.7)` | 9: 0.656 -> 0.556 (+0.101) | 8: 0.657 -> 0.750 (-0.093) | 7: 0.655 -> 0.429 (+0.227) |
+| `[0.7, 0.8)` | 5: 0.767 -> 1.000 (-0.233) | 13: 0.758 -> 0.923 (-0.165) | 5: 0.742 -> 0.400 (+0.342) |
+| `[0.8, 0.9)` | 22: 0.860 -> 0.909 (-0.050) | 21: 0.853 -> 1.000 (-0.147) | 2: 0.861 -> 0.500 (+0.361) |
+| `[0.9, 1.0]` | 65: 0.980 -> 0.985 (-0.005) | 99: 0.974 -> 0.990 (-0.016) | 10: 0.945 -> 0.300 (+0.645) |
+
+### 3. Risk-coverage sweep (`threshold` gate on `max(p)`)
+
+| threshold | dev (`cov`, `acc`, `r_acc`, `abst acc`) | test (`cov`, `acc`, `r_acc`, `abst acc`) | heldout_v2 (`cov`, `acc`, `r_acc`, `abst acc`) |
+|---|---|---|---|
+| `0.00` | 1.000 / 0.850 / 0.858 / — | 1.000 / 0.919 / 0.919 / — | 1.000 / 0.316 / 0.386 / — |
+| `0.40` | 0.967 / 0.879 / 0.888 / 0.000 | 0.969 / 0.935 / 0.935 / 0.400 | 0.772 / 0.364 / 0.409 / 0.154 |
+| `0.50` | 0.908 / 0.908 / 0.917 / 0.273 | 0.950 / 0.947 / 0.947 / 0.375 | 0.596 / 0.412 / 0.441 / 0.174 |
+| `0.55` | 0.892 / 0.916 / 0.925 / 0.308 | 0.900 / 0.965 / 0.965 / 0.500 | 0.509 / 0.414 / 0.448 / 0.214 |
+| **`0.60` (ships)** | **0.842 / 0.931 / 0.941 / 0.421** | **0.881 / 0.972 / 0.972 / 0.526** | **0.421 / 0.375 / 0.417 / 0.273** |
+| `0.65` | 0.808 / 0.938 / 0.948 / 0.478 | 0.856 / 0.985 / 0.985 / 0.522 | 0.386 / 0.364 / 0.409 / 0.286 |
+| `0.70` | 0.767 / 0.967 / 0.978 / 0.464 | 0.831 / 0.985 / 0.985 / 0.593 | 0.298 / 0.353 / 0.412 / 0.300 |
+| `0.80` | 0.725 / 0.966 / 0.977 / 0.545 | 0.750 / 0.992 / 0.992 / 0.700 | 0.211 / 0.333 / 0.417 / 0.311 |
+| `0.90` | 0.542 / 0.985 / 0.985 / 0.691 | 0.619 / 0.990 / 0.990 / 0.803 | 0.175 / 0.300 / 0.300 / 0.319 |
+
+**Verdict on the shipped `0.60` gate:**
+- **In-domain (`dev`, `test`): well-calibrated and well-placed.** ECE-10 is low (`0.0458` on `dev`, `0.0572` on `test`, slightly conservative in `[0.5, 0.9)`). At `0.60`, the router serves `84.2%` of `dev` queries locally at `93.1%` 8-class / `94.1%` routing accuracy (halving selective risk from `0.150` to `0.069`) and abstains only on `19` queries whose local accuracy is `42.1%`. On `test`, `88.1%` coverage achieves `97.2%` accuracy (`0.028` risk). Tightening to `0.65`–`0.70` pushes `dev` kept accuracy to `0.938`–`0.967` (`0.985` on `test`) at a `3.4–7.5 pt` coverage cost.
+- **Out-of-distribution (`heldout_v2`): calibration breaks under covariate shift.** `0.60` sends `57.9%` (`33/57`) of encyclopedic OOD questions to Gemini with `0` false `quiz` triggers, which is helpful — however the `24` high-confidence kept items still score only `37.5%` (`10` items in `[0.9, 1.0]` score `30.0%`, producing `ECE = 0.2745`). Softmax confidence on TF-IDF logits cannot distinguish confident OOD phrasing; keeping `0.60` (or raising to `0.65–0.70` if extra LLM fallback calls are cheap) works well in-domain, while OOD safety ultimately relies on log-monitoring `intent_decisions` in `shadow`/`model` mode and training on real user queries.
+
 ## Reproduce
 
 ```bash
 python3 eval/router/make_dataset.py
 python3 eval/router/audit_overlap.py                          # overlap audit + decontaminated slices
 python3 eval/router/train.py --score-only --eval-set heldout_v2  # one-shot frozen benchmark (numpy only)
+python3 eval/router/calibration.py                            # ECE-10, reliability bins, risk-coverage curve
 ```

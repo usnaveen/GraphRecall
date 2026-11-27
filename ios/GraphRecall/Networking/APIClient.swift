@@ -472,6 +472,27 @@ actor APIClient {
         )
     }
 
+    /// POST `/api/chat/messages/{id}/feedback` — record thumbs up/down + optional reason.
+    func submitChatFeedback(
+        messageId: String,
+        rating: ChatFeedbackRating,
+        reason: ChatFeedbackReason? = nil,
+        comment: String? = nil
+    ) async throws -> ChatFeedbackResponse {
+        try await post(
+            "/api/chat/messages/\(messageId)/feedback",
+            body: ChatFeedbackRequestBody(rating: rating, reason: reason, comment: comment)
+        )
+    }
+
+    /// POST `/api/chat/prefetch` — warm the query embedding on a ~600 ms typing pause.
+    func prefetchChatEmbedding(text: String, conversationId: String?) async throws -> ChatPrefetchResponse {
+        try await post(
+            "/api/chat/prefetch",
+            body: ChatPrefetchRequestBody(text: text, conversationId: conversationId)
+        )
+    }
+
     // MARK: - Core
 
     func get<T: Decodable>(_ path: String, query: [URLQueryItem]) async throws -> T {

@@ -25,6 +25,8 @@ final class ChatViewModel {
     /// Message id currently running create-card / save.
     var actionBusyMessageId: String?
     var savedMessageIds: Set<String> = []
+    var feedbackRatings: [String: ChatFeedbackRating] = [:]
+    var feedbackReasons: [String: ChatFeedbackReason] = [:]
 
     /// Conversation history sheet (L6).
     var showHistory = false
@@ -37,6 +39,8 @@ final class ChatViewModel {
 
     private var streamTask: Task<Void, Never>?
     private var bannerTask: Task<Void, Never>?
+    private var prefetchTask: Task<Void, Never>?
+    private var lastPrefetchedDraft: String = ""
     /// The follow-up chip behind the next message, if one was tapped (sent once, then cleared).
     private var pendingFollowUpClick: ChatFollowUpClick?
 
@@ -95,6 +99,8 @@ final class ChatViewModel {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming else { return }
 
+        cancelPrefetch()
+        lastPrefetchedDraft = ""
         input = ""
         errorMessage = nil
         messages.append(ChatMessageUI(role: .user, content: text))
@@ -215,6 +221,62 @@ final class ChatViewModel {
         }
     }
 
+    func submitFeedback(
+        for message: ChatMessageUI,
+        rating: ChatFeedbackRating,
+        reason: ChatFeedbackReason? = nil
+    ) async {
+        let previousRating = feedbackRatings[message.id]
+        let previousReason = feedbackReasons[message.id]
+        feedbackRatings[message.id] = rating
+        feedbackReasons[message.id] = rating == .down ? reason : nil
+
+        guard let serverId = message.serverId, !serverId.isEmpty, !usingStub else {
+            if reason != nil { showBanner("Thanks for the feedback") }
+            return
+        }
+
+        do {
+            _ = try await APIClient.shared.submitChatFeedback(
+                messageId: serverId,
+                rating: rating,
+                reason: reason,
+                comment: nil
+            )
+            if reason != nil {
+                showBanner("Thanks for the feedback")
+            }
+        } catch {
+            feedbackRatings[message.id] = previousRating
+            feedbackReasons[message.id] = previousReason
+            showBanner(APIError.userFacing(error, resource: "feedback"))
+        }
+    }
+
+    /// Warm the query embedding after a ~600 ms typing pause once the draft reaches 8 chars.
+    func schedulePrefetch(for draft: String) {
+        cancelPrefetch()
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 8, !isStreaming, !usingStub, trimmed != lastPrefetchedDraft else { return }
+        let cid = conversationId
+        prefetchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled, let self, !self.isStreaming else { return }
+            let current = self.input.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard current.count >= 8, current != self.lastPrefetchedDraft else { return }
+            self.lastPrefetchedDraft = current
+            _ = try? await APIClient.shared.prefetchChatEmbedding(
+                text: String(current.prefix(400)),
+                conversationId: cid
+            )
+        }
+    }
+
+    func cancelPrefetch() {
+        prefetchTask?.cancel()
+        prefetchTask = nil
+    }
+
 
     // MARK: - Conversation history (L6)
 
@@ -260,6 +322,8 @@ final class ChatViewModel {
         do {
             let detail = try await APIClient.shared.getConversation(id: id)
             let uiMessages = detail.messages.map { $0.asUIMessage() }
+            cancelPrefetch()
+            lastPrefetchedDraft = ""
             conversationId = detail.conversation?.id ?? id
             messages = uiMessages.isEmpty
                 ? [
@@ -270,6 +334,8 @@ final class ChatViewModel {
                   ]
                 : uiMessages
             savedMessageIds = []
+            feedbackRatings = [:]
+            feedbackReasons = [:]
             addToFeedMessageId = nil
             errorMessage = nil
             showHistory = false
@@ -281,6 +347,8 @@ final class ChatViewModel {
 
     func startNewChat() {
         cancelStream()
+        cancelPrefetch()
+        lastPrefetchedDraft = ""
         conversationId = nil
         focusTopic = nil
         scopedNotes = []
@@ -291,6 +359,8 @@ final class ChatViewModel {
             )
         ]
         savedMessageIds = []
+        feedbackRatings = [:]
+        feedbackReasons = [:]
         addToFeedMessageId = nil
         errorMessage = nil
         statusLine = nil

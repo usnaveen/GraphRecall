@@ -12,6 +12,7 @@ struct ChatView: View {
     @State private var isNearBottom = true
     @FocusState private var inputFocused: Bool
     @State private var expandedRetrieval: Set<String> = []
+    @State private var feedbackReasonMessage: ChatMessageUI?
     @Environment(AppRouter.self) private var router
 
     private static let bottomAnchor = "chat.bottom"
@@ -71,11 +72,33 @@ struct ChatView: View {
             }
         }
         .onChange(of: router.pendingAssistantPrompt) { _, _ in consumeRouter() }
+        .onChange(of: model.input) { _, newValue in
+            model.schedulePrefetch(for: newValue)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .grSessionReady)) { _ in
             Task { await model.loadSuggestions() }
         }
         .onChange(of: router.pendingConversationId) { _, _ in consumeRouter() }
-        .onDisappear { dictation.stop() }
+        .onDisappear {
+            dictation.stop()
+            model.cancelPrefetch()
+        }
+        .confirmationDialog(
+            "What went wrong?",
+            isPresented: Binding(
+                get: { feedbackReasonMessage != nil },
+                set: { if !$0 { feedbackReasonMessage = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: feedbackReasonMessage
+        ) { message in
+            ForEach(ChatFeedbackReason.allCases, id: \.self) { reason in
+                Button(reason.label) {
+                    GRHaptics.tap()
+                    Task { await model.submitFeedback(for: message, rating: .down, reason: reason) }
+                }
+            }
+        }
         .sheet(isPresented: $bindable.showHistory) {
             ConversationHistorySheet(model: model)
                 .presentationDetents([.medium, .large])
@@ -526,6 +549,30 @@ struct ChatView: View {
             if busy {
                 ProgressView().controlSize(.mini).tint(GRColor.accent)
             }
+
+            let rating = model.feedbackRatings[message.id]
+            Button {
+                GRHaptics.tap()
+                Task { await model.submitFeedback(for: message, rating: .up) }
+            } label: {
+                Image(systemName: rating == .up ? "hand.thumbsup.fill" : "hand.thumbsup")
+                    .font(.system(size: 13))
+                    .foregroundStyle(rating == .up ? GRColor.accent : GRColor.textTertiary)
+                    .frame(width: 28, height: 28)
+            }
+            .accessibilityLabel("Helpful")
+
+            Button {
+                GRHaptics.tap()
+                Task { await model.submitFeedback(for: message, rating: .down) }
+                feedbackReasonMessage = message
+            } label: {
+                Image(systemName: rating == .down ? "hand.thumbsdown.fill" : "hand.thumbsdown")
+                    .font(.system(size: 13))
+                    .foregroundStyle(rating == .down ? GRColor.accent : GRColor.textTertiary)
+                    .frame(width: 28, height: 28)
+            }
+            .accessibilityLabel("Not helpful")
 
             Button {
                 UIPasteboard.general.string = message.content
