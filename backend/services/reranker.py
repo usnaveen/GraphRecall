@@ -13,6 +13,7 @@ Provides:
 
 from __future__ import annotations
 
+import importlib.util
 import math
 import os
 import re
@@ -24,6 +25,10 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional, Protocol, Sequence, runtime_checkable
+
+import structlog
+
+logger = structlog.get_logger()
 
 import numpy as np
 
@@ -501,9 +506,11 @@ def _sigmoid(x: float) -> float:
     return z / (1.0 + z)
 
 
-DEFAULT_ONNX_MODEL = Path(__file__).resolve().parents[2] / "eval" / "retrieval" / "artifacts" / "ms-marco-MiniLM-L6-v2.onnx"
-DEFAULT_INT8_ONNX_MODEL = Path(__file__).resolve().parents[2] / "eval" / "retrieval" / "artifacts" / "ms-marco-MiniLM-L6-v2.int8.onnx"
-DEFAULT_ONNX_VOCAB = Path(__file__).resolve().parents[2] / "eval" / "retrieval" / "artifacts" / "vocab.txt"
+# Fetched at build time by `python -m backend.scripts.fetch_reranker` (pinned revision, SHA-256 checked).
+RERANKER_DIR = Path(__file__).resolve().parents[1] / "models" / "reranker"
+DEFAULT_INT8_ONNX_MODEL = RERANKER_DIR / "model.int8.onnx"
+DEFAULT_ONNX_MODEL = DEFAULT_INT8_ONNX_MODEL
+DEFAULT_ONNX_VOCAB = RERANKER_DIR / "vocab.txt"
 
 
 class OnnxCrossEncoderReranker:
@@ -631,7 +638,19 @@ def _cached_reranker(mode: str, model_path: str, vocab_path: str) -> Reranker:
         return LexicalOverlapReranker()
     chosen_model = Path(model_path)
     chosen_vocab = Path(vocab_path)
-    if mode == "onnx" or (chosen_model.exists() and chosen_vocab.exists()):
+    have_files = chosen_model.exists() and chosen_vocab.exists()
+    have_runtime = importlib.util.find_spec("onnxruntime") is not None
+    if not (have_files and have_runtime):
+        # Loud, once per process: a silent fallback hid that a deploy without the model ran the old reranker.
+        logger.warning(
+            "reranker: cross-encoder unavailable, using lexical reranker",
+            mode=mode, model_found=chosen_model.exists(), vocab_found=chosen_vocab.exists(),
+            onnxruntime=have_runtime, fix="python -m backend.scripts.fetch_reranker",
+        )
+        if mode == "onnx":
+            raise RuntimeError(f"RERANKER_MODE=onnx but the model or onnxruntime is missing ({chosen_model})")
+        return LexicalOverlapReranker()
+    if mode in ("onnx", "auto"):
         return OnnxCrossEncoderReranker(
             model_path=chosen_model,
             vocab_path=chosen_vocab,

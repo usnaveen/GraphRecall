@@ -20,6 +20,10 @@ RUN pip install -r requirements.txt
 # Application code.
 COPY backend ./backend
 
+# Cross-encoder reranker weights: pinned Hugging Face revision, SHA-256 checked, INT8 build for this CPU.
+# The build fails rather than shipping an image that silently falls back to the lexical reranker.
+RUN python -m backend.scripts.fetch_reranker
+
 # Run as a non-root user.
 RUN useradd --create-home --uid 1000 app && chown -R app /app
 USER app

@@ -113,7 +113,8 @@ DerivedData/
 eval/graphrag/questions*.json
 eval/graphrag/results/*.partial.jsonl
 eval/retrieval/artifacts/
-eval/retrieval/golden.*.jsonl
+# Reranker weights, fetched at build time (backend/scripts/fetch_reranker.py)
+backend/models/reranker/
 
 # Anki revlogs (research licence, no redistribution)
 eval/scheduler/data/
