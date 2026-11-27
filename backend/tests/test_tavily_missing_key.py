@@ -29,17 +29,3 @@ async def test_research_agent_skips_quietly_without_tavily_key(monkeypatch: pyte
     assert results == []
 
 
-@pytest.mark.asyncio
-async def test_graphs_skip_tavily_without_error_text(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
-    monkeypatch.setenv("GOOGLE_API_KEY", "dummy")
-
-    import importlib
-
-    quiz_graph = importlib.import_module("backend.graphs.quiz_graph")
-    research_graph = importlib.import_module("backend.graphs.research_graph")
-
-    assert await quiz_graph.web_search_for_topic.ainvoke("KV Cache") == ""
-    res = await quiz_graph.research_node({"topic": "KV Cache"})
-    assert res == {"research_results": []}
-    assert await research_graph.search_web.ainvoke("KV Cache") == ""

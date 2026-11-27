@@ -63,9 +63,9 @@ REVIEWED = {
         "chunk ids come from _MISSING_SQL, filtered by n.user_id",
 }
 
-# Graph modules whose LLM tools take a topic but no user context. They are unreachable today (no
-# router, service or worker imports them); test_unscoped_graphs_stay_unreachable keeps it that way.
-UNREACHABLE = ("graphs/content_graph.py", "graphs/quiz_graph.py", "graphs/research_graph.py")
+# The content / quiz / research graphs queried concepts and notes with no user filter. They were
+# unreachable and were deleted on 27 Nov 2026; test_unscoped_graphs_stay_deleted keeps them out.
+UNREACHABLE: tuple[str, ...] = ()
 
 
 def unfiltered_queries():
@@ -110,27 +110,7 @@ def test_every_user_data_query_filters_by_owner_or_is_reviewed():
     assert not unreviewed, "queries on user data without an owner filter:\n" + "\n".join(unreviewed)
 
 
-def test_unscoped_graphs_stay_unreachable():
-    """content/quiz/research graphs query concepts and notes with no user filter. Wiring one into a
-    request path must come with user scoping; until then nothing reachable may import them, by
-    module path or by any name they export through backend.graphs."""
-    modules = [pathlib.Path(u).stem for u in UNREACHABLE] + ["supervisor_graph"]
-    exported = {"quiz_graph", "run_quiz_generation", "research_agent", "run_research", "get_research_history",
-                "content_graph", "run_content_generation", "supervisor_graph"}
-    offenders = []
-    files = [ROOT / "main.py"]
-    for d in ("routers", "services", "agents", "agent_v2", "mcp"):
-        files += list((ROOT / d).rglob("*.py"))
-    for p in files:
-        tree = ast.parse(p.read_text())
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module:
-                names = {a.name for a in node.names}
-                if node.module == "backend.graphs" and names & exported:
-                    offenders.append(f"{p.relative_to(ROOT)} imports {sorted(names & exported)} from backend.graphs")
-                if any(node.module == f"backend.graphs.{m}" for m in modules):
-                    offenders.append(f"{p.relative_to(ROOT)} imports {node.module}")
-            elif isinstance(node, ast.Import):
-                offenders += [f"{p.relative_to(ROOT)} imports {a.name}" for a in node.names
-                              if any(a.name == f"backend.graphs.{m}" for m in modules)]
-    assert not offenders, "\n".join(offenders)
+def test_unscoped_graphs_stay_deleted():
+    """Re-adding one of these must come with user scoping on every query it runs."""
+    for name in ("content_graph", "quiz_graph", "research_graph", "supervisor_graph", "mcp_graph", "mermaid_graph"):
+        assert not (ROOT / "graphs" / f"{name}.py").exists(), f"graphs/{name}.py is back: scope its queries by user"
