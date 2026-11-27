@@ -90,11 +90,19 @@ class BookChunker:
         current_para: list[str] = []
         heading_stack: list[str] = []
 
+        para_counter = [0]
+
         def flush_para():
             if current_para:
                 text = "\n".join(current_para).strip()
                 if text:
-                    units.append({"type": "text", "text": text, "headings": heading_stack.copy()})
+                    para_counter[0] += 1
+                    # A paragraph longer than a chunk (a flattened PDF page, a YouTube transcript
+                    # with no newlines) used to become one giant chunk, so the size limit never
+                    # applied. Split it into sentence units; the packer below regroups them.
+                    for piece in (self._split_long(text) if len(text) > self.max_chars else [text]):
+                        units.append({"type": "text", "text": piece, "headings": heading_stack.copy(),
+                                      "para": para_counter[0]})
                 current_para.clear()
 
         for idx, line in enumerate(lines):
@@ -157,7 +165,16 @@ class BookChunker:
             if not buf_units:
                 return
             chunk_index = len(chunks)
-            text = "\n\n".join(u["text"] for u in buf_units).strip()
+            # Sentences cut from the same paragraph rejoin with a space; paragraphs with a blank line.
+            parts: list[str] = []
+            for i, u in enumerate(buf_units):
+                if i and u.get("para") and u.get("para") == buf_units[i - 1].get("para"):
+                    parts.append(" " + u["text"])
+                elif i:
+                    parts.append("\n\n" + u["text"])
+                else:
+                    parts.append(u["text"])
+            text = "".join(parts).strip()
             chunks.append(
                 Chunk(
                     index=chunk_index,
@@ -209,6 +226,24 @@ class BookChunker:
         flush_chunk()
 
         return chunks
+
+    def _split_long(self, text: str) -> list[str]:
+        """Sentences of an over-long paragraph; any sentence still over max_chars is cut at word
+        boundaries. Each piece becomes its own unit, so chunks respect max_chars and overlap
+        carries whole sentences."""
+        pieces: list[str] = []
+        for sentence in re.split(r"(?<=[.!?])\s+", text):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            while len(sentence) > self.max_chars:
+                cut = sentence.rfind(" ", 0, self.max_chars)
+                cut = cut if cut > 0 else self.max_chars
+                pieces.append(sentence[:cut].strip())
+                sentence = sentence[cut:].strip()
+            if sentence:
+                pieces.append(sentence)
+        return pieces
 
     def _normalize_filename(self, raw_path: str, images_dir: Path) -> tuple[str, Optional[int]]:
         """Handle extension mismatches and extract page number."""
