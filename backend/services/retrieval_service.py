@@ -47,6 +47,32 @@ async def run_vector_sql(
     return await pg.execute_query(sql, params)
 
 
+async def attach_chunk_embeddings(pg: Any, user_id: str, chunks: list[dict[str, Any]]) -> None:
+    """Set chunk["embedding"] (list[float]) on each chunk that has one, in one owner-filtered query."""
+    ids = [str(c["id"]) for c in chunks if c.get("id") and c.get("embedding") is None]
+    if not ids:
+        return
+    try:
+        rows = await pg.execute_query(
+            "SELECT id, embedding::text AS embedding FROM chunks "
+            "WHERE user_id = CAST(:user_id AS uuid) AND id = ANY(CAST(:ids AS uuid[])) AND embedding IS NOT NULL",
+            {"user_id": user_id, "ids": ids},
+        )
+    except Exception as e:  # diversity falls back to word overlap; retrieval itself is unaffected
+        logger.warning("attach_chunk_embeddings: failed", error=str(e))
+        return
+    by_id = {}
+    for r in rows or []:
+        raw = r.get("embedding")
+        try:
+            by_id[str(r["id"])] = [float(x) for x in raw.strip("[]").split(",")] if isinstance(raw, str) else list(raw)
+        except (TypeError, ValueError, AttributeError):
+            continue
+    for c in chunks:
+        if c.get("embedding") is None and str(c.get("id")) in by_id:
+            c["embedding"] = by_id[str(c["id"])]
+
+
 def reciprocal_rank_fusion(
     ranked_lists: list[tuple[str, float, list[dict[str, Any]]]],
     *,
@@ -351,6 +377,10 @@ class RetrievalService:
 
         fused = reciprocal_rank_fusion(ranked_lists, k=RRF_K)
         deduped = dedupe_by_parent(fused, limit=limit)
+        # MMR measures redundancy between chunks by cosine, so it needs their vectors. The legs
+        # don't select them (768 floats per row x 3 legs x candidate_k); fetch them once here
+        # for the few survivors. Without this, MMR silently fell back to word overlap.
+        await attach_chunk_embeddings(pg, user_id, deduped)
         stats = {
             **counts,
             "fused": len(fused),

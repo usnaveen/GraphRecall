@@ -162,13 +162,18 @@ def test_quiz_needs_higher_confidence():
     assert ir.threshold_for("explain", 0.6) == 0.6
 
 
-@pytest.mark.parametrize("router_source,intent,expect_vector_seeds", [
-    ("model", "explain", True),     # no LLM entities, so seed from the query embedding
-    ("model", "general", False),    # chit-chat stays off the graph, as it did with the LLM router
-    ("llm", "explain", False),      # LLM path unchanged (substring seeds only unless GRAPH_SEED_MODE=hybrid)
+@pytest.mark.parametrize("router_source,intent,seed_mode,expect_vector_seeds", [
+    ("model", "explain", None, True),         # no LLM entities, so seed from the query embedding
+    ("model", "general", None, False),        # chit-chat stays off the graph
+    ("llm", "explain", None, True),           # LLM-routed turns seed by meaning too (default "hybrid")
+    ("llm", "general", None, False),
+    ("llm", "explain", "substring", False),   # the old name-only path, kept behind the switch
 ])
-async def test_context_vector_seeds_follow_router_source(monkeypatch, router_source, intent, expect_vector_seeds):
-    monkeypatch.delenv("GRAPH_SEED_MODE", raising=False)
+async def test_context_vector_seeds_follow_router_source(monkeypatch, router_source, intent, seed_mode, expect_vector_seeds):
+    if seed_mode:
+        monkeypatch.setenv("GRAPH_SEED_MODE", seed_mode)
+    else:
+        monkeypatch.delenv("GRAPH_SEED_MODE", raising=False)
     cg._QUERY_EMBED_CACHE.clear()
     embedder = MagicMock()
     embedder.aembed_query = AsyncMock(return_value=[0.1] * 8)

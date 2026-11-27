@@ -422,3 +422,19 @@ def test_keyword_only_passages_count_any_term_match() -> None:
     chunks = [{"content": "pgvector HNSW uses iterative scan for filtered queries.", "_rrf_score": 0.03}]
     assert evaluate_retrieval_confidence(chunks, [], "explain", query="How does filtered ANN work?").should_abstain is False
     assert evaluate_retrieval_confidence(chunks, [], "explain", query="How do volcanoes form?").should_abstain is True
+
+
+def test_general_intent_no_longer_skips_the_guard_for_real_questions() -> None:
+    # Regression (eval/grounding/results-2026-11-26.json): the router labelled this "general",
+    # and "general" bypassed every check, so an off-topic question was answered from ML notes.
+    decision = evaluate_retrieval_confidence(
+        _ML_CHUNKS, _ML_CONCEPTS, "general", query="How do I make a sourdough starter?")
+    assert decision.should_abstain is True
+    assert decision.reason == "off_topic"
+
+
+def test_general_small_talk_is_still_answered_without_grounding() -> None:
+    for text in ("thanks!", "hi there", "ok cool"):
+        decision = evaluate_retrieval_confidence(_ML_CHUNKS, _ML_CONCEPTS, "general", query=text)
+        assert decision.should_abstain is False, text
+        assert decision.reason == "general_small_talk"

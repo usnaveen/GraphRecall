@@ -10,7 +10,14 @@ from typing import Any, Callable, Coroutine, Literal, Optional, Sequence, TypeVa
 
 T = TypeVar("T")
 
-_GENERAL_BYPASS_INTENTS: frozenset[str] = frozenset({"general", "greeting", "greetings", "chitchat"})
+# Small talk never needs grounding. "general" is not here: the router also labels real
+# questions "general" ("How do I make a sourdough starter?" slipped past the guard that way).
+_GENERAL_BYPASS_INTENTS: frozenset[str] = frozenset({"greeting", "greetings", "chitchat"})
+_SMALL_TALK_WORDS: frozenset[str] = frozenset({
+    "ok", "okay", "cool", "thanks", "thank", "thx", "hi", "hello", "hey", "great", "nice", "bye",
+    "yes", "yeah", "yep", "no", "nope", "sure", "awesome", "good", "morning", "night", "evening",
+    "got", "perfect", "lol", "wow",
+})
 _NON_RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({400, 401, 403, 404, 422})
 _RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 _RETRYABLE_MSG_MARKERS: tuple[str, ...] = (
@@ -243,6 +250,11 @@ def evaluate_retrieval_confidence(
     norm_intent = (intent or "general").strip().lower()
     if norm_intent in _GENERAL_BYPASS_INTENTS:
         return decide(False, "medium", "general_intent_bypass")
+    # A "general" turn with at most one content word is conversation ("thanks!", "hi there"),
+    # not a factual question; anything more goes through the same checks as every other intent.
+    general_terms = query_terms(query) if norm_intent == "general" else []
+    if norm_intent == "general" and (len(general_terms) <= 1 or all(t in _SMALL_TALK_WORDS for t in general_terms)):
+        return decide(False, "medium", "general_small_talk")
 
     if not chunks and not graph_concepts:
         return decide(True, "low", "no_retrieval_results", message=(
