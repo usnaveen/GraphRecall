@@ -1,0 +1,3053 @@
+{
+ "meta": {
+  "run_at": "2026-11-27 18:20",
+  "questions_file": "questions_slice.json",
+  "models": {
+   "chat": "gemini-3.5-flash-lite",
+   "fast": "gemini-3.5-flash-lite",
+   "reasoning": "gemini-3.5-flash-lite",
+   "embedding": "models/gemini-embedding-001"
+  },
+  "corpus_notes": 24,
+  "communities": 37,
+  "incomplete_notes": 0,
+  "seed_mode": "substring",
+  "missing": [
+   "Medical-1a7ab06f",
+   "Medical-b2552c99",
+   "Medical-643b2b9d"
+  ],
+  "invalid_this_run": []
+ },
+ "aggregate": {
+  "n": 9,
+  "by_type": {
+   "Complex Reasoning": {
+    "n": 3,
+    "closed_book": {
+     "answer_correctness": 0.34740498100604716,
+     "factual_recall": 0.6666666666208333,
+     "context_recall": null,
+     "empty_context": 0
+    },
+    "vector_only": {
+     "answer_correctness": 0.3890328306292275,
+     "factual_recall": 0.3333333333208333,
+     "context_recall": 0.0,
+     "empty_context": 0
+    },
+    "graph_only": {
+     "answer_correctness": 0.5374524672788575,
+     "factual_recall": 0.5888888888691481,
+     "context_recall": 0.0,
+     "empty_context": 0
+    },
+    "global_only": {
+     "answer_correctness": 0.153420401634598,
+     "factual_recall": 0.16666666665833332,
+     "context_recall": 0.3333333333333333,
+     "empty_context": 2
+    },
+    "shipped": {
+     "answer_correctness": 0.4622579120550956,
+     "factual_recall": 0.47777777776174074,
+     "context_recall": 0.0,
+     "empty_context": 0
+    }
+   },
+   "Contextual Summarize": {
+    "n": 2,
+    "closed_book": {
+     "answer_correctness": 0.3819646970343985,
+     "factual_recall": 0.5499999999815,
+     "context_recall": null,
+     "empty_context": 0
+    },
+    "vector_only": {
+     "answer_correctness": 0.6367543311686004,
+     "factual_recall": 0.7166666666537223,
+     "context_recall": 0.0,
+     "empty_context": 0
+    },
+    "graph_only": {
+     "answer_correctness": 0.2643215353837553,
+     "factual_recall": 0.299999999994,
+     "context_recall": 0.0,
+     "empty_context": 1
+    },
+    "global_only": {
+     "answer_correctness": 0.3152899386439998,
+     "factual_recall": 0.399999999992,
+     "context_recall": 0.0,
+     "empty_context": 1
+    },
+    "shipped": {
+     "answer_correctness": 0.5568092762262675,
+     "factual_recall": 0.64999999998575,
+     "context_recall": 0.0,
+     "empty_context": 0
+    }
+   },
+   "Fact Retrieval": {
+    "n": 4,
+    "closed_book": {
+     "answer_correctness": 0.41398662040642864,
+     "factual_recall": 0.749999999925,
+     "context_recall": null,
+     "empty_context": 0
+    },
+    "vector_only": {
+     "answer_correctness": 0.687146900103462,
+     "factual_recall": 0.87499999991875,
+     "context_recall": 0.0,
+     "empty_context": 0
+    },
+    "graph_only": {
+     "answer_correctness": 0.6454802334442028,
+     "factual_recall": 0.749999999925,
+     "context_recall": 0.5,
+     "empty_context": 0
+    },
+    "global_only": {
+     "answer_correctness": 0.3534084207652165,
+     "factual_recall": 0.49999999995,
+     "context_recall": 0.5,
+     "empty_context": 2
+    },
+    "shipped": {
+     "answer_correctness": 0.6454802334442028,
+     "factual_recall": 0.749999999925,
+     "context_recall": 0.5,
+     "empty_context": 0
+    }
+   }
+  },
+  "overall": {
+   "closed_book": {
+    "answer_correctness": 0.38467675763473924,
+    "factual_recall": 0.6777777777250555,
+    "context_recall": null,
+    "empty_context": 0
+   },
+   "vector_only": {
+    "answer_correctness": 0.576577194959859,
+    "factual_recall": 0.659259259216105,
+    "context_recall": 0.0,
+    "empty_context": 0
+   },
+   "graph_only": {
+    "answer_correctness": 0.5247690451534326,
+    "factual_recall": 0.5962962962550493,
+    "context_recall": 0.2222222222222222,
+    "empty_context": 1
+   },
+   "global_only": {
+    "answer_correctness": 0.27827497391696215,
+    "factual_recall": 0.36666666663988884,
+    "context_recall": 0.3333333333333333,
+    "empty_context": 5
+   },
+   "shipped": {
+    "answer_correctness": 0.5647014691549592,
+    "factual_recall": 0.6370370369951913,
+    "context_recall": 0.2222222222222222,
+    "empty_context": 0
+   }
+  },
+  "vs_vector_only": {
+   "closed_book": {
+    "mean_diff": -0.19190043732511983,
+    "ci95": [
+     -0.3581117286891901,
+     -0.03419221474576711
+    ]
+   },
+   "graph_only": {
+    "mean_diff": -0.051808149806426375,
+    "ci95": [
+     -0.2554313876655214,
+     0.11323445146789433
+    ]
+   },
+   "global_only": {
+    "mean_diff": -0.2983022210428969,
+    "ci95": [
+     -0.49885178903743177,
+     -0.11195027817472154
+    ]
+   },
+   "shipped": {
+    "mean_diff": -0.011875725804899864,
+    "ci95": [
+     -0.08941798940674812,
+     0.08962719783002895
+    ]
+   }
+  },
+  "retrieval": {
+   "search_modes": {
+    "null": 9
+   },
+   "questions_with_seed_concepts": 8,
+   "mean_concepts": 14.11111111111111,
+   "mean_relationships": 51.77777777777778,
+   "mean_get_context_llm_calls": 0.4444444444444444,
+   "vector_context_recall_prompt": 0.0,
+   "vector_context_recall_untruncated": 0.6666666666666666,
+   "intents": {
+    "find": 1,
+    "show_images": 1,
+    "explain": 6,
+    "compare": 1
+   }
+  }
+ },
+ "rows": [
+  {
+   "id": "Medical-8217a825",
+   "type": "Fact Retrieval",
+   "question": "What is the biggest risk factor for lung cancer?",
+   "answer": "Tobacco smoking is the biggest risk factor for lung cancer.",
+   "evidence": "",
+   "home_note": 19,
+   "home_margin": 0.0931,
+   "retrieval": {
+    "intent": "explain",
+    "intent_overridden": false,
+    "entities": [
+     "Risk Factor",
+     "Lung"
+    ],
+    "search_mode": null,
+    "vector_seeds": {
+     "count": 5,
+     "top_score": 0.8851
+    },
+    "concepts": 17,
+    "relationships": 71,
+    "notes": 4,
+    "note_titles": [
+     "NCCN patient guide excerpt 020",
+     "NCCN patient guide excerpt 021",
+     "NCCN patient guide excerpt 022",
+     "NCCN patient guide excerpt 006"
+    ],
+    "llm_calls": 0,
+    "seconds": 0.7,
+    "global_extra_llm_calls": 2,
+    "global_search_mode": "global_map_reduce",
+    "vector_untruncated_context_recall": 1.0
+   },
+   "gold_statements": [
+    "Tobacco smoking is the biggest risk factor for lung cancer"
+   ],
+   "arms": {
+    "closed_book": {
+     "context_chars": 0,
+     "gen_seconds": 4.9,
+     "gen_llm_calls": 1,
+     "answer": "The biggest risk factor for lung cancer is **tobacco smoking** (including cigarette, cigar, and pipe smoking). It is responsible for about 85% of all lung cancer cases.",
+     "correctness": {
+      "score": 0.5948927617078107,
+      "f1": 0.4999999999375,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.3333333333222222,
+      "similarity": 0.8795710470187428,
+      "tp": 1,
+      "fp": 2,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Tobacco smoking is the biggest risk factor for lung cancer",
+         "reason": "Directly matches the ground truth statement."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Tobacco smoking includes cigarette, cigar, and pipe smoking",
+         "reason": "Provides extra detail not mentioned in the ground truth."
+        },
+        {
+         "statement": "Tobacco smoking is responsible for about 85% of all lung cancer cases",
+         "reason": "Provides statistical detail not present in the ground truth."
+        }
+       ],
+       "FN": []
+      }
+     }
+    },
+    "vector_only": {
+     "context_chars": 2179,
+     "gen_seconds": 4.1,
+     "gen_llm_calls": 1,
+     "answer": "Based on your notes, the biggest risk factor for lung cancer is smoking tobacco [1]. Tobacco smoke contains more than 50 compounds known to cause cancer, and the risk increases the more a person smokes and the longer they smoke [1]. Additionally, exposure to secondhand smoke—which includes smoke exhaled by another person as well as smoke from the burning end of tobacco products—also increases the risk [1].",
+     "correctness": {
+      "score": 0.4527785504307329,
+      "f1": 0.3333333332944444,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.199999999996,
+      "similarity": 0.8111142018395983,
+      "tp": 1,
+      "fp": 4,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "The biggest risk factor for lung cancer is smoking tobacco",
+         "reason": "Directly matches the ground truth statement that tobacco smoking is the biggest risk factor."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Tobacco smoke contains more than 50 compounds known to cause cancer",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "The risk of lung cancer increases the more a person smokes and the longer they smoke",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Exposure to secondhand smoke increases the risk of lung cancer",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Secondhand smoke includes smoke exhaled by another person and smoke from the burning end of tobacco products",
+         "reason": "Not mentioned in the ground truth."
+        }
+       ],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Tobacco smoking is the biggest risk factor for lung cancer.",
+        "reason": "The context states that smoking cigarettes is a risk factor, but does not state it is the 'biggest' risk factor.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "graph_only": {
+     "context_chars": 3978,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, the biggest risk factor for lung cancer is smoking tobacco [1]. Tobacco smoke contains more than 50 compounds known to cause cancer, and the risk increases the more a person smokes and the longer they smoke [1]. Additionally, exposure to secondhand smoke—which includes smoke exhaled by another person as well as smoke from the burning end of tobacco products—also increases the risk [1].",
+     "correctness": {
+      "score": 0.4527785504307329,
+      "f1": 0.3333333332944444,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.199999999996,
+      "similarity": 0.8111142018395983,
+      "tp": 1,
+      "fp": 4,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Smoking tobacco is the biggest risk factor for lung cancer",
+         "reason": "Directly matches the ground truth statement that tobacco smoking is the biggest risk factor."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Tobacco smoke contains more than 50 compounds known to cause cancer",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "The risk of lung cancer increases the more a person smokes and the longer they smoke",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Exposure to secondhand smoke increases the risk of lung cancer",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Secondhand smoke includes smoke exhaled by another person and smoke from the burning end of tobacco products",
+         "reason": "Not mentioned in the ground truth."
+        }
+       ],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 1.0,
+      "classifications": [
+       {
+        "statement": "Tobacco smoking is the biggest risk factor for lung cancer.",
+        "reason": "The context explicitly states that tobacco smoke represents the biggest risk factor for lung cancer.",
+        "attributed": 1
+       }
+      ]
+     }
+    },
+    "global_only": {
+     "context_chars": 214,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, the biggest risk factor for lung cancer is smoking tobacco [1]. Tobacco smoke contains more than 50 compounds known to cause cancer, and the risk increases the more a person smokes and the longer they smoke [1]. Additionally, exposure to secondhand smoke—which includes smoke exhaled by another person as well as smoke from the burning end of tobacco products—also increases the risk [1].",
+     "correctness": {
+      "score": 0.4527785504307329,
+      "f1": 0.3333333332944444,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.199999999996,
+      "similarity": 0.8111142018395983,
+      "tp": 1,
+      "fp": 4,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "The biggest risk factor for lung cancer is smoking tobacco",
+         "reason": "Directly matches the ground truth statement that tobacco smoking is the biggest risk factor for lung cancer."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Tobacco smoke contains more than 50 compounds known to cause cancer",
+         "reason": "Not mentioned in the ground truth, making it unsupported by the provided context."
+        },
+        {
+         "statement": "The risk of lung cancer increases the more a person smokes and the longer they smoke",
+         "reason": "Not mentioned in the ground truth, making it unsupported."
+        },
+        {
+         "statement": "Exposure to secondhand smoke increases the risk of lung cancer",
+         "reason": "Not mentioned in the ground truth, making it unsupported."
+        },
+        {
+         "statement": "Secondhand smoke includes smoke exhaled by another person and smoke from the burning end of tobacco products",
+         "reason": "Not mentioned in the ground truth, making it unsupported."
+        }
+       ],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 1.0,
+      "classifications": [
+       {
+        "statement": "Tobacco smoking is the biggest risk factor for lung cancer.",
+        "reason": "Directly matches the context stating that the biggest risk factor for lung cancer is tobacco smoke.",
+        "attributed": 1
+       }
+      ]
+     }
+    },
+    "shipped": {
+     "context_chars": 6159,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, the biggest risk factor for lung cancer is smoking tobacco [1]. Tobacco smoke contains more than 50 compounds known to cause cancer, and the risk increases the more a person smokes and the longer they smoke [1]. Additionally, exposure to secondhand smoke—which includes smoke exhaled by another person as well as smoke from the burning end of tobacco products—also increases the risk [1].",
+     "correctness": {
+      "score": 0.4527785504307329,
+      "f1": 0.3333333332944444,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.199999999996,
+      "similarity": 0.8111142018395983,
+      "tp": 1,
+      "fp": 4,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "The biggest risk factor for lung cancer is smoking tobacco",
+         "reason": "Directly matches the ground truth that tobacco smoking is the biggest risk factor."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Tobacco smoke contains more than 50 compounds known to cause cancer",
+         "reason": "Not mentioned in the ground truth statement."
+        },
+        {
+         "statement": "The risk of lung cancer increases the more a person smokes and the longer they smoke",
+         "reason": "Not mentioned in the ground truth statement."
+        },
+        {
+         "statement": "Exposure to secondhand smoke increases the risk of lung cancer",
+         "reason": "Not mentioned in the ground truth statement."
+        },
+        {
+         "statement": "Secondhand smoke includes smoke exhaled by another person as well as smoke from the burning end of tobacco products",
+         "reason": "Not mentioned in the ground truth statement."
+        }
+       ],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 1.0,
+      "classifications": [
+       {
+        "statement": "Tobacco smoking is the biggest risk factor for lung cancer.",
+        "reason": "The context explicitly states under Tobacco Smoke that it represents 'the biggest risk factor for lung cancer.'",
+        "attributed": 1
+       }
+      ]
+     }
+    }
+   },
+   "seconds": 99.7,
+   "llm_calls": 20,
+   "embed_errors": 0,
+   "llm_errors": 0,
+   "valid": true
+  },
+  {
+   "id": "Medical-166bcaa7",
+   "type": "Complex Reasoning",
+   "question": "Why is Siewert type classification particularly important in the staging and treatment planning of tumors at the esophagogastric junction?",
+   "answer": "Siewert types determine staging and guide treatment planning for esophagogastric junction tumors.",
+   "evidence": "Siewert types guide treatment planning for esophagogastric junction tumors. Siewert types determine staging for esophagogastric junction tumors.",
+   "home_note": 22,
+   "home_margin": 0.1196,
+   "retrieval": {
+    "intent": "explain",
+    "intent_overridden": false,
+    "entities": [
+     "Esophagogastric Junction",
+     "Staging"
+    ],
+    "search_mode": null,
+    "vector_seeds": {
+     "count": 5,
+     "top_score": 0.8342
+    },
+    "concepts": 16,
+    "relationships": 47,
+    "notes": 4,
+    "note_titles": [
+     "NCCN patient guide excerpt 023",
+     "NCCN patient guide excerpt 001",
+     "NCCN patient guide excerpt 022",
+     "NCCN patient guide excerpt 015"
+    ],
+    "llm_calls": 0,
+    "seconds": 0.5,
+    "global_extra_llm_calls": 1,
+    "global_search_mode": "global_map_reduce",
+    "vector_untruncated_context_recall": 1.0
+   },
+   "gold_statements": [
+    "Siewert types determine staging for esophagogastric junction tumors",
+    "Siewert types guide treatment planning for esophagogastric junction tumors"
+   ],
+   "arms": {
+    "closed_book": {
+     "context_chars": 0,
+     "gen_seconds": 6.7,
+     "gen_llm_calls": 1,
+     "answer": "The **Siewert classification** is critically important in the staging and treatment planning of tumors at the esophagogastric junction (EGJ) because it defines the **exact anatomical epicentre** of the tumor in relation to the Z-line (squamocolumnar junction). \n\nBecause tumors at the EGJ can behave either like esophageal cancer or gastric cancer, the Siewert type dictates the surgical approach, the extent of lymph node dissection, and the necessity of neoadjuvant (preoperative) therapy. \n\nHere is why it is essential for staging and treatment planning:\n\n### 1. Choice of Surgical Approach\nThe Siewert classification directly determines whether a patient needs a predominantly thoracic/esophageal approach or an abdominal/gastric approach:\n*   **Type I (Adenocarcinoma of the distal esophagus):** Treated similarly to esophageal cancer. Often requires an esophagectomy with a transthoracic or minimally invasive thoracic approach (e.g., Ivor Lewis procedure).\n*   **Type II (True carcinoma of the cardia):** Located right at the junction. There is ongoing debate, but they are typically treated with either an extended total gastrectomy with lower esophagectomy or an esophagectomy, depending on the extent of esophageal involvement.\n*   **Type III (Subcardial gastric carcinoma):** Treated similarly to advanced gastric cancer. Requires a total gastrectomy with resection of the lower esophagus, approached primarily through the abdomen.\n\n### 2. Extent of Lymphadenectomy\nThe pattern of lymphatic spread changes significantly depending on the tumor's location:\n*   **Type I tumors** frequently metastasize to mediastinal lymph nodes. Therefore, staging requires mediastinal imaging (like EUS or PET-CT), and surgery requires a mediastinal lymphadenectomy.\n*   **Type III tumors** predominantly spread to abdominal lymph nodes (along the celiac axis, splenic artery, etc.). The surgical focus is on an extensive D2 abdominal lymph node dissection.\n*   **Type II tumors** exhibit a mixed pattern of lymphatic spread, involving both lower mediastinal and upper abdominal nodes, requiring careful consideration of both fields during staging and surgery.\n\n### 3. Role of Multimodality (Neoadjuvant) Therapy\nCurrent oncological guidelines use the Siewert classification (along with the T and N staging) to decide who receives preoperative chemotherapy or chemoradiation:\n*   **Type I and Type II** tumors are generally treated with protocols derived from esophageal cancer trials (e.g., the CROSS trial of chemoradiotherapy followed by surgery, or perioperative chemotherapy like FLOT).\n*   **Type III** tumors are typically managed according to gastric cancer guidelines (predominantly perioperative chemotherapy).\n\n### Summary\nWithout the Siewert classification, clinicians cannot standardize clinical trials, accurately predict metastatic patterns, or apply the correct, evidence-based surgical and multimodal treatment strategy to improve patient survival.",
+     "correctness": {
+      "score": 0.3418853248058736,
+      "f1": 0.16666666664861113,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.09090909090826446,
+      "similarity": 0.8675412992776609,
+      "tp": 1,
+      "fp": 10,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "The Siewert classification is important in the staging and treatment planning of tumors at the esophagogastric junction",
+         "reason": "Directly matches the ground truth that Siewert types determine staging and guide treatment planning for esophagogastric junction tumors."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The Siewert classification defines the exact anatomical epicentre of the tumor in relation to the Z-line",
+         "reason": "Provides specific anatomical detail not mentioned in the concise ground truth."
+        },
+        {
+         "statement": "The Siewert type dictates the surgical approach, extent of lymph node dissection, and necessity of neoadjuvant therapy",
+         "reason": "Provides granular treatment details beyond the scope of the ground truth."
+        },
+        {
+         "statement": "Type I Siewert tumors are adenocarcinomas of the distal esophagus and are treated similarly to esophageal cancer",
+         "reason": "Provides specific tumor type details not present in the ground truth."
+        },
+        {
+         "statement": "Type II Siewert tumors are true carcinomas of the cardia located right at the junction",
+         "reason": "Provides specific tumor type details not present in the ground truth."
+        },
+        {
+         "statement": "Type III Siewert tumors are subcardial gastric carcinomas treated similarly to advanced gastric cancer",
+         "reason": "Provides specific tumor type details not present in the ground truth."
+        },
+        {
+         "statement": "Type I tumors frequently metastasize to mediastinal lymph nodes",
+         "reason": "Provides specific metastasis details not present in the ground truth."
+        },
+        {
+         "statement": "Type III tumors predominantly spread to abdominal lymph nodes",
+         "reason": "Provides specific metastasis details not present in the ground truth."
+        },
+        {
+         "statement": "Type II tumors exhibit a mixed pattern of lymphatic spread involving both lower mediastinal and upper abdominal nodes",
+         "reason": "Provides specific metastasis details not present in the ground truth."
+        },
+        {
+         "statement": "Type I and Type II tumors are generally treated with protocols derived from esophageal cancer trials",
+         "reason": "Provides specific treatment trial details not present in the ground truth."
+        },
+        {
+         "statement": "Type III tumors are typically managed according to gastric cancer guidelines",
+         "reason": "Provides specific guideline details not present in the ground truth."
+        }
+       ],
+       "FN": []
+      }
+     }
+    },
+    "vector_only": {
+     "context_chars": 2179,
+     "gen_seconds": 3.5,
+     "gen_llm_calls": 1,
+     "answer": "Based on your notes, the Siewert type classification is important because it describes the exact location of a tumor relative to the esophagus and the stomach [1]. \n\nThis distinction is critical for treatment planning because some tumors that start in the stomach and cross over into the area between the esophagus and stomach (the esophagogastric junction) are treated specifically as esophageal cancers rather than stomach cancers, and this classification helps guide whether that approach is appropriate based on the tumor's precise location [1].",
+     "correctness": {
+      "score": 0.46026120490379396,
+      "f1": 0.33333333327777775,
+      "factual_recall": 0.499999999975,
+      "factual_precision": 0.24999999999375,
+      "similarity": 0.8410448197818426,
+      "tp": 1,
+      "fp": 3,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "The Siewert type classification is important for treatment planning",
+         "reason": "Directly matches the ground truth that Siewert types guide treatment planning for esophagogastric junction tumors."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The Siewert type classification describes the exact location of a tumor relative to the esophagus and the stomach",
+         "reason": "Provides descriptive detail about what the classification does, which is not mentioned in the ground truth."
+        },
+        {
+         "statement": "Some tumors starting in the stomach and crossing into the esophagogastric junction are treated specifically as esophageal cancers rather than stomach cancers",
+         "reason": "Introduces specific clinical treatment details that are absent from the ground truth."
+        },
+        {
+         "statement": "The Siewert type classification helps guide treatment approach based on precise tumor location",
+         "reason": "Expands on treatment guidance using specific anatomical location reasoning not found in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Siewert types determine staging for esophagogastric junction tumors",
+         "reason": "The ground truth indicates that Siewert types determine staging, which is missing from the answer statements."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Siewert types determine staging and guide treatment planning for esophagogastric junction tumors.",
+        "reason": "Information about Siewert types is not present in the provided context.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "graph_only": {
+     "context_chars": 3741,
+     "gen_seconds": 0.2,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, the Siewert type classification is important because it describes the exact location of a tumor relative to the esophagus and the stomach [1]. \n\nThis distinction is critical for treatment planning because some tumors that start in the stomach and cross over into the area between the esophagus and stomach (the esophagogastric junction) are treated specifically as esophageal cancers rather than stomach cancers, and this classification helps guide whether that approach is appropriate based on the tumor's precise location [1].",
+     "correctness": {
+      "score": 0.46026120490379396,
+      "f1": 0.33333333327777775,
+      "factual_recall": 0.499999999975,
+      "factual_precision": 0.24999999999375,
+      "similarity": 0.8410448197818426,
+      "tp": 1,
+      "fp": 3,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "The Siewert type classification is important for treatment planning",
+         "reason": "Directly matches the ground truth statement that Siewert types guide treatment planning for esophagogastric junction tumors."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The Siewert type classification describes the exact location of a tumor relative to the esophagus and the stomach",
+         "reason": "While factually true in a broader medical context, it is not mentioned in the provided ground truth."
+        },
+        {
+         "statement": "Some tumors starting in the stomach and crossing into the esophagogastric junction are treated specifically as esophageal cancers rather than stomach cancers",
+         "reason": "Provides specific treatment details not present in the ground truth."
+        },
+        {
+         "statement": "The Siewert classification helps guide whether treating a tumor as esophageal cancer is appropriate based on its precise location",
+         "reason": "Extrapolates specific treatment strategies not covered in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Siewert types determine staging for esophagogastric junction tumors",
+         "reason": "Missing from the answer statements, which only focused on treatment planning and tumor location."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Siewert types determine staging and guide treatment planning for esophagogastric junction tumors.",
+        "reason": "Siewert types are not mentioned anywhere in the provided context.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "global_only": {
+     "context_chars": 423,
+     "gen_seconds": 0.2,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, the Siewert type classification is important because it describes the exact location of a tumor relative to the esophagus and the stomach [1]. \n\nThis distinction is critical for treatment planning because some tumors that start in the stomach and cross over into the area between the esophagus and stomach (the esophagogastric junction) are treated specifically as esophageal cancers rather than stomach cancers, and this classification helps guide whether that approach is appropriate based on the tumor's precise location [1].",
+     "correctness": {
+      "score": 0.46026120490379396,
+      "f1": 0.33333333327777775,
+      "factual_recall": 0.499999999975,
+      "factual_precision": 0.24999999999375,
+      "similarity": 0.8410448197818426,
+      "tp": 1,
+      "fp": 3,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "The Siewert type classification is important for treatment planning",
+         "reason": "Directly matches ground truth that Siewert types guide treatment planning for esophagogastric junction tumors."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The Siewert type classification describes the exact location of a tumor relative to the esophagus and the stomach",
+         "reason": "While factually true in a broader medical context, it is not explicitly mentioned in the provided ground truth."
+        },
+        {
+         "statement": "Some tumors starting in the stomach and crossing into the esophagogastric junction are treated specifically as esophageal cancers rather than stomach cancers",
+         "reason": "Contains specific details about treatment protocols not present in the ground truth."
+        },
+        {
+         "statement": "The Siewert type classification helps guide whether treating a tumor as esophageal cancer is appropriate based on its precise location",
+         "reason": "Extends beyond the scope of the provided ground truth statements."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Siewert types determine staging for esophagogastric junction tumors",
+         "reason": "The answer completely misses the crucial aspect of staging related to Siewert types."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 1.0,
+      "classifications": [
+       {
+        "statement": "Siewert types determine staging and guide treatment planning for esophagogastric junction tumors.",
+        "reason": "The context states that Siewert type classification is crucial in treatment planning for tumors at the esophagogastric junction and relates to staging concepts.",
+        "attributed": 1
+       }
+      ]
+     }
+    },
+    "shipped": {
+     "context_chars": 5922,
+     "gen_seconds": 0.1,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, the Siewert type classification is important because it describes the exact location of a tumor relative to the esophagus and the stomach [1]. \n\nThis distinction is critical for treatment planning because some tumors that start in the stomach and cross over into the area between the esophagus and stomach (the esophagogastric junction) are treated specifically as esophageal cancers rather than stomach cancers, and this classification helps guide whether that approach is appropriate based on the tumor's precise location [1].",
+     "correctness": {
+      "score": 0.46026120490379396,
+      "f1": 0.33333333327777775,
+      "factual_recall": 0.499999999975,
+      "factual_precision": 0.24999999999375,
+      "similarity": 0.8410448197818426,
+      "tp": 1,
+      "fp": 3,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "The Siewert type classification is important for treatment planning",
+         "reason": "Directly matches the ground truth statement that Siewert types guide treatment planning for esophagogastric junction tumors."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The Siewert type classification describes the exact location of a tumor relative to the esophagus and the stomach",
+         "reason": "While factually true in medical context, it is not mentioned in the provided ground truth."
+        },
+        {
+         "statement": "Some tumors starting in the stomach and crossing into the esophagogastric junction are treated as esophageal cancers rather than stomach cancers",
+         "reason": "This specific detail about treatment approaches is absent from the ground truth."
+        },
+        {
+         "statement": "The Siewert classification helps guide treatment approaches based on the tumor's precise location",
+         "reason": "Contains extra detail about 'precise location' not explicitly stated in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Siewert types determine staging for esophagogastric junction tumors",
+         "reason": "The answer completely misses the aspect of tumor staging covered in the ground truth."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Siewert types determine staging and guide treatment planning for esophagogastric junction tumors.",
+        "reason": "The context mentions staging helps guide treatment planning and defines the esophagogastric junction, but it does not contain any information about 'Siewert types'.",
+        "attributed": 0
+       }
+      ]
+     }
+    }
+   },
+   "seconds": 96.2,
+   "llm_calls": 19,
+   "embed_errors": 0,
+   "llm_errors": 0,
+   "valid": true
+  },
+  {
+   "id": "Medical-915df475",
+   "type": "Contextual Summarize",
+   "question": "What are the connections between risk factors, symptoms, and anatomical location in basal cell carcinoma?",
+   "answer": "Basal cell carcinoma most often affects sun-exposed areas such as the face, head, and neck, with risk factors including UV radiation and fair skin, and typically presents with symptoms like flat pale or yellow areas, red patches, shiny bumps, open sores, or brown/black bumps with rolled borders.",
+   "evidence": "Basal cell carcinoma typically presents with brown or black bumps with rolled borders. Basal cell carcinoma typically presents with open sores. Basal cell carcinoma typically presents with shiny bumps. Basal cell carcinoma typically presents with red patches. Basal cell carcinoma typically presents with flat pale or yellow areas. Risk factors for basal cell carcinoma include fair skin. Risk factors for basal cell carcinoma include UV radiation. Common sun-exposed areas include the face, head, and neck. Basal cell carcinoma most often affects sun-exposed areas.",
+   "home_note": 0,
+   "home_margin": 0.2747,
+   "retrieval": {
+    "intent": "explain",
+    "intent_overridden": false,
+    "entities": [
+     "basal cell carcinoma"
+    ],
+    "search_mode": null,
+    "vector_seeds": null,
+    "concepts": 18,
+    "relationships": 68,
+    "notes": 5,
+    "note_titles": [
+     "NCCN patient guide excerpt 001",
+     "NCCN patient guide excerpt 005",
+     "NCCN patient guide excerpt 007",
+     "NCCN patient guide excerpt 006",
+     "NCCN patient guide excerpt 002"
+    ],
+    "llm_calls": 1,
+    "seconds": 5.0,
+    "global_extra_llm_calls": 1,
+    "global_search_mode": null,
+    "vector_untruncated_context_recall": 1.0
+   },
+   "gold_statements": [
+    "Basal cell carcinoma most often affects sun-exposed areas such as the face, head, and neck",
+    "Risk factors for basal cell carcinoma include UV radiation and fair skin",
+    "Basal cell carcinoma typically presents with flat pale or yellow areas, red patches, shiny bumps, open sores, or brown/black bumps with rolled borders"
+   ],
+   "arms": {
+    "closed_book": {
+     "context_chars": 0,
+     "gen_seconds": 8.1,
+     "gen_llm_calls": 1,
+     "answer": "Basal cell carcinoma (BCC) is the most common form of skin cancer. There is a well-established, direct triad of connection between its **risk factors**, **anatomical location**, and **clinical symptoms/presentation**. \n\nHere is how these three elements interconnect:\n\n---\n\n### 1. The Primary Connection: Ultraviolet (UV) Radiation\nThe overarching link between risk factors, location, and symptoms is **sun exposure**. \n* **Risk Factor:** Cumulative, long-term UV radiation (sun exposure) and intermittent, intense sunburning (especially in childhood) damage the DNA of basal cells in the skin.\n* **Anatomical Location Connection:** Because UV exposure drives the disease, BCCs overwhelmingly develop on **sun-exposed areas** of the body. Approximately 80% of BCCs occur on the **head and neck** (with the nose, cheeks, and forehead being primary hotspots), followed by the trunk and shoulders. \n* **Symptom Connection:** Because the face is constantly exposed to the elements, patients usually notice these lesions themselves early on, often reporting cosmetic changes or persistent sores in high-visibility areas.\n\n---\n\n### 2. Connection to Specific Subtypes and Anatomical Sites\nDifferent subtypes of BCC tend to appear in different anatomical locations, which in turn dictates the specific symptoms a patient experiences:\n\n* **Nodular BCC (Most Common):**\n  * *Location:* Typically found on the **head and neck**.\n  * *Symptoms:* Appears as a pink, dome-shaped bump with prominent, dilated blood vessels (telangiectasias). It may have a rolled border and a central depression or ulcer.\n* **Superficial BCC:**\n  * *Location:* More commonly found on the **trunk and extremities** (associated with intermittent sun exposure).\n  * *Symptoms:* Presents as a flat, scaly, pink-to-red patch or plaque that often mimics eczema or psoriasis. It may itch or bleed slightly when scratched.\n* **Morpheaform/Sclerosing BCC (Aggressive):**\n  * *Location:* Frequently occurs on the **head and neck**, particularly around the central face (eyes, nose, mouth).\n  * *Symptoms:* Looks like a scar or a firm, white-to-yellow, waxy plaque with poorly defined borders. Because it lacks the classic raised \"pearly\" border, patients often mistake it for scar tissue until it begins to cause functional issues (e.g., tight skin, distortion of facial features).\n\n---\n\n### 3. Connection to Patient-Specific Risk Factors\nA patient's intrinsic risk factors can shift both the location and the symptom severity:\n* **Skin Phototype (Fair Skin/Fitzpatrick Types I and II):** Individuals with low melanin protection are at risk anywhere, but cumulative sun damage on the face and ears leads to classic ulcerating or bleeding lesions.\n* **Genetic Predispositions:** Patients with genetic syndromes, such as **Gorlin syndrome** (Nevoid Basal Cell Carcinoma Syndrome), carry mutations in the *PTCH1* gene. \n  * *Location:* Instead of just sun-exposed areas, these patients develop **hundreds** of BCCs all over their bodies, including non-sun-exposed areas like the palms, soles, and groin.\n  * *Symptoms:* Multiple lesions appearing at a young age, often accompanied by skeletal abnormalities and pitting of the palms and soles.\n* **Immunosuppression (e.g., organ transplant recipients):** \n  * *Location:* BCCs can appear anywhere, but they are more numerous and aggressive on sun-exposed skin.\n  * *Symptoms:* Lesions in immunosuppressed patients may grow faster, become larger, and present with more extensive local tissue destruction.\n\n---\n\n### 4. Direct Symptoms Caused by Anatomical Location\nThe anatomical location directly dictates the *secondary* symptoms a patient experiences:\n* **Periorbital or Nasal Locations:** If a BCC develops near the eye or on the side of the nose, symptoms can include chronic tearing, visual obstruction, or localized pain if the tumor invades cartilage or bone (though perineural invasion is rarer in BCC than in squamous cell carcinoma).\n* **High-Risk \"H-Zone\" of the Face:** Lesions on the \"mask areas\" of the face (nose, eyelids, lips, ears) have a higher risk of recurrence and deep tissue invasion. Symptoms here often transition from a simple \"painless bump\" to chronic bleeding, crusting, and non-healing open sores that patients try to cover with makeup or bandages.\n\n### Summary\nIn basal cell carcinoma, **risk factors** (primarily UV exposure and genetics) dictate *where* the cancer grows (**anatomical location**, heavily skewed toward the head and neck). The combination of the tumor type and its specific location determines the physical presentation (**symptoms**), ranging from a simple pearly bump on the nose to a scaly patch on the trunk or a scar-like plaque on the cheek.",
+     "correctness": {
+      "score": 0.468337186061658,
+      "f1": 0.3333333332895062,
+      "factual_recall": 0.599999999988,
+      "factual_precision": 0.23076923076745562,
+      "similarity": 0.8733487443781132,
+      "tp": 3,
+      "fp": 10,
+      "fn": 2,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Cumulative, long-term UV radiation and intermittent sunburning damage the DNA of basal cells",
+         "reason": "Matches ground truth stating UV radiation is a risk factor for basal cell carcinoma."
+        },
+        {
+         "statement": "Approximately 80% of BCCs occur on the head and neck",
+         "reason": "Matches ground truth stating that basal cell carcinoma most often affects sun-exposed areas such as the face, head, and neck."
+        },
+        {
+         "statement": "Superficial BCC presents as a flat, scaly, pink-to-red patch or plaque",
+         "reason": "Matches ground truth mentioning red patches and flat areas as presentations."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Basal cell carcinoma (BCC) is the most common form of skin cancer",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Nodular BCC is typically found on the head and neck",
+         "reason": "Specific subtype anatomical localization not mentioned in the ground truth."
+        },
+        {
+         "statement": "Nodular BCC appears as a pink, dome-shaped bump with prominent, dilated blood vessels",
+         "reason": "Specific subtype appearance not mentioned in the ground truth."
+        },
+        {
+         "statement": "Superficial BCC is more commonly found on the trunk and extremities",
+         "reason": "Specific subtype anatomical localization not mentioned in the ground truth."
+        },
+        {
+         "statement": "Morpheaform/Sclerosing BCC frequently occurs on the head and neck",
+         "reason": "Specific subtype anatomical localization not mentioned in the ground truth."
+        },
+        {
+         "statement": "Morpheaform/Sclerosing BCC looks like a scar or a firm, white-to-yellow, waxy plaque",
+         "reason": "Specific subtype appearance not mentioned in the ground truth."
+        },
+        {
+         "statement": "Patients with Gorlin syndrome carry mutations in the PTCH1 gene",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Patients with Gorlin syndrome develop hundreds of BCCs all over their bodies",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Immunosuppressed patients can develop BCCs that grow faster and become larger",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Lesions on the H-Zone of the face have a higher risk of recurrence and deep tissue invasion",
+         "reason": "Not mentioned in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Risk factors for basal cell carcinoma include fair skin",
+         "reason": "Missing fair skin as a risk factor from the ground truth."
+        },
+        {
+         "statement": "Basal cell carcinoma typically presents with shiny bumps, open sores, or brown/black bumps with rolled borders",
+         "reason": "Missing specific presentation details like shiny bumps, open sores, and brown/black bumps with rolled borders from the ground truth."
+        }
+       ]
+      }
+     }
+    },
+    "vector_only": {
+     "context_chars": 2719,
+     "gen_seconds": 3.6,
+     "gen_llm_calls": 1,
+     "answer": "Based on your notes, here is an explanation of the connections between risk factors, anatomical location, and characteristics of basal cell skin cancer (BCC):\n\n* **Anatomical Location:** Your skin is the body's largest organ and consists of three main layers: the epidermis (top layer containing basal cells and melanocytes), the dermis (middle layer), and the hypodermis [1, 2]. Basal cell skin cancer occurs when basal cells in the lower part of the epidermis become abnormal and grow out of control [1, 2]. \n* **Connection to Risk Factors:** Because basal cell skin cancer typically develops in areas exposed to the sun, it most frequently occurs on sun-exposed areas of the body such as the face, head, neck, arms, legs, and trunk [1]. \n* **Symptoms & Presentation:** Due to these anatomical and environmental factors, skin lesions are often visibly found on the face, head, and neck [1]. When caught early, basal cell skin cancer is easily treatable, curable, and rarely metastasizes (spreads) [1].",
+     "correctness": {
+      "score": 0.5072144993406366,
+      "f1": 0.39999999995022223,
+      "factual_recall": 0.599999999988,
+      "factual_precision": 0.299999999997,
+      "similarity": 0.8288579975118794,
+      "tp": 3,
+      "fp": 7,
+      "fn": 2,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Basal cell skin cancer most frequently occurs on sun-exposed areas such as the face, head, neck, arms, legs, and trunk",
+         "reason": "Matches ground truth stating basal cell carcinoma most often affects sun-exposed areas such as the face, head, and neck."
+        },
+        {
+         "statement": "Skin lesions are often visibly found on the face, head, and neck",
+         "reason": "Aligns with the ground truth regarding the anatomical location of sun-exposed areas like the face, head, and neck."
+        },
+        {
+         "statement": "Basal cell skin cancer typically develops in areas exposed to the sun",
+         "reason": "Directly corresponds to the ground truth that basal cell carcinoma most often affects sun-exposed areas."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The skin is the body's largest organ",
+         "reason": "Irrelevant background information not mentioned in the ground truth."
+        },
+        {
+         "statement": "The skin consists of three main layers: the epidermis, the dermis, and the hypodermis",
+         "reason": "Anatomical detail not required or mentioned in the ground truth."
+        },
+        {
+         "statement": "The epidermis is the top layer of the skin containing basal cells and melanocytes",
+         "reason": "Detailed skin layer description not present in the ground truth."
+        },
+        {
+         "statement": "The dermis is the middle layer of the skin",
+         "reason": "Unsupported by the ground truth."
+        },
+        {
+         "statement": "Basal cell skin cancer occurs when basal cells in the lower part of the epidermis become abnormal and grow out of control",
+         "reason": "Pathophysiological definition not explicitly stated in the ground truth."
+        },
+        {
+         "statement": "When caught early, basal cell skin cancer is easily treatable and curable",
+         "reason": "Treatment prognosis information not found in the ground truth."
+        },
+        {
+         "statement": "Basal cell skin cancer rarely metastasizes or spreads",
+         "reason": "Metastasis details are not mentioned in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Risk factors for basal cell carcinoma include UV radiation and fair skin",
+         "reason": "Missing from the answer statements, which fail to address specific risk factors like UV radiation and fair skin."
+        },
+        {
+         "statement": "Basal cell carcinoma typically presents with flat pale or yellow areas, red patches, shiny bumps, open sores, or brown/black bumps with rolled borders",
+         "reason": "Missing from the answer statements, which do not detail the specific symptoms or physical presentation of the lesions."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Basal cell carcinoma most often affects sun-exposed areas such as the face, head, and neck, with risk factors including UV radiation and fair skin, and typically presents with symptoms like flat pale or yellow areas, red patches, shiny bumps, open sores, or brown/black bumps with rolled borders.",
+        "reason": "The specific anatomical locations, detailed symptoms, and UV radiation risk factors are not mentioned in the provided context notes.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "graph_only": {
+     "context_chars": 4134,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, here is an explanation of the connections between risk factors, anatomical location, and characteristics of basal cell skin cancer (BCC):\n\n* **Anatomical Location:** Your skin is the body's largest organ and consists of three main layers: the epidermis (top layer containing basal cells and melanocytes), the dermis (middle layer), and the hypodermis [1, 2]. Basal cell skin cancer occurs when basal cells in the lower part of the epidermis become abnormal and grow out of control [1, 2]. \n* **Connection to Risk Factors:** Because basal cell skin cancer typically develops in areas exposed to the sun, it most frequently occurs on sun-exposed areas of the body such as the face, head, neck, arms, legs, and trunk [1]. \n* **Symptoms & Presentation:** Due to these anatomical and environmental factors, skin lesions are often visibly found on the face, head, and neck [1]. When caught early, basal cell skin cancer is easily treatable, curable, and rarely metastasizes (spreads) [1].",
+     "correctness": {
+      "score": 0.5286430707675106,
+      "f1": 0.4285714285193877,
+      "factual_recall": 0.599999999988,
+      "factual_precision": 0.3333333333296296,
+      "similarity": 0.8288579975118794,
+      "tp": 3,
+      "fp": 6,
+      "fn": 2,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Basal cell skin cancer most frequently occurs on the face, head, neck, arms, legs, and trunk",
+         "reason": "Matches ground truth regarding anatomical location (face, head, neck, and sun-exposed areas)"
+        },
+        {
+         "statement": "Basal cell skin cancer typically develops in areas exposed to the sun",
+         "reason": "Matches ground truth about sun-exposed areas being most often affected"
+        },
+        {
+         "statement": "Skin lesions from basal cell skin cancer are often visibly found on the face, head, and neck",
+         "reason": "Matches ground truth regarding anatomical locations like the face, head, and neck"
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The skin is the body's largest organ",
+         "reason": "General anatomical fact not mentioned in the ground truth regarding basal cell carcinoma connections"
+        },
+        {
+         "statement": "The skin consists of three main layers: the epidermis, the dermis, and the hypodermis",
+         "reason": "General skin anatomy not present in ground truth"
+        },
+        {
+         "statement": "The epidermis is the top layer of the skin containing basal cells and melanocytes",
+         "reason": "Detailed layer definition not found in ground truth"
+        },
+        {
+         "statement": "The dermis is the middle layer of the skin",
+         "reason": "Detailed layer definition not found in ground truth"
+        },
+        {
+         "statement": "Basal cell skin cancer occurs when basal cells in the lower part of the epidermis become abnormal and grow out of control",
+         "reason": "Cellular mechanism details not present in ground truth"
+        },
+        {
+         "statement": "When caught early, basal cell skin cancer is easily treatable, curable, and rarely metastasizes",
+         "reason": "Prognosis and metastasis information not mentioned in ground truth"
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Risk factors for basal cell carcinoma include UV radiation and fair skin",
+         "reason": "Missing risk factors information present in ground truth"
+        },
+        {
+         "statement": "Basal cell carcinoma typically presents with flat pale or yellow areas, red patches, shiny bumps, open sores, or brown/black bumps with rolled borders",
+         "reason": "Missing symptom presentation details present in ground truth"
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Basal cell carcinoma most often affects sun-exposed areas such as the face, head, and neck, with risk factors including UV radiation and fair skin, and typically presents with symptoms like flat pale or yellow areas, red patches, shiny bumps, open sores, or brown/black bumps with rolled borders.",
+        "reason": "Specific details about anatomical locations like face, head, neck, fair skin, and various symptom descriptions are not present in the context.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "global_only": {
+     "context_chars": 0,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": null,
+     "correctness": {
+      "score": 0.0,
+      "f1": 0.0,
+      "factual_recall": 0.0,
+      "factual_precision": 0.0,
+      "similarity": 0.0,
+      "empty_context": true
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": []
+     }
+    },
+    "shipped": {
+     "context_chars": 6855,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, here is an explanation of the connections between risk factors, anatomical location, and characteristics of basal cell skin cancer (BCC):\n\n* **Anatomical Location:** Your skin is the body's largest organ and consists of three main layers: the epidermis (top layer containing basal cells and melanocytes), the dermis (middle layer), and the hypodermis [1, 2]. Basal cell skin cancer occurs when basal cells in the lower part of the epidermis become abnormal and grow out of control [1, 2]. \n* **Connection to Risk Factors:** Because basal cell skin cancer typically develops in areas exposed to the sun, it most frequently occurs on sun-exposed areas of the body such as the face, head, neck, arms, legs, and trunk [1]. \n* **Symptoms & Presentation:** Due to these anatomical and environmental factors, skin lesions are often visibly found on the face, head, and neck [1]. When caught early, basal cell skin cancer is easily treatable, curable, and rarely metastasizes (spreads) [1].",
+     "correctness": {
+      "score": 0.42150021363001067,
+      "f1": 0.2857142856693877,
+      "factual_recall": 0.4999999999875,
+      "factual_precision": 0.199999999998,
+      "similarity": 0.8288579975118794,
+      "tp": 2,
+      "fp": 8,
+      "fn": 2,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Basal cell skin cancer typically develops in areas exposed to the sun",
+         "reason": "Matches ground truth regarding basal cell carcinoma affecting sun-exposed areas"
+        },
+        {
+         "statement": "Basal cell skin cancer most frequently occurs on the face, head, neck, arms, legs, and trunk",
+         "reason": "Aligns with ground truth mentioning face, head, and neck as sun-exposed areas"
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The skin is the body's largest organ",
+         "reason": "General anatomical fact not mentioned in the ground truth regarding risk factors, symptoms, or location specific to BCC connections"
+        },
+        {
+         "statement": "The skin consists of three main layers: the epidermis, the dermis, and the hypodermis",
+         "reason": "General anatomical background not present in the ground truth"
+        },
+        {
+         "statement": "The epidermis is the top layer containing basal cells and melanocytes",
+         "reason": "Detailed skin layer composition not supported by the ground truth"
+        },
+        {
+         "statement": "The dermis is the middle layer of the skin",
+         "reason": "Unsupported anatomical detail regarding skin layers"
+        },
+        {
+         "statement": "Basal cell skin cancer occurs when basal cells in the lower part of the epidermis become abnormal and grow out of control",
+         "reason": "Pathophysiology explanation not present in the ground truth"
+        },
+        {
+         "statement": "Skin lesions from basal cell skin cancer are often visibly found on the face, head, and neck",
+         "reason": "Redundant with the location statement and specifies lesion visibility not directly in ground truth"
+        },
+        {
+         "statement": "When caught early, basal cell skin cancer is easily treatable and curable",
+         "reason": "Prognosis information not mentioned in the ground truth"
+        },
+        {
+         "statement": "Basal cell skin cancer rarely metastasizes or spreads",
+         "reason": "Metastasis information not contained within the ground truth"
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Risk factors for basal cell carcinoma include UV radiation and fair skin",
+         "reason": "Missing risk factors information present in the ground truth"
+        },
+        {
+         "statement": "Basal cell carcinoma typically presents with flat pale or yellow areas, red patches, shiny bumps, open sores, or brown/black bumps with rolled borders",
+         "reason": "Missing symptom presentations present in the ground truth"
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Basal cell carcinoma most often affects sun-exposed areas such as the face, head, and neck, with risk factors including UV radiation and fair skin, and typically presents with symptoms like flat pale or yellow areas, red patches, shiny bumps, open sores, or brown/black bumps with rolled borders.",
+        "reason": "The context mentions basal cell carcinoma, UV radiation, and skin lesions, but specific details about the face, head, neck, fair skin, and exact physical symptoms like flat pale areas or shiny bumps are not present in the provided context.",
+        "attributed": 0
+       }
+      ]
+     }
+    }
+   },
+   "seconds": 86.2,
+   "llm_calls": 17,
+   "embed_errors": 0,
+   "llm_errors": 0,
+   "valid": true
+  },
+  {
+   "id": "Medical-24373ebe",
+   "type": "Complex Reasoning",
+   "question": "How does the disease phase of CML affect the types of blood cells present?",
+   "answer": "Blast phase CML is characterized by increased blasts and progenitor cells, while chronic phase has increased mature granulocytes.",
+   "evidence": "Chronic phase CML has increased mature granulocytes. Blast phase CML is characterized by increased progenitor cells. Blast phase CML is characterized by increased blasts.",
+   "home_note": 16,
+   "home_margin": 0.0438,
+   "retrieval": {
+    "intent": "show_images",
+    "intent_overridden": false,
+    "entities": [
+     "Blood"
+    ],
+    "search_mode": null,
+    "vector_seeds": {
+     "count": 4,
+     "top_score": 0.8768
+    },
+    "concepts": 15,
+    "relationships": 56,
+    "notes": 2,
+    "note_titles": [
+     "NCCN patient guide excerpt 017",
+     "NCCN patient guide excerpt 018"
+    ],
+    "llm_calls": 0,
+    "seconds": 0.5,
+    "global_extra_llm_calls": 1,
+    "global_search_mode": null,
+    "vector_untruncated_context_recall": 0.0
+   },
+   "gold_statements": [
+    "Blast phase CML is characterized by increased blasts and progenitor cells",
+    "Chronic phase CML has increased mature granulocytes"
+   ],
+   "arms": {
+    "closed_book": {
+     "context_chars": 0,
+     "gen_seconds": 6.9,
+     "gen_llm_calls": 1,
+     "answer": "Chronic Myeloid Leukemia (CML) progresses through three distinct phases—**chronic phase, accelerated phase, and blast phase (or blast crisis)**—with each phase showing progressively worse disruptions in the types and maturity of blood cells present. \n\nHere is how each phase affects the blood cells:\n\n### 1. Chronic Phase (Early/Initial Phase)\n*   **Duration/Nature:** This is the earliest phase, where most patients are diagnosed. It is usually slow-growing and manageable.\n*   **Blood Cell Types Present:**\n    *   **White Blood Cells (WBCs):** Significantly elevated (leukocytosis). However, unlike an infection where mature WBCs fight disease, these WBCs are largely **myeloid lineage cells** at various stages of maturity (neutrophils, metamyelocytes, myelocytes, and occasionally a few blasts).\n    *   **Red Blood Cells (RBCs):** Often normal or slightly reduced, which may lead to mild anemia.\n    *   **Platelets:** Can be normal, abnormally high (thrombocytosis), or sometimes low.\n    *   **Blasts (Immature stem cells):** Make up less than 10% of the cells in the blood and bone marrow.\n\n### 2. Accelerated Phase (Transition Phase)\n*   **Duration/Nature:** The disease becomes more aggressive, stops responding as well to treatment, and bone marrow function worsens.\n*   **Blood Cell Types Present:**\n    *   **Blasts:** The percentage of immature blast cells increases, typically ranging between **10% and 19%** in the blood or bone marrow.\n    *   **Basophils:** There is often a notable increase in basophils (a type of WBC), sometimes making up 20% or more of the white blood cells.\n    *   **Platelets:** Counts become unstable—either dropping dangerously low (causing bleeding/bruising) or rising too high (causing clotting), regardless of treatment.\n    *   **Red Blood Cells:** Anemia becomes more pronounced due to the bone marrow being crowded out by abnormal cells.\n\n### 3. Blast Phase / Blast Crisis (Advanced/Acute Phase)\n*   **Duration/Nature:** This is the final, most aggressive phase of CML, behaving very similarly to acute leukemia. \n*   **Blood Cell Types Present:**\n    *   **Blasts:** Immature blast cells proliferate uncontrollably, making up **20% or more** of the white blood cells in the blood or cells in the bone marrow. \n    *   **Normal Blood Cells:** The production of normal, healthy red blood cells, platelets, and mature white blood cells drops drastically because the bone marrow is overwhelmed by primitive blast cells.\n    *   **Consequences:** This results in severe anemia (fatigue, weakness), severe neutropenia (high risk of life-threatening infections), and severe thrombocytopenia (spontaneous bleeding and bruising).\n\n### Summary\nIn short, as CML progresses from the **chronic phase** to the **blast phase**, the blood and bone marrow shift from containing an excess of *semi-mature and maturing myeloid cells* to being overrun by *immature blast cells*, while normal, healthy blood cells are severely depleted.",
+     "correctness": {
+      "score": 0.33450980619603077,
+      "f1": 0.1666666666361111,
+      "factual_recall": 0.499999999975,
+      "factual_precision": 0.099999999999,
+      "similarity": 0.8380392248757897,
+      "tp": 1,
+      "fp": 9,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "In the chronic phase, white blood cells are significantly elevated",
+         "reason": "Aligns with the ground truth that chronic phase CML has increased mature granulocytes (which are a type of white blood cell)."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Chronic Myeloid Leukemia (CML) progresses through three distinct phases: chronic phase, accelerated phase, and blast phase",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "The chronic phase is the earliest phase of CML where most patients are diagnosed",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "In the chronic phase, blasts make up less than 10% of the cells in the blood and bone marrow",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "The accelerated phase is more aggressive and bone marrow function worsens",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "In the accelerated phase, the percentage of immature blast cells typically ranges between 10% and 19% in the blood or bone marrow",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "In the accelerated phase, there is often a notable increase in basophils",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "The blast phase is the final, most aggressive phase of CML",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "In the blast phase, immature blast cells make up 20% or more of the white blood cells in the blood or cells in the bone marrow",
+         "reason": "Not explicitly stated with these percentages in the ground truth."
+        },
+        {
+         "statement": "In the blast phase, the production of normal, healthy red blood cells, platelets, and mature white blood cells drops drastically",
+         "reason": "Not mentioned in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Blast phase CML is characterized by increased blasts and progenitor cells",
+         "reason": "Missing from the answer statements regarding the specific cellular characterization of the blast phase."
+        }
+       ]
+      }
+     }
+    },
+    "vector_only": {
+     "context_chars": 1099,
+     "gen_seconds": 3.7,
+     "gen_llm_calls": 1,
+     "answer": "Based on your notes, the disease phase of Chronic Myeloid Leukemia (CML) affects the types of blood cells present in the following ways:\n\n* **Standard CML:** This phase is thought to arise from blood stem cells that produce an increased amount of *myeloid progenitor cells*, which form into myeloblasts and other non-lymphoid blood cells [1].\n* **Blast Phase CML (BP-CML):** This advanced form of CML causes an increased amount of either *lymphoid or myeloid progenitor cells* [1]. The specific type of blast phase cell present will directly affect the treatment approach [1].",
+     "correctness": {
+      "score": 0.21200638207725916,
+      "f1": 0.0,
+      "factual_recall": 0.0,
+      "factual_precision": 0.0,
+      "similarity": 0.8480255283090367,
+      "tp": 0,
+      "fp": 5,
+      "fn": 2,
+      "classification": {
+       "TP": [],
+       "FP": [
+        {
+         "statement": "Standard CML is thought to arise from blood stem cells that produce an increased amount of myeloid progenitor cells",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Myeloid progenitor cells form into myeloblasts and other non-lymphoid blood cells",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Blast Phase CML (BP-CML) is an advanced form of CML",
+         "reason": "Not explicitly stated in the ground truth."
+        },
+        {
+         "statement": "Blast Phase CML causes an increased amount of either lymphoid or myeloid progenitor cells",
+         "reason": "Ground truth states blast phase CML is characterized by increased blasts and progenitor cells, but does not specify lymphoid vs myeloid."
+        },
+        {
+         "statement": "The specific type of blast phase cell present will directly affect the treatment approach",
+         "reason": "Not mentioned in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Blast phase CML is characterized by increased blasts and progenitor cells",
+         "reason": "Directly stated in ground truth but missing from the answer."
+        },
+        {
+         "statement": "Chronic phase CML has increased mature granulocytes",
+         "reason": "Directly stated in ground truth regarding the disease phases of CML affecting blood cell types, but missing from the answer."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Blast phase CML is characterized by increased blasts and progenitor cells, while chronic phase has increased mature granulocytes.",
+        "reason": "The context does not contain information about the blast phase or chronic phase of CML and their associated cell types.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "graph_only": {
+     "context_chars": 3389,
+     "gen_seconds": 5.3,
+     "gen_llm_calls": 1,
+     "answer": "Based on your current notes, there is insufficient information to fully explain how the different disease phases of Chronic Myeloid Leukemia (CML) specifically affect the types of blood cells present. \n\nYour notes do note that CML generally involves the overproduction of white blood cells—specifically granulocytes—and mentions that the **Blast Phase** is an advanced, aggressive form of CML characterized by an increased amount of lymphoid or myeloid progenitor cells. However, your notes do not contain detailed breakdowns of how other specific disease phases alter the full spectrum of blood cells.\n\nTo help answer this comprehensively, I suggest adding notes on:\n* The specific characteristics of the chronic, accelerated, and blast phases of CML.\n* How cell counts (such as red blood cells, platelets, and immature blast cells) shift across each distinct phase.",
+     "correctness": {
+      "score": 0.5822652920268573,
+      "f1": 0.499999999940625,
+      "factual_recall": 0.6666666666444444,
+      "factual_precision": 0.399999999992,
+      "similarity": 0.8290611682855541,
+      "tp": 2,
+      "fp": 3,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Chronic Myeloid Leukemia (CML) generally involves the overproduction of white blood cells, specifically granulocytes",
+         "reason": "Matches ground truth stating chronic phase CML has increased mature granulocytes."
+        },
+        {
+         "statement": "The Blast Phase is characterized by an increased amount of lymphoid or myeloid progenitor cells",
+         "reason": "Matches ground truth stating blast phase CML is characterized by increased blasts and progenitor cells."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The Blast Phase is an advanced, aggressive form of CML",
+         "reason": "While factually true in medicine, it is not directly supported by the provided ground truth statements."
+        },
+        {
+         "statement": "The current notes contain insufficient information to fully explain how different CML disease phases specifically affect the types of blood cells present",
+         "reason": "Unsupported hedge statement, as the provided ground truth actually contains the necessary information for the chronic and blast phases."
+        },
+        {
+         "statement": "The current notes lack detailed breakdowns of how specific disease phases other than the blast phase alter the full spectrum of blood cells",
+         "reason": "Unsupported hedge statement, as the notes/ground truth do cover the chronic phase."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Blast phase CML is characterized by increased blasts",
+         "reason": "Missing the specific mention of 'increased blasts' from the ground truth."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Blast phase CML is characterized by increased blasts and progenitor cells, while chronic phase has increased mature granulocytes.",
+        "reason": "The context states blast phase has increased progenitor cells and granulocytes are overproduced in CML, but it does not contain the complete comparison regarding chronic phase mature granulocytes.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "global_only": {
+     "context_chars": 0,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": null,
+     "correctness": {
+      "score": 0.0,
+      "f1": 0.0,
+      "factual_recall": 0.0,
+      "factual_precision": 0.0,
+      "similarity": 0.0,
+      "empty_context": true
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": []
+     }
+    },
+    "shipped": {
+     "context_chars": 4490,
+     "gen_seconds": 5.1,
+     "gen_llm_calls": 1,
+     "answer": "Based on your notes, the phase of chronic myeloid leukemia (CML) directly influences the types of progenitor and immature cells present:\n\n* **Standard Chronic Myeloid Leukemia:** CML typically arises from blood stem cells that produce an increased amount of myeloid progenitor cells [1]. These myeloid progenitor cells further develop into myeloblasts and other non-lymphoid blood cells [1]. Granulocytes (such as neutrophils, eosinophils, and basophils) are also typically overproduced in CML.\n* **Blast Phase CML (BP-CML):** This is an advanced, aggressive form of the disease [1]. Unlike the earlier phase, blast phase CML causes an increased amount of *either* lymphoid or myeloid progenitor cells [1]. The specific type of blast phase cell present will directly affect the treatment approach [1]. \n\n*(Note: No image or figure block was provided in your notes to accompany this response.)*",
+     "correctness": {
+      "score": 0.5650149596832337,
+      "f1": 0.46153846148402367,
+      "factual_recall": 0.599999999988,
+      "factual_precision": 0.3749999999953125,
+      "similarity": 0.8754444542808637,
+      "tp": 3,
+      "fp": 5,
+      "fn": 2,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Granulocytes are typically overproduced in CML",
+         "reason": "Matches ground truth stating chronic phase CML has increased mature granulocytes."
+        },
+        {
+         "statement": "Blast phase CML (BP-CML) is an advanced, aggressive form of the disease",
+         "reason": "Accurately describes blast phase CML, aligning with ground truth about blast phase CML."
+        },
+        {
+         "statement": "Blast phase CML causes an increased amount of either lymphoid or myeloid progenitor cells",
+         "reason": "Matches ground truth that blast phase CML is characterized by increased blasts and progenitor cells."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The phase of chronic myeloid leukemia (CML) directly influences the types of progenitor and immature cells present",
+         "reason": "Too broad/introductory, though related, it's not explicitly stated in this form in the ground truth."
+        },
+        {
+         "statement": "CML typically arises from blood stem cells that produce an increased amount of myeloid progenitor cells",
+         "reason": "Provides general disease mechanism details not mentioned in the ground truth."
+        },
+        {
+         "statement": "Myeloid progenitor cells further develop into myeloblasts and other non-lymphoid blood cells",
+         "reason": "Background biological detail not present in the ground truth."
+        },
+        {
+         "statement": "Granulocytes include neutrophils, eosinophils, and basophils",
+         "reason": "Definitional detail about granulocytes that is absent from the ground truth."
+        },
+        {
+         "statement": "The specific type of blast phase cell present will directly affect the treatment approach",
+         "reason": "Discusses treatment implications which are entirely missing from the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Blast phase CML is characterized by increased blasts and progenitor cells",
+         "reason": "Ground truth statement about blast phase CML characteristics that was paraphrased or partially missed in specific wording."
+        },
+        {
+         "statement": "Chronic phase CML has increased mature granulocytes",
+         "reason": "The specific mention of the 'chronic phase' and its characteristic feature was not fully captured as a distinct state in the answer."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Blast phase CML is characterized by increased blasts and progenitor cells, while chronic phase has increased mature granulocytes.",
+        "reason": "The context mentions blast phase features (increased lymphoid or myeloid progenitor cells) and granulocyte overproduction in CML, but does not state the specific blood cell characteristics of a separate chronic phase as described.",
+        "attributed": 0
+       }
+      ]
+     }
+    }
+   },
+   "seconds": 90.8,
+   "llm_calls": 18,
+   "embed_errors": 0,
+   "llm_errors": 0,
+   "valid": true
+  },
+  {
+   "id": "Medical-081395a7",
+   "type": "Contextual Summarize",
+   "question": "Which diagnostic methods are commonly used to evaluate adrenal tumors and what is their purpose?",
+   "answer": "Adrenal tumors are commonly evaluated using imaging tests such as CT scan, MRI scan, PET scan, FDG-PET/CT, and SSTR-PET/CT, as well as blood and biochemical tests to detect hormone secretion, with genetic testing and biopsy also used for diagnosis.",
+   "evidence": "Biopsy is also used for the diagnosis of adrenal tumors. Genetic testing is used for the diagnosis of adrenal tumors. Blood and biochemical tests are used to detect hormone secretion in adrenal tumors. Common imaging tests for adrenal tumors include CT scan, MRI scan, PET scan, FDG-PET/CT, and SSTR-PET/CT. Adrenal tumors are commonly evaluated using imaging tests.",
+   "home_note": 4,
+   "home_margin": 0.1881,
+   "retrieval": {
+    "intent": "explain",
+    "intent_overridden": false,
+    "entities": [
+     "adrenal tumors",
+     "diagnostic methods"
+    ],
+    "search_mode": null,
+    "vector_seeds": null,
+    "concepts": 0,
+    "relationships": 0,
+    "notes": 4,
+    "note_titles": [
+     "NCCN patient guide excerpt 005",
+     "NCCN patient guide excerpt 002",
+     "NCCN patient guide excerpt 004",
+     "NCCN patient guide excerpt 003"
+    ],
+    "llm_calls": 1,
+    "seconds": 3.0,
+    "global_extra_llm_calls": 2,
+    "global_search_mode": "global_map_reduce",
+    "vector_untruncated_context_recall": 0.0
+   },
+   "gold_statements": [
+    "Adrenal tumors are commonly evaluated using CT scan, MRI scan, PET scan, FDG-PET/CT, and SSTR-PET/CT",
+    "Blood and biochemical tests are used to detect hormone secretion in adrenal tumors",
+    "Genetic testing is used for the diagnosis of adrenal tumors",
+    "Biopsy is used for the diagnosis of adrenal tumors"
+   ],
+   "arms": {
+    "closed_book": {
+     "context_chars": 0,
+     "gen_seconds": 7.4,
+     "gen_llm_calls": 1,
+     "answer": "Evaluating adrenal tumors requires a combination of biochemical (laboratory) testing and imaging modalities. The main purpose of this evaluation is twofold: **to determine if the tumor is hormonally active (secreting excess hormones)** and **to determine if the tumor is benign (non-cancerous) or malignant (cancerous).**\n\nHere are the commonly used diagnostic methods and their specific purposes:\n\n### 1. Biochemical (Laboratory) Testing\nBecause many adrenal tumors are discovered incidentally (\"incidentalomas\") without overt symptoms, hormone-secreting workups are mandatory for all newly discovered adrenal masses.\n\n*   **24-Hour Urine Free Cortisol, Overnight 1 mg Dexamethasone Suppression Test, or Late-Night Salivary Cortisol:**\n    *   *Purpose:* To check for Cushing's syndrome (excess cortisol production).\n*   **Plasma Free Metanephrines or 24-Hour Urine Metanephrines and Catecholamines:**\n    *   *Purpose:* To screen for a pheochromocytoma (a rare, catecholamine-secreting tumor of the adrenal medulla). **Crucial note:** This must be ruled out before any biopsy or surgery to prevent a dangerous spike in blood pressure.\n*   **Plasma Aldosterone-to-Renin Ratio (ARR):**\n    *   *Purpose:* To evaluate for primary aldosteronism (Conn's syndrome, which causes high blood pressure and low potassium), especially in patients with hypertension.\n*   **Sex Hormones (DHEA-S, Testosterone, Estradiol):**\n    *   *Purpose:* To check for virilizing or feminizing adrenal tumors, which are more commonly malignant.\n\n---\n\n### 2. Imaging Modalities\nImaging helps determine the physical characteristics of the tumor, such as size, shape, borders, and tissue density.\n\n*   **Adrenal-Protocol Computed Tomography (CT) Scan:**\n    *   *Purpose:* This is the gold-standard imaging test. A specialized CT uses \"contrast washout\" to measure the lipid content of the tumor. Benign adenomas are rich in intracellular fat and wash out contrast quickly, whereas malignant tumors, cysts, and pheochromocytomas retain contrast longer. CT also assesses tumor size and invasion into surrounding tissues.\n*   **Magnetic Resonance Imaging (MRI):**\n    *   *Purpose:* Often used as a problem-solving tool if CT results are indeterminate, or to evaluate whether a tumor has invaded major blood vessels (like the vena cava). It is also useful in characterizing pheochromocytomas.\n*   **Functional Imaging (MIBG scan, PET/CT with 18F-FDG or specific tracers):**\n    *   *Purpose:* Used when malignancy is suspected, to stage known adrenal cancer, or to locate extra-adrenal pheochromocytomas. FDG-PET is particularly helpful because malignant tumors have a higher metabolic rate (glucose uptake) than benign ones.\n\n---\n\n### 3. Histopathological Evaluation (Biopsy)\n*   **Fine-Needle Aspiration (FNA):**\n    *   *Purpose:* **Not routinely recommended.** Biopsies of adrenal masses are generally avoided unless there is a known history of extra-adrenal cancer (e.g., lung or breast cancer) and doctors need to confirm metastasis, *and* only after pheochromocytoma has been strictly ruled out. This is because biopsies cannot reliably distinguish between benign and malignant primary adrenal cortical tumors, and they carry a risk of bleeding or seeding cancer cells if the tumor is a pheochromocytoma or adrenocortical carcinoma. \n\n### Summary of Purposes\n*   **Rule out malignancy:** Based on size (>4 cm usually raises concern), CT density (Hounsfield units), and growth rate.\n*   **Rule out hyperfunction:** Ensuring the tumor is not secretly overproducing cortisol, aldosterone, or catecholamines.",
+     "correctness": {
+      "score": 0.29559220800713903,
+      "f1": 0.099999999981,
+      "factual_recall": 0.499999999975,
+      "factual_precision": 0.05555555555524692,
+      "similarity": 0.882368832085556,
+      "tp": 1,
+      "fp": 17,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Evaluating adrenal tumors requires a combination of biochemical testing and imaging modalities.",
+         "reason": "Matches ground truth concepts of using CT/MRI/PET scans and blood/biochemical tests."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "The main purpose of evaluating adrenal tumors is to determine if the tumor is hormonally active and if the tumor is benign or malignant.",
+         "reason": "Detailed purpose not explicitly mentioned in the concise ground truth."
+        },
+        {
+         "statement": "Hormone-secreting workups are mandatory for all newly discovered adrenal masses.",
+         "reason": "Not stated in the ground truth."
+        },
+        {
+         "statement": "24-Hour Urine Free Cortisol, Overnight 1 mg Dexamethasone Suppression Test, or Late-Night Salivary Cortisol check for Cushing's syndrome.",
+         "reason": "Specific tests are not detailed in the ground truth."
+        },
+        {
+         "statement": "Plasma Free Metanephrines or 24-Hour Urine Metanephrines and Catecholamines screen for a pheochromocytoma.",
+         "reason": "Specific tests are not detailed in the ground truth."
+        },
+        {
+         "statement": "Pheochromocytoma must be ruled out before any biopsy or surgery to prevent a dangerous spike in blood pressure.",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Plasma Aldosterone-to-Renin Ratio evaluates for primary aldosteronism.",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Sex Hormones check for virilizing or feminizing adrenal tumors, which are more commonly malignant.",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Adrenal-Protocol Computed Tomography Scan is the gold-standard imaging test.",
+         "reason": "While CT scan is in the ground truth, the specific details about gold standard are not."
+        },
+        {
+         "statement": "Benign adenomas are rich in intracellular fat and wash out contrast quickly.",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Malignant tumors, cysts, and pheochromocytomas retain contrast longer on CT scans.",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Magnetic Resonance Imaging is used as a problem-solving tool if CT results are indeterminate or to evaluate major blood vessel invasion.",
+         "reason": "While MRI is in the ground truth, these specific indications are not."
+        },
+        {
+         "statement": "Functional Imaging is used when malignancy is suspected, to stage known adrenal cancer, or to locate extra-adrenal pheochromocytomas.",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "FDG-PET is helpful because malignant tumors have a higher metabolic rate than benign ones.",
+         "reason": "While PET is in the ground truth, this detailed explanation is not."
+        },
+        {
+         "statement": "Fine-Needle Aspiration of adrenal masses is not routinely recommended.",
+         "reason": "Contradicts the ground truth inclusion of biopsy for diagnosis."
+        },
+        {
+         "statement": "Biopsies cannot reliably distinguish between benign and malignant primary adrenal cortical tumors.",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Biopsies carry a risk of bleeding or seeding cancer cells if the tumor is a pheochromocytoma or adrenocortical carcinoma.",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "A tumor size greater than 4 cm usually raises concern for malignancy.",
+         "reason": "Not mentioned in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Genetic testing is used for the diagnosis of adrenal tumors",
+         "reason": "Present in ground truth but missing from the answer."
+        }
+       ]
+      }
+     }
+    },
+    "vector_only": {
+     "context_chars": 2179,
+     "gen_seconds": 3.5,
+     "gen_llm_calls": 1,
+     "answer": "Based on your notes, several diagnostic methods and evaluations are commonly used to assess adrenal tumors:\n\n*   **Imaging Tests (e.g., CT or MRI Scans):** Many adrenal tumors do not cause symptoms and are frequently discovered incidentally through imaging tests performed for unrelated reasons [2]. Imaging is also used during the testing and treatment planning phases [4].\n*   **Blood and Biochemical Tests:** These tests measure substances such as hormones in the blood, urine, or saliva (which may be produced by the adrenal tumor) [1]. Their purpose is to look for signs of hormone secretion, evaluate how well the body is responding to certain treatments, or help identify symptoms caused by the body making an excess of a hormone [1].\n*   **Somatostatin Receptor-PET (SSTR-PET):** This scan uses a specific tracer that binds to somatostatin receptor antagonists (proteins found on the surface of cells that bind to the hormone somatostatin) [1]. \n*   **Genetic Tests and Biopsies:** These are included among the general testing options utilized during the diagnosis and treatment planning process for adrenal tumors [4].",
+     "correctness": {
+      "score": 0.7662941629965643,
+      "f1": 0.7142857142265306,
+      "factual_recall": 0.8333333333194445,
+      "factual_precision": 0.6249999999921875,
+      "similarity": 0.922319509306665,
+      "tp": 5,
+      "fp": 3,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Imaging tests such as CT or MRI scans are used during testing and treatment planning phases for adrenal tumors",
+         "reason": "Matches ground truth stating adrenal tumors are commonly evaluated using CT and MRI scans."
+        },
+        {
+         "statement": "Blood and biochemical tests measure substances such as hormones in the blood, urine, or saliva",
+         "reason": "Aligns with ground truth regarding blood and biochemical tests used to detect hormone secretion."
+        },
+        {
+         "statement": "Blood and biochemical tests look for signs of hormone secretion, evaluate treatment response, or help identify symptoms caused by excess hormone production",
+         "reason": "Consistent with ground truth on blood and biochemical tests detecting hormone secretion."
+        },
+        {
+         "statement": "Somatostatin Receptor-PET (SSTR-PET) uses a specific tracer that binds to somatostatin receptor antagonists",
+         "reason": "Supports ground truth mentioning SSTR-PET/CT as a diagnostic evaluation method."
+        },
+        {
+         "statement": "Genetic tests and biopsies are included among the general testing options utilized during the diagnosis and treatment planning process for adrenal tumors",
+         "reason": "Directly matches ground truth stating genetic testing and biopsy are used for diagnosis."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Many adrenal tumors do not cause symptoms",
+         "reason": "Not mentioned in the ground truth statements."
+        },
+        {
+         "statement": "Adrenal tumors are frequently discovered incidentally through imaging tests performed for unrelated reasons",
+         "reason": "Not mentioned in the ground truth statements."
+        },
+        {
+         "statement": "Somatostatin receptor antagonists are proteins found on the surface of cells that bind to the hormone somatostatin",
+         "reason": "Detailed definition not supported by the concise ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Adrenal tumors are commonly evaluated using PET scan and FDG-PET/CT",
+         "reason": "Ground truth specifically lists PET scan and FDG-PET/CT alongside CT, MRI, and SSTR-PET."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Adrenal tumors are commonly evaluated using imaging tests such as CT scan, MRI scan, PET scan, FDG-PET/CT, and SSTR-PET/CT, as well as blood and biochemical tests to detect hormone secretion, with genetic testing and biopsy also used for diagnosis.",
+        "reason": "The context mentions MRI scans and blood tests, but lacks information on CT scans, PET scans, biopsies, and specific hormone evaluations listed.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "graph_only": {
+     "context_chars": 0,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": null,
+     "correctness": {
+      "score": 0.0,
+      "f1": 0.0,
+      "factual_recall": 0.0,
+      "factual_precision": 0.0,
+      "similarity": 0.0,
+      "empty_context": true
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": []
+     }
+    },
+    "global_only": {
+     "context_chars": 814,
+     "gen_seconds": 0.1,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, several diagnostic methods and evaluations are commonly used to assess adrenal tumors:\n\n*   **Imaging Tests (e.g., CT or MRI Scans):** Many adrenal tumors do not cause symptoms and are frequently discovered incidentally through imaging tests performed for unrelated reasons [2]. Imaging is also used during the testing and treatment planning phases [4].\n*   **Blood and Biochemical Tests:** These tests measure substances such as hormones in the blood, urine, or saliva (which may be produced by the adrenal tumor) [1]. Their purpose is to look for signs of hormone secretion, evaluate how well the body is responding to certain treatments, or help identify symptoms caused by the body making an excess of a hormone [1].\n*   **Somatostatin Receptor-PET (SSTR-PET):** This scan uses a specific tracer that binds to somatostatin receptor antagonists (proteins found on the surface of cells that bind to the hormone somatostatin) [1]. \n*   **Genetic Tests and Biopsies:** These are included among the general testing options utilized during the diagnosis and treatment planning process for adrenal tumors [4].",
+     "correctness": {
+      "score": 0.6305798772879996,
+      "f1": 0.5333333332817778,
+      "factual_recall": 0.799999999984,
+      "factual_precision": 0.399999999996,
+      "similarity": 0.922319509306665,
+      "tp": 4,
+      "fp": 6,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Imaging tests such as CT or MRI scans are used during testing and treatment planning phases",
+         "reason": "Matches ground truth stating CT and MRI scans are used to evaluate adrenal tumors."
+        },
+        {
+         "statement": "Blood and biochemical tests measure substances such as hormones in the blood, urine, or saliva",
+         "reason": "Aligns with ground truth regarding blood and biochemical tests used to detect hormone secretion."
+        },
+        {
+         "statement": "Blood and biochemical tests look for signs of hormone secretion",
+         "reason": "Directly matches ground truth that blood and biochemical tests detect hormone secretion."
+        },
+        {
+         "statement": "Genetic tests and biopsies are included among the general testing options utilized during the diagnosis and treatment planning process for adrenal tumors",
+         "reason": "Matches ground truth regarding the use of genetic testing and biopsy for diagnosis."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Many adrenal tumors do not cause symptoms",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Adrenal tumors are frequently discovered incidentally through imaging tests performed for unrelated reasons",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Blood and biochemical tests evaluate how well the body is responding to certain treatments",
+         "reason": "Not supported by the ground truth, which only mentions their use to detect hormone secretion."
+        },
+        {
+         "statement": "Blood and biochemical tests help identify symptoms caused by the body making an excess of a hormone",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Somatostatin Receptor-PET uses a specific tracer that binds to somatostatin receptor antagonists",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Somatostatin receptor antagonists are proteins found on the surface of cells that bind to the hormone somatostatin",
+         "reason": "Not mentioned in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Adrenal tumors are commonly evaluated using PET scan, FDG-PET/CT, and SSTR-PET/CT",
+         "reason": "Missing specific advanced imaging modalities mentioned in the ground truth."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Adrenal tumors are commonly evaluated using imaging tests such as CT scan, MRI scan, PET scan, FDG-PET/CT, and SSTR-PET/CT, as well as blood and biochemical tests to detect hormone secretion, with genetic testing and biopsy also used for diagnosis.",
+        "reason": "While some imaging tests like CT scans and FDG-PET are mentioned in the context, others (like MRI, PET scan, SSTR-PET/CT, blood tests, and biopsy) are not mentioned.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "shipped": {
+     "context_chars": 2179,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, several diagnostic methods and evaluations are commonly used to assess adrenal tumors:\n\n*   **Imaging Tests (e.g., CT or MRI Scans):** Many adrenal tumors do not cause symptoms and are frequently discovered incidentally through imaging tests performed for unrelated reasons [2]. Imaging is also used during the testing and treatment planning phases [4].\n*   **Blood and Biochemical Tests:** These tests measure substances such as hormones in the blood, urine, or saliva (which may be produced by the adrenal tumor) [1]. Their purpose is to look for signs of hormone secretion, evaluate how well the body is responding to certain treatments, or help identify symptoms caused by the body making an excess of a hormone [1].\n*   **Somatostatin Receptor-PET (SSTR-PET):** This scan uses a specific tracer that binds to somatostatin receptor antagonists (proteins found on the surface of cells that bind to the hormone somatostatin) [1]. \n*   **Genetic Tests and Biopsies:** These are included among the general testing options utilized during the diagnosis and treatment planning process for adrenal tumors [4].",
+     "correctness": {
+      "score": 0.6921183388225243,
+      "f1": 0.6153846153278106,
+      "factual_recall": 0.799999999984,
+      "factual_precision": 0.49999999999375,
+      "similarity": 0.922319509306665,
+      "tp": 4,
+      "fp": 4,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Imaging tests such as CT or MRI scans are used during testing and treatment planning phases for adrenal tumors",
+         "reason": "Matches ground truth stating adrenal tumors are commonly evaluated using CT scan and MRI scan."
+        },
+        {
+         "statement": "Blood and biochemical tests measure substances such as hormones in the blood, urine, or saliva",
+         "reason": "Aligns with ground truth regarding blood and biochemical tests used to detect hormone secretion."
+        },
+        {
+         "statement": "Blood and biochemical tests look for signs of hormone secretion, evaluate treatment response, or help identify symptoms of excess hormones",
+         "reason": "Aligns with ground truth that blood and biochemical tests are used to detect hormone secretion."
+        },
+        {
+         "statement": "Genetic tests and biopsies are included among the general testing options utilized during the diagnosis and treatment planning process for adrenal tumors",
+         "reason": "Matches ground truth stating genetic testing and biopsy are used for the diagnosis of adrenal tumors."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Many adrenal tumors do not cause symptoms",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Adrenal tumors are frequently discovered incidentally through imaging tests performed for unrelated reasons",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Somatostatin Receptor-PET uses a specific tracer that binds to somatostatin receptor antagonists",
+         "reason": "Details about tracers and antagonists are not present in the ground truth."
+        },
+        {
+         "statement": "Somatostatin receptor antagonists are proteins found on the surface of cells that bind to the hormone somatostatin",
+         "reason": "Detailed definition of somatostatin receptor antagonists is not in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Adrenal tumors are commonly evaluated using PET scan, FDG-PET/CT, and SSTR-PET/CT",
+         "reason": "Missing specific mention of PET scan, FDG-PET/CT, and SSTR-PET/CT as listed in the ground truth."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Adrenal tumors are commonly evaluated using imaging tests such as CT scan, MRI scan, PET scan, FDG-PET/CT, and SSTR-PET/CT, as well as blood and biochemical tests to detect hormone secretion, with genetic testing and biopsy also used for diagnosis.",
+        "reason": "The context mentions MRI scans, blood tests, and genetic conditions related to adrenal tumors, but it does not contain the specific list of all these diagnostic methods and their purposes.",
+        "attributed": 0
+       }
+      ]
+     }
+    }
+   },
+   "seconds": 94.0,
+   "llm_calls": 20,
+   "embed_errors": 0,
+   "llm_errors": 0,
+   "valid": true
+  },
+  {
+   "id": "Medical-e3da3cd7",
+   "type": "Complex Reasoning",
+   "question": "Which diagnostic methods are common to both adrenocortical carcinoma (ACC) and pheochromocytoma, and which are unique to ACC?",
+   "answer": "CT scan, MRI scan, and biochemical test are common to both; PET scan, FDG-PET/CT, SSTR-PET/CT, blood test, genetic test, and biopsy are unique to ACC.",
+   "evidence": "Biopsy is a diagnostic method unique to adrenocortical carcinoma (ACC). Genetic test is a diagnostic method unique to adrenocortical carcinoma (ACC). Blood test is a diagnostic method unique to adrenocortical carcinoma (ACC). SSTR-PET/CT is a diagnostic method unique to adrenocortical carcinoma (ACC). FDG-PET/CT is a diagnostic method unique to adrenocortical carcinoma (ACC). PET scan is a diagnostic method unique to adrenocortical carcinoma (ACC). Biochemical test is a common diagnostic method for both adrenocortical carcinoma (ACC) and pheochromocytoma. MRI scan is a common diagnostic method for both adrenocortical carcinoma (ACC) and pheochromocytoma. CT scan is a common diagnostic method for both adrenocortical carcinoma (ACC) and pheochromocytoma.",
+   "home_note": 2,
+   "home_margin": 0.0896,
+   "retrieval": {
+    "intent": "compare",
+    "intent_overridden": false,
+    "entities": [
+     "adrenocortical carcinoma",
+     "ACC",
+     "pheochromocytoma"
+    ],
+    "search_mode": null,
+    "vector_seeds": null,
+    "concepts": 18,
+    "relationships": 72,
+    "notes": 3,
+    "note_titles": [
+     "NCCN patient guide excerpt 003",
+     "NCCN patient guide excerpt 005",
+     "NCCN patient guide excerpt 002"
+    ],
+    "llm_calls": 1,
+    "seconds": 3.7,
+    "global_extra_llm_calls": 1,
+    "global_search_mode": null,
+    "vector_untruncated_context_recall": 0.0
+   },
+   "gold_statements": [
+    "CT scan, MRI scan, and biochemical test are common to both",
+    "PET scan, FDG-PET/CT, SSTR-PET/CT, blood test, genetic test, and biopsy are unique to ACC"
+   ],
+   "arms": {
+    "closed_book": {
+     "context_chars": 0,
+     "gen_seconds": 8.2,
+     "gen_llm_calls": 1,
+     "answer": "Based on standard clinical endocrinology and oncology guidelines, here is the comparison of diagnostic methods for Adrenocortical Carcinoma (ACC) and Pheochromocytoma:\n\n### 1. Diagnostic Methods Common to Both ACC and Pheochromocytoma\nBoth conditions are tumors of the adrenal gland that often present with mass effects or hormone hypersecretion. Therefore, they share several initial and staging diagnostic modalities:\n\n*   **Cross-Sectional Imaging (CT and MRI):** \n    *   **Computed Tomography (CT):** Abdominal/pelvic CT with contrast is the primary imaging modality for characterizing adrenal masses and assessing local invasion, tumor size, and lymph node involvement for both ACC and pheochromocytoma.\n    *   **Magnetic Resonance Imaging (MRI):** Used in both conditions to further characterize indeterminate adrenal masses, assess vascular invasion (such as into the inferior vena cava), or when CT contrast is contraindicated.\n*   **Biochemical Evaluation (Hormonal Workup):**\n    *   Both tumors can be functional (hormone-secreting). Standard biochemical screening for both includes checking for **catecholamine excess** (plasma free metanephrines or 24-hour urinary fractionated metanephrines), as some ACCs can also secrete catecholamines or mixed hormones, and pheochromocytomas routinely do.\n    *   Both also require screening for **Cushing's syndrome** (e.g., overnight 1-mg dexamethasone suppression test, 24-hour urinary free cortisol) because ACC frequently causes hypercortisolemia, and a subset of pheochromocytomas can concurrently secrete cortisol or ACTH.\n*   **Functional/Molecular Imaging:**\n    *   **PET/CT:** 18F-FDG PET/CT is commonly used in both conditions—particularly for staging and assessing metastatic disease in ACC, and for metastatic or extra-adrenal (paraganglioma) detection in pheochromocytoma.\n\n---\n\n### 2. Diagnostic Methods Unique to ACC\nBecause ACC is a malignant epithelial carcinoma of the adrenal cortex (whereas pheochromocytoma arises from the adrenal medulla's chromaffin cells), specific diagnostic methods and specific hormone panels are unique to ACC:\n\n*   **Specific Steroid Profiling Unique to ACC:**\n    *   **Serum Steroid Hormone Panels / Mass Spectrometry:** ACC is characterized by the inefficient synthesis of cortisol, leading to the massive accumulation and secretion of precursor steroids and sex hormones. Unique diagnostic blood tests for ACC include elevated levels of **dehydroepiandrosterone sulfate (DHEA-S), androstenedione, 11-deoxycortisol, 17-hydroxyprogesterone, and progesterone**. Pheochromocytomas do not secrete these steroid hormones.\n*   **Pathological Histological Scoring Systems (Unique to ACC Diagnosis):**\n    *   Because imaging alone cannot always reliably distinguish benign adrenocortical adenomas from ACC, definitive diagnosis relies on surgical resection and specialized pathology scores:\n        *   **Weiss System:** The gold standard histological scoring system for ACC, which evaluates nine specific histologic criteria (e.g., high nuclear grade, mitotic rate, atypical mitoses, clear cells comprising $\\le 25\\%$ of the tumor, diffuse architecture, necrosis, sinusoidal invasion, venous invasion, and capsular invasion). A Weiss score $\\ge 3$ diagnoses ACC.\n        *   **Ki-67 Proliferation Index:** Immunohistochemical staining for Ki-67 is routinely performed on ACC pathology specimens to assess tumor grade (high Ki-67 strongly correlates with malignancy and poor prognosis).\n*   **Genetic Testing Unique to ACC:**\n    *   While pheochromocytoma has a very broad panel of hereditary genetic tests (e.g., *SDHx, VHL, RET, NF1*), genetic evaluation for ACC often focuses on syndromes associated with adrenocortical malignancy, such as germline *TP53* mutations (**Li-Fraumeni syndrome**), *CTNNB1*, or methylation profiling (which is increasingly used to classify adrenal cortical tumors).",
+     "correctness": {
+      "score": 0.36581981201623726,
+      "f1": 0.22222222218518517,
+      "factual_recall": 0.4999999999875,
+      "factual_precision": 0.14285714285612244,
+      "similarity": 0.7966125815093935,
+      "tp": 2,
+      "fp": 12,
+      "fn": 2,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Computed Tomography (CT) is the primary imaging modality for characterizing adrenal masses",
+         "reason": "Matches ground truth stating CT scan is common to both"
+        },
+        {
+         "statement": "Magnetic Resonance Imaging (MRI) is used to further characterize indeterminate adrenal masses and assess vascular invasion",
+         "reason": "Matches ground truth stating MRI scan is common to both"
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Adrenocortical Carcinoma (ACC) and pheochromocytoma are both tumors of the adrenal gland",
+         "reason": "General background information not explicitly present in the ground truth"
+        },
+        {
+         "statement": "Standard biochemical screening for ACC and pheochromocytoma includes checking for catecholamine excess",
+         "reason": "Catecholamine excess is specific to pheochromocytoma, not a shared diagnostic method listed in the ground truth"
+        },
+        {
+         "statement": "Both ACC and pheochromocytoma require screening for Cushing's syndrome",
+         "reason": "Not mentioned in the ground truth"
+        },
+        {
+         "statement": "18F-FDG PET/CT is commonly used for staging and assessing metastatic disease in ACC and pheochromocytoma",
+         "reason": "Ground truth states PET scan/FDG-PET/CT is unique to ACC, not common to both"
+        },
+        {
+         "statement": "ACC arises from the adrenal cortex, while pheochromocytoma arises from the adrenal medulla's chromaffin cells",
+         "reason": "Anatomical description not mentioned in the ground truth"
+        },
+        {
+         "statement": "Unique diagnostic blood tests for ACC include elevated levels of DHEA-S, androstenedione, 11-deoxycortisol, 17-hydroxyprogesterone, and progesterone",
+         "reason": "While blood tests are in the ground truth, these specific hormone details are not mentioned"
+        },
+        {
+         "statement": "Pheochromocytomas do not secrete steroid hormones such as DHEA-S, androstenedione, 11-deoxycortisol, 17-hydroxyprogesterone, and progesterone",
+         "reason": "Not mentioned in the ground truth"
+        },
+        {
+         "statement": "Definitive diagnosis of ACC relies on surgical resection and specialized pathology scores",
+         "reason": "Not mentioned in the ground truth"
+        },
+        {
+         "statement": "The Weiss System is the gold standard histological scoring system for ACC",
+         "reason": "Not mentioned in the ground truth"
+        },
+        {
+         "statement": "A Weiss score of 3 or greater diagnoses ACC",
+         "reason": "Not mentioned in the ground truth"
+        },
+        {
+         "statement": "Immunohistochemical staining for Ki-67 is routinely performed on ACC pathology specimens to assess tumor grade",
+         "reason": "Not mentioned in the ground truth"
+        },
+        {
+         "statement": "Genetic evaluation for ACC often focuses on syndromes associated with adrenocortical malignancy such as germline TP53 mutations in Li-Fraumeni syndrome",
+         "reason": "While genetic tests are in the ground truth, specific mutations are not mentioned"
+        }
+       ],
+       "FN": [
+        {
+         "statement": "biochemical test are common to both",
+         "reason": "Missing from answer as a explicitly stated common diagnostic method"
+        },
+        {
+         "statement": "PET scan, FDG-PET/CT, SSTR-PET/CT, blood test, genetic test, and biopsy are unique to ACC",
+         "reason": "Missing specific unique ACC diagnostic modalities like SSTR-PET/CT, biopsy, and explicit categorization of blood and genetic tests as unique"
+        }
+       ]
+      }
+     }
+    },
+    "vector_only": {
+     "context_chars": 1639,
+     "gen_seconds": 3.3,
+     "gen_llm_calls": 1,
+     "answer": "Based on your notes, here is a comparison of diagnostic methods for adrenal tumors, noting what is mentioned regarding testing:\n\n* **Common Diagnostic Methods / General Testing:** \n  Both types of adrenal tumors generally rely on evaluation methods such as imaging tests (like CT or MRI scans) [1, 2, 3], blood tests [1], and genetic testing [1] to help diagnose and plan treatment. Additionally, functional tumors (which can apply to various adrenal tumor types) may be discovered or evaluated through tests investigating hormone-related symptoms [3]. Furthermore, specialized imaging like PET scans (such as FDG-PET/CT or SSTR-PET/CT) are noted in the context of assessing adrenal tumors to locate cancer cells and check for spread [2].\n\n* **Specifics on ACC vs. Pheochromocytoma in Notes:** \n  The provided notes discuss general adrenal tumors, adrenal cancer (adrenocortical cancer / ACC) [1], and the adrenal medulla (which produces epinephrine, norepinephrine, and dopamine) [3], but they **do not** contain specific diagnostic distinctions or unique tests exclusively named for pheochromocytoma. \n\n*If you have additional notes regarding pheochromocytoma-specific diagnostics (such as fractionated metanephrines), consider adding them to your knowledge graph so I can include a more detailed contrast!*",
+     "correctness": {
+      "score": 0.4948309049066295,
+      "f1": 0.399999999944,
+      "factual_recall": 0.4999999999875,
+      "factual_precision": 0.33333333332777776,
+      "similarity": 0.7793236197945183,
+      "tp": 2,
+      "fp": 4,
+      "fn": 2,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Imaging tests used for adrenal tumors include CT or MRI scans",
+         "reason": "Aligns with ground truth stating CT scan and MRI scan are common diagnostic methods."
+        },
+        {
+         "statement": "Specialized imaging like PET scans, such as FDG-PET/CT or SSTR-PET/CT, are used to locate cancer cells and check for spread in adrenal tumors",
+         "reason": "Reflects the ground truth listing PET scan, FDG-PET/CT, and SSTR-PET/CT as diagnostic methods."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Adrenal tumors generally rely on evaluation methods such as imaging tests, blood tests, and genetic testing",
+         "reason": "The answer groups tests generally rather than explicitly stating which are common to both and which are unique to ACC as requested by the question."
+        },
+        {
+         "statement": "Functional adrenal tumors may be discovered or evaluated through tests investigating hormone-related symptoms",
+         "reason": "This is extraneous information about functional tumors not specifically requested or matched to the comparative diagnostic methods in the ground truth."
+        },
+        {
+         "statement": "The adrenal medulla produces epinephrine, norepinephrine, and dopamine",
+         "reason": "This is biological background about the adrenal medulla, not a diagnostic method for ACC or pheochromocytoma."
+        },
+        {
+         "statement": "The provided notes do not contain specific diagnostic distinctions or unique tests exclusively named for pheochromocytoma",
+         "reason": "Incorrect assertion, as the ground truth explicitly outlines common and unique diagnostic methods."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "CT scan, MRI scan, and biochemical test are common to both",
+         "reason": "Missing the specific identification of biochemical tests and the direct overlap between ACC and pheochromocytoma."
+        },
+        {
+         "statement": "PET scan, FDG-PET/CT, SSTR-PET/CT, blood test, genetic test, and biopsy are unique to ACC",
+         "reason": "Failed to correctly identify which specific tests (blood test, genetic test, biopsy) are unique to ACC versus pheochromocytoma."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "CT scan, MRI scan, and biochemical test are common to both; PET scan, FDG-PET/CT, SSTR-PET/CT, blood test, genetic test, and biopsy are unique to ACC.",
+        "reason": "The provided context does not contain information comparing diagnostic methods for ACC and pheochromocytoma.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "graph_only": {
+     "context_chars": 3374,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, here is a comparison of diagnostic methods for adrenal tumors, noting what is mentioned regarding testing:\n\n* **Common Diagnostic Methods / General Testing:** \n  Both types of adrenal tumors generally rely on evaluation methods such as imaging tests (like CT or MRI scans) [1, 2, 3], blood tests [1], and genetic testing [1] to help diagnose and plan treatment. Additionally, functional tumors (which can apply to various adrenal tumor types) may be discovered or evaluated through tests investigating hormone-related symptoms [3]. Furthermore, specialized imaging like PET scans (such as FDG-PET/CT or SSTR-PET/CT) are noted in the context of assessing adrenal tumors to locate cancer cells and check for spread [2].\n\n* **Specifics on ACC vs. Pheochromocytoma in Notes:** \n  The provided notes discuss general adrenal tumors, adrenal cancer (adrenocortical cancer / ACC) [1], and the adrenal medulla (which produces epinephrine, norepinephrine, and dopamine) [3], but they **do not** contain specific diagnostic distinctions or unique tests exclusively named for pheochromocytoma. \n\n*If you have additional notes regarding pheochromocytoma-specific diagnostics (such as fractionated metanephrines), consider adding them to your knowledge graph so I can include a more detailed contrast!*",
+     "correctness": {
+      "score": 0.5698309049059213,
+      "f1": 0.4999999999430556,
+      "factual_recall": 0.599999999988,
+      "factual_precision": 0.4285714285653061,
+      "similarity": 0.7793236197945183,
+      "tp": 3,
+      "fp": 4,
+      "fn": 2,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Imaging tests for adrenal tumors include CT or MRI scans",
+         "reason": "Correctly identifies CT and MRI scans, which are part of the diagnostic methods."
+        },
+        {
+         "statement": "PET scans used for assessing adrenal tumors include FDG-PET/CT or SSTR-PET/CT",
+         "reason": "Matches ground truth stating these specific PET scans are used (and unique to ACC in the context)."
+        },
+        {
+         "statement": "Specialized imaging like PET scans are used to assess adrenal tumors to locate cancer cells and check for spread",
+         "reason": "Aligns with PET scan methodologies present in the ground truth."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Adrenal tumors generally rely on evaluation methods such as imaging tests, blood tests, and genetic testing",
+         "reason": "Too generalized as a direct comparative statement for ACC vs. pheochromocytoma, missing the strict overlap defined in the ground truth."
+        },
+        {
+         "statement": "Functional adrenal tumors may be discovered or evaluated through tests investigating hormone-related symptoms",
+         "reason": "Unsupported by the specific ground truth statements provided."
+        },
+        {
+         "statement": "The adrenal medulla produces epinephrine, norepinephrine, and dopamine",
+         "reason": "Irrelevant biological fact not mentioned in the ground truth regarding diagnostic methods."
+        },
+        {
+         "statement": "The provided notes do not contain specific diagnostic distinctions or unique tests exclusively named for pheochromocytoma",
+         "reason": "Incorrect, as the ground truth explicitly outlines common and unique tests for both conditions."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "CT scan, MRI scan, and biochemical test are common to both",
+         "reason": "Missing the explicit statement that CT, MRI, and biochemical tests are common to both ACC and pheochromocytoma."
+        },
+        {
+         "statement": "PET scan, FDG-PET/CT, SSTR-PET/CT, blood test, genetic test, and biopsy are unique to ACC",
+         "reason": "Missing the complete list of methods uniquely attributed to ACC in the ground truth."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "CT scan, MRI scan, and biochemical test are common to both; PET scan, FDG-PET/CT, SSTR-PET/CT, blood test, genetic test, and biopsy are unique to ACC.",
+        "reason": "Diagnostic methods and tests are not mentioned in the provided context.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "global_only": {
+     "context_chars": 0,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": null,
+     "correctness": {
+      "score": 0.0,
+      "f1": 0.0,
+      "factual_recall": 0.0,
+      "factual_precision": 0.0,
+      "similarity": 0.0,
+      "empty_context": true
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": []
+     }
+    },
+    "shipped": {
+     "context_chars": 5015,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, here is a comparison of diagnostic methods for adrenal tumors, noting what is mentioned regarding testing:\n\n* **Common Diagnostic Methods / General Testing:** \n  Both types of adrenal tumors generally rely on evaluation methods such as imaging tests (like CT or MRI scans) [1, 2, 3], blood tests [1], and genetic testing [1] to help diagnose and plan treatment. Additionally, functional tumors (which can apply to various adrenal tumor types) may be discovered or evaluated through tests investigating hormone-related symptoms [3]. Furthermore, specialized imaging like PET scans (such as FDG-PET/CT or SSTR-PET/CT) are noted in the context of assessing adrenal tumors to locate cancer cells and check for spread [2].\n\n* **Specifics on ACC vs. Pheochromocytoma in Notes:** \n  The provided notes discuss general adrenal tumors, adrenal cancer (adrenocortical cancer / ACC) [1], and the adrenal medulla (which produces epinephrine, norepinephrine, and dopamine) [3], but they **do not** contain specific diagnostic distinctions or unique tests exclusively named for pheochromocytoma. \n\n*If you have additional notes regarding pheochromocytoma-specific diagnostics (such as fractionated metanephrines), consider adding them to your knowledge graph so I can include a more detailed contrast!*",
+     "correctness": {
+      "score": 0.3614975715782592,
+      "f1": 0.2222222221728395,
+      "factual_recall": 0.3333333333222222,
+      "factual_precision": 0.16666666666388888,
+      "similarity": 0.7793236197945183,
+      "tp": 1,
+      "fp": 5,
+      "fn": 2,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Imaging tests used for adrenal tumors include CT or MRI scans",
+         "reason": "Correctly identifies CT and MRI scans, which are part of the common diagnostic methods."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Adrenal tumors generally rely on evaluation methods such as imaging tests, blood tests, and genetic testing to help diagnose and plan treatment",
+         "reason": "Ground truth states blood tests and genetic tests are unique to ACC, not general to both."
+        },
+        {
+         "statement": "Functional adrenal tumors may be discovered or evaluated through tests investigating hormone-related symptoms",
+         "reason": "Too vague and not explicitly mentioned as a diagnostic method shared or unique in the ground truth."
+        },
+        {
+         "statement": "Specialized imaging like PET scans, such as FDG-PET/CT or SSTR-PET/CT, are used to assess adrenal tumors to locate cancer cells and check for spread",
+         "reason": "Ground truth specifies that PET scans, FDG-PET/CT, and SSTR-PET/CT are unique to ACC, not general adrenal tumor assessments."
+        },
+        {
+         "statement": "The adrenal medulla produces epinephrine, norepinephrine, and dopamine",
+         "reason": "This is physiological information about the adrenal medulla, not a diagnostic method."
+        },
+        {
+         "statement": "The provided notes do not contain specific diagnostic distinctions or unique tests exclusively named for pheochromocytoma",
+         "reason": "Incorrect, as the ground truth clearly lists common and unique diagnostic methods for both conditions."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "CT scan, MRI scan, and biochemical test are common to both",
+         "reason": "Missing from the answer statements regarding methods common to both conditions."
+        },
+        {
+         "statement": "PET scan, FDG-PET/CT, SSTR-PET/CT, blood test, genetic test, and biopsy are unique to ACC",
+         "reason": "Missing from the answer statements regarding methods unique to ACC."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "CT scan, MRI scan, and biochemical test are common to both; PET scan, FDG-PET/CT, SSTR-PET/CT, blood test, genetic test, and biopsy are unique to ACC.",
+        "reason": "The specific diagnostic methods and their commonality or uniqueness are not mentioned in the provided context.",
+        "attributed": 0
+       }
+      ]
+     }
+    }
+   },
+   "seconds": 84.5,
+   "llm_calls": 17,
+   "embed_errors": 0,
+   "llm_errors": 0,
+   "valid": true
+  },
+  {
+   "id": "Medical-34c3dd3d",
+   "type": "Fact Retrieval",
+   "question": "Which cancer subtype arises from mucus-secreting cells in the esophagus?",
+   "answer": "Esophageal adenocarcinoma arises from mucus-secreting cells.",
+   "evidence": "",
+   "home_note": 22,
+   "home_margin": 0.1227,
+   "retrieval": {
+    "intent": "find",
+    "intent_overridden": false,
+    "entities": [
+     "esophagus",
+     "cancer subtype",
+     "mucus-secreting cells"
+    ],
+    "search_mode": null,
+    "vector_seeds": null,
+    "concepts": 19,
+    "relationships": 57,
+    "notes": 4,
+    "note_titles": [
+     "NCCN patient guide excerpt 023",
+     "NCCN patient guide excerpt 020",
+     "NCCN patient guide excerpt 018",
+     "NCCN patient guide excerpt 022"
+    ],
+    "llm_calls": 1,
+    "seconds": 5.0,
+    "global_extra_llm_calls": 1,
+    "global_search_mode": "global_map_reduce",
+    "vector_untruncated_context_recall": 1.0
+   },
+   "gold_statements": [
+    "Esophageal adenocarcinoma arises from mucus-secreting cells"
+   ],
+   "arms": {
+    "closed_book": {
+     "context_chars": 0,
+     "gen_seconds": 5.4,
+     "gen_llm_calls": 1,
+     "answer": "The cancer subtype that arises from mucus-secreting cells in the esophagus is **adenocarcinoma** (specifically, **esophageal adenocarcinoma**). \n\nThis type of cancer typically develops in the lower portion of the esophagus, often as a complication of chronic acid reflux leading to Barrett's esophagus, where the normal lining is replaced by mucus-secreting gland cells.",
+     "correctness": {
+      "score": 0.5160585702392582,
+      "f1": 0.39999999995200003,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.24999999999375,
+      "similarity": 0.8642342811010324,
+      "tp": 1,
+      "fp": 3,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "The cancer subtype arising from mucus-secreting cells in the esophagus is adenocarcinoma",
+         "reason": "Directly matches the ground truth that esophageal adenocarcinoma arises from mucus-secreting cells."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Esophageal adenocarcinoma typically develops in the lower portion of the esophagus",
+         "reason": "Provides additional anatomical detail not mentioned in the ground truth."
+        },
+        {
+         "statement": "Esophageal adenocarcinoma often develops as a complication of chronic acid reflux leading to Barrett's esophagus",
+         "reason": "Provides etiology details not present in the ground truth."
+        },
+        {
+         "statement": "Barrett's esophagus involves the normal lining of the esophagus being replaced by mucus-secreting gland cells",
+         "reason": "Provides contextual definition of Barrett's esophagus not found in the ground truth."
+        }
+       ],
+       "FN": []
+      }
+     }
+    },
+    "vector_only": {
+     "context_chars": 2179,
+     "gen_seconds": 3.9,
+     "gen_llm_calls": 1,
+     "answer": "Based on your notes, the cancer subtype that starts in the mucus-making cells of the inner lining of the esophagus is **Esophageal adenocarcinoma (EAC)** [1].",
+     "correctness": {
+      "score": 0.9608551326301331,
+      "f1": 0.99999999985,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.9999999999,
+      "similarity": 0.8434205309705324,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Esophageal adenocarcinoma (EAC) is a cancer subtype that starts in the mucus-making cells of the inner lining of the esophagus",
+         "reason": "Accurately identifies esophageal adenocarcinoma as arising from mucus-secreting cells, matching the ground truth."
+        }
+       ],
+       "FP": [],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Esophageal adenocarcinoma arises from mucus-secreting cells.",
+        "reason": "The provided context does not contain this information about esophageal adenocarcinoma.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "graph_only": {
+     "context_chars": 3034,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, the cancer subtype that starts in the mucus-making cells of the inner lining of the esophagus is **Esophageal adenocarcinoma (EAC)** [1].",
+     "correctness": {
+      "score": 0.9608551326301331,
+      "f1": 0.99999999985,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.9999999999,
+      "similarity": 0.8434205309705324,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Esophageal adenocarcinoma (EAC) is a cancer subtype that starts in the mucus-making cells of the inner lining of the esophagus",
+         "reason": "Accurately identifies that esophageal adenocarcinoma arises from mucus-secreting cells, directly matching the ground truth."
+        }
+       ],
+       "FP": [],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 1.0,
+      "classifications": [
+       {
+        "statement": "Esophageal adenocarcinoma arises from mucus-secreting cells.",
+        "reason": "The context states that Esophageal Adenocarcinoma starts in the mucus-making cells of the inner lining of the esophagus.",
+        "attributed": 1
+       }
+      ]
+     }
+    },
+    "global_only": {
+     "context_chars": 247,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, the cancer subtype that starts in the mucus-making cells of the inner lining of the esophagus is **Esophageal adenocarcinoma (EAC)** [1].",
+     "correctness": {
+      "score": 0.9608551326301331,
+      "f1": 0.99999999985,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.9999999999,
+      "similarity": 0.8434205309705324,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Esophageal adenocarcinoma (EAC) is a cancer subtype that starts in the mucus-making cells of the inner lining of the esophagus",
+         "reason": "Matches the ground truth that esophageal adenocarcinoma arises from mucus-secreting cells, while providing appropriate context."
+        }
+       ],
+       "FP": [],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 1.0,
+      "classifications": [
+       {
+        "statement": "Esophageal adenocarcinoma arises from mucus-secreting cells.",
+        "reason": "The context states that esophageal adenocarcinoma arises from mucus-secreting gland cells in the esophagus.",
+        "attributed": 1
+       }
+      ]
+     }
+    },
+    "shipped": {
+     "context_chars": 5215,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, the cancer subtype that starts in the mucus-making cells of the inner lining of the esophagus is **Esophageal adenocarcinoma (EAC)** [1].",
+     "correctness": {
+      "score": 0.9608551326301331,
+      "f1": 0.99999999985,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.9999999999,
+      "similarity": 0.8434205309705324,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "Esophageal adenocarcinoma starts in the mucus-making cells of the inner lining of the esophagus",
+         "reason": "Accurately reflects the ground truth that esophageal adenocarcinoma arises from mucus-secreting cells, with the added context of the inner lining."
+        }
+       ],
+       "FP": [],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 1.0,
+      "classifications": [
+       {
+        "statement": "Esophageal adenocarcinoma arises from mucus-secreting cells.",
+        "reason": "The context states that Esophageal Adenocarcinoma starts in the mucus-making cells of the inner lining of the esophagus.",
+        "attributed": 1
+       }
+      ]
+     }
+    }
+   },
+   "seconds": 101.2,
+   "llm_calls": 20,
+   "embed_errors": 0,
+   "llm_errors": 0,
+   "valid": true
+  },
+  {
+   "id": "Medical-6a38af6d",
+   "type": "Fact Retrieval",
+   "question": "What is a key biomarker used in risk assessment for CSCC?",
+   "answer": "Perineural invasion is a key biomarker for CSCC risk assessment.",
+   "evidence": "",
+   "home_note": 12,
+   "home_margin": 0.1112,
+   "retrieval": {
+    "intent": "explain",
+    "intent_overridden": false,
+    "entities": [],
+    "search_mode": null,
+    "vector_seeds": {
+     "count": 1,
+     "top_score": 0.8401
+    },
+    "concepts": 6,
+    "relationships": 19,
+    "notes": 5,
+    "note_titles": [
+     "NCCN patient guide excerpt 015",
+     "NCCN patient guide excerpt 012",
+     "NCCN patient guide excerpt 014",
+     "NCCN patient guide excerpt 016",
+     "NCCN patient guide excerpt 013"
+    ],
+    "llm_calls": 0,
+    "seconds": 0.7,
+    "global_extra_llm_calls": 1,
+    "global_search_mode": null,
+    "vector_untruncated_context_recall": 1.0
+   },
+   "gold_statements": [
+    "Perineural invasion is a key biomarker for CSCC risk assessment"
+   ],
+   "arms": {
+    "closed_book": {
+     "context_chars": 0,
+     "gen_seconds": 5.9,
+     "gen_llm_calls": 1,
+     "answer": "Based on current dermatologic oncology guidelines, **p53** (specifically aberrant p53 expression or mutation) is a key biomarker used in the risk assessment and prognosis of **Cutaneous Squamous Cell Carcinoma (CSCC)**. \n\nOther notable biomarkers and molecular factors studied or used in high-risk CSCC risk assessment include:\n*   **EGFR (Epidermal Growth Factor Receptor):** Often overexpressed in advanced or high-risk CSCC.\n*   **Ki-67:** A marker of cellular proliferation, where a high labeling index correlates with increased risk of metastasis.\n*   **PD-L1:** Used primarily as a predictive biomarker for response to immunotherapy (immune checkpoint inhibitors) in advanced CSCC.\n*   **CDKN2A (p16) loss:** Associated with poorer outcomes.\n\n*(Note: In clinical practice, traditional clinicopathologic risk factors—such as tumor thickness, depth of invasion, perineural invasion, differentiation grade, and anatomic location—remain the primary drivers of CSCC risk assessment, alongside emerging molecular profiling tests).*",
+     "correctness": {
+      "score": 0.1879815125434039,
+      "f1": 0.0,
+      "factual_recall": 0.0,
+      "factual_precision": 0.0,
+      "similarity": 0.7519260501736156,
+      "tp": 0,
+      "fp": 9,
+      "fn": 1,
+      "classification": {
+       "TP": [],
+       "FP": [
+        {
+         "statement": "p53 is a key biomarker used in the risk assessment and prognosis of Cutaneous Squamous Cell Carcinoma",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "p53 is evaluated as aberrant p53 expression or mutation",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "EGFR is often overexpressed in advanced or high-risk CSCC",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Ki-67 is a marker of cellular proliferation",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "A high Ki-67 labeling index correlates with increased risk of metastasis",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "PD-L1 is used as a predictive biomarker for response to immunotherapy in advanced CSCC",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "CDKN2A loss is associated with poorer outcomes",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Traditional clinicopathologic risk factors remain the primary drivers of CSCC risk assessment",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Traditional clinicopathologic risk factors include tumor thickness, depth of invasion, perineural invasion, differentiation grade, and anatomic location",
+         "reason": "Not mentioned in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Perineural invasion is a key biomarker for CSCC risk assessment",
+         "reason": "Present in ground truth but missing from the answer statements."
+        }
+       ]
+      }
+     }
+    },
+    "vector_only": {
+     "context_chars": 2719,
+     "gen_seconds": 3.9,
+     "gen_llm_calls": 1,
+     "answer": "Based on your notes, a key factor considered during a risk assessment for cutaneous squamous cell carcinoma (CSCC) is whether the tumor has grown into a nerve or a group of nerves, which is usually seen under a microscope [1]. Additionally, risk assessment takes into account features such as:\n- **Tumor grade:** A rating of how fast doctors expect the cancer to grow and spread [1].\n- **Depth of invasion:** The deeper the tumor has invaded into the skin, the higher the risk of the cancer returning [1].\n- **Location and size:** Tumors on certain areas (such as the head, face, neck, hands, feet, shins, or genitalia) or specific sizes (such as those between 2 cm and 4 cm on the trunk, arms, or legs) are considered high risk [5]. \n\nThe risk category (low-, high-, or very high-risk) is typically based on the highest risk factor found [1, 5].",
+     "correctness": {
+      "score": 0.3646237185232927,
+      "f1": 0.22222222218271603,
+      "factual_recall": 0.499999999975,
+      "factual_precision": 0.14285714285510204,
+      "similarity": 0.7918282075450226,
+      "tp": 1,
+      "fp": 6,
+      "fn": 1,
+      "classification": {
+       "TP": [
+        {
+         "statement": "A key factor considered during a risk assessment for cutaneous squamous cell carcinoma (CSCC) is whether the tumor has grown into a nerve or a group of nerves",
+         "reason": "Matches the ground truth concept that perineural invasion (growth into nerves) is a key biomarker for CSCC risk assessment"
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Tumor perineural invasion is usually seen under a microscope",
+         "reason": "Provides additional descriptive detail about how it is seen, which is not mentioned in the ground truth"
+        },
+        {
+         "statement": "Tumor grade is a rating of how fast doctors expect the cancer to grow and spread",
+         "reason": "Discusses tumor grade, which is not present in the ground truth statement"
+        },
+        {
+         "statement": "The deeper the tumor has invaded into the skin, the higher the risk of the cancer returning",
+         "reason": "Discusses tumor depth, which is not present in the ground truth"
+        },
+        {
+         "statement": "Tumors on the head, face, neck, hands, feet, shins, or genitalia are considered high risk",
+         "reason": "Discusses anatomical location risk factors, which are not present in the ground truth"
+        },
+        {
+         "statement": "Tumors between 2 cm and 4 cm on the trunk, arms, or legs are considered high risk",
+         "reason": "Discusses tumor size, which is not present in the ground truth"
+        },
+        {
+         "statement": "The risk category, such as low-, high-, or very high-risk, is typically based on the highest risk factor found",
+         "reason": "Discusses risk categorization rules, which are not present in the ground truth"
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Perineural invasion is a key biomarker for CSCC risk assessment",
+         "reason": "The exact concise definition from the ground truth was not fully captured as a direct statement"
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Perineural invasion is a key biomarker for CSCC risk assessment.",
+        "reason": "The context mentions risk assessment and features of the cancer, but does not state that perineural invasion is a key biomarker.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "graph_only": {
+     "context_chars": 2320,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, a key factor considered during a risk assessment for cutaneous squamous cell carcinoma (CSCC) is whether the tumor has grown into a nerve or a group of nerves, which is usually seen under a microscope [1]. Additionally, risk assessment takes into account features such as:\n- **Tumor grade:** A rating of how fast doctors expect the cancer to grow and spread [1].\n- **Depth of invasion:** The deeper the tumor has invaded into the skin, the higher the risk of the cancer returning [1].\n- **Location and size:** Tumors on certain areas (such as the head, face, neck, hands, feet, shins, or genitalia) or specific sizes (such as those between 2 cm and 4 cm on the trunk, arms, or legs) are considered high risk [5]. \n\nThe risk category (low-, high-, or very high-risk) is typically based on the highest risk factor found [1, 5].",
+     "correctness": {
+      "score": 0.19795705188625565,
+      "f1": 0.0,
+      "factual_recall": 0.0,
+      "factual_precision": 0.0,
+      "similarity": 0.7918282075450226,
+      "tp": 0,
+      "fp": 7,
+      "fn": 1,
+      "classification": {
+       "TP": [],
+       "FP": [
+        {
+         "statement": "A key factor considered during a risk assessment for cutaneous squamous cell carcinoma (CSCC) is whether the tumor has grown into a nerve or a group of nerves",
+         "reason": "Describes perineural invasion (which matches ground truth conceptually), but the prompt asked specifically for a 'biomarker', and this is phrased purely as a clinical/pathological factor rather than the biomarker itself."
+        },
+        {
+         "statement": "Tumor growth into a nerve is usually seen under a microscope",
+         "reason": "Unsupported microscopic detail not mentioned in the ground truth."
+        },
+        {
+         "statement": "Tumor grade is a rating of how fast doctors expect the cancer to grow and spread",
+         "reason": "Information about tumor grade is not present in the ground truth."
+        },
+        {
+         "statement": "The deeper the tumor has invaded into the skin, the higher the risk of the cancer returning",
+         "reason": "Information about depth of invasion is not present in the ground truth."
+        },
+        {
+         "statement": "Tumors on certain areas such as the head, face, neck, hands, feet, shins, or genitalia are considered high risk",
+         "reason": "Information about specific anatomical locations is not present in the ground truth."
+        },
+        {
+         "statement": "Tumors between 2 cm and 4 cm on the trunk, arms, or legs are considered high risk",
+         "reason": "Information about tumor size is not present in the ground truth."
+        },
+        {
+         "statement": "The risk category, which can be low, high, or very high risk, is typically based on the highest risk factor found",
+         "reason": "Information about risk categories is not present in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Perineural invasion is a key biomarker for CSCC risk assessment",
+         "reason": "The answer completely misses the direct identification of perineural invasion as the specific key biomarker."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Perineural invasion is a key biomarker for CSCC risk assessment.",
+        "reason": "Perineural invasion is not mentioned in the provided context.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "global_only": {
+     "context_chars": 0,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": null,
+     "correctness": {
+      "score": 0.0,
+      "f1": 0.0,
+      "factual_recall": 0.0,
+      "factual_precision": 0.0,
+      "similarity": 0.0,
+      "empty_context": true
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": []
+     }
+    },
+    "shipped": {
+     "context_chars": 5041,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on your notes, a key factor considered during a risk assessment for cutaneous squamous cell carcinoma (CSCC) is whether the tumor has grown into a nerve or a group of nerves, which is usually seen under a microscope [1]. Additionally, risk assessment takes into account features such as:\n- **Tumor grade:** A rating of how fast doctors expect the cancer to grow and spread [1].\n- **Depth of invasion:** The deeper the tumor has invaded into the skin, the higher the risk of the cancer returning [1].\n- **Location and size:** Tumors on certain areas (such as the head, face, neck, hands, feet, shins, or genitalia) or specific sizes (such as those between 2 cm and 4 cm on the trunk, arms, or legs) are considered high risk [5]. \n\nThe risk category (low-, high-, or very high-risk) is typically based on the highest risk factor found [1, 5].",
+     "correctness": {
+      "score": 0.19795705188625565,
+      "f1": 0.0,
+      "factual_recall": 0.0,
+      "factual_precision": 0.0,
+      "similarity": 0.7918282075450226,
+      "tp": 0,
+      "fp": 7,
+      "fn": 1,
+      "classification": {
+       "TP": [],
+       "FP": [
+        {
+         "statement": "A key factor considered during a risk assessment for cutaneous squamous cell carcinoma (CSCC) is whether the tumor has grown into a nerve or a group of nerves",
+         "reason": "While related to perineural invasion, the specific ground truth is that perineural invasion itself is the key biomarker."
+        },
+        {
+         "statement": "Tumor perineural invasion is usually seen under a microscope",
+         "reason": "Provides extra detail not mentioned in the ground truth."
+        },
+        {
+         "statement": "Tumor grade is a rating of how fast doctors expect the cancer to grow and spread",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "The deeper the tumor has invaded into the skin, the higher the risk of the cancer returning",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Tumors on certain areas such as the head, face, neck, hands, feet, shins, or genitalia are considered high risk",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Tumors of specific sizes such as those between 2 cm and 4 cm on the trunk, arms, or legs are considered high risk",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "The risk category, including low, high, or very high risk, is typically based on the highest risk factor found",
+         "reason": "Not mentioned in the ground truth."
+        }
+       ],
+       "FN": [
+        {
+         "statement": "Perineural invasion is a key biomarker for CSCC risk assessment",
+         "reason": "The exact ground truth statement identifying the key biomarker was missing from the answer."
+        }
+       ]
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "Perineural invasion is a key biomarker for CSCC risk assessment.",
+        "reason": "The context mentions risk assessment for squamous cell skin cancer, but does not state that perineural invasion is a key biomarker.",
+        "attributed": 0
+       }
+      ]
+     }
+    }
+   },
+   "seconds": 81.0,
+   "llm_calls": 16,
+   "embed_errors": 0,
+   "llm_errors": 0,
+   "valid": true
+  },
+  {
+   "id": "Medical-d675eecd",
+   "type": "Fact Retrieval",
+   "question": "What is a flat, pale or yellow area on the skin indicative of in BCC?",
+   "answer": "A flat, pale or yellow area is a symptom of BCC.",
+   "evidence": "",
+   "home_note": 0,
+   "home_margin": 0.0611,
+   "retrieval": {
+    "intent": "explain",
+    "intent_overridden": false,
+    "entities": [],
+    "search_mode": null,
+    "vector_seeds": {
+     "count": 2,
+     "top_score": 0.8455
+    },
+    "concepts": 18,
+    "relationships": 76,
+    "notes": 5,
+    "note_titles": [
+     "NCCN patient guide excerpt 001",
+     "NCCN patient guide excerpt 002",
+     "NCCN patient guide excerpt 005",
+     "NCCN patient guide excerpt 008",
+     "NCCN patient guide excerpt 007"
+    ],
+    "llm_calls": 0,
+    "seconds": 0.6,
+    "global_extra_llm_calls": 1,
+    "global_search_mode": null,
+    "vector_untruncated_context_recall": 1.0
+   },
+   "gold_statements": [
+    "A flat, pale or yellow area is a symptom of BCC"
+   ],
+   "arms": {
+    "closed_book": {
+     "context_chars": 0,
+     "gen_seconds": 5.7,
+     "gen_llm_calls": 1,
+     "answer": "In Basal Cell Carcinoma (BCC), a flat, pale, or yellow area on the skin—often resembling a scar—is indicative of **morpheaform BCC** (also known as sclerosing basal cell carcinoma). \n\nThis subtype of BCC is known for the following characteristics:\n* **Appearance:** It typically looks firm, smooth, and flat or slightly depressed, often appearing waxy, yellowish, or whitish like a scar (cicatricial).\n* **Behavior:** It is considered an aggressive, high-risk subtype of BCC. \n* **Diagnosis challenge:** Because it lacks the more common BCC features (such as a pearly border or visible blood vessels) and often blends into normal skin, the margins are notoriously difficult to define clinically, meaning it frequently extends deeper and wider than it appears on the surface.",
+     "correctness": {
+      "score": 0.3570136371352418,
+      "f1": 0.19999999997799997,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.11111111110987654,
+      "similarity": 0.8280545486069675,
+      "tp": 1,
+      "fp": 8,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "In Basal Cell Carcinoma (BCC), a flat, pale, or yellow area on the skin that often resembles a scar is indicative of morpheaform BCC",
+         "reason": "Correctly identifies that a flat, pale or yellow area is indicative of a type of BCC, aligning with the ground truth."
+        }
+       ],
+       "FP": [
+        {
+         "statement": "Morpheaform BCC is also known as sclerosing basal cell carcinoma",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Morpheaform BCC typically looks firm, smooth, and flat or slightly depressed",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Morpheaform BCC often appears waxy, yellowish, or whitish like a scar",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Morpheaform BCC is considered an aggressive, high-risk subtype of BCC",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Morpheaform BCC lacks more common BCC features such as a pearly border or visible blood vessels",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Morpheaform BCC often blends into normal skin",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "The margins of morpheaform BCC are notoriously difficult to define clinically",
+         "reason": "Not mentioned in the ground truth."
+        },
+        {
+         "statement": "Morpheaform BCC frequently extends deeper and wider than it appears on the surface",
+         "reason": "Not mentioned in the ground truth."
+        }
+       ],
+       "FN": []
+      }
+     }
+    },
+    "vector_only": {
+     "context_chars": 2719,
+     "gen_seconds": 3.6,
+     "gen_llm_calls": 1,
+     "answer": "Based on the provided notes, a flat, pale or yellow area (resembling a scar) can be one of the signs and symptoms of **basal cell skin cancer (BCC)** in people with lighter skin [1].",
+     "correctness": {
+      "score": 0.9703301988296894,
+      "f1": 0.99999999985,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.9999999999,
+      "similarity": 0.8813207957687575,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "A flat, pale or yellow area resembling a scar can be a sign of basal cell skin cancer in people with lighter skin",
+         "reason": "Correctly identifies a flat, pale or yellow area as a sign of BCC, adding context about skin tone and scar-like appearance."
+        }
+       ],
+       "FP": [],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "A flat, pale or yellow area is a symptom of BCC.",
+        "reason": "The provided context does not mention flat, pale, or yellow areas as symptoms of BCC.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "graph_only": {
+     "context_chars": 4245,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on the provided notes, a flat, pale or yellow area (resembling a scar) can be one of the signs and symptoms of **basal cell skin cancer (BCC)** in people with lighter skin [1].",
+     "correctness": {
+      "score": 0.9703301988296894,
+      "f1": 0.99999999985,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.9999999999,
+      "similarity": 0.8813207957687575,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "A flat, pale or yellow area resembling a scar can be a sign of basal cell skin cancer in people with lighter skin",
+         "reason": "Correctly identifies that a flat, pale or yellow area is a symptom of BCC, adding relevant contextual detail about appearance and skin type."
+        }
+       ],
+       "FP": [],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "A flat, pale or yellow area is a symptom of BCC.",
+        "reason": "The specific description of a flat, pale or yellow area is not mentioned in the context.",
+        "attributed": 0
+       }
+      ]
+     }
+    },
+    "global_only": {
+     "context_chars": 0,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": null,
+     "correctness": {
+      "score": 0.0,
+      "f1": 0.0,
+      "factual_recall": 0.0,
+      "factual_precision": 0.0,
+      "similarity": 0.0,
+      "empty_context": true
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": []
+     }
+    },
+    "shipped": {
+     "context_chars": 6966,
+     "gen_seconds": 0.0,
+     "gen_llm_calls": 0,
+     "answer": "Based on the provided notes, a flat, pale or yellow area (resembling a scar) can be one of the signs and symptoms of **basal cell skin cancer (BCC)** in people with lighter skin [1].",
+     "correctness": {
+      "score": 0.9703301988296894,
+      "f1": 0.99999999985,
+      "factual_recall": 0.9999999999,
+      "factual_precision": 0.9999999999,
+      "similarity": 0.8813207957687575,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "classification": {
+       "TP": [
+        {
+         "statement": "A flat, pale or yellow area resembling a scar can be a sign of basal cell skin cancer in people with lighter skin",
+         "reason": "Correctly identifies that a flat, pale or yellow area is a sign of basal cell skin cancer (BCC), matching the ground truth."
+        }
+       ],
+       "FP": [],
+       "FN": []
+      }
+     },
+     "context_recall": {
+      "score": 0.0,
+      "classifications": [
+       {
+        "statement": "A flat, pale or yellow area is a symptom of BCC.",
+        "reason": "The context does not state that a flat, pale or yellow area is a symptom of BCC.",
+        "attributed": 0
+       }
+      ]
+     }
+    }
+   },
+   "seconds": 81.0,
+   "llm_calls": 16,
+   "embed_errors": 0,
+   "llm_errors": 0,
+   "valid": true
+  }
+ ]
+}

@@ -17,7 +17,7 @@ benchmark's own metric definitions (GraphRAG-Bench Evaluation/metrics), re-imple
   factual_recall     = TP / (TP + FN), reported separately because the app's answers are long and
                        educational, which costs precision for every arm alike
   context_recall     = share of gold-answer statements attributable to the context the generator saw
-                       (formatted exactly as generate_response_node formats it, 500-char note cut included)
+                       (formatted exactly as generate_response_node formats it: a window around the matched chunk)
 The judge is the same model as the generator (gemini-3.5-flash-lite, the only model this key can run).
 
     python eval/graphrag/run_eval.py --questions questions_slice.json
@@ -73,7 +73,12 @@ def format_context(graph_context: dict, rag_context: list[dict]) -> str:
             rels.append(f"- {r.get('src_name') or r.get('src')} --[{r.get('type')}]--> {r.get('tgt_name') or r.get('tgt')}{tag}")
         parts.append("**Relationships:**\n" + "\n".join(rels))
     if rag_context:
-        notes = [f"[{i}] {n.get('title', 'Note')}: {(n.get('content') or '')[:500]}..." for i, n in enumerate(rag_context, 1)]
+        # Same snippet generate_response_node sends: a window centred on the matched child chunk.
+        from backend.services.retrieval_service import extract_child_centered_window
+        notes = [f"[{i}] {n.get('title', 'Note')}: "
+                 + (n.get("window_content") or extract_child_centered_window(
+                     n.get("parent_content") or n.get("content") or "", n.get("child_content") or ""))
+                 for i, n in enumerate(rag_context, 1)]
         parts.append("**Relevant Notes:**\n" + "\n".join(notes))
     return "\n\n".join(parts)
 
@@ -265,7 +270,7 @@ async def run_question(q: dict, user_id: str) -> dict:
         if arm != "closed_book":
             rec["context_recall"] = await context_recall(q["question"], context, q["answer"])
         arms[arm] = rec
-    # Diagnostic: the same retrieved notes without the 500-character cut the prompt applies.
+    # Diagnostic: the same retrieved notes in full, not just the window the prompt sends.
     full_notes = "\n".join(f"[{i}] {n.get('title')}: {n.get('content') or ''}" for i, n in enumerate(rag, 1))
     retrieval["vector_untruncated_context_recall"] = (await context_recall(q["question"], full_notes, q["answer"]))["score"]
     return {**q, "retrieval": retrieval, "gold_statements": gold_stmts, "arms": arms}
@@ -348,7 +353,7 @@ def markdown(name: str, meta: dict, agg: dict) -> str:
           f"- search_mode counts (shipped path): {r['search_modes']}",
           f"- Intents: {r['intents']}",
           f"- Mean LLM calls inside get_context_node (map-reduce): {r['mean_get_context_llm_calls']:.1f}",
-          f"- Vector context recall as the prompt sees it (500-char cut): {r['vector_context_recall_prompt']:.2f}; "
+          f"- Vector context recall as the prompt sees it (matched-chunk window): {r['vector_context_recall_prompt']:.2f}; "
           f"same notes untruncated: {r['vector_context_recall_untruncated']:.2f}"]
     return "\n".join(L) + "\n"
 
