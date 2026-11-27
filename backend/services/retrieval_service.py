@@ -55,6 +55,14 @@ async def run_vector_sql(
 _OR_TSQUERY = "replace(websearch_to_tsquery('english', :query)::text, ' & ', ' | ')::tsquery"
 
 
+def _ef_search() -> Optional[int]:
+    """HNSW candidate-list size (VECTOR_EF_SEARCH). Unset = pgvector's default (40). Measured 27 Nov
+    on 2,353 vectors: recall@20 vs exact search is 1.000 at 40, 100 and 200, so there is nothing to
+    buy yet; rerun eval/retrieval/hnsw_recall.py as the corpus grows and raise it when recall drops."""
+    raw = os.getenv("VECTOR_EF_SEARCH", "").strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else None
+
+
 async def attach_chunk_embeddings(pg: Any, user_id: str, chunks: list[dict[str, Any]]) -> None:
     """Set chunk["embedding"] (list[float]) on each chunk that has one, in one owner-filtered query."""
     ids = [str(c["id"]) for c in chunks if c.get("id") and c.get("embedding") is None]
@@ -492,7 +500,7 @@ class RetrievalService:
             ORDER BY c.embedding <=> cast(:embedding as vector)
             LIMIT :limit
         """
-        rows = await run_vector_sql(pg, sql, params)
+        rows = await run_vector_sql(pg, sql, params, ef_search=_ef_search())
 
         results: list[dict[str, Any]] = []
         for row in rows or []:
@@ -726,7 +734,7 @@ class RetrievalService:
                 ORDER BY c.embedding <=> cast(:embedding as vector)
                 LIMIT :limit
             """
-            rows = await run_vector_sql(pg, sql, params)
+            rows = await run_vector_sql(pg, sql, params, ef_search=_ef_search())
         else:
             sql = """
                 SELECT

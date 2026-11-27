@@ -2,14 +2,15 @@
 
 import json
 import uuid
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Literal, Optional
 
 import structlog
 
 from backend.graphs.thread_ids import chat_thread_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from backend.auth.middleware import get_current_user
 from backend.services.followups import suggest_followups, suggestion_click_meta
 from backend.services.quota import require_quota
@@ -54,9 +55,38 @@ def message_meta(related_concepts: list, metadata: dict) -> dict:
         "reranker": (md.get("rerank_stats") or {}).get("method"),
         "grounding": (md.get("grounding") or {}).get("reason"),
     }
+    outcomes = answer_outcomes(md)
+    if outcomes:
+        generation["outcomes"] = outcomes
     if any(v is not None for v in generation.values()):
         out["generation"] = generation
     return out
+
+
+def answer_outcomes(md: dict) -> list[str]:
+    """Failure taxonomy for one answer, from its own metadata (no extra work at request time):
+
+    no_retrieval        neither notes nor concepts were found
+    abstained           the grounding guard judged the context insufficient or off-topic
+    citations_stripped  the model cited sources it was not given, and they were removed
+    reranker_fallback   the lexical reranker ran instead of the cross-encoder
+    cache_hit           served from the answer cache
+    """
+    md = md or {}
+    grounding = md.get("grounding") or {}
+    rerank = (md.get("rerank_stats") or {}).get("method")
+    tags = []
+    if md.get("documents_retrieved") == 0 and md.get("nodes_retrieved") == 0:
+        tags.append("no_retrieval")
+    if grounding.get("should_abstain"):
+        tags.append("abstained")
+    if grounding.get("invalid_refs"):
+        tags.append("citations_stripped")
+    if rerank and rerank != "onnx_cross_encoder":
+        tags.append("reranker_fallback")
+    if md.get("cache_hit"):
+        tags.append("cache_hit")
+    return tags
 
 router = APIRouter(prefix="/api/chat", tags=["Chat Assistant"])
 
@@ -907,6 +937,94 @@ async def delete_conversation(
 # (history, RAG, "explain this card"), wrap them with
 # backend.agent_bridge.untrusted.agent_answer_for_prompt / wrap_untrusted first.
 # Not wired yet: today agent text is only shown to the user, never fed to the chat model.
+FEEDBACK_REASONS = ("wrong", "incomplete", "not_my_level", "bad_sources", "too_long", "other")
+
+
+class AnswerFeedback(BaseModel):
+    rating: Literal["up", "down"]
+    reason: Optional[Literal["wrong", "incomplete", "not_my_level", "bad_sources", "too_long", "other"]] = None
+    comment: Optional[str] = Field(default=None, max_length=500)
+
+
+@router.post("/messages/{message_id}/feedback")
+async def answer_feedback(
+    message_id: str,
+    body: AnswerFeedback,
+    current_user: dict = Depends(get_current_user),
+):
+    """Thumbs up/down on an assistant answer (the online quality signal). Stored on the message, so
+    it sits next to the prompt version, model, reranker and outcomes that produced the answer."""
+    pg_client = await get_postgres_client()
+    user_id = str(current_user["id"])
+    feedback = {"rating": body.rating, "reason": body.reason, "comment": (body.comment or "").strip() or None,
+                "at": datetime.now(timezone.utc).isoformat()}
+    rows = await pg_client.execute_query(
+        """
+        UPDATE chat_messages cm
+        SET meta_json = COALESCE(cm.meta_json, '{}'::jsonb) || jsonb_build_object('feedback', CAST(:feedback AS jsonb))
+        FROM chat_conversations cc
+        WHERE cm.id = CAST(:message_id AS uuid) AND cm.role = 'assistant'
+          AND cc.id = cm.conversation_id AND cc.user_id = :user_id
+        RETURNING cm.id
+        """,
+        {"message_id": message_id, "user_id": user_id, "feedback": json.dumps(feedback)},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Answer not found")
+    return {"status": "recorded", "message_id": message_id, "feedback": feedback}
+
+
+@router.get("/quality")
+async def answer_quality(
+    days: int = Query(30, ge=1, le=365),
+    current_user: dict = Depends(get_current_user),
+):
+    """The caller's own answer-quality numbers for the last `days`: thumbs up/down, and how often each
+    failure outcome happened, overall and per prompt version (to compare releases)."""
+    pg_client = await get_postgres_client()
+    rows = await pg_client.execute_query(
+        """
+        SELECT cm.meta_json
+        FROM chat_messages cm
+        JOIN chat_conversations cc ON cc.id = cm.conversation_id
+        WHERE cc.user_id = :user_id AND cm.role = 'assistant'
+          AND cm.created_at >= NOW() - make_interval(days => :days)
+        """,
+        {"user_id": str(current_user["id"]), "days": days},
+    )
+    return summarize_quality([r.get("meta_json") for r in rows or []])
+
+
+def summarize_quality(metas: list) -> dict:
+    def blank() -> dict:
+        return {"answers": 0, "up": 0, "down": 0, "outcomes": {}}
+
+    overall, by_version = blank(), {}
+    for meta in metas:
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except ValueError:
+                meta = {}
+        meta = meta or {}
+        gen = meta.get("generation") or {}
+        version = gen.get("prompt_version") or "unversioned"
+        for bucket in (overall, by_version.setdefault(version, blank())):
+            bucket["answers"] += 1
+            rating = (meta.get("feedback") or {}).get("rating")
+            if rating in ("up", "down"):
+                bucket[rating] += 1
+            for tag in gen.get("outcomes") or []:
+                bucket["outcomes"][tag] = bucket["outcomes"].get(tag, 0) + 1
+
+    def rates(b: dict) -> dict:
+        rated = b["up"] + b["down"]
+        return {**b, "thumbs_down_rate": round(b["down"] / rated, 3) if rated else None,
+                "outcome_rates": {k: round(v / b["answers"], 3) for k, v in b["outcomes"].items()} if b["answers"] else {}}
+
+    return {"overall": rates(overall), "by_prompt_version": {k: rates(v) for k, v in by_version.items()}}
+
+
 @router.post("/stream")
 async def stream_chat(
     request: ChatRequest,
