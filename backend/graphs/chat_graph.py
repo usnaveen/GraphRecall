@@ -52,6 +52,7 @@ from backend.services.rag_cache import (
     InMemoryTTLCache,
     RedisCacheBackend,
 )
+from backend.services.output_guard import allowed_image_urls, sanitize_markdown_images
 from backend.services.reranker import (
     get_reranker,
     mmr_select_chunks,
@@ -1150,6 +1151,11 @@ async def generate_response_node(state: ChatState) -> dict:
         )
 
         response_content = strip_prompt_echo(response.text)
+        # Images may only point at URLs from this turn's retrieved material or the app's own image
+        # endpoints: an instruction injected into an ingested page could otherwise make the answer
+        # load https://attacker/?d=<user data> (backend/services/output_guard.py).
+        allowed_images = allowed_image_urls(packed_rag) | {img["url"] for img in all_image_urls}
+        response_content = sanitize_markdown_images(response_content, allowed_images)
 
         # Off-topic: the retrieved passages are the nearest misses, not support. Showing them as
         # sources, citations, related concepts or figures under "your notes don't cover this"

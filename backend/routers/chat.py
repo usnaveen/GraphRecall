@@ -18,6 +18,7 @@ from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
 from backend.models.feed_schemas import ChatMessage, ChatRequest, ChatResponse
 # Refactor: Use new LangGraph workflow instead of legacy agent
+from backend.services.output_guard import StreamingImageGuard, allowed_image_urls
 from backend.graphs.chat_graph import chat_graph, run_chat, ChatState
 from backend.telemetry import elapsed_ms, now, record
 from langchain_core.messages import HumanMessage
@@ -968,6 +969,8 @@ async def stream_chat(
             # Streaming Loop using astream_events (LangGraph 1.0+)
             # Using version="v2" for standard event format
             full_content = ""
+            # Filters the live token stream: a disallowed image never reaches the client, even briefly.
+            image_guard = StreamingImageGuard()
 
             async for event in chat_graph.astream_events(initial_state, config, version="v2"):
                 
@@ -985,8 +988,11 @@ async def stream_chat(
                         if not first_token_logged:
                             first_token_logged = True
                             record("chat.first_token_after_auth", elapsed_ms(stream_start))
-                        full_content += content
-                        yield f"data: {json.dumps({'type': 'chunk', 'content': content})}\n\n"
+                        safe = image_guard.feed(content)
+                        if not safe:
+                            continue
+                        full_content += safe
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': safe})}\n\n"
                     else:
                         # Otherwise, send as a status update (keeps the "loading" feel but clean)
                         # This avoids the "JSON in message" problem
@@ -1003,6 +1009,14 @@ async def stream_chat(
 
                 elif kind == "on_chain_end" and event["name"] in node_starts:
                     record(f"chat.node.{event['name']}", elapsed_ms(node_starts.pop(event["name"])))
+                    if event["name"] == "get_context":
+                        output = (event.get("data") or {}).get("output") or {}
+                        image_guard.allowed |= allowed_image_urls(output.get("rag_context") or [])
+
+            tail = image_guard.finish()
+            if tail:
+                full_content += tail
+                yield f"data: {json.dumps({'type': 'chunk', 'content': tail})}\n\n"
 
             # Get final state for metadata
             final_state = await chat_graph.aget_state(config)
