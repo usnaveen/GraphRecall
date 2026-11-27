@@ -303,9 +303,10 @@ async def get_conversation(
             SELECT id, role, content, sources_json, meta_json, created_at
             FROM chat_messages
             WHERE conversation_id = :conversation_id
+              AND conversation_id IN (SELECT id FROM chat_conversations WHERE user_id = :user_id)
             ORDER BY created_at ASC
             """,
-            {"conversation_id": conversation_id},
+            {"conversation_id": conversation_id, "user_id": user_id},
         )
 
         # Serialize UUID/datetime fields for JSON

@@ -20,6 +20,7 @@ from backend.agent_bridge.oauth import (
 )
 from backend.agent_bridge.knowledge import KnowledgeService
 from backend.agent_bridge.repository import InMemoryBridgeRepository
+from backend.agent_bridge.tools import TOOLS
 from backend.agent_bridge.tools import BridgeServices
 from backend.tests.agent_bridge_fakes import USER_A, FakeNeo4j, FakePG
 
@@ -230,7 +231,7 @@ async def test_full_oauth_pkce_flow_into_mcp_call_rotation_and_revocation(monkey
             )
             assert mcp_res.status_code == 200
             tools_payload = mcp_res.json()["result"]["tools"]
-            assert len(tools_payload) == 13
+            assert len(tools_payload) == len(TOOLS)  # every registered tool, not a hard-coded count
 
             # Verify key appears in user's iOS-visible agent_api_keys list
             keys = await repo.list_keys(USER_A)
