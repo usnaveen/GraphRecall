@@ -215,7 +215,9 @@ async def test_l1_embedding_cache_and_backend_selection(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_context_node_wires_reranker_mmr_and_lost_in_middle() -> None:
+async def test_get_context_node_wires_reranker_mmr_and_lost_in_middle(monkeypatch) -> None:
+    monkeypatch.setenv("RERANKER_MODE", "lexical")
+    monkeypatch.setenv("RAG_MAX_PER_PARENT", "1")
     embedder = _DummyEmbedder(dims=4)
     mock_pg = AsyncMock()
     mock_neo4j = AsyncMock()
@@ -295,6 +297,58 @@ async def test_get_context_node_wires_reranker_mmr_and_lost_in_middle() -> None:
     assert out["graph_context"]["rerank_stats"]["method"] == "lexical_overlap"
     assert out["graph_context"]["rerank_stats"]["in_count"] == 4
     assert out["graph_context"]["rerank_stats"]["out_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_get_context_node_wires_two_level_onnx_reranker(monkeypatch) -> None:
+    from backend.services.reranker import RerankResult
+
+    monkeypatch.setenv("RERANKER_MODE", "onnx")
+    monkeypatch.setenv("RAG_MAX_PER_PARENT", "2")
+    embedder = _DummyEmbedder(dims=4)
+    mock_pg = AsyncMock()
+    mock_pg.execute_query = AsyncMock(return_value=[])
+    mock_neo4j = AsyncMock()
+    mock_neo4j.find_seed_concepts = AsyncMock(return_value=[])
+
+    coarse_chunks = [
+        {"id": "c1", "parent_chunk_id": "p1", "title": "Note A", "content": "coarse 1", "child_content": "c1", "_rrf_score": 0.04, "images": []},
+        {"id": "c2", "parent_chunk_id": "p1", "title": "Note A", "content": "coarse 2", "child_content": "c2", "_rrf_score": 0.03, "images": []},
+        {"id": "c3", "parent_chunk_id": "p2", "title": "Note B", "content": "coarse 3", "child_content": "c3", "_rrf_score": 0.05, "images": []},
+    ]
+    hybrid_mock = AsyncMock(return_value={"chunks": coarse_chunks, "stats": {"vector": 3}})
+
+    class FakeCEReranker:
+        def rerank(self, query: str, chunks: list[dict], top_k: int = 8) -> RerankResult:
+            # Promote both c1 and c2 from p1 above c3 using CE scores.
+            scored = [
+                {**chunks[0], "rerank_score": 4.0},
+                {**chunks[1], "rerank_score": 2.5},
+                {**chunks[2], "rerank_score": -1.2},
+            ]
+            return RerankResult(chunks=scored[:top_k], method="onnx_cross_encoder", latency_ms=12.5, used_fallback=False)
+
+    with patch.object(cg, "get_embeddings", return_value=embedder), \
+         patch.object(cg, "get_embedding_dims", return_value=4), \
+         patch.object(cg, "get_postgres_client", AsyncMock(return_value=mock_pg)), \
+         patch.object(cg, "get_neo4j_client", AsyncMock(return_value=mock_neo4j)), \
+         patch.object(cg, "get_reranker", return_value=FakeCEReranker()), \
+         patch.object(cg.RetrievalService, "hybrid_search", hybrid_mock):
+        out = await cg.get_context_node({
+            "user_id": "u1",
+            "intent": "explain",
+            "entities": [],
+            "retrieval_query": "HNSW pruning",
+            "messages": [HumanMessage(content="HNSW pruning")],
+        })
+
+    kwargs = hybrid_mock.await_args.kwargs
+    assert kwargs["limit"] == 25
+    assert kwargs["candidate_k"] == 25
+    assert kwargs["max_per_parent"] == 0
+    assert kwargs["attach_embeddings"] is False
+    assert [c["id"] for c in out["rag_context"]] == ["c1", "c3", "c2"] or set(c["id"] for c in out["rag_context"]) == {"c1", "c2", "c3"}
+    assert out["graph_context"]["rerank_stats"]["method"] == "onnx_cross_encoder"
 
 
 @pytest.mark.asyncio

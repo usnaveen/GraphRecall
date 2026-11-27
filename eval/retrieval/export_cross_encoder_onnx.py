@@ -23,6 +23,7 @@ SNAPSHOT_DIR = Path(
 )
 OUT_DIR = ROOT / "eval" / "retrieval" / "artifacts"
 ONNX_PATH = OUT_DIR / "ms-marco-MiniLM-L6-v2.onnx"
+INT8_ONNX_PATH = OUT_DIR / "ms-marco-MiniLM-L6-v2.int8.onnx"
 VOCAB_PATH = OUT_DIR / "vocab.txt"
 PARITY_PATH = OUT_DIR / "parity_reference.json"
 
@@ -95,7 +96,21 @@ def export_model() -> None:
     print(f"Exported ONNX model: {ONNX_PATH} ({size_mb:.2f} MB), vocab copied to {VOCAB_PATH}")
 
 
-def verify_parity() -> None:
+def quantize_model() -> None:
+    from onnxruntime.quantization import QuantType, quantize_dynamic
+
+    assert ONNX_PATH.exists(), f"Missing FP32 ONNX model: {ONNX_PATH}"
+    quantize_dynamic(
+        model_input=str(ONNX_PATH),
+        model_output=str(INT8_ONNX_PATH),
+        weight_type=QuantType.QUInt8,
+    )
+    fp32_mb = ONNX_PATH.stat().st_size / (1024 * 1024)
+    int8_mb = INT8_ONNX_PATH.stat().st_size / (1024 * 1024)
+    print(f"Quantized INT8 ONNX: {INT8_ONNX_PATH} ({int8_mb:.2f} MB vs {fp32_mb:.2f} MB FP32, {fp32_mb/int8_mb:.1f}x smaller)")
+
+
+def verify_parity(*, model_path: Path = ONNX_PATH) -> None:
     import numpy as np
     import onnxruntime as ort
     from backend.services.reranker import OnnxCrossEncoderReranker, _WordPieceTokenizer
@@ -113,7 +128,7 @@ def verify_parity() -> None:
     opts = ort.SessionOptions()
     opts.inter_op_num_threads = 1
     opts.intra_op_num_threads = 4
-    sess = ort.InferenceSession(str(ONNX_PATH), sess_options=opts, providers=["CPUExecutionProvider"])
+    sess = ort.InferenceSession(str(model_path), sess_options=opts, providers=["CPUExecutionProvider"])
 
     pairs = [(p["q"], p["d"]) for p in ref["pairs"]]
     b_ids, b_mask, b_types = wp.encode_batch(pairs, max_length=256)
@@ -122,11 +137,12 @@ def verify_parity() -> None:
         dtype=np.float64,
     ).reshape(-1)
     max_diff = float(np.max(np.abs(ort_logits - np.asarray(ref["torch_logits"], dtype=np.float64))))
-    assert max_diff < 1e-4, f"ONNX vs PyTorch max diff too large: {max_diff}"
-    print(f"Logit parity PASSED (max |torch - ort| = {max_diff:.2e})")
+    if model_path == ONNX_PATH:
+        assert max_diff < 1e-4, f"ONNX vs PyTorch max diff too large: {max_diff}"
+    print(f"[{model_path.name}] Logit max diff vs PyTorch = {max_diff:.2e}")
 
     # Benchmark dynamic-batched batch=30 CPU latency on realistic child chunks.
-    reranker = OnnxCrossEncoderReranker(ONNX_PATH, VOCAB_PATH)
+    reranker = OnnxCrossEncoderReranker(model_path, VOCAB_PATH)
     fake_chunks = [
         {"id": f"c{i}", "title": f"Note {i}", "child_content": TEST_PAIRS[i % len(TEST_PAIRS)][1] * 2}
         for i in range(30)
@@ -138,15 +154,20 @@ def verify_parity() -> None:
         res = reranker.rerank(TEST_PAIRS[0][0], fake_chunks, top_k=10)
         assert not res.used_fallback and res.method == "onnx_cross_encoder"
         latencies.append((time.perf_counter() - t0) * 1000.0)
-    print(f"Batch=30 CPU latency: mean={sum(latencies)/len(latencies):.1f} ms (min={min(latencies):.1f}, max={max(latencies):.1f})")
+    print(f"[{model_path.name}] Batch=30 CPU latency: mean={sum(latencies)/len(latencies):.1f} ms (min={min(latencies):.1f}, max={max(latencies):.1f})")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--export", action="store_true")
+    parser.add_argument("--quantize", action="store_true")
     parser.add_argument("--verify", action="store_true")
     args = parser.parse_args()
     if args.export:
         export_model()
+    if args.quantize:
+        quantize_model()
     if args.verify:
-        verify_parity()
+        verify_parity(model_path=ONNX_PATH)
+        if INT8_ONNX_PATH.exists():
+            verify_parity(model_path=INT8_ONNX_PATH)

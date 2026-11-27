@@ -14,12 +14,14 @@ Provides:
 from __future__ import annotations
 
 import math
+import os
 import re
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional, Protocol, Sequence, runtime_checkable
 
@@ -500,6 +502,7 @@ def _sigmoid(x: float) -> float:
 
 
 DEFAULT_ONNX_MODEL = Path(__file__).resolve().parents[2] / "eval" / "retrieval" / "artifacts" / "ms-marco-MiniLM-L6-v2.onnx"
+DEFAULT_INT8_ONNX_MODEL = Path(__file__).resolve().parents[2] / "eval" / "retrieval" / "artifacts" / "ms-marco-MiniLM-L6-v2.int8.onnx"
 DEFAULT_ONNX_VOCAB = Path(__file__).resolve().parents[2] / "eval" / "retrieval" / "artifacts" / "vocab.txt"
 
 
@@ -620,6 +623,36 @@ class OnnxCrossEncoderReranker:
                 latency_ms=(time.perf_counter() - t0) * 1000.0,
                 used_fallback=True,
             )
+
+
+@lru_cache(maxsize=4)
+def _cached_reranker(mode: str, model_path: str, vocab_path: str) -> Reranker:
+    if mode == "lexical":
+        return LexicalOverlapReranker()
+    chosen_model = Path(model_path)
+    chosen_vocab = Path(vocab_path)
+    if mode == "onnx" or (chosen_model.exists() and chosen_vocab.exists()):
+        return OnnxCrossEncoderReranker(
+            model_path=chosen_model,
+            vocab_path=chosen_vocab,
+            use_child_text=True,
+            rrf_blend_weight=0.0,
+        )
+    return LexicalOverlapReranker()
+
+
+def get_reranker() -> Reranker:
+    """Return configured second-stage reranker (`RERANKER_MODE`: auto | onnx | lexical)."""
+    mode = (os.getenv("RERANKER_MODE", "auto") or "auto").strip().lower()
+    env_model = (os.getenv("RERANKER_ONNX_MODEL_PATH") or "").strip()
+    if env_model:
+        chosen_model = env_model
+    elif DEFAULT_INT8_ONNX_MODEL.exists():
+        chosen_model = str(DEFAULT_INT8_ONNX_MODEL)
+    else:
+        chosen_model = str(DEFAULT_ONNX_MODEL)
+    chosen_vocab = (os.getenv("RERANKER_ONNX_VOCAB_PATH") or "").strip() or str(DEFAULT_ONNX_VOCAB)
+    return _cached_reranker(mode, chosen_model, chosen_vocab)
 
 
 def _best_chunk_score(chunk: dict[str, Any]) -> float:

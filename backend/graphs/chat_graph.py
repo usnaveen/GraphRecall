@@ -53,12 +53,13 @@ from backend.services.rag_cache import (
     RedisCacheBackend,
 )
 from backend.services.reranker import (
-    LexicalOverlapReranker,
+    get_reranker,
     mmr_select_chunks,
     order_lost_in_middle,
 )
 from backend.services.retrieval_service import (
     RetrievalService,
+    attach_chunk_embeddings,
     extract_child_centered_window,
     pack_context_chunks,
     run_vector_sql,
@@ -740,13 +741,17 @@ async def get_context_node(state: ChatState) -> dict:
             rag_limit = 10 if intent == "show_images" else 5
 
             hybrid_start = now()
+            coarse_limit = max(rag_limit * 5, 25)
             hybrid_out = await RetrievalService().hybrid_search(
                 query=query,
                 user_id=user_id,
                 query_embedding=query_embedding,
                 seed_concept_ids=seed_concept_ids,
                 focused_source_ids=focused_source_ids or None,
-                limit=rag_limit,
+                limit=coarse_limit,
+                candidate_k=25,
+                max_per_parent=0,
+                attach_embeddings=False,
                 pg_client=pg_client,
                 neo4j_client=neo4j_client,
             )
@@ -755,15 +760,21 @@ async def get_context_node(state: ChatState) -> dict:
             graph_context["retrieval_stats"] = hybrid_out.get("stats", {})
 
             rerank_start = now()
-            rerank_res = LexicalOverlapReranker().rerank(
+            rerank_res = get_reranker().rerank(
                 query,
                 raw_chunks,
-                top_k=max(rag_limit, 6),
+                top_k=max(rag_limit + 3, 8),
             )
+            await attach_chunk_embeddings(pg_client, user_id, rerank_res.chunks)
+            max_per_parent = int(os.getenv("RAG_MAX_PER_PARENT", "2"))
+            is_ce = rerank_res.method == "onnx_cross_encoder"
             mmr_chunks = mmr_select_chunks(
                 query_embedding,
                 rerank_res.chunks,
                 k=rag_limit,
+                lambda_mult=0.88 if is_ce else 0.72,
+                max_per_parent=max_per_parent,
+                prefer_rerank_score=is_ce,
             )
             ordered_chunks = order_lost_in_middle(mmr_chunks)
             rerank_ms = elapsed_ms(rerank_start)

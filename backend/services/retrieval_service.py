@@ -330,6 +330,9 @@ class RetrievalService:
         focused_source_ids: Optional[list[str]] = None,
         limit: int = 5,
         candidate_k: int = 20,
+        max_per_parent: int = 1,
+        graph_mode: Optional[str] = None,
+        attach_embeddings: bool = True,
         pg_client: Any = None,
         neo4j_client: Any = None,
     ) -> dict[str, Any]:
@@ -371,6 +374,7 @@ class RetrievalService:
                 pg_client=pg,
             ),
         ))
+        resolved_graph_mode = (graph_mode or os.getenv("GRAPH_CHUNK_MODE", "hub_pruned_2hop") or "hub_pruned_2hop").strip()
         if seed_concept_ids:
             tasks.append((
                 "graph",
@@ -381,6 +385,7 @@ class RetrievalService:
                     query_embedding=resolved_embedding,
                     focused_source_ids=focused_source_ids,
                     limit=min(candidate_k, 15),
+                    graph_mode=resolved_graph_mode,
                     pg_client=pg,
                     neo4j_client=neo4j_client,
                 ),
@@ -400,11 +405,12 @@ class RetrievalService:
                 ranked_lists.append((name, weight, rows))
 
         fused = reciprocal_rank_fusion(ranked_lists, k=RRF_K)
-        deduped = dedupe_by_parent(fused, limit=limit)
+        deduped = dedupe_by_parent(fused, limit=limit, max_per_parent=max_per_parent)
         # MMR measures redundancy between chunks by cosine, so it needs their vectors. The legs
         # don't select them (768 floats per row x 3 legs x candidate_k); fetch them once here
-        # for the few survivors. Without this, MMR silently fell back to word overlap.
-        await attach_chunk_embeddings(pg, user_id, deduped)
+        # for the survivors unless caller delays attachment until after second-stage reranking.
+        if attach_embeddings:
+            await attach_chunk_embeddings(pg, user_id, deduped)
         stats = {
             **counts,
             "fused": len(fused),
