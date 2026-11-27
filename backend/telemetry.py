@@ -52,6 +52,12 @@ def record(name: str, duration_ms: float, *, log: bool = True, **fields: Any) ->
         stages.append((name, duration_ms))
     if log:
         logger.info("timing", stage=name, duration_ms=round(duration_ms, 1), **fields)
+    try:  # also a child span of the current trace, when OpenTelemetry is configured (backend/tracing.py)
+        from backend.tracing import record_span
+
+        record_span(name, duration_ms, fields)
+    except Exception:  # tracing must never break a request
+        pass
 
 
 @contextmanager

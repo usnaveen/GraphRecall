@@ -176,6 +176,11 @@ from backend.middleware.rate_limit import RateLimitMiddleware  # noqa: E402
 app.add_middleware(RateLimitMiddleware)  # per-client token bucket; daily LLM cost caps: services/quota.py
 app.add_middleware(telemetry.TimingMiddleware)
 
+# OpenTelemetry: off unless OTEL_EXPORTER_OTLP_ENDPOINT (or OTEL_TRACES_EXPORTER=console) is set.
+from backend.tracing import init_tracing  # noqa: E402
+
+init_tracing(app)
+
 # Register new routers
 app.include_router(feed_router)      # /api/feed - Active recall feed
 app.include_router(review_router)    # /api/review - Human-in-the-loop concept review

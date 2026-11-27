@@ -52,6 +52,7 @@ from backend.services.rag_cache import (
     InMemoryTTLCache,
     RedisCacheBackend,
 )
+from backend.tracing import traced
 from backend.services.output_guard import allowed_image_urls, sanitize_markdown_images
 from backend.services.reranker import (
     get_reranker,
@@ -380,6 +381,7 @@ def _preselect_communities(summaries: list[dict], query: str, max_count: int) ->
     return sorted(summaries, key=_score, reverse=True)[:max_count]
 
 
+@traced("chat.analyze_query")
 async def analyze_query_node(state: ChatState) -> dict:
     """
     Node 1: Analyze the user's query to determine intent and extract entities,
@@ -574,6 +576,7 @@ def _learner_state_block(state_rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+@traced("chat.get_context")
 async def get_context_node(state: ChatState) -> dict:
     """
     Node 2: Retrieve context from knowledge graph and notes via chunk-level hybrid RRF.
@@ -945,6 +948,7 @@ async def get_context_node(state: ChatState) -> dict:
 
 
 
+@traced("chat.generate_response")
 async def generate_response_node(state: ChatState) -> dict:
     """
     Node 3: Generate response using retrieved context.
