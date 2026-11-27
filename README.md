@@ -1,20 +1,24 @@
 <div align="center">
 
+<img src="docs/media/logo.png" width="120" alt="GraphRecall logo">
+
 # GraphRecall
 
-### An active knowledge graph of everything you learn
+An active knowledge graph of everything you learn.<br>
+Put anything in. It comes back to you as a feed you actually open,<br>
+an assistant that knows what you know, and context for every AI agent you use.
 
-**Put anything in. It becomes your graph. It comes back to you as a feed you actually open, an assistant that knows what you know, and context for every AI agent you use.**
+### See it in action at **[graphrecall.online](https://graphrecall.online)**
 
-[![iOS 26](https://img.shields.io/badge/iOS%2026-SwiftUI%20·%20Liquid%20Glass-000000?style=flat-square&logo=apple)](ios/)
+<a href="https://graphrecall.online"><img src="https://img.shields.io/badge/Check%20it%20out-graphrecall.online-B6FF2E?style=for-the-badge&labelColor=07070A" alt="Check it out at graphrecall.online"></a>
+
+[![iOS 26](https://img.shields.io/badge/iOS%2026-SwiftUI-000000?style=flat-square&logo=apple)](ios/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python%203.11%2B-009688?style=flat-square&logo=fastapi)](backend/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-workflows-1C3C3C?style=flat-square&logo=langchain)](backend/graphs/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?style=flat-square&logo=postgresql)](https://github.com/pgvector/pgvector)
 [![Neo4j](https://img.shields.io/badge/Neo4j-knowledge%20graph-4581C3?style=flat-square&logo=neo4j)](https://neo4j.com)
-[![Gemini](https://img.shields.io/badge/Gemini-Flash--Lite%20·%20embeddings%20·%20image-8E75B2?style=flat-square&logo=googlegemini)](https://ai.google.dev)
+[![Gemini](https://img.shields.io/badge/Gemini-Flash%20Lite-8E75B2?style=flat-square&logo=googlegemini&logoColor=white)](https://ai.google.dev)
 [![MCP](https://img.shields.io/badge/MCP-15%20tools-B6FF2E?style=flat-square)](backend/agent_bridge/)
-
-🌐 **[graphrecall.online](https://graphrecall.online)** · 📄 **[What makes it special](docs/GraphRecall-What-Makes-It-Special.pdf)** · 🛠️ **[Technical report](docs/TECHNICAL-REPORT.md)** ([PDF](docs/GraphRecall-Technical-Report.pdf))
 
 </div>
 
