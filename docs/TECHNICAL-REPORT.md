@@ -95,7 +95,7 @@ Not yet used: Gemini's explicit context caching for very long single-document Q&
 
 ## 6. The learning loop
 
-**Scheduling.** Reviews use FSRS (stability and difficulty per concept). When recall slips on a concept, scheduling **backtracks along prerequisite edges** and brings back the shaky foundations first.
+**Scheduling.** Reviews use SM-2 by default, with FSRS v4 selectable per user. The feed ranker scores urgency with FSRS-style retrievability, and when recall slips on a concept it **backtracks along prerequisite edges** and brings back the weakest foundation first.
 
 **The feed.** A one-stop daily view, designed to feel like scrolling social media rather than homework: no goal rings or streak guilt, which matters for ADHD-prone learners.
 - **Card types:** concept showcases, cloze term cards, multiple-choice quizzes, "spot the bug" cards and runnable code sandboxes (executed offline in a locked-down WKWebView). Articles and YouTube videos from sources you follow are each matched to concepts in your graph.

@@ -2,1028 +2,274 @@
 
 # GraphRecall
 
-### Lifetime Active Recall Learning System
+### An active knowledge graph of everything you learn
 
-**Transform your notes into an intelligent knowledge graph with AI-powered spaced repetition.**
+**Put anything in. It becomes your graph. It comes back to you as a feed you actually open, an assistant that knows what you know, and context for every AI agent you use.**
 
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
-[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react)](https://react.dev)
-[![LangGraph](https://img.shields.io/badge/LangGraph-1.0+-1C3C3C?style=flat-square&logo=langchain)](https://langchain-ai.github.io/langgraph/)
-[![Neo4j](https://img.shields.io/badge/Neo4j-5.15+-4581C3?style=flat-square&logo=neo4j)](https://neo4j.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?style=flat-square&logo=postgresql)](https://www.postgresql.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![iOS 26](https://img.shields.io/badge/iOS%2026-SwiftUI%20·%20Liquid%20Glass-000000?style=flat-square&logo=apple)](ios/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Python%203.11%2B-009688?style=flat-square&logo=fastapi)](backend/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-workflows-1C3C3C?style=flat-square&logo=langchain)](backend/graphs/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?style=flat-square&logo=postgresql)](https://github.com/pgvector/pgvector)
+[![Neo4j](https://img.shields.io/badge/Neo4j-knowledge%20graph-4581C3?style=flat-square&logo=neo4j)](https://neo4j.com)
+[![Gemini](https://img.shields.io/badge/Gemini-Flash--Lite%20·%20embeddings%20·%20image-8E75B2?style=flat-square&logo=googlegemini)](https://ai.google.dev)
+[![MCP](https://img.shields.io/badge/MCP-15%20tools-B6FF2E?style=flat-square)](backend/agent_bridge/)
+
+🌐 **[graphrecall.online](https://graphrecall.online)** · 📄 **[What makes it special](docs/GraphRecall-What-Makes-It-Special.pdf)** · 🛠️ **[Technical report](docs/TECHNICAL-REPORT.md)** ([PDF](docs/GraphRecall-Technical-Report.pdf))
 
 </div>
+
+---
+
+## Contents
+
+- [GraphRecall in one minute](#graphrecall-in-one-minute)
+- [How it started](#how-it-started)
+- [Architecture today](#architecture-today)
+- [Ingestion: from anything to concepts](#ingestion-from-anything-to-concepts)
+- [The assistant: hybrid GraphRAG](#the-assistant-hybrid-graphrag)
+- [The learning loop](#the-learning-loop)
+- [MCP: your knowledge as context for any agent](#mcp-your-knowledge-as-context-for-any-agent)
+- [Keeping it cheap](#keeping-it-cheap)
+- [Tests and evaluation](#tests-and-evaluation)
+- [Repository layout](#repository-layout)
+- [Running it locally](#running-it-locally)
+- [What's next](#whats-next)
 
 ---
 
 ## GraphRecall in one minute
 
-> **Graphs are everywhere.** LinkedIn and Reddit are full of beautiful knowledge graphs, and most of them, like most piles of notes, never get opened again. **GraphRecall builds an *active* graph of every concept you've been exposed to, and brings it back to you.**
-
-📄 **[What makes it special](docs/GraphRecall-What-Makes-It-Special.pdf)** · 🛠️ **[Technical report](docs/TECHNICAL-REPORT.md)** ([PDF](docs/GraphRecall-Technical-Report.pdf)) · 🌐 **[graphrecall.online](https://graphrecall.online)**
-
-GraphRecall is a native iOS 26 app (SwiftUI, Liquid Glass) on a FastAPI + PostgreSQL/pgvector + Neo4j backend with Gemini models.
+Knowledge graphs are everywhere, and most of them, like most piles of notes, are pictures that never get opened again. GraphRecall builds an **active** graph of every concept you've been exposed to, and keeps bringing it back to you.
 
 ### 1. Put anything in
 <p align="center"><img src="docs/media/app-create.png" width="230" alt="Create: concepts, text, URL, YouTube, chat, file, scan and voice, plus Remind me and LeetCode"></p>
 
-Type concepts or text, paste a URL or a YouTube video, import a chat history, upload files and whole books, scan pages and photos, or just talk. You can also share to GraphRecall from any app.
+Type concepts or text, paste a URL or a YouTube video, import a chat history, upload files and whole books, scan pages and photos, or just talk. Share to GraphRecall from any app. Log LeetCode problems by number: type 146 and the title, difficulty, topics and pattern fill in.
 
 ### 2. It becomes your graph
 <p align="center">
-  <img src="docs/media/app-graph.png" width="230" alt="Graph: named communities spread apart">
-  <img src="docs/media/app-graph-cluster.png" width="230" alt="Graph: inside one community, with typed links">
+  <img src="docs/media/app-graph-cluster.png" width="230" alt="Graph: inside the Machine Learning community, with typed links">
   <img src="docs/media/app-graph-focus.png" width="230" alt="Graph: Transformer with only its nearest prerequisites, subtopics and what it unlocks">
 </p>
 
-Concepts are extracted. Each one **merges into a node you already have or becomes a new one**, linked with typed, directed edges: *prerequisite of*, *subtopic of*, *builds on*. Communities are detected and named. Tap a community to go inside it; tap a concept and you see only what it needs, what it's part of and what it unlocks.
+Each concept **merges into a node you already have or becomes a new one**, linked by typed, directed edges: *prerequisite of*, *subtopic of*, *builds on*. Communities are detected and named. Tap a community to go inside it; tap a concept to see only what it needs, what it's part of and what it unlocks.
 
 ### 3. It comes back as a feed you actually open
 <p align="center">
-  <img src="docs/media/app-feed.png" width="230" alt="Feed: a YouTube video from a channel you follow, matched to concepts in your graph">
+  <img src="docs/media/app-feed.png" width="230" alt="Feed: a runnable code sandbox card with its difficulty meter">
+  <img src="docs/media/nano-banana-transformer.jpg" width="330" alt="The Transformer architecture, redrawn from the original paper's figure in GraphRecall's style">
 </p>
 
-- **A one-stop daily view.** Concept showcases, quizzes, term cards and runnable code cards (with syntax colours), plus videos and articles from sources you follow (YouTube, Substack, Medium, RSS), each matched to concepts you're learning.
-- **ADHD-friendly by design.** It scrolls like social media: no goal rings, no streak guilt, and a daily limit instead of a backlog. You rate how well you knew each card on Apple's native slider, and "Remind me" brings any card back later.
-- **Real spaced repetition.** FSRS schedules every concept. When recall slips, it **backtracks to the shaky prerequisites underneath**.
-- **Pictures that teach.** Figures from your own papers and books appear on cards. Where there's no figure, a Gemini image model (Nano Banana) redraws the real reference diagram in the app's style:
-
-<p align="center"><img src="docs/media/nano-banana-transformer.jpg" width="330" alt="The Transformer architecture, redrawn from the original paper's figure in GraphRecall's style"></p>
+- **Everything that needs your attention today, in one feed:** spaced-repetition reviews, newsletters and important updates.
+- **Hand-crafted cards for each kind of content:** concept cards with figures from your own papers, term cards, multiple-choice quizzes, "spot the bug", runnable code sandboxes, diagrams with hidden labels, and videos and articles from sources you follow, each matched to concepts in your graph.
+- **Built for brains that wander:** it scrolls like social media, with no goal rings or streak guilt. You rate recall on Apple's native slider, and "Remind me" brings any card back later.
+- **Pictures that teach:** where your sources have no figure, a Gemini image model (Nano Banana) redraws the real reference diagram in the app's style (right).
 
 ### 4. An assistant that knows what you know
-<p align="center"><img src="docs/media/app-assistant.png" width="230" alt="Assistant: grounded in your graph and notes, with suggested questions"></p>
+<p align="center"><img src="docs/media/app-assistant.png" width="230" alt="Assistant: an answer on multi-head attention, from your own notes, with citations"></p>
 
-- **GraphRAG answers from your own notes, with numbered citations.** Math renders readably.
-- **"Ask next" suggestions come from your graph, not a model**: a prerequisite you're shaky on, a subtopic you haven't studied, what the concept unlocks. About 0.2 s, zero tokens.
+Answers come from your own notes and books with numbered citations, readable math and code. The "Ask next" suggestions come from your graph: a prerequisite you're shaky on, a subtopic you haven't studied, what the concept unlocks.
 
 ### 5. Your profile, measured
-<p align="center"><img src="docs/media/app-profile.png" width="230" alt="Profile: knowledge map by status, resume, education, projects, LeetCode and today's progress"></p>
+<p align="center">
+  <img src="docs/media/app-profile.png" width="230" alt="Profile: knowledge map by status, resume, education, projects, LeetCode and today's progress">
+  <img src="docs/media/app-resume.png" width="230" alt="Resume check: every skill highlighted green, amber or red by how it held up">
+</p>
 
-Education, resume, projects and LeetCode progress. Log a problem by its number: type 146, and title, difficulty, topics and pattern fill in. Every concept's status (strong, shaky, seen or new) comes from evidence. **The resume scan marks each claimed skill** by whether you could defend it.
+Every concept is strong, shaky, seen or new, based on evidence: reviews, quiz answers, code results and self-ratings. **Resume/JD check:** every skill on your resume is highlighted from red to green by what your graph says about you, for an at-a-glance picture of how ready you are.
 
-### 6. Your knowledge as context for any AI agent (MCP)
-Paste a research paper into Claude and ask it to explain:
-1. Claude calls GraphRecall's MCP server and gets your **knowledge frontier**: what you know well, the prerequisites you're shaky on, and what you've never seen.
-2. It refreshes the shaky parts, then explains the new ideas at your level.
-3. It records what you learned back into your graph.
-
-There are 15 tools in all (`get_knowledge_frontier`, `get_knowledge_profile`, `search_concepts`, `record_exposure`, …), with scoped keys and OAuth 2.1. It works today with Claude Code. Public connectors for claude.ai and ChatGPT come with hosting.
-
-### Under the hood (details in the [technical report](docs/TECHNICAL-REPORT.md))
-- **Hybrid GraphRAG retrieval:** pgvector + Postgres full-text + a graph boost, fused with reciprocal rank fusion, then reranked, diversified (MMR) and ordered against "lost in the middle". Community-summary map-reduce runs for summary questions only.
-- **Intent routing without an LLM call:** a TF-IDF and logistic-regression classifier in pure numpy, with an LLM fallback when unsure. Every decision is logged.
-- **Caching with correctness rules:** an embedding cache, and an answer cache partitioned by a version of your notes, so a deleted note is never served. Agents get a stable profile hash they can cache as a prompt prefix.
-- **Cost discipline:** small models by default, zero-token components where a model isn't needed, and per-day usage tracking.
-
-### What's next
-Hold "+" to dictate concepts and watch the graph wire itself up (the streaming backend exists) · open the graph on subjects, then communities, then concepts · keep resume PDFs on the server · public hosting for agent connectors · newsletter email routing · published retrieval evaluation scores.
+### 6. Your knowledge as context for any AI agent
+Paste a research paper into Claude and ask it to explain. Claude asks GraphRecall's MCP server what you know well, what you're shaky on and what you've never seen, refreshes the shaky parts and teaches the new ideas at your level. After the session it sends back every concept you discussed, plus a summary, so your graph grows from those conversations too.
 
 ---
 
-The rest of this README documents the system in depth (architecture, API, schema, workflows); parts of it describe the earlier React web client.
+## How it started
+
+GraphRecall began in January 2026 as a **React web app on a LangGraph multi-agent setup**. A supervisor graph classified each request and routed it to a specialised sub-graph: ingestion, chat, research, Mermaid diagrams or content generation. Ingestion paused at a human-in-the-loop `interrupt()` so you could approve every extracted concept. A "scanner" agent marked quiz-worthy passages and generated questions just in time, and a Tavily-backed research agent filled gaps from the web. It ran on Render and Vercel.
+
+That version proved the idea, but it called a model at almost every step. Since then the project has moved to:
+
+- **a native iOS 26 app** as the main client;
+- **one focused workflow per job** instead of a general supervisor;
+- **no model calls where a model isn't needed:** a trained classifier for routing, graph-picked follow-ups and rule-based book chunking;
+- **evidence-based mastery** that drives the feed, the resume check and the MCP server.
+
+The old web client (`frontend/`) and the supervisor graph (`backend/graphs/supervisor_graph.py`) are still in the repo for reference.
 
 ---
 
-GraphRecall is a full-stack AI application that ingests your notes, articles, and transcripts, extracts key concepts into a **Neo4j knowledge graph**, and generates personalized study material using **spaced repetition (SM-2)**. A **GraphRAG chatbot** lets you query your knowledge base conversationally, while a **3D force-directed graph** visualizes how your concepts connect.
-
-## Table of Contents
-
-- [Features](#features)
-- [Recent Changes (Feb 2026)](#recent-changes-feb-2026)
-- [Architecture Overview](#architecture-overview)
-- [System Architecture](#system-architecture)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Environment Variables](#environment-variables)
-- [API Reference](#api-reference)
-- [Database Schema](#database-schema)
-- [LangGraph Workflows](#langgraph-workflows)
-- [Frontend Screens](#frontend-screens)
-- [Deployment](#deployment)
-- [Development](#development)
-- [License](#license)
-
----
-
-## Features
-
-### Knowledge Ingestion
-- **Multi-format support** &mdash; Ingest markdown, plain text, PDF, images, DOCX, YouTube links, and LLM chat transcripts
-- **URL scraping** &mdash; Fetch and process articles from Substack, Medium, blogs, and documentation sites
-- **AI concept extraction** &mdash; Gemini 2.5 Flash extracts concepts with definitions, domains, complexity scores, and relationships
-- **Duplicate & conflict detection** &mdash; Embedding-based synthesis detects overlapping, enhancing, or contradictory concepts
-- **Human-in-the-loop review** &mdash; LangGraph `interrupt()` pauses ingestion and resumes via `thread_id` after concept approval
-
-### Active Recall & Spaced Repetition
-- **Seven card types** &mdash; Flashcards, multiple-choice quizzes, fill-in-the-blank, screenshots, Mermaid diagrams, concept showcases, and code challenges
-- **SM-2 algorithm** &mdash; SuperMemo 2 scheduling adjusts review intervals based on your difficulty ratings
-- **Topic-scoped quizzes** &mdash; Generate quizzes on any concept with automatic web research fallback via Tavily
-- **Proficiency tracking** &mdash; Per-concept mastery scores drive adaptive feed ordering
-- **Lazy Quiz Generation** &mdash; "Scanner Agent" identifies quiz candidates during ingestion, creating full questions only when needed (just-in-time) to save tokens.
-- **Web Search Caching** &mdash; Intelligent caching of Tavily search results to reduce API costs and latency.
-
-
-### Knowledge Graph
-- **3D visualization** &mdash; Force-directed graph with zoom, pan, search, and focus modes
-- **Domain clustering** &mdash; Concepts grouped and colored by subject area
-- **Linked notes panel** &mdash; Click any node to see source notes and connected concepts
-- **Graph-aware chat** &mdash; The chatbot traverses your graph to answer questions with context
-
-### GraphRAG Assistant
-- **Streaming responses** &mdash; Server-Sent Events for real-time chat
-- **Dual retrieval** &mdash; Combines Neo4j graph traversal with PostgreSQL vector search (RAG)
-- **Source citations** &mdash; Every response links back to the notes and concepts it used
-- **Conversation persistence** &mdash; Full history with the ability to save conversations as new notes
-
-### Bulk Book Ingestion (Image-Aware)
-- **scripts/ingest_book.py** ingests large OCR-parsed textbooks without per-chunk LLM calls.
-- Consumes markdown like `sample_content/The Hundred-Page Language Models Book /The Hundred-Page Language Models Book 2025 (1).md` plus figures in the adjacent `images/` folder.
-- Figures and captions are linked to each chunk and stored in the `chunks.images` JSONB column; images are served from `/api/images/{filename}` or uploaded via `--upload-images`.
-- Optional `--local-embeddings` uses sentence-transformers; `--extract-concepts` batches concept extraction to Neo4j.
-- The earlier parsing notebook lives at `notebooks/pdf_ocr_colab.ipynb` (source for the provided parsed book).
-
-## Recent Changes (Feb 2026)
-
-- **Concept dedup hardening** &mdash; Neo4j concept upserts now `MERGE` on `name_normalized + user_id` to collapse naming variants (for example, parenthetical suffixes).
-- **Ingestion ordering fix** &mdash; Workflow order is now FK-safe: `extract_concepts -> store_note -> embed_chunks -> save_chunks`.
-- **LLM JSON sanitization** &mdash; Added defensive parsing/cleanup paths in generation nodes and quiz agents for malformed escaped output.
-- **Graph edge robustness** &mdash; 3D graph queries now use `coalesce` for optional relationship properties like `mention_count`.
-- **Navigation update** &mdash; Books/Library moved into `Profile` (not a bottom dock tab).
-
----
-
-## Architecture Overview
-
-```mermaid
-graph TB
-    subgraph Client["Frontend (Vercel)"]
-        UI["React 19 + Vite + TypeScript"]
-        Zustand["Zustand State Management"]
-        UI --> Zustand
-    end
-
-    subgraph Server["Backend (Render)"]
-        API["FastAPI"]
-        LG["LangGraph Workflows"]
-        Agents["AI Agents"]
-        Services["Service Layer"]
-        API --> LG
-        API --> Services
-        LG --> Agents
-    end
-
-    subgraph Data["Data Layer"]
-        Neo4j["Neo4j Aura\n(Knowledge Graph)"]
-        PG["PostgreSQL + pgvector\n(Supabase)"]
-        S3["Supabase Storage\n(File Uploads)"]
-    end
-
-    subgraph AI["AI Services"]
-        Gemini["Google Gemini 2.5 Flash"]
-        Embed["Gemini Embedding-001"]
-        Tavily["Tavily Web Search"]
-    end
-
-    Client -->|REST API + SSE| Server
-    Server --> Data
-    Agents --> AI
-
-    style Client fill:#0d1117,stroke:#B6FF2E,color:#fff
-    style Server fill:#0d1117,stroke:#2EFFE6,color:#fff
-    style Data fill:#0d1117,stroke:#a78bfa,color:#fff
-    style AI fill:#0d1117,stroke:#f59e0b,color:#fff
-```
-
----
-
-## System Architecture
-
-### Backend Layered Architecture
-
-```mermaid
-graph TD
-    A["HTTP Request"] --> B["FastAPI Router Layer"]
-
-    subgraph Routers["API Routers (12 modules)"]
-        B --> R1["/api/chat"]
-        B --> R2["/api/feed"]
-        B --> R3["/api/graph3d"]
-        B --> R4["/api/v2/ingest"]
-        B --> R5["/api/review"]
-        B --> R6["/api/uploads"]
-        B --> R7["/auth"]
-        B --> R8["/api/notes"]
-        B --> R9["/api/nodes"]
-        B --> R10["/api/concepts"]
-        B --> R11["/api/images"]
-        B --> R12["/api/knowledge"]
-    end
-
-    subgraph Services["Service Layer"]
-        S1["FeedService"]
-        S2["SpacedRepetitionService\n(SM-2 Algorithm)"]
-        S3["ConceptReviewService"]
-        S4["StorageService\n(S3)"]
-    end
-
-    subgraph Agents["AI Agent Layer"]
-        AG1["ExtractionAgent\n(Concept Extraction)"]
-        AG2["SynthesisAgent\n(Conflict Detection)"]
-        AG3["ContentGeneratorAgent\n(MCQ, Flashcards)"]
-        AG4["WebResearchAgent\n(Tavily Search + Cache)"]
-        AG5["MermaidAgent\n(Diagram Generation)"]
-        AG6["ScannerAgent\n(Lazy Quiz Discovery)"]
-    end
-
-    subgraph Graphs["LangGraph Workflows"]
-        G1["Ingestion Graph\n(with HITL interrupt)"]
-        G2["Chat Graph\n(GraphRAG)"]
-        G3["Quiz Graph"]
-        G4["Research Graph"]
-    end
-
-    subgraph DB["Database Clients (Async)"]
-        D1["Neo4jClient\n(Knowledge Graph)"]
-        D2["PostgresClient\n(SQLAlchemy + pgvector)"]
-    end
-
-    Routers --> Services
-    Routers --> Graphs
-    Services --> Agents
-    Graphs --> Agents
-    Agents --> DB
-    Services --> DB
-    Graphs --> DB
-
-    style Routers fill:#1a1a2e,stroke:#2EFFE6,color:#fff
-    style Services fill:#1a1a2e,stroke:#B6FF2E,color:#fff
-    style Agents fill:#1a1a2e,stroke:#f59e0b,color:#fff
-    style Graphs fill:#1a1a2e,stroke:#a78bfa,color:#fff
-    style DB fill:#1a1a2e,stroke:#ef4444,color:#fff
-```
-
-### Frontend Architecture
-
-```mermaid
-graph TD
-    subgraph App["React Application"]
-        Auth["GoogleOAuthProvider"]
-        Auth --> Router["Screen Router (5 tabs)"]
-
-        Router --> Feed["FeedScreen\n7 card types, SR scheduling"]
-        Router --> Graph["GraphScreen\n3D force-directed graph"]
-        Router --> Create["CreateScreen\nMulti-modal ingestion"]
-        Router --> Chat["AssistantScreen\nGraphRAG streaming chat"]
-        Router --> Profile["ProfileScreen\nStats, heatmap, settings, books/library"]
-    end
-
-    subgraph State["Zustand Stores"]
-        AppStore["useAppStore\nfeed, chat, stats, navigation"]
-        AuthStore["useAuthStore\nuser, token (persisted)"]
-    end
-
-    subgraph UI["Shared Components"]
-        TopBar["TopBar\nprogress, status, streak"]
-        Dock["LiquidDock\nbottom nav, glassmorphism"]
-        Status["BackendStatusPanel\ndiagnostics"]
-    end
-
-    subgraph API["Service Layer"]
-        FeedSvc["feedService"]
-        GraphSvc["graphService"]
-        ChatSvc["chatService"]
-        IngestSvc["ingestService"]
-    end
-
-    App --> State
-    App --> UI
-    State --> API
-    API -->|"authFetch + Bearer token"| Backend["FastAPI Backend"]
-
-    style App fill:#0d1117,stroke:#B6FF2E,color:#fff
-    style State fill:#0d1117,stroke:#2EFFE6,color:#fff
-    style UI fill:#0d1117,stroke:#a78bfa,color:#fff
-    style API fill:#0d1117,stroke:#f59e0b,color:#fff
-```
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|:------|:-----------|
-| **Frontend** | React 19, TypeScript 5.9, Vite 7, Tailwind CSS 3.4 |
-| **UI/UX** | Radix UI, Framer Motion, Three.js (3D graph), Recharts |
-| **State** | Zustand 5 (persisted auth store) |
-| **Backend** | Python 3.11+, FastAPI, Uvicorn |
-| **AI Orchestration** | LangGraph 1.0+ (StateGraph with conditional edges, HITL interrupts) |
-| **LLM** | Google Gemini 2.5 Flash (extraction, synthesis, content generation) |
-| **Embeddings** | Gemini Embedding-001 (768 dimensions via MRL) |
-| **Knowledge Graph** | Neo4j Aura (Concept, NoteSource, Topic nodes) |
-| **Relational DB** | PostgreSQL via Supabase (SQLAlchemy async + pgvector) |
-| **Vector Search** | pgvector IVFFlat index on note embeddings |
-| **File Storage** | Supabase Storage (S3-compatible) |
-| **Web Research** | Tavily Search API (with PostgreSQL caching) |
-| **Auth** | Google OAuth 2.0 |
-| **Observability** | LangSmith tracing, structlog |
-| **Deployment** | Render (backend), Vercel (frontend) |
-
----
-
-## Project Structure
-
-```
-GraphRecall/
-├── backend/
-│   ├── agents/                    # AI agent implementations
-│   │   ├── extraction.py          #   Concept extraction (Gemini)
-│   │   ├── synthesis.py           #   Conflict/duplicate detection (embeddings + LLM)
-│   │   ├── content_generator.py   #   MCQ, flashcard, fill-blank generation
-│   │   ├── research_agent.py      #   Web research via Tavily
-│   │   ├── mermaid_agent.py       #   Mermaid diagram generation
-│   │   ├── scanner_agent.py       #   Lazy quiz candidate discovery
-│   │   ├── web_quiz_agent.py      #   Web search with caching
-│   │   └── states.py              #   Shared state schemas
-│   ├── auth/
-│   │   ├── google_oauth.py        #   Google token verification
-│   │   └── middleware.py          #   Auth dependency (get_current_user)
-│   ├── config/
-│   │   └── llm.py                 #   LLM model configuration (cached)
-│   ├── db/
-│   │   ├── neo4j_client.py        #   Async Neo4j driver with pooling
-│   │   ├── postgres_client.py     #   Async SQLAlchemy with pgvector
-│   │   └── init.sql               #   PostgreSQL schema definitions
-│   ├── graphs/                    # LangGraph state machines
-│   │   ├── ingestion_graph.py     #   Note → concepts pipeline (HITL)
-│   │   ├── chat_graph.py          #   GraphRAG conversation flow
-│   │   ├── quiz_graph.py          #   Quiz generation with research
-│   │   ├── article_graph.py       #   URL scraping + ingestion
-│   │   ├── research_graph.py      #   Web research workflow
-│   │   ├── mermaid_graph.py       #   Diagram generation workflow
-│   │   ├── content_graph.py       #   Parallel content generation
-│   │   ├── link_suggestion_graph.py # AI-assisted relationship suggestions
-│   │   ├── mcp_graph.py           #   Verification workflow
-│   │   └── supervisor_graph.py    #   Orchestrator graph
-│   ├── models/
-│   │   ├── schemas.py             #   Core Pydantic models
-│   │   └── feed_schemas.py        #   Feed, stats, and card models
-│   ├── prompts/
-│   │   ├── extraction.txt         #   Concept extraction prompt
-│   │   └── synthesis.txt          #   Conflict analysis prompt
-│   ├── routers/
-│   │   ├── chat.py                #   /api/chat — GraphRAG assistant
-│   │   ├── feed.py                #   /api/feed — Active recall feed
-│   │   ├── graph3d.py             #   /api/graph3d — 3D visualization
-│   │   ├── ingest_v2.py           #   /api/v2 — LangGraph ingestion
-│   │   ├── review.py              #   /api/review — Concept review (HITL)
-│   │   ├── uploads.py             #   /api/uploads — File management
-│   │   ├── notes.py               #   /api/notes — Notes library
-│   │   ├── concepts.py            #   /api/concepts — Concept operations
-│   │   ├── nodes.py               #   /api/nodes — Manual graph edits
-│   │   ├── images.py              #   /api/images — Book image serving
-│   │   ├── knowledge.py           #   /api/knowledge — Global summaries
-│   │   └── auth.py                #   /auth — Google OAuth
-│   ├── services/
-│   │   ├── feed_service.py        #   Feed generation & stats
-│   │   ├── spaced_repetition.py   #   SM-2 algorithm implementation
-│   │   ├── concept_review.py      #   HITL review session management
-│   │   └── storage_service.py     #   S3-compatible file storage
-│   ├── alembic/                   # Database migrations
-│   ├── tests/                     # Test suite
-│   └── main.py                    # FastAPI app entry point
-│
-├── frontend/
-│   ├── src/
-│   │   ├── screens/
-│   │   │   ├── LoginScreen.tsx    #   Google OAuth sign-in
-│   │   │   ├── FeedScreen.tsx     #   Active recall card feed
-│   │   │   ├── GraphScreen.tsx    #   3D knowledge graph
-│   │   │   ├── CreateScreen.tsx   #   Multi-modal content ingestion
-│   │   │   ├── AssistantScreen.tsx #  GraphRAG streaming chatbot
-│   │   │   └── ProfileScreen.tsx  #   Stats, heatmap, settings
-│   │   ├── components/
-│   │   │   ├── TopBar.tsx         #   Header with progress + status
-│   │   │   ├── LiquidDock.tsx     #   Bottom nav (glassmorphism)
-│   │   │   ├── BackendStatusPanel.tsx # Diagnostics sheet
-│   │   │   └── ui/               #   Radix UI component library
-│   │   ├── store/
-│   │   │   ├── useAppStore.ts     #   App state (Zustand)
-│   │   │   └── useAuthStore.ts    #   Auth state (persisted)
-│   │   ├── services/
-│   │   │   └── api.ts             #   API service layer
-│   │   └── types/
-│   │       └── index.ts           #   TypeScript definitions
-│   ├── vite.config.ts
-│   ├── tailwind.config.js
-│   └── package.json
-│
-├── pyproject.toml                 # Python project config (uv/hatch)
-├── requirements.txt               # Pip dependencies
-├── render.yaml                    # Render deployment config
-└── alembic.ini                    # Migration config
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-| Requirement | Version |
-|:------------|:--------|
-| Python | 3.11+ |
-| Node.js | 18+ |
-| [uv](https://github.com/astral-sh/uv) | Latest (Python package manager) |
-| Neo4j | 5.15+ (or [Neo4j Aura](https://neo4j.com/cloud/aura/) free tier) |
-| PostgreSQL | 15+ with pgvector (or [Supabase](https://supabase.com) free tier) |
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/usnaveen/GraphRecall.git
-cd GraphRecall
-```
-
-### 2. Backend Setup
-
-```bash
-# Install Python dependencies
-uv sync
-
-# Create and configure environment variables
-# (create .env manually and set values listed below)
-
-# Run database migrations
-uv run alembic upgrade head
-
-# Start the API server
-uv run uvicorn backend.main:app --reload --port 8000
-```
-
-The API will be available at `http://localhost:8000` with interactive docs at `http://localhost:8000/docs`.
-
-### 3. Frontend Setup
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Configure the API URL
-echo "VITE_API_URL=http://localhost:8000/api" > .env
-echo "VITE_GOOGLE_CLIENT_ID=your-google-client-id" >> .env
-
-# Start the dev server
-npm run dev
-```
-
-The app will be available at `http://localhost:5173`.
-
----
-
-## Environment Variables
-
-### Backend (`.env`)
-
-| Variable | Required | Description |
-|:---------|:--------:|:------------|
-| `GOOGLE_API_KEY` | Yes | Google AI (Gemini) API key |
-| `DATABASE_URL` | Yes | PostgreSQL connection string (with pgvector) |
-| `NEO4J_URI` | Yes | Neo4j Bolt URI (e.g. `neo4j+s://xxx.databases.neo4j.io`) |
-| `NEO4J_USER` | Yes | Neo4j username |
-| `NEO4J_PASSWORD` | Yes | Neo4j password |
-| `GOOGLE_CLIENT_ID` | Yes | Google OAuth 2.0 Client ID |
-| `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth 2.0 Client Secret |
-| `SECRET_KEY` | Yes | JWT signing secret |
-| `TAVILY_API_KEY` | No | Tavily API key (enables web research for quizzes) |
-| `S3_BUCKET_NAME` | No | S3-compatible bucket for file uploads |
-| `S3_ENDPOINT_URL` | No | S3 endpoint (Supabase Storage) |
-| `S3_ACCESS_KEY_ID` | No | S3 access key |
-| `S3_SECRET_ACCESS_KEY` | No | S3 secret key |
-| `S3_PUBLIC_URL_BASE` | No | Public URL prefix for uploaded files |
-| `LANGSMITH_API_KEY` | No | LangSmith API key (enables tracing) |
-| `LANGSMITH_TRACING` | No | Set `true` to enable LangSmith tracing |
-| `FRONTEND_URL` | No | Frontend URL for CORS (default: `http://localhost:5173`) |
-| `ENVIRONMENT` | No | `production` enables PostgresSaver for LangGraph checkpoints |
-| `DEBUG` | No | Set `true` for debug mode |
-
-### Frontend (`.env`)
-
-| Variable | Required | Description |
-|:---------|:--------:|:------------|
-| `VITE_API_URL` | Yes | Backend API base URL (e.g. `https://your-app.onrender.com/api`) |
-| `VITE_GOOGLE_CLIENT_ID` | Yes | Google OAuth 2.0 Client ID |
-
----
-
-## API Reference
-
-### Authentication (`/auth`)
-
-All endpoints (except `/auth/google` and `/health`) require a `Bearer` token in the `Authorization` header.
-
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| `POST` | `/auth/google` | Exchange Google ID token for user session |
-| `PATCH` | `/auth/profile` | Update user settings |
-
-### Ingestion (`/api/v2`)
-
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| `POST` | `/api/v2/ingest` | Ingest text/markdown with concept review |
-| `POST` | `/api/v2/ingest/url` | Fetch and ingest an article URL |
-| `POST` | `/api/v2/ingest/youtube` | Store a YouTube link |
-| `POST` | `/api/v2/ingest/chat-transcript` | Process an LLM chat transcript |
-| `GET` | `/api/v2/ingest/{thread_id}/status` | Check ingestion workflow status |
-| `POST` | `/api/v2/ingest/{thread_id}/approve` | Approve/reject extracted concepts |
-| `GET` | `/api/v2/health` | Router health probe |
-
-### Feed & Spaced Repetition (`/api/feed`)
-
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| `GET` | `/api/feed` | Get personalized active recall feed |
-| `POST` | `/api/feed/review` | Record difficulty rating (again/hard/good/easy) |
-| `GET` | `/api/feed/stats` | User statistics (streak, accuracy, domains) |
-| `GET` | `/api/feed/saved` | Get liked/saved study items |
-| `GET` | `/api/feed/history/quizzes` | Quiz history |
-| `GET` | `/api/feed/due-count` | Count of items due today |
-| `POST` | `/api/feed/quiz/topic/{topic}` | Generate quiz on a specific topic |
-| `POST` | `/api/feed/quiz/topic/{topic}/stream` | Stream topic quiz generation |
-| `GET` | `/api/feed/resources/{concept}` | Get all resources linked to a concept |
-| `GET` | `/api/feed/schedule` | Recall schedule for next days |
-| `POST` | `/api/feed/{item_id}/like` | Toggle like on a card |
-| `POST` | `/api/feed/{item_id}/save` | Toggle save on a card |
-
-### Chat (`/api/chat`)
-
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| `POST` | `/api/chat` | Send message to GraphRAG assistant |
-| `POST` | `/api/chat/quick` | Fast-path chat endpoint |
-| `POST` | `/api/chat/stream` | Stream response via SSE |
-| `GET` | `/api/chat/suggestions` | Get contextual chat suggestions |
-| `GET` | `/api/chat/conversations` | List conversations |
-| `GET` | `/api/chat/conversations/{id}` | Get full conversation |
-| `POST` | `/api/chat/conversations` | Create a conversation |
-| `POST` | `/api/chat/conversations/{id}/messages` | Add message to conversation |
-| `POST` | `/api/chat/messages/{id}/save` | Save message for quiz generation |
-| `POST` | `/api/chat/messages/{id}/create-card` | Create card from message |
-| `POST` | `/api/chat/conversations/{id}/to-knowledge` | Convert conversation to notes |
-| `GET` | `/api/chat/history` | List recent conversations |
-| `DELETE` | `/api/chat/conversations/{id}` | Delete conversation |
-
-### Knowledge Graph (`/api/graph3d`)
-
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| `GET` | `/api/graph3d` | Get full 3D graph data |
-| `GET` | `/api/graph3d/focus/{concept_id}` | Get concept neighborhood with linked notes |
-| `GET` | `/api/graph3d/search` | Search concepts for navigation |
-| `POST` | `/api/graph3d/communities/recompute` | Recompute graph communities |
-
-### Concept Review (`/api/review`)
-
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| `POST` | `/api/review/ingest` | Start review-oriented ingestion |
-| `GET` | `/api/review/sessions` | List pending review sessions |
-| `GET` | `/api/review/sessions/{id}` | Get session with concepts |
-| `PUT` | `/api/review/sessions/{id}` | Edit concepts before approval |
-| `POST` | `/api/review/sessions/{id}/approve` | Commit concepts to Neo4j |
-| `POST` | `/api/review/sessions/{id}/cancel` | Cancel session |
-| `POST` | `/api/review/sessions/{id}/concepts` | Add concept to session |
-
-### Uploads (`/api/uploads`)
-
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| `POST` | `/api/uploads` | Upload screenshot/infographic |
-| `GET` | `/api/uploads` | List user uploads |
-| `GET` | `/api/uploads/{id}` | Get upload details |
-| `PUT` | `/api/uploads/{id}` | Update upload metadata |
-| `POST` | `/api/uploads/{id}/link-concepts` | Link concepts to upload |
-| `DELETE` | `/api/uploads/{id}/link-concepts/{concept_id}` | Unlink concept |
-| `DELETE` | `/api/uploads/{id}` | Delete upload |
-
-### Notes & Nodes
-
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| `GET` | `/api/notes` | List notes |
-| `DELETE` | `/api/notes/{note_id}` | Delete note |
-| `POST` | `/api/nodes` | Create manual concept node |
-| `POST` | `/api/nodes/{node_id}/suggest-links` | Get AI link suggestions |
-| `POST` | `/api/nodes/{node_id}/link` | Apply selected links |
-
-### Other Utility Endpoints
-
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| `DELETE` | `/api/concepts/{concept_id}` | Delete concept |
-| `GET` | `/api/images/{filename}` | Serve ingested book images |
-| `GET` | `/api/knowledge/summary` | Global knowledge summary |
-
-### Health
-
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| `GET` | `/health` | System health (PostgreSQL + Neo4j status) |
-
----
-
-## Database Schema
-
-### PostgreSQL (Relational Data)
-
-```mermaid
-erDiagram
-    users {
-        uuid id PK
-        varchar google_id UK
-        varchar email UK
-        varchar name
-        text profile_picture
-        jsonb settings_json
-        timestamp created_at
-        timestamp last_login
-    }
-
-    notes {
-        uuid id PK
-        uuid user_id FK
-        varchar title
-        varchar content_type
-        text content_text
-        varchar resource_type
-        varchar source_url
-        vector_768 embedding
-        timestamp created_at
-    }
-
-    flashcards {
-        uuid id PK
-        uuid user_id FK
-        varchar concept_id
-        text front_content
-        text back_content
-        decimal difficulty
-        boolean is_liked
-        boolean is_saved
-        integer times_reviewed
-    }
-
-    proficiency_scores {
-        uuid id PK
-        uuid user_id FK
-        varchar concept_id
-        decimal score
-        decimal easiness_factor
-        integer interval_days
-        integer repetition_count
-        timestamp next_review_due
-    }
-
-    chat_conversations {
-        uuid id PK
-        uuid user_id FK
-        varchar title
-        boolean is_saved_to_knowledge
-        text summary
-        timestamp updated_at
-    }
-
-    chat_messages {
-        uuid id PK
-        uuid conversation_id FK
-        varchar role
-        text content
-        jsonb sources_json
-        boolean is_saved_for_quiz
-    }
-
-    concept_review_sessions {
-        varchar id PK
-        uuid user_id FK
-        uuid note_id FK
-        varchar status
-        text concepts_json
-        timestamp expires_at
-    }
-
-    user_uploads {
-        uuid id PK
-        uuid user_id FK
-        varchar upload_type
-        text file_url
-        varchar_arr linked_concepts
-    }
-
-    daily_stats {
-        uuid id PK
-        uuid user_id FK
-        date stat_date
-        integer reviews_completed
-        integer concepts_learned
-        decimal accuracy
-    }
-
-    web_search_cache {
-        varchar query_hash PK
-        text query_text
-        jsonb results_json
-        timestamp created_at
-    }
-
-    quiz_candidates {
-        uuid id PK
-        uuid user_id FK
-        uuid source_note_id FK
-        text chunk_text
-        varchar topic
-        decimal difficulty
-        varchar status
-    }
-
-    users ||--o{ notes : owns
-    users ||--o{ flashcards : studies
-    users ||--o{ proficiency_scores : tracks
-    users ||--o{ chat_conversations : chats
-    users ||--o{ user_uploads : uploads
-    users ||--o{ daily_stats : records
-    users ||--o{ concept_review_sessions : reviews
-    chat_conversations ||--o{ chat_messages : contains
-```
-
-### Neo4j Knowledge Graph
+## Architecture today
 
 ```mermaid
 graph LR
-    subgraph Nodes
-        C1["Concept\n(name, definition, domain,\ncomplexity, embedding)"]
-        C2["Concept"]
-        NS["NoteSource\n(note_id, summary)"]
+    subgraph Client["iOS 26 app (SwiftUI)"]
+        Feed["Feed"]
+        Graph["Graph (Three.js in WKWebView)"]
+        Asst["Assistant (SSE)"]
+        Create["Create · Share extension · Widget"]
     end
 
-    NS -->|"EXPLAINS\n(relevance)"| C1
-    C1 -->|"RELATED_TO"| C2
-    C1 -->|"PREREQUISITE_OF"| C2
-    C1 -->|"BUILDS_ON"| C2
+    subgraph API["FastAPI backend"]
+        Ingest["Ingestion workflow (LangGraph)"]
+        Chat["Chat workflow (LangGraph)"]
+        Router["Intent router (numpy classifier)"]
+        Ranker["Feed ranker + SM-2 / FSRS"]
+        Bridge["MCP agent bridge (15 tools)"]
+        Cache["Embedding + answer caches"]
+    end
 
-    style C1 fill:#1a1a2e,stroke:#B6FF2E,color:#fff
-    style C2 fill:#1a1a2e,stroke:#B6FF2E,color:#fff
-    style NS fill:#1a1a2e,stroke:#2EFFE6,color:#fff
+    subgraph Data["Storage"]
+        PG["PostgreSQL + pgvector<br/>notes · chunks · embeddings · reviews · evidence"]
+        N4J["Neo4j<br/>concepts · typed relationships · communities"]
+    end
+
+    Gemini["Gemini Flash-Lite · embeddings · image model"]
+    Agents["Claude · Cursor · any MCP client"]
+
+    Client -->|REST + SSE| API
+    Agents -->|MCP over streamable HTTP| Bridge
+    API --> PG
+    API --> N4J
+    API --> Gemini
+
+    style Client fill:#0d1117,stroke:#B6FF2E,color:#fff
+    style API fill:#0d1117,stroke:#2EFFE6,color:#fff
+    style Data fill:#0d1117,stroke:#a78bfa,color:#fff
 ```
 
-**Node types:**
-- **Concept** &mdash; A knowledge unit with name, definition, domain, complexity score, and vector embedding
-- **NoteSource** &mdash; Links a PostgreSQL note to the concepts it explains (bridging relational and graph data)
-
-**Relationship types:**
-- `EXPLAINS` (NoteSource &rarr; Concept) &mdash; A note explains a concept, with relevance score
-- `RELATED_TO` (Concept &harr; Concept) &mdash; Semantic relationship between concepts
-- `PREREQUISITE_OF` (Concept &rarr; Concept) &mdash; Learning dependency
-- `BUILDS_ON` (Concept &rarr; Concept) &mdash; Knowledge hierarchy
+| Layer | Technology |
+|---|---|
+| iOS app | SwiftUI on iOS 26 (Liquid Glass), WKWebView + Three.js for the graph, PDFKit, on-device dictation and OCR, a share extension and a widget |
+| API | FastAPI (Python 3.11+), LangGraph for the ingestion and chat workflows, Server-Sent Events for streaming |
+| Storage | PostgreSQL with pgvector, Neo4j |
+| Models | Gemini Flash-Lite for extraction, chat and cards; Gemini embeddings; a Gemini image model for illustrations; a locally trained classifier for intent routing |
+| Agents | MCP over streamable HTTP, scoped API keys, OAuth 2.1 with PKCE |
 
 ---
 
-## LangGraph Workflows
+## Ingestion: from anything to concepts
 
-### Ingestion Pipeline (Human-in-the-Loop)
+The ingestion workflow (`backend/graphs/ingestion_graph.py`):
 
-The ingestion workflow uses LangGraph's `interrupt()` for human review of extracted concepts.
-
-```mermaid
-stateDiagram-v2
-    [*] --> Parse: Raw content input
-
-    Parse --> Chunk: Parse/normalize markdown
-    Chunk --> ExtractConcepts: Chunked content prepared
-    ExtractConcepts --> StoreNote: Concepts extracted
-    StoreNote --> EmbedChunks: FK-safe note creation first
-    EmbedChunks --> SaveChunks: Child embeddings generated
-    SaveChunks --> FindRelated: Chunk rows persisted
-
-    FindRelated --> CheckOverlap: Query Neo4j for similar concepts
-
-    state CheckOverlap <<choice>>
-    CheckOverlap --> Synthesize: overlap > 30%
-    CheckOverlap --> CreateConcepts: overlap ≤ 30%
-
-    Synthesize --> UserReview: Conflicts detected
-    UserReview --> LinkSynthesis: User approves/rejects
-    LinkSynthesis --> GenerateFlashcards: Merge with existing
-
-    CreateConcepts --> LinkSynthesis: New concepts in Neo4j
-    LinkSynthesis --> GenerateFlashcards: Cross-note links reinforced
-
-    GenerateFlashcards --> GenerateQuiz: Initial MCQs generated
-    GenerateQuiz --> [*]: Ingestion complete
-
-    note right of UserReview
-        LangGraph interrupt()
-        pauses execution here.
-        Frontend shows review UI.
-        User approves via /ingest/{thread_id}/approve.
-    end note
+```
+parse → chunk → extract propositions → embed → save chunks → extract concepts
+      → store note → find related concepts → synthesize → create / merge concepts
+      → link → generate cards
 ```
 
-### GraphRAG Chat Pipeline
+- **Books** go through a rule-based, image-aware chunker (`backend/services/book_chunker.py`) with no model calls. It keeps headings as hierarchy hints, never separates a figure from its caption, and overlaps chunks by about 15%.
+- **Parent and child chunks:** retrieval matches small child windows and answers with the surrounding parent section.
+- **Merge or create:** each extracted concept is matched against your graph by normalised name and embedding similarity. It either merges into an existing node (adding evidence and links) or becomes a new one. A human-review step is still available but optional.
+- **Communities and subjects:** Louvain community detection groups concepts, a model names each community, and a taxonomy rolls communities up into subjects (`backend/services/graph_hierarchy.py`).
+- **Figures:** cropped from your PDFs and attached to a card only when the caption is genuinely about the concept (`backend/services/concept_figures.py`).
+- **Other sources:** YouTube, articles, Substack and RSS feeds (`substack_sync.py`), forwarded newsletters (`email_ingest.py`), voice dictation streamed into the graph (`dictation_graph.py`) and LeetCode lookups by number (`leetcode.py`).
 
-```mermaid
-stateDiagram-v2
-    [*] --> AnalyzeQuery: User message
+---
 
-    AnalyzeQuery --> SearchGraph: Parse intent & entities
-    AnalyzeQuery --> SearchNotes: Parallel retrieval
+## The assistant: hybrid GraphRAG
 
-    SearchGraph --> AggregateContext: Neo4j graph traversal
-    SearchNotes --> AggregateContext: pgvector similarity search
+The chat workflow (`backend/graphs/chat_graph.py`) is three nodes: `analyze_query → get_context → generate_response`.
 
-    AggregateContext --> GenerateResponse: Combined context
-    GenerateResponse --> [*]: Streaming SSE response
+1. **Intent routing without an LLM call.** Word and character TF-IDF features feed a logistic regression trained offline with scikit-learn and re-implemented in plain numpy. Parity with sklearn is asserted at training time. It routes alone when confident and asks a model only when unsure. Every decision is logged (`backend/services/intent_router/`).
+2. **Query analysis.** Follow-ups are anchored to the previous turn's topic, and concept names from your graph become seeds.
+3. **Graph context.** The seeds and vector-similar concepts pull in their Neo4j neighbourhood: definitions, typed relationships and your mastery.
+4. **Hybrid retrieval.** pgvector similarity, PostgreSQL full-text search and a graph boost are fused with reciprocal rank fusion (k = 60). Results are deduplicated by parent chunk, reranked, diversified with MMR and ordered against "lost in the middle".
+5. **Community map-reduce only when it helps.** "Summarise what I know about…" questions fan out over community summaries; other intents never do.
+6. **Grounded or honest.** Answers cite numbered sources, and a grounding guard says so when your notes don't cover the question.
+7. **Graph-picked follow-ups.** About 0.2 s and zero tokens (`backend/services/followups.py`); taps are logged per suggestion type.
 
-    note right of SearchGraph
-        Searches Concept nodes
-        by name and relationships
-    end note
+---
 
-    note right of SearchNotes
-        Vector search on note
-        embeddings (768-dim)
-    end note
+## The learning loop
+
+- **Scheduling:** SM-2 by default, with FSRS v4 selectable per user (`backend/services/spaced_repetition.py`).
+- **Feed ranking:** the ranker (`backend/feed_ranker/`) scores urgency with FSRS-style retrievability and graph signals. After a lapse, it brings back the **weakest prerequisite** underneath before the harder concept.
+- **Pacing:** a daily cap keeps the feed short, and the backlog never piles up into guilt (`feed_pacing.py`).
+- **Evidence:** reviews, quiz answers, code results, self-ratings and notes set each concept's status, which drives the profile, the resume check and the MCP server (`knowledge_map.py`, `resume.py`).
+- **Code cards** run offline in a locked-down WKWebView sandbox.
+
+---
+
+## MCP: your knowledge as context for any agent
+
+GraphRecall runs an MCP server over streamable HTTP (`backend/agent_bridge/`, enabled with `AGENT_BRIDGE_ENABLED=1`). Clients connect with a scoped key (`read:knowledge`, optionally `write:feed`) or OAuth 2.1. Host and Origin checks, per-key rate limits and an audit log protect it, and keys are hashed at rest.
+
+| Tool | What it does |
+|---|---|
+| `get_knowledge_frontier` | For a task: what you know well (to explain through), what's shaky (refresh in a line), what you've never seen (teach properly), misconceptions and where you learned each thing |
+| `get_knowledge_profile`, `get_capability_blueprint` | Your knowledge by status and domain, education, courses with grades and projects. Returned with a stable hash an agent can cache as a prompt prefix |
+| `search_concepts`, `get_concept_neighborhood`, `assess_concepts` | Look things up in your graph |
+| `list_due_reviews`, `get_recent_activity` | What's due and what you've been doing |
+| `record_exposure` | After a session, the agent records each concept you discussed |
+| `propose_feed_items`, `suggest_for_later`, `schedule_daily_digest` | The agent can send a session summary, reading or exam prep to your feed, for you to approve |
+
+---
+
+## Keeping it cheap
+
+- Small, fast models by default (Gemini Flash-Lite), set by `GEMINI_CHAT_MODEL` and `GEMINI_FAST_MODEL`.
+- Routing by a local classifier and follow-ups from the graph: no model call for either.
+- Books chunked by rules, not by a model.
+- An embedding cache, and an answer cache partitioned by a version of your notes, so a deleted note is never served back (`rag_cache.py`).
+- Community map-reduce runs only for summary questions.
+- Per-day usage tracking (`quota.py`).
+
+---
+
+## Tests and evaluation
+
+- **604 backend tests** (`pytest backend/tests`) covering chat, retrieval, follow-ups, the feed ranker, the MCP bridge, ingestion, LeetCode lookup, the graph hierarchy and more. iOS unit and UI tests are in `ios/GraphRecallTests` and `ios/GraphRecallUITests`.
+- **Evaluation harnesses** in `eval/`: GraphRAG retrieval and answer quality (`graphrag/`), the intent router (`router/`), grounding (`grounding/`), the scheduler (`scheduler/`) and the feed algorithm (`feed_algo/`).
+
+---
+
+## Repository layout
+
+```
+backend/
+  agent_bridge/     MCP server: tools, scopes, keys, OAuth
+  feed_ranker/      feed scoring with FSRS-style retrievability and graph signals
+  graphs/           LangGraph workflows (ingestion, chat; earlier supervisor and sub-graphs)
+  routers/          FastAPI endpoints
+  services/         retrieval, intent router, caches, scheduling, feed, resume, ingestion helpers
+  alembic/          database migrations
+  tests/            backend tests
+ios/
+  GraphRecall/      the SwiftUI app
+  GraphRecallShare/ share extension
+  GraphRecallWidget/ widget
+  Tools/graph3d/    Three.js graph renderer (built into ios/WebAssets)
+eval/               evaluation harnesses
+docs/               technical report, write-up, media
+frontend/           the earlier React web client
 ```
 
 ---
 
-## Frontend Screens
+## Running it locally
 
-### Feed Screen
-The primary study interface with seven card types driven by SM-2 spaced repetition scheduling:
-
-| Card Type | Description |
-|:----------|:------------|
-| **Flashcard** | Concept front/back with tap-to-flip, complexity badge, prerequisites |
-| **Quiz (MCQ)** | Multiple choice with instant feedback and explanation |
-| **Fill-in-Blank** | Interactive sentence completion with hints |
-| **Screenshot** | User-uploaded images with linked concept badges |
-| **Diagram** | Mermaid-generated visual mindmaps and flowcharts |
-| **Concept Showcase** | Rich cards with emoji, tagline, real-world examples, and key points |
-| **Code Challenge** | Short code/CLI completion tasks with guided explanations |
-
-### Graph Screen
-Interactive 3D force-directed knowledge graph with:
-- Nodes sized by complexity, colored by mastery level
-- Domain clustering and filtering
-- Click-to-focus with linked notes panel and connected concepts
-- In-graph quiz generation and resource browsing
-
-### Create Screen
-Multi-modal content ingestion with a step-by-step wizard:
-1. **Upload** &mdash; Drag-and-drop files (PDF, DOCX, images, markdown) or paste text, YouTube URLs, chat transcripts
-2. **Processing** &mdash; Real-time progress with geekout facts and concept previews
-3. **Review** &mdash; Toggle concepts on/off, see which are new vs. existing (color-coded)
-4. **Success** &mdash; Summary with stats and links to the feed
-
-### Assistant Screen
-GraphRAG chatbot with:
-- Streaming responses via Server-Sent Events
-- Quick actions (Search, Summarize, Quiz, Learning Path, Explain, Find Connections)
-- Swipe-to-save messages for later review
-- Source citations with links back to original notes
-- Conversation history and knowledge base export
-
-### Profile Screen
-User dashboard with:
-- GitHub-style 90-day activity heatmap
-- Domain mastery progress bars
-- Streak tracking with flame animation
-- Notes and concepts browser with search
-- Books/library browser (moved from dock into Profile)
-- Settings (theme, notifications, daily target)
-
----
-
-## Deployment
-
-### Backend on Render
-
-The backend is configured via `render.yaml`:
+**Backend** (Python 3.11+, PostgreSQL with pgvector, Neo4j):
 
 ```bash
-# Service: graphrecall-api
-# Runtime: Python
-# Build: pip install -r requirements.txt
-# Start: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
-# Health: /health
+uv sync                                  # or: pip install -r requirements.txt
+export GOOGLE_API_KEY=...                # Gemini
+export DATABASE_URL=postgresql://localhost:5432/graphrecall
+export NEO4J_URI=bolt://localhost:7687 NEO4J_USER=neo4j NEO4J_PASSWORD=...
+export AGENT_BRIDGE_ENABLED=1            # optional: the MCP server at /mcp/agent/
+alembic upgrade head
+uvicorn backend.main:app --host 0.0.0.0 --port 8001
 ```
 
-Set all required environment variables in the Render dashboard.
+Optional: `GEMINI_CHAT_MODEL` and `GEMINI_FAST_MODEL` choose the models, and `FEED_DEFAULT_SR_ALGORITHM` (`sm2` or `fsrs`) the scheduler.
 
-### Frontend on Vercel
-
-The frontend deploys as a Vite SPA with `vercel.json` providing SPA rewrites:
-
-```json
-{
-  "rewrites": [
-    { "source": "/((?!assets/).*)", "destination": "/index.html" }
-  ]
-}
-```
-
-**Required Vercel environment variables:**
-- `VITE_API_URL` &mdash; Your Render backend URL (e.g. `https://graphrecall-api.onrender.com/api`)
-- `VITE_GOOGLE_CLIENT_ID` &mdash; Google OAuth Client ID
+**iOS app:** open `ios/GraphRecall.xcodeproj` in Xcode 26 and run on an iOS 26 device or simulator. In a debug build, the welcome screen can point the app at a backend on your Mac. Some optional title fonts are personal-use only and aren't in the repo; the app falls back to the system font without them.
 
 ---
 
-## Development
+## What's next
 
-### Running Tests
-
-```bash
-# Backend tests
-uv run pytest
-
-# Type checking
-uv run mypy backend/
-
-# Linting
-uv run ruff check backend/
-```
-
-### Frontend Development
-
-```bash
-cd frontend
-
-# Dev server with hot reload
-npm run dev
-
-# Type check
-npx tsc --noEmit
-
-# Production build
-npm run build
-```
-
-### Database Migrations
-
-```bash
-# Create a new migration
-uv run alembic revision --autogenerate -m "description"
-
-# Apply migrations
-uv run alembic upgrade head
-
-# Rollback one step
-uv run alembic downgrade -1
-```
-
-### LangSmith Tracing
-
-Enable tracing to debug LangGraph workflows:
-
-```bash
-export LANGSMITH_TRACING=true
-export LANGSMITH_API_KEY=your-key
-export LANGCHAIN_PROJECT=graphrecall
-```
-
-View traces at [smith.langchain.com](https://smith.langchain.com).
-
-### Colab Book OCR Troubleshooting
-
-If `notebooks/book_ingestion_colab.ipynb` prints errors like:
-
-```text
-⚠️ Failed to save _page_XX_Figure_YY.jpeg: function takes at most 16 arguments (17 given)
-```
-
-this is a runtime-level image encoding incompatibility in some Colab environments (typically on JPEG save paths). The notebook now falls back to PNG export and rewrites markdown image references automatically, so ingestion can continue with figures attached.
-
-If you still see the error repeatedly:
-
-1. Restart the Colab runtime.
-2. Re-run cells from the top (especially the dependency install cell).
-3. Re-run Step 3 (PDF parse and image export) before ingestion.
-
----
-
-## License
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-<div align="center">
-
-Built with LangGraph, Gemini, Neo4j, and React
-
-</div>
+- Hold "+" to dictate concepts and watch the graph wire itself up (the streaming backend exists).
+- Open the graph on subjects first, then communities, then concepts.
+- Match a job description the same way the resume check works.
+- Public hosting on graphrecall.online, so claude.ai and ChatGPT can connect over OAuth.
+- Published retrieval and answer-quality scores.
