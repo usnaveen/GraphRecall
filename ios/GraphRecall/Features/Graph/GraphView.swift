@@ -308,9 +308,9 @@ struct GraphView: View {
                     masteryLegendView.padding(10)
                 }
             }
-            // The key to the graph — visible in Community & Concept Focus modes when edges appear.
+            // The key to the graph — visible in Concept & Concept Focus modes when edges appear.
             .overlay(alignment: .topTrailing) {
-                let showsEdges = model.selectedNodeId != nil || model.activeClusterTitle != nil || !model.isShowingAllClusters
+                let showsEdges = model.selectedNodeId != nil || model.activeNavLevel == "concepts" || !model.isShowingAllClusters
                 if !model.showControls && !model.mergeMode && model.activeSheet == nil && (showsEdges || model.usingStub) {
                     VStack(alignment: .trailing, spacing: 6) {
                         if model.usingStub { demoBadge }
@@ -397,8 +397,12 @@ struct GraphView: View {
         case .select(let id):
             withAnimation(.easeInOut(duration: 0.22)) { model.select(nodeId: id) }
             if id != nil { GRHaptics.tap() }
-        case .clusterChanged(let title):
-            withAnimation(.easeInOut(duration: 0.22)) { model.activeClusterTitle = title }
+        case .clusterChanged(let level, let title, let backLabel):
+            withAnimation(.easeInOut(duration: 0.22)) {
+                model.activeNavLevel = level
+                model.activeClusterTitle = title
+                model.activeBackLabel = backLabel
+            }
             if title != nil { GRHaptics.tap() }
         case .mergeToggle(let id):
             model.toggleMergeTarget(id)
@@ -444,8 +448,8 @@ struct GraphView: View {
             }
             if model.selectedNodeId != nil && !model.showControls {
                 focusPill
-            } else if let clusterTitle = model.activeClusterTitle, !model.showControls {
-                clusterBackPill(title: clusterTitle)
+            } else if let backLabel = model.activeBackLabel ?? model.activeClusterTitle.map({ "All groups · \($0)" }), !model.showControls {
+                clusterBackPill(label: backLabel)
             }
             if model.showControls {
                 GraphControlsPanel(model: model)
@@ -476,14 +480,14 @@ struct GraphView: View {
         .fixedSize()
     }
 
-    private func clusterBackPill(title: String) -> some View {
+    private func clusterBackPill(label: String) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.22)) { model.exitCluster() }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 10, weight: .bold))
-                Text("All groups · \(title)")
+                Text(label)
                     .font(GRType.micro.weight(.semibold))
                     .lineLimit(1)
             }
@@ -492,7 +496,7 @@ struct GraphView: View {
         .buttonStyle(.glass)
         .buttonBorderShape(.capsule)
         .controlSize(.small)
-        .accessibilityLabel("Back to all communities from \(title)")
+        .accessibilityLabel("Navigate back from \(label)")
     }
 
     /// Two columns of swatches, like the legend this screen used to carry — it names the link

@@ -33,7 +33,7 @@ struct GraphSceneState: Equatable {
 
 enum Graph3DEvent {
     case select(String?)
-    case clusterChanged(title: String?)
+    case clusterChanged(level: String, title: String?, backLabel: String?)
     case mergeToggle(String)
     /// Long press on empty space — create a concept at this world position.
     case createAt(GraphPoint3D)
@@ -180,7 +180,11 @@ struct Graph3DWebView: UIViewRepresentable {
             case "select":
                 onEvent(.select(body["id"] as? String))
             case "clusterChanged":
-                onEvent(.clusterChanged(title: body["title"] as? String))
+                onEvent(.clusterChanged(
+                    level: (body["level"] as? String) ?? "subjects",
+                    title: body["title"] as? String,
+                    backLabel: body["backLabel"] as? String
+                ))
             case "mergeToggle":
                 if let id = body["id"] as? String { onEvent(.mergeToggle(id)) }
             case "createAt":

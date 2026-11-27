@@ -2,16 +2,16 @@
  * GraphRecall iOS 3D Galaxy Scene — inspired by the web GraphVisualizer + GalaxyBackground.
  * Build: `npm run build` in ios/Tools/graph3d → ios/WebAssets/graph3d.bundle.js
  *
- * Three clean hierarchical states:
- *   1. OVERVIEW   — Spaced 3D glowing community orbs on a deep starfield with small borderless
- *                   group labels. Individual concepts and edges are hidden. Tap an orb/label
- *                   (or pinch-zoom into one) to isolate and open that community.
- *   2. COMMUNITY  — All other communities vanish completely. The active community expands into an
- *                   airy dedicated 3D constellation with small borderless labels and directed
- *                   typed edges. Pinching far out or tapping `All groups` returns to OVERVIEW.
- *   3. CONCEPT    — Interactive 3D focus around one concept (`controls.enableRotate = true`):
- *                   prerequisites above, unlocks below, related around the equator, persistent
- *                   legend, no arrowheads on RELATED_TO, and small non-overlapping labels.
+ * Four clean hierarchical levels:
+ *   0. SUBJECTS    — Spaced 3D glowing subject nebulae (~8–18 coarse themes) on a deep starfield
+ *                    with small borderless subject labels. Tap/pinch into a subject to open it.
+ *   1. COMMUNITIES — All other subjects vanish completely. Shows ONLY that subject's named
+ *                    communities spaced in 3D (single-community subjects skip straight to Level 2).
+ *   2. CONCEPTS    — All other communities vanish. The active community expands into an airy
+ *                    dedicated 3D constellation with small borderless labels and directed edges.
+ *   3. FOCUS       — Interactive 3D focus around one concept (`controls.enableRotate = true`):
+ *                    prerequisites above, unlocks below, related around the equator, persistent
+ *                    legend, no arrowheads on RELATED_TO, and small non-overlapping labels.
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -84,6 +84,34 @@ function stableColor(key) {
 
 /* ---------------------------------------------------------------- data */
 
+const SUBJECT_RULES = [
+  ['Machine Learning', ['machine learning', 'deep learning', 'natural language processing', 'nlp', 'llm', 'large language', 'transformer', 'attention', 'neural network', 'reinforcement learning', 'computer vision', 'generative ai', 'ai', 'ml', 'rag']],
+  ['Mathematics', ['math', 'geometry', 'linear algebra', 'calculus', 'probability', 'statistics', 'optimization', 'number theory', 'discrete math']],
+  ['LeetCode Patterns', ['leetcode', 'coding interview', 'competitive programming', 'sliding window', 'two pointers']],
+  ['Computer Science', ['computer science', 'algorithm', 'data structure', 'compiler', 'operating system', 'theory']],
+  ['Systems & Infrastructure', ['system design', 'distributed', 'networking', 'architecture', 'cloud', 'kubernetes', 'docker']],
+  ['Databases', ['database', 'sql', 'postgres', 'neo4j', 'storage engine', 'indexing']],
+  ['Software Engineering', ['software', 'programming', 'python', 'swift', 'ios', 'typescript', 'backend', 'frontend', 'testing']],
+  ['Product & Research', ['product', 'research', 'writing', 'reading', 'economics', 'finance', 'biology']],
+];
+
+function normalizeSubject(domain) {
+  const raw = String(domain || '').trim();
+  const low = raw.toLowerCase();
+  if (!raw || low === 'general' || low === 'uncategorized') return 'General';
+  for (const [subject, keywords] of SUBJECT_RULES) {
+    for (const kw of keywords) {
+      if (kw.length <= 3) {
+        const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (new RegExp(`\\b${escaped}\\b`, 'i').test(low)) return subject;
+      } else if (low.includes(kw)) {
+        return subject;
+      }
+    }
+  }
+  return raw.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function formatClusterTitle(title, fallbackDomain, shareDomain) {
   const t = String(title || '').trim();
   const domain = String(fallbackDomain || 'General').trim();
@@ -105,10 +133,12 @@ function adaptGraph(raw) {
     id: String(n.id),
     title: n.name || n.label || 'Concept',
     domain: n.domain || 'General',
+    subject: normalizeSubject(n.domain || 'General'),
     color: n.color || FALLBACK_COLOR,
     mastery: typeof n.mastery_level === 'number' ? n.mastery_level : null,
     size: typeof n.size === 'number' ? n.size : 1,
     communityIndex: -1,
+    subjectIndex: 0,
     colorKey: n.domain || 'General',
     degree: 0,
   }));
@@ -216,7 +246,47 @@ function adaptGraph(raw) {
     }
   }
 
-  return { nodes, links, clusterCount, clusterTitles };
+  // Roll communities up into coarse Subject buckets matching backend normalize_subject rules.
+  const clusterSubjectCounts = new Map();
+  const clusterMemberCounts = new Map();
+  for (const node of nodes) {
+    const ci = node.clusterIndex ?? 0;
+    clusterMemberCounts.set(ci, (clusterMemberCounts.get(ci) || 0) + 1);
+    if (!clusterSubjectCounts.has(ci)) clusterSubjectCounts.set(ci, new Map());
+    const sc = clusterSubjectCounts.get(ci);
+    sc.set(node.subject, (sc.get(node.subject) || 0) + 1);
+  }
+  const clusterSubjectName = new Map();
+  const subjectNodeCounts = new Map();
+  const subjectClusterLists = new Map();
+  for (let ci = 0; ci < clusterCount; ci++) {
+    const sc = clusterSubjectCounts.get(ci);
+    const subj = sc && sc.size
+      ? [...sc.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]
+      : 'General';
+    clusterSubjectName.set(ci, subj);
+    subjectNodeCounts.set(subj, (subjectNodeCounts.get(subj) || 0) + (clusterMemberCounts.get(ci) || 0));
+    if (!subjectClusterLists.has(subj)) subjectClusterLists.set(subj, []);
+    subjectClusterLists.get(subj).push(ci);
+  }
+  const orderedSubjects = [...subjectClusterLists.keys()].sort(
+    (a, b) => (subjectNodeCounts.get(b) || 0) - (subjectNodeCounts.get(a) || 0) || a.localeCompare(b),
+  );
+  const subjects = orderedSubjects.map((title, index) => ({
+    index,
+    title,
+    clusterIndices: subjectClusterLists.get(title) || [],
+  }));
+  const subjectIdxByName = new Map(subjects.map((s) => [s.title, s.index]));
+  const clusterToSubject = [];
+  for (let ci = 0; ci < clusterCount; ci++) {
+    clusterToSubject[ci] = subjectIdxByName.get(clusterSubjectName.get(ci) || 'General') ?? 0;
+  }
+  for (const node of nodes) {
+    node.subjectIndex = clusterToSubject[node.clusterIndex ?? 0] ?? 0;
+  }
+
+  return { nodes, links, clusterCount, clusterTitles, subjects, clusterToSubject };
 }
 
 /* ---------------------------------------------------------------- layout */
@@ -224,7 +294,7 @@ function adaptGraph(raw) {
 const yieldToPage = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 async function layoutGraph(graph, previous, isStale) {
-  const { nodes, links, clusterCount = 1 } = graph;
+  const { nodes, links, clusterCount = 1, subjects = [] } = graph;
   const golden = Math.PI * (3 - Math.sqrt(5));
   const kClusters = Math.max(clusterCount, 1);
 
@@ -233,21 +303,57 @@ async function layoutGraph(graph, previous, isStale) {
   const byPlace = [...Array(kClusters).keys()].sort((a, b) => (sizes.get(b) || 0) - (sizes.get(a) || 0));
   const islandRadius = (n) => Math.max(24, 16 * Math.cbrt(n || 1));
 
-  // Wide portrait-balanced 3D spacing so cluster nebulae look distinct and separate in overview.
-  const spacing = Math.max(290, 10.2 * Math.max(...byPlace.map((c) => islandRadius(sizes.get(c))), 28));
-  const clusterCenters = new Array(kClusters);
-  byPlace.forEach((c, i) => {
-    if (kClusters === 1) { clusterCenters[c] = { x: 0, y: 0, z: 0 }; return; }
-    const t = i / Math.max(kClusters - 1, 1);
-    const r = spacing * (0.42 + 0.78 * Math.sqrt(t));
-    const phi = Math.acos(1 - 2 * ((i + 0.5) / kClusters));
-    const theta = i * golden;
-    clusterCenters[c] = {
-      x: r * Math.sin(phi) * Math.cos(theta) * 0.78,
-      y: r * Math.sin(phi) * Math.sin(theta) * 1.38,
-      z: r * Math.cos(phi) * 0.42,
+  // Place coarse Subject centers far apart first, then cluster communities locally inside each Subject.
+  const kSubjects = Math.max(subjects.length, 1);
+  const subjectCenters = new Array(kSubjects);
+  const subjectSpacing = Math.max(420, 13.5 * Math.max(...byPlace.map((c) => islandRadius(sizes.get(c))), 28));
+  for (let si = 0; si < kSubjects; si++) {
+    if (kSubjects === 1) { subjectCenters[si] = { x: 0, y: 0, z: 0 }; continue; }
+    const t = si / Math.max(kSubjects - 1, 1);
+    const r = subjectSpacing * (0.45 + 0.78 * Math.sqrt(t));
+    const phi = Math.acos(1 - 2 * ((si + 0.5) / kSubjects));
+    const theta = si * golden;
+    subjectCenters[si] = {
+      x: r * Math.sin(phi) * Math.cos(theta) * 0.80,
+      y: r * Math.sin(phi) * Math.sin(theta) * 1.36,
+      z: r * Math.cos(phi) * 0.44,
     };
-  });
+  }
+
+  const clusterCenters = new Array(kClusters);
+  if (subjects.length >= 2) {
+    subjects.forEach((subj, si) => {
+      const sCenter = subjectCenters[si] || { x: 0, y: 0, z: 0 };
+      const cids = subj.clusterIndices.slice().sort((a, b) => (sizes.get(b) || 0) - (sizes.get(a) || 0));
+      const subSpread = cids.length <= 1 ? 0 : Math.max(78, 38 * Math.cbrt(cids.length));
+      cids.forEach((c, idx) => {
+        if (cids.length === 1) { clusterCenters[c] = { ...sCenter }; return; }
+        const t = (idx + 0.5) / cids.length;
+        const r = subSpread * (0.45 + 0.65 * Math.sqrt(t));
+        const phi = Math.acos(1 - 2 * t);
+        const theta = idx * golden;
+        clusterCenters[c] = {
+          x: sCenter.x + r * Math.sin(phi) * Math.cos(theta),
+          y: sCenter.y + r * Math.sin(phi) * Math.sin(theta),
+          z: sCenter.z + r * Math.cos(phi) * 0.65,
+        };
+      });
+    });
+  } else {
+    const spacing = Math.max(290, 10.2 * Math.max(...byPlace.map((c) => islandRadius(sizes.get(c))), 28));
+    byPlace.forEach((c, i) => {
+      if (kClusters === 1) { clusterCenters[c] = { x: 0, y: 0, z: 0 }; return; }
+      const t = i / Math.max(kClusters - 1, 1);
+      const r = spacing * (0.42 + 0.78 * Math.sqrt(t));
+      const phi = Math.acos(1 - 2 * ((i + 0.5) / kClusters));
+      const theta = i * golden;
+      clusterCenters[c] = {
+        x: r * Math.sin(phi) * Math.cos(theta) * 0.78,
+        y: r * Math.sin(phi) * Math.sin(theta) * 1.38,
+        z: r * Math.cos(phi) * 0.42,
+      };
+    });
+  }
 
   const clusterMembers = new Map();
   for (const node of nodes) {
@@ -306,11 +412,14 @@ async function layoutGraph(graph, previous, isStale) {
 
 /** Airy, dedicated 3D layout for ONE community so its concepts spread comfortably without clumping. */
 function computeExpandedCommunity(view) {
-  if (view.expandedPositions) return view.expandedPositions;
+  const origin = view.activeCentre || view.centre;
+  if (view.expandedPositions && view.expandedOrigin && view.expandedOrigin.equals(origin)) {
+    return view.expandedPositions;
+  }
   const members = [...view.members].map((id) => objects.get(id)?.node).filter(Boolean);
   const memberSet = view.members;
   const golden = Math.PI * (3 - Math.sqrt(5));
-  const c = view.centre;
+  const c = origin;
 
   const tempNodes = members.map((n, i) => {
     const t = (i + 0.5) / Math.max(members.length, 1);
@@ -355,8 +464,61 @@ function computeExpandedCommunity(view) {
     maxDist = Math.max(maxDist, v.distanceTo(c));
   }
   view.expandedPositions = positions;
+  view.expandedOrigin = origin.clone();
   view.expandedRadius = maxDist + 14;
   return positions;
+}
+
+/** Spacious dedicated 3D sphere of community orbs for ONE expanded Subject. */
+function computeExpandedSubject(subjectView) {
+  const childViews = subjectView.communityIndices
+    .map((ci) => clusterViews.find((v) => v.index === ci))
+    .filter(Boolean)
+    .sort((a, b) => b.members.size - a.members.size);
+  if (!childViews.length) return;
+
+  if (!subjectView.expandedCentres) {
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    const maxOrbR = Math.max(...childViews.map((v) => v.orbRadius), 24);
+    const spacing = childViews.length <= 1 ? 0 : Math.max(122, 4.6 * maxOrbR + 18 * Math.cbrt(childViews.length));
+    const centres = new Map();
+    let maxDist = maxOrbR + 30;
+    childViews.forEach((v, i) => {
+      let pos;
+      if (childViews.length === 1) {
+        pos = subjectView.centre.clone();
+      } else {
+        const t = (i + 0.5) / childViews.length;
+        const r = spacing * (0.48 + 0.72 * Math.sqrt(t));
+        const phi = Math.acos(1 - 2 * t);
+        const theta = i * golden;
+        pos = new THREE.Vector3(
+          subjectView.centre.x + r * Math.sin(phi) * Math.cos(theta) * 0.85,
+          subjectView.centre.y + r * Math.sin(phi) * Math.sin(theta) * 1.15,
+          subjectView.centre.z + r * Math.cos(phi) * 0.52,
+        );
+      }
+      centres.set(v.index, pos);
+      maxDist = Math.max(maxDist, pos.distanceTo(subjectView.centre) + v.orbRadius);
+    });
+    subjectView.expandedCentres = centres;
+    subjectView.expandedRadius = maxDist + 24;
+  }
+
+  for (const v of childViews) {
+    const p = subjectView.expandedCentres.get(v.index) || v.centre;
+    v.activeCentre.copy(p);
+    v.group.position.copy(p);
+    v.sprite.position.copy(p);
+  }
+}
+
+function restoreCommunityPositions() {
+  for (const v of clusterViews) {
+    v.activeCentre.copy(v.centre);
+    v.group.position.copy(v.centre);
+    v.sprite.position.copy(v.centre);
+  }
 }
 
 /* ---------------------------------------------------------------- renderer & galaxy backdrop */
@@ -519,23 +681,37 @@ controls.addEventListener('change', () => {
   const delta = curDist - prevCameraDist;
   prevCameraDist = curDist;
   // Auto-transition by zoom ONLY during an explicit two-finger pinch gesture (not damped/programmatic movement).
-  if (!cameraFlight && pointers.size >= 2 && graph && !focusView && !state.selectedId && !state.mergeMode) {
-    if (activeClusterIndex === null && delta < -0.5 && isOverviewCapable()) {
-      // Pinching in toward a cluster orb opens that community cleanly!
+  if (!cameraFlight && pointers.size >= 2 && graph && !focusView && !state.selectedId && !state.mergeMode && performance.now() > navCooldownUntil) {
+    const level = getViewLevel();
+    if (delta < -0.5 && (level === 'subjects' || level === 'communities')) {
+      const views = level === 'subjects'
+        ? subjectViews.filter((v) => v.orb.visible)
+        : clusterViews.filter((v) => v.orb.visible);
       let closest = null;
       let minD = Infinity;
-      for (const view of clusterViews) {
-        const d = camera.position.distanceTo(view.centre);
-        if (d < Math.max(150, view.orbRadius * 4.5) && d < minD) {
+      for (const view of views) {
+        const anchor = view.activeCentre || view.centre;
+        const d = camera.position.distanceTo(anchor);
+        if (d < Math.max(165, view.orbRadius * 4.5) && d < minD) {
           minD = d;
           closest = view;
         }
       }
-      if (closest) enterCluster(closest.index);
-    } else if (activeClusterIndex !== null && delta > 0.5) {
-      const view = clusterViews.find((v) => v.index === activeClusterIndex);
-      if (view && curDist > Math.max(460, (view.expandedRadius || 110) * 4.8)) {
-        exitCluster();
+      if (closest) {
+        if (level === 'subjects') enterSubject(closest.index);
+        else enterCluster(closest.index);
+      }
+    } else if (delta > 0.5 && (level === 'concepts' || level === 'communities')) {
+      if (level === 'concepts' && activeClusterIndex !== null) {
+        const view = clusterViews.find((v) => v.index === activeClusterIndex);
+        if (view && curDist > Math.max(460, (view.expandedRadius || 110) * 4.8)) {
+          exitLevel();
+        }
+      } else if (level === 'communities' && activeSubjectIndex !== null) {
+        const sView = subjectViews.find((v) => v.index === activeSubjectIndex);
+        if (sView && curDist > Math.max(520, (sView.expandedRadius || 140) * 4.2)) {
+          exitLevel();
+        }
       }
     }
   }
@@ -550,8 +726,12 @@ let linkBatches = [];
 let arrows = [];
 let neighborIds = new Set();
 let shownLabels = new Set();
-let clusterViews = [];       // { index, orb, sprite, label, titleText, centre, radius, orbRadius, members, expandedPositions, expandedRadius }
+let subjectViews = [];     // { index, group, orb, stars, constellationLines, sprite, label, titleText, colourHex, centre, activeCentre, radius, orbRadius, members, communityIndices, expandedCentres, expandedRadius }
+let clusterViews = [];     // { index, subjectIndex, group, orb, stars, constellationLines, sprite, label, titleText, colourHex, centre, activeCentre, radius, orbRadius, members, expandedPositions, expandedOrigin, expandedRadius }
+let activeSubjectIndex = null;
 let activeClusterIndex = null;
+let skippedCommunities = false;
+let navCooldownUntil = 0;
 let dataGeneration = 0;
 let cameraFlight = null;
 let viewShift = 0;
@@ -625,12 +805,34 @@ function disposeArrows() {
   arrows = [];
 }
 
+function disposeViewList(views) {
+  for (const view of views) {
+    haloLayer.remove(view.sprite);
+    view.sprite.material.dispose();
+    clusterEntityLayer.remove(view.group);
+    view.orb.material.dispose();
+    if (view.stars) {
+      view.stars.geometry.dispose();
+      view.stars.material.dispose();
+    }
+    if (view.constellationLines) {
+      view.constellationLines.geometry.dispose();
+      view.constellationLines.material.dispose();
+    }
+    view.label.remove();
+  }
+}
+
 function disposeScene() {
   for (const obj of objects.values()) {
     obj.mesh.material.dispose();
     if (obj.ring) { ringLayer.remove(obj.ring); obj.ring.material.dispose(); }
     if (obj.label) obj.label.remove();
   }
+  disposeViewList(subjectViews);
+  subjectViews = [];
+  disposeViewList(clusterViews);
+  clusterViews = [];
   nodeLayer.clear();
   disposeLinks();
   disposeArrows();
@@ -641,7 +843,9 @@ function disposeScene() {
 function buildScene(newGraph) {
   disposeScene();
   graph = newGraph;
+  activeSubjectIndex = null;
   activeClusterIndex = null;
+  skippedCommunities = false;
   for (const node of graph.nodes) {
     const mesh = new THREE.Mesh(
       sphereGeometry,
@@ -666,27 +870,147 @@ function buildScene(newGraph) {
     });
   }
   buildClusterViews();
+  buildSubjectViews();
   applyState();
 }
 
-function buildClusterViews() {
-  for (const view of clusterViews) {
-    haloLayer.remove(view.sprite);
-    view.sprite.material.dispose();
-    clusterEntityLayer.remove(view.orb);
-    view.orb.material.dispose();
-    if (view.stars) {
-      clusterEntityLayer.remove(view.stars);
-      view.stars.geometry.dispose();
-      view.stars.material.dispose();
-    }
-    if (view.constellationLines) {
-      clusterEntityLayer.remove(view.constellationLines);
-      view.constellationLines.geometry.dispose();
-      view.constellationLines.material.dispose();
-    }
-    view.label.remove();
+/** Shared builder for both Subject nebulae (Level 0) and Community nebulae (Level 1). */
+function createNebulaView({ index, titleText, colourKey, members, orbMin, orbMax, starSize, onTap, extra }) {
+  const centre = new THREE.Vector3();
+  for (const n of members) centre.add(new THREE.Vector3(n.x, n.y, n.z));
+  centre.divideScalar(members.length);
+  const distances = members.map((n) => centre.distanceTo(new THREE.Vector3(n.x, n.y, n.z))).sort((a, b) => a - b);
+  const radius = Math.max(24, distances[Math.floor(distances.length * 0.85)] || 24);
+  const maxDist = Math.max(distances[distances.length - 1] || 24, 1);
+  const orbRadius = THREE.MathUtils.clamp(orbMin + Math.cbrt(members.length) * 4.8, orbMin + 2, orbMax);
+  const colourHex = stableColor(colourKey);
+  const colour = new THREE.Color(colourHex);
+
+  const group = new THREE.Group();
+  group.position.copy(centre);
+  clusterEntityLayer.add(group);
+
+  const orb = new THREE.Mesh(sphereGeometry, createNebulaShellMaterial(colour));
+  orb.scale.setScalar(orbRadius);
+  orb.userData.viewIndex = index;
+  group.add(orb);
+
+  // Inner glowing star-cluster points + gossamer constellation filaments (in group-local coords).
+  const starPositions = new Float32Array(members.length * 3);
+  const starColors = new Float32Array(members.length * 3);
+  const memberMiniPos = new Map();
+  const starCol = new THREE.Color();
+  const innerScale = (orbRadius * 0.78) / maxDist;
+  members.forEach((n, i) => {
+    const mx = (n.x - centre.x) * innerScale;
+    const my = (n.y - centre.y) * innerScale;
+    const mz = (n.z - centre.z) * innerScale;
+    starPositions[i * 3] = mx;
+    starPositions[i * 3 + 1] = my;
+    starPositions[i * 3 + 2] = mz;
+    memberMiniPos.set(n.id, [mx, my, mz]);
+
+    const brightness = Math.min(1, (n.degree || 0) / 8);
+    starCol.copy(colour).lerp(new THREE.Color('#ffffff'), 0.45 + 0.35 * brightness);
+    starColors[i * 3] = starCol.r;
+    starColors[i * 3 + 1] = starCol.g;
+    starColors[i * 3 + 2] = starCol.b;
+  });
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+  const stars = new THREE.Points(
+    starGeo,
+    new THREE.PointsMaterial({
+      map: starDotTexture,
+      size: starSize,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.92,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }),
+  );
+  stars.raycast = () => {};
+  group.add(stars);
+
+  const intraPairs = [];
+  for (const link of graph.links) {
+    if (intraPairs.length >= 45) break;
+    const a = memberMiniPos.get(link.source.id);
+    const b = memberMiniPos.get(link.target.id);
+    if (a && b) intraPairs.push([a, b]);
   }
+  let constellationLines = null;
+  if (intraPairs.length > 0) {
+    const linePositions = new Float32Array(intraPairs.length * 6);
+    intraPairs.forEach(([a, b], i) => {
+      const o = i * 6;
+      linePositions[o] = a[0]; linePositions[o + 1] = a[1]; linePositions[o + 2] = a[2];
+      linePositions[o + 3] = b[0]; linePositions[o + 4] = b[1]; linePositions[o + 5] = b[2];
+    });
+    const lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+    constellationLines = new THREE.LineSegments(
+      lineGeo,
+      new THREE.LineBasicMaterial({
+        color: colour,
+        transparent: true,
+        opacity: 0.16,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+    constellationLines.raycast = () => {};
+    group.add(constellationLines);
+  }
+
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: haloTexture, color: colour, transparent: true, opacity: 0.24,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  sprite.position.copy(centre);
+  sprite.scale.setScalar(orbRadius * 2.9);
+  sprite.renderOrder = -5;
+  haloLayer.add(sprite);
+
+  const clippedTitle = titleText.length > 26 ? `${titleText.slice(0, 24)}…` : titleText;
+  const label = document.createElement('div');
+  label.className = 'cluster-label';
+  label.textContent = clippedTitle;
+  label.style.color = '#E2E8F0';
+  label.style.opacity = '0';
+  label.style.pointerEvents = 'none';
+  labelsEl.appendChild(label);
+
+  label.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (label.style.opacity === '0') return;
+    onTap();
+  });
+
+  return {
+    index,
+    group,
+    orb,
+    stars,
+    constellationLines,
+    sprite,
+    label,
+    titleText: clippedTitle,
+    colourHex,
+    centre,
+    activeCentre: centre.clone(),
+    radius,
+    orbRadius,
+    members: new Set(members.map((n) => n.id)),
+    ...extra,
+  };
+}
+
+function buildClusterViews() {
+  disposeViewList(clusterViews);
   clusterViews = [];
   if (!graph || (graph.clusterCount || 0) < 2) return;
 
@@ -699,193 +1023,226 @@ function buildClusterViews() {
 
   for (const [index, members] of groups) {
     if (members.length < 2) continue;
-    const centre = new THREE.Vector3();
-    for (const n of members) centre.add(new THREE.Vector3(n.x, n.y, n.z));
-    centre.divideScalar(members.length);
-    const distances = members.map((n) => centre.distanceTo(new THREE.Vector3(n.x, n.y, n.z))).sort((a, b) => a - b);
-    const radius = Math.max(24, distances[Math.floor(distances.length * 0.85)] || 24);
-    const maxDist = Math.max(distances[distances.length - 1] || 24, 1);
-    const orbRadius = THREE.MathUtils.clamp(15 + Math.cbrt(members.length) * 4.8, 17, 31);
-    const colourHex = stableColor(members[0].colorKey || String(index));
-    const colour = new THREE.Color(colourHex);
-
-    const orb = new THREE.Mesh(sphereGeometry, createNebulaShellMaterial(colour));
-    orb.position.copy(centre);
-    orb.scale.setScalar(orbRadius);
-    orb.userData.clusterIndex = index;
-    clusterEntityLayer.add(orb);
-
-    // Inner glowing star-cluster points + gossamer constellation filaments inside each translucent nebula.
-    const starPositions = new Float32Array(members.length * 3);
-    const starColors = new Float32Array(members.length * 3);
-    const memberMiniPos = new Map();
-    const starCol = new THREE.Color();
-    const innerScale = (orbRadius * 0.78) / maxDist;
-    members.forEach((n, i) => {
-      const mx = centre.x + (n.x - centre.x) * innerScale;
-      const my = centre.y + (n.y - centre.y) * innerScale;
-      const mz = centre.z + (n.z - centre.z) * innerScale;
-      starPositions[i * 3] = mx;
-      starPositions[i * 3 + 1] = my;
-      starPositions[i * 3 + 2] = mz;
-      memberMiniPos.set(n.id, [mx, my, mz]);
-
-      const brightness = Math.min(1, (n.degree || 0) / 8);
-      starCol.copy(colour).lerp(new THREE.Color('#ffffff'), 0.45 + 0.35 * brightness);
-      starColors[i * 3] = starCol.r;
-      starColors[i * 3 + 1] = starCol.g;
-      starColors[i * 3 + 2] = starCol.b;
-    });
-    const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-    starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
-    const stars = new THREE.Points(
-      starGeo,
-      new THREE.PointsMaterial({
-        map: starDotTexture,
-        size: 5.5,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.92,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        sizeAttenuation: true,
-      }),
-    );
-    stars.raycast = () => {};
-    clusterEntityLayer.add(stars);
-
-    const intraPairs = [];
-    for (const link of graph.links) {
-      if (intraPairs.length >= 45) break;
-      const a = memberMiniPos.get(link.source.id);
-      const b = memberMiniPos.get(link.target.id);
-      if (a && b) intraPairs.push([a, b]);
-    }
-    let constellationLines = null;
-    if (intraPairs.length > 0) {
-      const linePositions = new Float32Array(intraPairs.length * 6);
-      intraPairs.forEach(([a, b], i) => {
-        const o = i * 6;
-        linePositions[o] = a[0]; linePositions[o + 1] = a[1]; linePositions[o + 2] = a[2];
-        linePositions[o + 3] = b[0]; linePositions[o + 4] = b[1]; linePositions[o + 5] = b[2];
-      });
-      const lineGeo = new THREE.BufferGeometry();
-      lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
-      constellationLines = new THREE.LineSegments(
-        lineGeo,
-        new THREE.LineBasicMaterial({
-          color: colour,
-          transparent: true,
-          opacity: 0.16,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        }),
-      );
-      constellationLines.raycast = () => {};
-      clusterEntityLayer.add(constellationLines);
-    }
-
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: haloTexture, color: colour, transparent: true, opacity: 0.24,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    }));
-    sprite.position.copy(centre);
-    sprite.scale.setScalar(orbRadius * 2.9);
-    sprite.renderOrder = -5;
-    haloLayer.add(sprite);
-
     const rawTitle = (graph.clusterTitles && graph.clusterTitles[index]) || members[0].domain || 'Group';
-    const titleText = rawTitle.length > 26 ? `${rawTitle.slice(0, 24)}…` : rawTitle;
-    const label = document.createElement('div');
-    label.className = 'cluster-label';
-    label.textContent = titleText;
-    label.style.color = '#E2E8F0';
-    label.style.opacity = '0';
-    label.style.pointerEvents = 'none';
-    labelsEl.appendChild(label);
-
-    const view = {
+    const colourKey = members[0].colorKey || String(index);
+    const subjectIndex = graph.clusterToSubject ? (graph.clusterToSubject[index] ?? 0) : 0;
+    const view = createNebulaView({
       index,
-      orb,
-      stars,
-      constellationLines,
-      sprite,
-      label,
-      titleText,
-      colourHex,
-      centre,
-      radius,
-      orbRadius,
-      members: new Set(members.map((n) => n.id)),
-      expandedPositions: null,
-      expandedRadius: radius,
-    };
-    label.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (label.style.opacity === '0') return;
-      enterCluster(view.index);
+      titleText: rawTitle,
+      colourKey,
+      members,
+      orbMin: 15,
+      orbMax: 31,
+      starSize: 5.5,
+      onTap: () => enterCluster(index),
+      extra: {
+        subjectIndex,
+        expandedPositions: null,
+        expandedOrigin: null,
+        expandedRadius: 65,
+      },
     });
     clusterViews.push(view);
   }
 }
 
-function visibleClusterCount() {
-  let count = 0;
-  for (const view of clusterViews) {
-    for (const id of view.members) {
-      const obj = objects.get(id);
-      if (obj && obj.passesFilters) { count += 1; break; }
-    }
+function buildSubjectViews() {
+  disposeViewList(subjectViews);
+  subjectViews = [];
+  if (!graph || !graph.subjects || graph.subjects.length < 2) return;
+
+  const builtClusterIndices = new Set(clusterViews.map((v) => v.index));
+  const membersBySubject = new Map();
+  for (const node of graph.nodes) {
+    const si = node.subjectIndex ?? 0;
+    if (!membersBySubject.has(si)) membersBySubject.set(si, []);
+    membersBySubject.get(si).push(node);
   }
-  return count;
+
+  for (const subj of graph.subjects) {
+    const members = membersBySubject.get(subj.index) || [];
+    if (!members.length) continue;
+    const communityIndices = subj.clusterIndices.filter((ci) => builtClusterIndices.has(ci));
+    const view = createNebulaView({
+      index: subj.index,
+      titleText: subj.title,
+      colourKey: `subject:${subj.title}`,
+      members,
+      orbMin: 21,
+      orbMax: 42,
+      starSize: 6.2,
+      onTap: () => enterSubject(subj.index),
+      extra: {
+        communityIndices,
+        expandedCentres: null,
+        expandedRadius: 140,
+      },
+    });
+    subjectViews.push(view);
+  }
 }
 
-function isOverviewCapable() {
-  return visibleClusterCount() >= 2 && !state.visibleIds && !state.domain && state.highlightIds.size === 0;
+function viewPassesFilter(view) {
+  for (const id of view.members) {
+    const obj = objects.get(id);
+    if (obj && isVisibleNode(obj.node)) return true;
+  }
+  return false;
+}
+
+function getViewLevel() {
+  if (!graph) return 'concepts';
+  if (focusView || state.selectedId) return 'focus';
+  if (state.mergeMode || state.visibleIds || state.domain || state.highlightIds.size > 0) return 'concepts';
+  if (activeClusterIndex !== null) return 'concepts';
+  if (activeSubjectIndex !== null && subjectViews.length >= 2) return 'communities';
+  if (subjectViews.length >= 2) return 'subjects';
+  if (clusterViews.length >= 2) return 'communities';
+  return 'concepts';
 }
 
 function isOverviewMode() {
-  return !focusView && !state.selectedId && !state.mergeMode && activeClusterIndex === null && isOverviewCapable();
+  const level = getViewLevel();
+  return level === 'subjects' || level === 'communities';
+}
+
+function postNavState() {
+  const level = getViewLevel();
+  const sView = activeSubjectIndex !== null ? subjectViews.find((v) => v.index === activeSubjectIndex) || null : null;
+  const cView = activeClusterIndex !== null ? clusterViews.find((v) => v.index === activeClusterIndex) || null : null;
+  let title = null;
+  let backLabel = null;
+  if (cView && (level === 'concepts' || level === 'focus')) {
+    title = cView.titleText;
+    if (sView && !skippedCommunities) {
+      backLabel = `${sView.titleText} · ${cView.titleText}`;
+    } else if (subjectViews.length >= 2) {
+      backLabel = `All subjects · ${cView.titleText}`;
+    } else {
+      backLabel = `All groups · ${cView.titleText}`;
+    }
+  } else if (sView && level === 'communities') {
+    title = sView.titleText;
+    backLabel = `All subjects · ${sView.titleText}`;
+  }
+  post({ type: 'clusterChanged', level, title, backLabel, index: activeClusterIndex });
+}
+
+function flyToVantage(centre, spanRadius) {
+  const vFov = THREE.MathUtils.degToRad(camera.fov);
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  const distance = Math.max(95, (spanRadius * 1.18) / Math.tan(Math.min(vFov, hFov) / 2));
+  const vantage = new THREE.Vector3(0.18, 0.14, 0.97).normalize();
+  cameraFlight = {
+    target: centre.clone(),
+    position: centre.clone().addScaledVector(vantage, distance),
+  };
+}
+
+function enterSubject(index) {
+  const sView = subjectViews.find((v) => v.index === index);
+  if (!sView) return;
+  navCooldownUntil = performance.now() + 550;
+  focusView = null;
+  state.selectedId = null;
+
+  if (sView.communityIndices.length <= 1) {
+    const onlyIdx = sView.communityIndices[0];
+    const cView = onlyIdx !== undefined ? clusterViews.find((v) => v.index === onlyIdx) : null;
+    if (cView) {
+      activeSubjectIndex = index;
+      skippedCommunities = true;
+      cView.activeCentre.copy(sView.centre);
+      cView.group.position.copy(sView.centre);
+      cView.sprite.position.copy(sView.centre);
+      enterCluster(cView.index);
+      return;
+    }
+  }
+
+  activeSubjectIndex = index;
+  activeClusterIndex = null;
+  skippedCommunities = false;
+  computeExpandedSubject(sView);
+  clusterEntityLayer.updateMatrixWorld(true);
+  applyState();
+  flyToVantage(sView.centre, sView.expandedRadius);
+  postNavState();
+  invalidate();
 }
 
 function enterCluster(index) {
   const view = clusterViews.find((v) => v.index === index);
   if (!view) return;
+  navCooldownUntil = performance.now() + 550;
   focusView = null;
+  if (activeSubjectIndex === null && subjectViews.length >= 2) {
+    activeSubjectIndex = view.subjectIndex;
+    const sView = subjectViews.find((v) => v.index === activeSubjectIndex);
+    skippedCommunities = !sView || sView.communityIndices.length <= 1;
+  }
   activeClusterIndex = index;
   computeExpandedCommunity(view);
 
   applyState();
-
-  const vFov = THREE.MathUtils.degToRad(camera.fov);
-  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
-  const distance = Math.max(95, (view.expandedRadius * 1.18) / Math.tan(Math.min(vFov, hFov) / 2));
-  const vantage = new THREE.Vector3(0.18, 0.14, 0.97).normalize();
-  cameraFlight = {
-    target: view.centre.clone(),
-    position: view.centre.clone().addScaledVector(vantage, distance),
-  };
-  post({ type: 'clusterChanged', index: view.index, title: view.titleText });
+  const anchor = view.activeCentre || view.centre;
+  view.sprite.position.copy(anchor);
+  flyToVantage(anchor, view.expandedRadius);
+  postNavState();
   invalidate();
 }
 
-function exitCluster() {
-  const wasActive = activeClusterIndex !== null;
-  if (focusView) {
+function exitLevel() {
+  navCooldownUntil = performance.now() + 550;
+  if (focusView || state.selectedId) {
     focusView = null;
     preFocusCamera = null;
-  }
-  state.selectedId = null;
-  activeClusterIndex = null;
-  applyState();
-  frameAll(true);
-  if (wasActive) {
-    post({ type: 'clusterChanged', index: null, title: null });
+    state.selectedId = null;
+    applyState();
+    postNavState();
     post({ type: 'select', id: null });
+    invalidate();
+    return;
   }
-  invalidate();
+  if (activeClusterIndex !== null) {
+    state.selectedId = null;
+    activeClusterIndex = null;
+    if (skippedCommunities) {
+      activeSubjectIndex = null;
+      skippedCommunities = false;
+      restoreCommunityPositions();
+    } else if (activeSubjectIndex !== null) {
+      const sView = subjectViews.find((v) => v.index === activeSubjectIndex);
+      if (sView) computeExpandedSubject(sView);
+    }
+    clusterEntityLayer.updateMatrixWorld(true);
+    applyState();
+    if (activeSubjectIndex !== null) {
+      const sView = subjectViews.find((v) => v.index === activeSubjectIndex);
+      if (sView) flyToVantage(sView.centre, sView.expandedRadius);
+    } else {
+      frameAll(true);
+    }
+    postNavState();
+    post({ type: 'select', id: null });
+    invalidate();
+    return;
+  }
+  if (activeSubjectIndex !== null) {
+    state.selectedId = null;
+    activeSubjectIndex = null;
+    skippedCommunities = false;
+    restoreCommunityPositions();
+    clusterEntityLayer.updateMatrixWorld(true);
+    applyState();
+    frameAll(true);
+    postNavState();
+    post({ type: 'select', id: null });
+    invalidate();
+  }
 }
+
+const exitCluster = exitLevel;
 
 /* ---------------------------------------------------------------- interactive 3D concept focus */
 
@@ -1020,23 +1377,34 @@ function applyState() {
     exitFocus();
   }
 
-  const overview = isOverviewMode();
+  const level = getViewLevel();
+  const inSubjects = level === 'subjects';
+  const inCommunities = level === 'communities';
+  const inOrbOverview = inSubjects || inCommunities;
   const activeView = activeClusterIndex !== null ? clusterViews.find((v) => v.index === activeClusterIndex) || null : null;
   const activeSet = activeView ? activeView.members : null;
-  const focusing = !!focusView;
-  const searching = !overview && !focusing && state.highlightIds.size > 0;
+  const focusing = level === 'focus';
+  const searching = !inOrbOverview && !focusing && state.highlightIds.size > 0;
 
-  // In OVERVIEW: show every cluster orb & halo cleanly, hide individual nodes/links.
-  // In COMMUNITY: vanish every other orb/halo/node — show ONLY activeSet!
-  // In CONCEPT FOCUS: vanish all orbs, show ONLY focusView.members!
-  for (const view of clusterViews) {
-    let anyFilterPass = false;
-    for (const id of view.members) {
-      const obj = objects.get(id);
-      if (obj && isVisibleNode(obj.node)) { anyFilterPass = true; break; }
+  // Level 0 (SUBJECTS): show Subject nebulae only.
+  // Level 1 (COMMUNITIES): show only the active Subject's Community nebulae.
+  // Level 2 (CONCEPTS) & 3 (FOCUS): hide all nebula orbs; expand ONLY activeSet/focusView!
+  for (const sView of subjectViews) {
+    const showSubjectOrb = inSubjects && viewPassesFilter(sView);
+    sView.orb.visible = showSubjectOrb;
+    if (sView.stars) sView.stars.visible = showSubjectOrb;
+    if (sView.constellationLines) sView.constellationLines.visible = showSubjectOrb;
+    sView.sprite.visible = showSubjectOrb;
+    if (!showSubjectOrb) {
+      sView.label.style.opacity = '0';
+      sView.label.style.pointerEvents = 'none';
     }
-    const showOrb = overview && anyFilterPass;
-    const isIsolatedCloud = !overview && !focusing && activeView && view.index === activeView.index;
+  }
+
+  for (const view of clusterViews) {
+    const belongsToSubject = activeSubjectIndex === null || view.subjectIndex === activeSubjectIndex;
+    const showOrb = inCommunities && belongsToSubject && viewPassesFilter(view);
+    const isIsolatedCloud = level === 'concepts' && activeView && view.index === activeView.index;
     view.orb.visible = showOrb;
     if (view.stars) view.stars.visible = showOrb;
     if (view.constellationLines) view.constellationLines.visible = showOrb;
@@ -1056,16 +1424,16 @@ function applyState() {
     if (focusing) {
       obj.visible = obj.passesFilters && focusView.members.has(node.id);
       obj.target.copy(focusView.targets.get(node.id) || obj.origin);
-    } else if (overview) {
+    } else if (inOrbOverview) {
       obj.visible = false;
       obj.target.copy(obj.origin);
     } else if (activeSet) {
       obj.visible = obj.passesFilters && activeSet.has(node.id);
       const exp = activeView.expandedPositions?.get(node.id);
       obj.target.copy(exp || obj.origin);
-      // If just entering from an invisible orb, start smoothly at orb centre.
+      // If just entering from an orb, start smoothly at that orb's centre.
       if (obj.visible && mesh.visible === false && exp) {
-        mesh.position.copy(activeView.centre);
+        mesh.position.copy(activeView.activeCentre || activeView.centre);
       }
     } else {
       obj.visible = obj.passesFilters;
@@ -1090,7 +1458,7 @@ function applyState() {
 
   selectionRing.visible = !!selected && selected.visible;
   settling = true;
-  rebuildLinks(selectedId, searching, overview, activeSet);
+  rebuildLinks(selectedId, searching, inOrbOverview, activeSet);
   invalidate();
 }
 
@@ -1228,23 +1596,38 @@ const clusterScreen = new THREE.Vector3();
 const clusterDown = new THREE.Vector3();
 
 function placeClusterLabels() {
-  if (!isOverviewMode()) {
-    for (const view of clusterViews) {
+  const level = getViewLevel();
+  const activeViews = level === 'subjects'
+    ? subjectViews
+    : level === 'communities'
+      ? clusterViews.filter((v) => activeSubjectIndex === null || v.subjectIndex === activeSubjectIndex)
+      : [];
+
+  for (const view of subjectViews) {
+    if (level !== 'subjects') {
       view.label.style.opacity = '0';
       view.label.style.pointerEvents = 'none';
     }
-    return;
   }
+  for (const view of clusterViews) {
+    if (level !== 'communities' || (activeSubjectIndex !== null && view.subjectIndex !== activeSubjectIndex)) {
+      view.label.style.opacity = '0';
+      view.label.style.pointerEvents = 'none';
+    }
+  }
+  if (!activeViews.length) return;
+
   const placedRects = [];
   const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
-  const ordered = clusterViews.slice().sort((a, b) => b.members.size - a.members.size);
+  const ordered = activeViews.slice().sort((a, b) => b.members.size - a.members.size);
 
-  // Reserve screen circles around visible orbs so no cluster name ever crosses another orb.
+  // Reserve screen circles around visible orbs so no nebula name ever crosses another orb.
   for (const view of ordered) {
     if (!view.orb.visible) continue;
-    clusterScreen.copy(view.centre).project(camera);
+    const anchor = view.activeCentre || view.centre;
+    clusterScreen.copy(anchor).project(camera);
     if (clusterScreen.z > 1) continue;
-    const dist = Math.max(1, camera.position.distanceTo(view.centre));
+    const dist = Math.max(1, camera.position.distanceTo(anchor));
     const pr = (view.orbRadius * height) / (2 * dist * tanHalf) + 4;
     const sx = (clusterScreen.x * 0.5 + 0.5) * width;
     const sy = (-clusterScreen.y * 0.5 + 0.5) * height;
@@ -1257,13 +1640,14 @@ function placeClusterLabels() {
       view.label.style.pointerEvents = 'none';
       continue;
     }
-    clusterScreen.copy(view.centre).project(camera);
+    const anchor = view.activeCentre || view.centre;
+    clusterScreen.copy(anchor).project(camera);
     if (clusterScreen.z > 1 || clusterScreen.x < -1.08 || clusterScreen.x > 1.08 || clusterScreen.y < -1.08 || clusterScreen.y > 1.08) {
       view.label.style.opacity = '0';
       view.label.style.pointerEvents = 'none';
       continue;
     }
-    const dist = Math.max(1, camera.position.distanceTo(view.centre));
+    const dist = Math.max(1, camera.position.distanceTo(anchor));
     const pxRadius = (view.orbRadius * height) / (2 * dist * tanHalf);
     const w = view.label.offsetWidth || 96;
     const h = 15;
@@ -1527,8 +1911,11 @@ function flyToNode(nodeId) {
 
 function frameAll(animated) {
   const box = new THREE.Box3();
-  if (isOverviewMode()) {
-    for (const v of clusterViews) if (v.orb.visible) box.expandByPoint(v.centre);
+  const level = getViewLevel();
+  if (level === 'subjects') {
+    for (const v of subjectViews) if (v.orb.visible) box.expandByPoint(v.centre);
+  } else if (level === 'communities') {
+    for (const v of clusterViews) if (v.orb.visible) box.expandByPoint(v.activeCentre || v.centre);
   } else {
     for (const obj of objects.values()) if (obj.visible) box.expandByPoint(obj.mesh.position);
   }
@@ -1569,21 +1956,26 @@ function ndcFrom(clientX, clientY) {
 }
 
 function pickCluster(clientX, clientY) {
-  if (!isOverviewMode()) return null;
+  const level = getViewLevel();
+  if (level !== 'subjects' && level !== 'communities') return null;
+  const kind = level === 'subjects' ? 'subject' : 'community';
+  const pool = level === 'subjects' ? subjectViews : clusterViews;
   const rect = ndcFrom(clientX, clientY);
   raycaster.setFromCamera(pointerNdc, camera);
-  const orbs = clusterViews.filter((v) => v.orb.visible).map((v) => v.orb);
+  const orbs = pool.filter((v) => v.orb.visible).map((v) => v.orb);
   const hit = raycaster.intersectObjects(orbs, false)[0];
   if (hit) {
-    const idx = hit.object.userData.clusterIndex;
-    return clusterViews.find((v) => v.index === idx) || null;
+    const idx = hit.object.userData.viewIndex;
+    const view = pool.find((v) => v.index === idx) || null;
+    return view ? { kind, view } : null;
   }
-  // Generous screen-space tap radius on cluster orbs.
+  // Generous screen-space tap radius on nebula orbs.
   let best = null;
   let bestDist = Infinity;
-  for (const view of clusterViews) {
+  for (const view of pool) {
     if (!view.orb.visible) continue;
-    projected.copy(view.centre).project(camera);
+    const anchor = view.activeCentre || view.centre;
+    projected.copy(anchor).project(camera);
     if (projected.z > 1) continue;
     const sx = rect.left + ((projected.x + 1) / 2) * rect.width;
     const sy = rect.top + ((1 - projected.y) / 2) * rect.height;
@@ -1593,7 +1985,7 @@ function pickCluster(clientX, clientY) {
       best = view;
     }
   }
-  return best;
+  return best ? { kind, view: best } : null;
 }
 
 function pickNode(clientX, clientY) {
@@ -1641,7 +2033,8 @@ function handleTap(x, y) {
   const clusterHit = pickCluster(x, y);
   if (clusterHit) {
     lastEmptyTap = null;
-    enterCluster(clusterHit.index);
+    if (clusterHit.kind === 'subject') enterSubject(clusterHit.view.index);
+    else enterCluster(clusterHit.view.index);
     return;
   }
   const id = pickNode(x, y);
@@ -1743,9 +2136,12 @@ window.setGraphData = async function setGraphData(raw) {
     disposeScene();
     graph = null;
     focusView = null;
+    activeSubjectIndex = null;
     activeClusterIndex = null;
+    skippedCommunities = false;
     setStatus('');
     invalidate();
+    postNavState();
     post({ type: 'layout', running: false, nodes: 0 });
     return;
   }
@@ -1768,7 +2164,10 @@ window.setGraphData = async function setGraphData(raw) {
       return;
     }
   }
-  if (isFirstLayout && !state.selectedId && activeClusterIndex === null) frameAll(false);
+  if (isFirstLayout && !state.selectedId && activeClusterIndex === null && activeSubjectIndex === null) {
+    frameAll(false);
+  }
+  postNavState();
   post({ type: 'layout', running: false, nodes: result.nodes.length });
 };
 
@@ -1782,7 +2181,10 @@ window.setGraphState = function setGraphState(next) {
   lastVisibilityKey = nextVisibilityKey;
 
   if (visibilityChanged && (visArr !== null || (next.domain || null) !== null)) {
+    activeSubjectIndex = null;
     activeClusterIndex = null;
+    skippedCommunities = false;
+    restoreCommunityPositions();
   }
 
   state.selectedId = next.selectedId || null;
@@ -1794,6 +2196,7 @@ window.setGraphState = function setGraphState(next) {
   state.mergeMode = !!next.mergeMode;
   state.mergeTargetIds = new Set(next.mergeTargetIds || []);
   applyState();
+  postNavState();
   if (visibilityChanged && !state.selectedId && graph) {
     frameAll(true);
   }
@@ -1810,29 +2213,37 @@ window.resetCamera = function resetCamera() {
     applyState();
     post({ type: 'select', id: null });
   }
-  if (activeClusterIndex !== null) {
-    exitCluster();
+  if (activeClusterIndex !== null || activeSubjectIndex !== null) {
+    exitLevel();
   } else {
     frameAll(true);
   }
 };
 
 window.exitCluster = function() {
-  exitCluster();
+  exitLevel();
 };
 
 window.enterClusterByTitle = function(query) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return false;
-  if (!clusterViews.length) {
+  if (!clusterViews.length && !subjectViews.length) {
     pendingClusterQuery = q;
     return false;
   }
-  const exact = clusterViews.find((v) => v.titleText.toLowerCase() === q);
-  const partial = exact || clusterViews.find((v) => v.titleText.toLowerCase().includes(q));
-  if (!partial) return false;
-  enterCluster(partial.index);
-  return true;
+  const cMatch = clusterViews.find((v) => v.titleText.toLowerCase() === q)
+    || clusterViews.find((v) => v.titleText.toLowerCase().includes(q));
+  if (cMatch) {
+    enterCluster(cMatch.index);
+    return true;
+  }
+  const sMatch = subjectViews.find((v) => v.titleText.toLowerCase() === q)
+    || subjectViews.find((v) => v.titleText.toLowerCase().includes(q));
+  if (sMatch) {
+    enterSubject(sMatch.index);
+    return true;
+  }
+  return false;
 };
 
 requestAnimationFrame(tick);

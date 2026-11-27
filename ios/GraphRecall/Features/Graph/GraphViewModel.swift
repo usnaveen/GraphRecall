@@ -66,6 +66,8 @@ final class GraphViewModel {
     var cardExpanded = false
     var resetCameraToken = 0
     var activeClusterTitle: String? = nil
+    var activeNavLevel: String = "subjects"
+    var activeBackLabel: String? = nil
     var exitClusterToken = 0
     var focusClusterQuery: String? = ProcessInfo.processInfo.environment["GR_CLUSTER"]?.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -497,7 +499,10 @@ final class GraphViewModel {
 
     func exitCluster() {
         selectedNodeId = nil
-        activeClusterTitle = nil
+        if activeNavLevel == "communities" {
+            activeClusterTitle = nil
+            activeBackLabel = nil
+        }
         exitClusterToken &+= 1
     }
 
