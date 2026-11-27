@@ -140,7 +140,8 @@ async def purge_unfinished(pg, user_id: str, log: dict) -> int:
     return len(stale)
 
 
-async def main(dataset: str, upto: int | None, communities_only: bool, limit: int | None, skip_communities: bool) -> None:
+async def main(dataset: str, upto: int | None, communities_only: bool, limit: int | None, skip_communities: bool,
+               start: int = 0) -> None:
     from backend.db.postgres_client import get_postgres_client
 
     _env.throttle_llm()
@@ -152,6 +153,7 @@ async def main(dataset: str, upto: int | None, communities_only: bool, limit: in
 
     corpus = [json.loads(l) for l in corpus_path.open()]
     corpus = corpus[:upto] if upto else corpus
+    corpus = corpus[start:]  # --from: a held-out slice nothing was tuned on
 
     log = json.loads(log_path.read_text()) if log_path.exists() else {"user_id": user_id, "models": _env.models(), "notes": {}}
     graph = build_eval_graph()
@@ -216,8 +218,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", choices=["grb", "musique"], default="grb")
     ap.add_argument("--upto", type=int, default=None, help="only the first N corpus notes (the slice)")
+    ap.add_argument("--from", dest="start", type=int, default=0, help="skip the first N notes (held-out slices)")
     ap.add_argument("--communities-only", action="store_true")
     ap.add_argument("--skip-communities", action="store_true")
     ap.add_argument("--limit", type=int, default=None, help="ingest at most N notes this run")
     a = ap.parse_args()
-    asyncio.run(main(a.dataset, a.upto, a.communities_only, a.limit, a.skip_communities))
+    asyncio.run(main(a.dataset, a.upto, a.communities_only, a.limit, a.skip_communities, a.start))
