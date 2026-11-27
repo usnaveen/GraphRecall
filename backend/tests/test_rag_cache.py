@@ -380,3 +380,12 @@ def test_response_cache_blocks_topic_swaps_even_when_embeddings_are_close() -> N
 
     asyncio.run(scenario())
     assert cache.stats()["entity_guard_blocks"] == 3
+
+
+def test_question_word_is_part_of_the_semantic_cache_guard():
+    from backend.services.rag_cache import _content_terms
+
+    assert _content_terms("why does HNSW work?") != _content_terms("how does HNSW work?")
+    assert _content_terms("How does HNSW work?") == _content_terms("Explain HNSW work")
+    assert _content_terms("When was HNSW introduced?") != _content_terms("Where was HNSW introduced?")
+    assert _content_terms("what is HNSW") == _content_terms("What is HNSW?")

@@ -10,6 +10,7 @@ from backend.db.neo4j_client import get_neo4j_client
 from backend.db.postgres_client import get_postgres_client
 from backend.graphs.link_suggestion_graph import run_link_suggestions
 from backend.config.llm import get_fast_model
+from backend.services.answer_cache import invalidate_cached_answers
 from backend.services.graph_registry import resolve_graph
 from backend.services.ingestion.embedding_service import EmbeddingService
 
@@ -259,6 +260,7 @@ async def create_node(
                 # failed to save because linking broke is not.
                 logger.warning("Nodes: auto-link failed", node_id=node_id, error=str(e))
 
+        await invalidate_cached_answers(user_id)
         return {
             "status": "created",
             "node": node,
@@ -358,6 +360,7 @@ async def apply_links(
             neo4j, user_id=user_id, node_id=node_id, links=request.links
         )
 
+        await invalidate_cached_answers(user_id)
         return {"status": "linked", "node_id": node_id, "links": created}
     except HTTPException:
         raise

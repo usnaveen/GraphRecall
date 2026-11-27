@@ -399,18 +399,19 @@ async def test_generate_response_l2_cache_hit_invalidation_and_grounding() -> No
 
     with patch.object(cg, "get_chat_model", return_value=FakeLLM()), \
          patch.object(cg, "_notes_fingerprint", side_effect=fake_fingerprint):
-        # 1. First call: misses L2, calls LLM, strips [9] and [G9], preserves [1], [G1], and markdown link, caches.
+        # 1. First call: misses L2, calls LLM, strips [9] and every [G#] (graph concepts are not citable,
+        #    the app would show them as stray text), preserves [1] and the markdown link, caches.
         res1 = await cg.generate_response_node(state)
         assert len(llm_calls) == 1
         ans1 = res1["messages"][-1].content
         assert "[1]" in ans1
-        assert "[G1]" in ans1
+        assert "[G1]" not in ans1
         assert "[9]" not in ans1
         assert "[G9]" not in ans1
         assert "[doc](https://example.com/1)" in ans1
         assert res1["metadata"]["cache_hit"] is False
         assert res1["metadata"]["grounding"]["should_abstain"] is False
-        assert res1["metadata"]["grounding"]["invalid_refs"] == ["9", "G9"]
+        assert res1["metadata"]["grounding"]["invalid_refs"] == ["9", "G1", "G9"]
 
         # 2. Second identical single-turn call: L2 cache hit, zero extra LLM calls.
         res2 = await cg.generate_response_node(state)

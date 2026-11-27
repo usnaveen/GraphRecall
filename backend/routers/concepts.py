@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 
+from backend.services.answer_cache import invalidate_cached_answers
 from backend.auth.middleware import get_current_user
 from backend.db.postgres_client import get_postgres_client
 from backend.db.neo4j_client import get_neo4j_client
@@ -73,6 +74,7 @@ async def delete_concept(
             {"user_id": user_id, "concept_id": concept_id},
         )
 
+        await invalidate_cached_answers(user_id)
         return {"status": "deleted", "concept_id": concept_id}
     except HTTPException:
         raise
@@ -240,6 +242,7 @@ async def merge_concepts(
             merged_count += 1
 
         logger.info("Concepts: Merged", merged=merged_count, target=request.target_id)
+        await invalidate_cached_answers(user_id)
         return {
             "status": "merged",
             "target_id": request.target_id,
@@ -467,7 +470,9 @@ async def dump_concepts(
 
     user_id = str(current_user["id"])
     try:
-        return await run_dump(user_id, request.concepts)
+        result = await run_dump(user_id, request.concepts)
+        await invalidate_cached_answers(user_id)
+        return result
     except Exception as e:
         logger.error("Concepts: dump failed", error=str(e))
         raise HTTPException(

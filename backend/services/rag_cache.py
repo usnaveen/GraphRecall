@@ -139,7 +139,14 @@ def _content_terms(query: str) -> tuple[str, ...]:
     Order matters: "GloVe improve on word2vec" and "word2vec improve on GloVe" share a set."""
     from backend.services.grounding_guard import query_terms
 
-    return tuple(dict.fromkeys(_light_stem(t) for t in query_terms(query)))
+    # Some question words change what is asked: "why does HNSW work?" vs "how does HNSW work?", or
+    # "when" vs "where", share topic words and near-identical embeddings but need different answers.
+    # "what" / "how" / "explain" are the same explanatory request, so they are not marked.
+    kinds = tuple(f"?{w}" for w in _QUESTION_WORDS if re.search(rf"\b{w}\b", (query or "").lower()))
+    return kinds + tuple(dict.fromkeys(_light_stem(t) for t in query_terms(query)))
+
+
+_QUESTION_WORDS = ("why", "when", "where", "who", "which")
 
 
 def _light_stem(term: str) -> str:
