@@ -7,6 +7,7 @@ deduplicates by `parent_chunk_id`, and extracts child-centered context windows i
 from __future__ import annotations
 
 import asyncio
+import os
 import json
 from typing import Any, Dict, List, Optional
 
@@ -45,6 +46,13 @@ async def run_vector_sql(
     if hasattr(pg, "execute_vector_query"):
         return await pg.execute_vector_query(sql, params, ef_search=ef_search)
     return await pg.execute_query(sql, params)
+
+
+# Lexical leg query: the question's terms joined with OR, ranked by ts_rank_cd (cover density).
+# websearch_to_tsquery joins every word with AND, so a whole question ("What combination of symptoms
+# and test results would suggest...") matched almost no 300-character chunk: recall@5 0.06 on the
+# retrieval golden set. Phrases ("<->") and the parser's stop-word handling are kept.
+_OR_TSQUERY = "replace(websearch_to_tsquery('english', :query)::text, ' & ', ' | ')::tsquery"
 
 
 async def attach_chunk_embeddings(pg: Any, user_id: str, chunks: list[dict[str, Any]]) -> None:
@@ -489,6 +497,8 @@ class RetrievalService:
             return []
 
         pg = pg_client or await get_postgres_client()
+        # KEYWORD_TSQUERY=and restores the old all-words match (kept for A/B in eval/retrieval).
+        tsq = "websearch_to_tsquery('english', :query)" if os.getenv("KEYWORD_TSQUERY", "or") == "and" else _OR_TSQUERY
         scoped_clause = "AND n.id = ANY(:source_ids)" if focused_source_ids else ""
         base_params: dict[str, Any] = {"user_id": user_id, "query": clean_query, "limit": limit}
         if focused_source_ids:
@@ -506,7 +516,7 @@ class RetrievalService:
                 c.page_end,
                 c.note_id,
                 n.title,
-                ts_rank_cd(c.content_tsv, websearch_to_tsquery('english', :query), 32) AS bm25_score
+                ts_rank_cd(c.content_tsv, {tsq}, 32) AS bm25_score
             FROM chunks c
             LEFT JOIN chunks p ON c.parent_chunk_id = p.id
             JOIN notes n ON c.note_id = n.id
@@ -514,7 +524,7 @@ class RetrievalService:
               AND n.user_id = CAST(:user_id AS uuid)
               AND c.chunk_level = 'child'
               {scoped_clause}
-              AND c.content_tsv @@ websearch_to_tsquery('english', :query)
+              AND c.content_tsv @@ {tsq}
             ORDER BY bm25_score DESC, n.updated_at DESC
             LIMIT :limit
         """
@@ -530,7 +540,7 @@ class RetrievalService:
                 c.page_end,
                 c.note_id,
                 n.title,
-                ts_rank_cd(to_tsvector('english', coalesce(c.content, '')), plainto_tsquery('english', :query), 32) AS bm25_score
+                ts_rank_cd(to_tsvector('english', coalesce(c.content, '')), {tsq}, 32) AS bm25_score
             FROM chunks c
             LEFT JOIN chunks p ON c.parent_chunk_id = p.id
             JOIN notes n ON c.note_id = n.id
@@ -538,7 +548,7 @@ class RetrievalService:
               AND n.user_id = CAST(:user_id AS uuid)
               AND c.chunk_level = 'child'
               {scoped_clause}
-              AND to_tsvector('english', coalesce(c.content, '')) @@ plainto_tsquery('english', :query)
+              AND to_tsvector('english', coalesce(c.content, '')) @@ {tsq}
             ORDER BY bm25_score DESC, n.updated_at DESC
             LIMIT :limit
         """
