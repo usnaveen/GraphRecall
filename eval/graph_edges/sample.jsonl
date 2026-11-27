@@ -1,0 +1,120 @@
+{"n": 1, "prerequisite": "Multilayer Perceptron", "of": "Mixture of Experts", "domain": "Deep Learning"}
+{"n": 2, "prerequisite": "4D Parallelism", "of": "Pipeline Parallelism", "domain": "Distributed Computing"}
+{"n": 3, "prerequisite": "Gradient Descent", "of": "Mini-Batch Gradient Descent", "domain": "Machine Learning"}
+{"n": 4, "prerequisite": "Multilayer Perceptron", "of": "Recurrent Neural Network", "domain": "Deep Learning"}
+{"n": 5, "prerequisite": "Hash Set", "of": "Longest Substring With Unique Characters", "domain": "Algorithms and Data Structures"}
+{"n": 6, "prerequisite": "Depth-First Search", "of": "Inorder Traversal", "domain": "Algorithms"}
+{"n": 7, "prerequisite": "Depth-First Search", "of": "Bipartite Graph Validation", "domain": "Algorithms"}
+{"n": 8, "prerequisite": "Math and Geometry", "of": "Integer Overflow", "domain": "Algorithms and Data Structures"}
+{"n": 9, "prerequisite": "Conditional Probability", "of": "Top-k Filtering", "domain": "Probability and Statistics"}
+{"n": 10, "prerequisite": "Depth-First Search", "of": "Preorder Traversal", "domain": "Algorithms"}
+{"n": 11, "prerequisite": "Binary Search", "of": "Exit Condition", "domain": "Algorithms and Data Structures"}
+{"n": 12, "prerequisite": "Stack", "of": "Push", "domain": "Algorithms and Data Structures"}
+{"n": 13, "prerequisite": "Hash map + linked list", "of": "LRU Cache", "domain": "Coding Interviews"}
+{"n": 14, "prerequisite": "Two Pointers", "of": "Partitioning", "domain": "Algorithms and Data Structures"}
+{"n": 15, "prerequisite": "Vocabulary", "of": "Byte-Pair Encoding", "domain": "Natural Language Processing"}
+{"n": 16, "prerequisite": "Neural Network", "of": "Cross-Entropy Loss", "domain": "Machine Learning"}
+{"n": 17, "prerequisite": "Vanishing Gradient Problem", "of": "LSTM", "domain": "Deep Learning"}
+{"n": 18, "prerequisite": "Query Optimization", "of": "Query Routing", "domain": "Machine Learning"}
+{"n": 19, "prerequisite": "Sliding Window", "of": "Fixed Sliding Window", "domain": "Machine Learning"}
+{"n": 20, "prerequisite": "Interval", "of": "Sorting Intervals", "domain": "Data Structures and Algorithms"}
+{"n": 21, "prerequisite": "Scaled Dot-Product Attention", "of": "Multi-Head Attention", "domain": "Machine Learning"}
+{"n": 22, "prerequisite": "Bit Manipulation", "of": "Bitwise Operators", "domain": "Algorithms and Data Structures"}
+{"n": 23, "prerequisite": "Recursion", "of": "Memoization", "domain": "Computer Science Fundamentals"}
+{"n": 24, "prerequisite": "Tree Traversal", "of": "Depth-First Search", "domain": "Algorithms"}
+{"n": 25, "prerequisite": "Matrix Factorization Method", "of": "GloVe", "domain": "Natural Language Processing"}
+{"n": 26, "prerequisite": "Artificial Intelligence", "of": "Explainability", "domain": "Artificial Intelligence"}
+{"n": 27, "prerequisite": "Binary Tree", "of": "Balanced Binary Tree Validation", "domain": "Data Structures"}
+{"n": 28, "prerequisite": "Forward Pass", "of": "Real-Time Recurrent Learning", "domain": "Deep Learning"}
+{"n": 29, "prerequisite": "Gradient Descent", "of": "Solver", "domain": "Machine Learning"}
+{"n": 30, "prerequisite": "Language Model", "of": "Count-Based Language Model", "domain": "Natural Language Processing"}
+{"n": 31, "prerequisite": "Prefix Sum", "of": "Prefix Products", "domain": "Algorithms and Data Structures"}
+{"n": 32, "prerequisite": "Trees", "of": "Tree Traversal", "domain": "Algorithms and Data Structures"}
+{"n": 33, "prerequisite": "Word Embeddings", "of": "Recurrent Neural Network", "domain": "Natural Language Processing"}
+{"n": 34, "prerequisite": "Self-Attention", "of": "Long-context pretraining", "domain": "Machine Learning"}
+{"n": 35, "prerequisite": "Hash Map", "of": "Load Factor", "domain": "Algorithms and Data Structures"}
+{"n": 36, "prerequisite": "Greatest Common Divisor", "of": "Euclidean Algorithm", "domain": "Math and Geometry"}
+{"n": 37, "prerequisite": "Recurrent Neural Network", "of": "Attention Mechanism", "domain": "Machine Learning"}
+{"n": 38, "prerequisite": "Autoregressive Language Model", "of": "Causal Mask", "domain": "Natural Language Processing"}
+{"n": 39, "prerequisite": "Deep Neural Network", "of": "Long Short-Term Memory", "domain": "Machine Learning"}
+{"n": 40, "prerequisite": "Retrieval-Augmented Generation", "of": "Advanced RAG", "domain": "Large Language Models"}
+{"n": 41, "prerequisite": "Graphs", "of": "Topological Sort", "domain": "Algorithms and Data Structures"}
+{"n": 42, "prerequisite": "Recursion", "of": "Overlapping Subproblems", "domain": "Computer Science Fundamentals"}
+{"n": 43, "prerequisite": "Decoder-Only Transformer", "of": "Open-weight model", "domain": "Deep Learning"}
+{"n": 44, "prerequisite": "Language Model", "of": "Prompting Format", "domain": "Natural Language Processing"}
+{"n": 45, "prerequisite": "Breadth-First Search", "of": "Multi-Source BFS", "domain": "Algorithms"}
+{"n": 46, "prerequisite": "Math and Geometry", "of": "Happy Number", "domain": "Algorithms and Data Structures"}
+{"n": 47, "prerequisite": "Softmax", "of": "Temperature", "domain": "Machine Learning"}
+{"n": 48, "prerequisite": "Tokenization", "of": "ROUGE-1", "domain": "Natural Language Processing"}
+{"n": 49, "prerequisite": "Recursion", "of": "Find All Subsets", "domain": "Computer Science Fundamentals"}
+{"n": 50, "prerequisite": "Transformer", "of": "Low-Rank Adaptation", "domain": "Machine Learning"}
+{"n": 51, "prerequisite": "Graphs", "of": "Bipartite Graph Validation", "domain": "Algorithms and Data Structures"}
+{"n": 52, "prerequisite": "Approximate Nearest Neighbor", "of": "Hierarchical Navigable Small World", "domain": "Information Retrieval"}
+{"n": 53, "prerequisite": "Pointer Manipulation", "of": "Linked List Intersection", "domain": "Algorithms"}
+{"n": 54, "prerequisite": "Embedding", "of": "CLIP", "domain": "Machine Learning"}
+{"n": 55, "prerequisite": "Recursion", "of": "Base Cases", "domain": "Computer Science Fundamentals"}
+{"n": 56, "prerequisite": "Cross-Entropy Loss", "of": "Pretraining", "domain": "Machine Learning"}
+{"n": 57, "prerequisite": "Recurrent Neural Network", "of": "LSTM", "domain": "Machine Learning"}
+{"n": 58, "prerequisite": "Vector Database", "of": "Filtered Vector Search", "domain": "Database Systems"}
+{"n": 59, "prerequisite": "Feature Pipeline", "of": "Change Data Capture", "domain": "Machine Learning Engineering"}
+{"n": 60, "prerequisite": "Word Vector", "of": "Sentiment Analysis", "domain": "Natural Language Processing"}
+{"n": 61, "prerequisite": "Backtracking", "of": "Find All Permutations", "domain": "Algorithms and Data Structures"}
+{"n": 62, "prerequisite": "Graph", "of": "Weighted Graph", "domain": "Data Structures and Algorithms"}
+{"n": 63, "prerequisite": "Query Optimization", "of": "Query Rewriting", "domain": "Machine Learning"}
+{"n": 64, "prerequisite": "Mini-Batch Gradient Descent", "of": "Epoch", "domain": "Machine Learning"}
+{"n": 65, "prerequisite": "Recursion", "of": "Insert and Search Words with Wildcards", "domain": "Computer Science Fundamentals"}
+{"n": 66, "prerequisite": "Trees", "of": "Graph", "domain": "Algorithms and Data Structures"}
+{"n": 67, "prerequisite": "Backpropagation Through Time", "of": "Constant Error Carrousel", "domain": "Deep Learning"}
+{"n": 68, "prerequisite": "Dynamic Programming", "of": "Kadane's Algorithm", "domain": "Algorithms and Data Structures"}
+{"n": 69, "prerequisite": "Prompting Format", "of": "ChatML", "domain": "Natural Language Processing"}
+{"n": 70, "prerequisite": "Language Model", "of": "Perplexity", "domain": "Natural Language Processing"}
+{"n": 71, "prerequisite": "Language Model", "of": "ROUGE", "domain": "Natural Language Processing"}
+{"n": 72, "prerequisite": "Tensor", "of": "Computational Graph", "domain": "Machine Learning"}
+{"n": 73, "prerequisite": "Sorting Intervals", "of": "Merge Overlapping Intervals", "domain": "Data Structures and Algorithms"}
+{"n": 74, "prerequisite": "Transformer", "of": "Mixture of Experts", "domain": "Machine Learning"}
+{"n": 75, "prerequisite": "Feature Store", "of": "Artifact", "domain": "MLOps"}
+{"n": 76, "prerequisite": "Binary Tree", "of": "Rightmost Nodes of a Binary Tree", "domain": "Data Structures"}
+{"n": 77, "prerequisite": "Binary Search", "of": "Lower Bound", "domain": "Algorithms and Data Structures"}
+{"n": 78, "prerequisite": "Upper Bound", "of": "Cutting Wood", "domain": "Algorithms"}
+{"n": 79, "prerequisite": "Tree Traversal", "of": "Breadth-First Search", "domain": "Algorithms"}
+{"n": 80, "prerequisite": "Artificial Intelligence", "of": "Machine Learning", "domain": "Artificial Intelligence"}
+{"n": 81, "prerequisite": "Discrete Probability Distribution", "of": "Nucleus Sampling", "domain": "Probability and Statistics"}
+{"n": 82, "prerequisite": "Model Quantization", "of": "GPTQ", "domain": "Model Optimization"}
+{"n": 83, "prerequisite": "Depth-First Search", "of": "Postorder Traversal", "domain": "Algorithms"}
+{"n": 84, "prerequisite": "Stack", "of": "Monotonic Stack", "domain": "Algorithms and Data Structures"}
+{"n": 85, "prerequisite": "Depth-First Search", "of": "Lowest Common Ancestor", "domain": "Algorithms"}
+{"n": 86, "prerequisite": "Feature, Training, and Inference Architecture", "of": "Feature Pipeline", "domain": "Machine Learning Engineering"}
+{"n": 87, "prerequisite": "Word Embeddings", "of": "GloVe", "domain": "Natural Language Processing"}
+{"n": 88, "prerequisite": "Language Model", "of": "Chain of Thought", "domain": "Natural Language Processing"}
+{"n": 89, "prerequisite": "Depth-First Search", "of": "State Space Tree", "domain": "Algorithms"}
+{"n": 90, "prerequisite": "Data Indexing", "of": "Sliding Window", "domain": "Machine Learning"}
+{"n": 91, "prerequisite": "Trees", "of": "Binary Tree", "domain": "Algorithms and Data Structures"}
+{"n": 92, "prerequisite": "Feature Pipeline", "of": "Feature Store", "domain": "Machine Learning Engineering"}
+{"n": 93, "prerequisite": "Transformer", "of": "Parameter-Efficient Finetuning", "domain": "Machine Learning"}
+{"n": 94, "prerequisite": "Co-occurrence Matrix", "of": "Singular Value Decomposition", "domain": "Natural Language Processing"}
+{"n": 95, "prerequisite": "Palindrome", "of": "Manacher's Algorithm", "domain": "Algorithms and Data Structures"}
+{"n": 96, "prerequisite": "Big O Notation", "of": "Pair Sum - Sorted", "domain": "Algorithms and Data Structures"}
+{"n": 97, "prerequisite": "Discrete Probability Distribution", "of": "Perplexity", "domain": "Probability and Statistics"}
+{"n": 98, "prerequisite": "Complexity Analysis", "of": "Zero Striping", "domain": "Computer Science"}
+{"n": 99, "prerequisite": "Graphs", "of": "Graph Coloring", "domain": "Algorithms and Data Structures"}
+{"n": 100, "prerequisite": "Hash Map", "of": "K-Sum Subarrays", "domain": "Algorithms and Data Structures"}
+{"n": 101, "prerequisite": "Dynamic Sliding Window", "of": "Longest Uniform Substring After Replacements", "domain": "Algorithms"}
+{"n": 102, "prerequisite": "Prefix Sum", "of": "Sum Between Range", "domain": "Algorithms and Data Structures"}
+{"n": 103, "prerequisite": "Automatic Differentiation", "of": "Autograd", "domain": "Machine Learning"}
+{"n": 104, "prerequisite": "Transformer", "of": "Residual Connection", "domain": "Machine Learning"}
+{"n": 105, "prerequisite": "Long-context pretraining", "of": "Needle in a Haystack", "domain": "Machine Learning"}
+{"n": 106, "prerequisite": "Trees", "of": "Trie", "domain": "Algorithms and Data Structures"}
+{"n": 107, "prerequisite": "Big O Notation", "of": "Counting Sort", "domain": "Algorithms and Data Structures"}
+{"n": 108, "prerequisite": "Hash Map", "of": "Two Sum", "domain": "Algorithms and Data Structures"}
+{"n": 109, "prerequisite": "Language Model", "of": "Prompt Engineering", "domain": "Natural Language Processing"}
+{"n": 110, "prerequisite": "Tensor", "of": "Embedding Layer", "domain": "Machine Learning"}
+{"n": 111, "prerequisite": "Least Squares Regression", "of": "AdaGrad", "domain": "Statistics and Machine Learning"}
+{"n": 112, "prerequisite": "Semantic Vector Space Model", "of": "Matrix Factorization Method", "domain": "Natural Language Processing"}
+{"n": 113, "prerequisite": "Word Embeddings", "of": "Transformer", "domain": "Natural Language Processing"}
+{"n": 114, "prerequisite": "Transformer", "of": "Vision Language Model", "domain": "Machine Learning"}
+{"n": 115, "prerequisite": "Causal Mask", "of": "DecoderLanguageModel", "domain": "Deep Learning"}
+{"n": 116, "prerequisite": "Feature, Training, and Inference Architecture", "of": "LLM Twin", "domain": "Machine Learning Engineering"}
+{"n": 117, "prerequisite": "Neural Network", "of": "Xavier Initialization", "domain": "Machine Learning"}
+{"n": 118, "prerequisite": "Bit Manipulation", "of": "Bitwise XOR", "domain": "Algorithms and Data Structures"}
+{"n": 119, "prerequisite": "Multi-Head Attention", "of": "Projection Matrix", "domain": "Machine Learning"}
+{"n": 120, "prerequisite": "ETL", "of": "ZenML", "domain": "Data Engineering"}
