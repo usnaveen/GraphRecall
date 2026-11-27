@@ -527,6 +527,15 @@ async def analyze_query_node(state: ChatState) -> dict:
     return result_payload
 
 
+# Concurrent cross-encoder runs: cores / threads per run (RERANKER_THREADS).
+def _rerank_slots() -> asyncio.Semaphore:
+    from backend.services.reranker import RERANKER_THREADS
+
+    return asyncio.Semaphore(max(1, (os.cpu_count() or 4) // RERANKER_THREADS))
+
+
+_RERANK_SLOTS = _rerank_slots()
+
 _LEARNER_STATE_TIMEOUT_S = 1.2
 _LEARNER_STATE_MAX = 8
 
@@ -782,11 +791,17 @@ async def get_context_node(state: ChatState) -> dict:
             graph_context["retrieval_stats"] = hybrid_out.get("stats", {})
 
             rerank_start = now()
-            rerank_res = get_reranker().rerank(
-                query,
-                raw_chunks,
-                top_k=max(rag_limit + 3, 8),
-            )
+            # The cross-encoder is ~165 ms of CPU. Run on the event loop it froze every other request
+            # (load test: loop lag up to 1 s at 16 concurrent, throughput flat at ~6.5 req/s). ONNX
+            # Runtime releases the GIL, so a worker thread runs it in parallel; the semaphore keeps
+            # concurrent sessions from oversubscribing the cores.
+            async with _RERANK_SLOTS:
+                rerank_res = await asyncio.to_thread(
+                    get_reranker().rerank,
+                    query,
+                    raw_chunks,
+                    top_k=max(rag_limit + 3, 8),
+                )
             await attach_chunk_embeddings(pg_client, user_id, rerank_res.chunks)
             max_per_parent = int(os.getenv("RAG_MAX_PER_PARENT", "2"))
             is_ce = rerank_res.method == "onnx_cross_encoder"

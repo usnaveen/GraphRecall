@@ -507,6 +507,8 @@ def _sigmoid(x: float) -> float:
 
 
 # Fetched at build time by `python -m backend.scripts.fetch_reranker` (pinned revision, SHA-256 checked).
+# Threads per cross-encoder run (RERANKER_THREADS); chat_graph allows cpu_count // this runs at once.
+RERANKER_THREADS = max(1, int(os.getenv("RERANKER_THREADS", "4") or 4))
 RERANKER_DIR = Path(__file__).resolve().parents[1] / "models" / "reranker"
 DEFAULT_INT8_ONNX_MODEL = RERANKER_DIR / "model.int8.onnx"
 DEFAULT_ONNX_MODEL = DEFAULT_INT8_ONNX_MODEL
@@ -549,7 +551,7 @@ class OnnxCrossEncoderReranker:
 
             opts = ort.SessionOptions()
             opts.inter_op_num_threads = 1
-            opts.intra_op_num_threads = 4
+            opts.intra_op_num_threads = RERANKER_THREADS
             self._session = ort.InferenceSession(
                 str(self.model_path),
                 sess_options=opts,
