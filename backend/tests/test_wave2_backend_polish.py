@@ -123,7 +123,8 @@ async def test_focus_on_concept_batches_linked_notes_and_images(monkeypatch):
 
     async def fake_pg_exec(query: str, params=None):
         pg_calls.append((query, dict(params or {})))
-        assert params.get("user_id") == "user-1"
+        # Every query must be owner-filtered; knowledge_map names the parameter :u.
+        assert (params.get("user_id") or params.get("u")) == "user-1"
         if "FROM notes" in query:
             assert "= ANY(:ids)" in query
             return [
@@ -160,8 +161,10 @@ async def test_focus_on_concept_batches_linked_notes_and_images(monkeypatch):
 
     note_queries = [q for q, _ in pg_calls if "FROM notes" in q]
     chunk_queries = [q for q, _ in pg_calls if "FROM chunks" in q]
-    assert len(note_queries) == 1
-    assert len(chunk_queries) == 1
+    # No N+1: every notes/chunks query is batched over ids, and their number does not grow with the
+    # 5 linked notes (linked notes + provenance each read notes once).
+    assert all("ANY(:ids)" in q for q in note_queries + chunk_queries)
+    assert len(note_queries) <= 2 and len(chunk_queries) == 1
 
 
 # ---------------------------------------------------------------------------
