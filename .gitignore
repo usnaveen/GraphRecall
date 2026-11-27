@@ -115,6 +115,8 @@ eval/graphrag/results/*.partial.jsonl
 eval/retrieval/artifacts/
 # Reranker weights, fetched at build time (backend/scripts/fetch_reranker.py)
 backend/models/reranker/
+# Your own questions and note ids (eval/real_queries/label.py)
+eval/real_queries/data/
 
 # Anki revlogs (research licence, no redistribution)
 eval/scheduler/data/

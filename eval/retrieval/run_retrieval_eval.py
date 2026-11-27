@@ -8,7 +8,7 @@ against the mechanically labelled relevant chunks (build_golden.py). Arms, cheap
   graph           seed concepts by meaning -> (:NoteSource)-[:EXPLAINS]->(:Concept) -> chunks (top 15)
   rrf_vk          RRF of vector + keyword, one child per parent (what hybrid_search returns, no graph)
   rrf_vkg         RRF of vector + keyword + graph, one child per parent (the shipped retrieval, limit 10)
-  shipped_top5    rrf_vkg -> lexical rerank (top 6) -> MMR (k=5): the 5 chunks the chat actually packs
+  shipped_top5    the chat's pipeline: uncapped pool of 25 -> cross-encoder -> MMR (k=5, <=2 per parent)
 
 Ablations (eval only, same leg results and weights as hybrid_search):
   ablate_vkg_no_parent_cap   RRF of all three legs without the one-child-per-parent cap
@@ -41,7 +41,7 @@ ARMS = ("vector", "keyword", "graph", "rrf_vk", "rrf_vkg", "shipped_top5",
         "ablate_vkg_no_parent_cap", "ablate_vg", "ablate_vg_no_parent_cap")
 
 
-def metrics(ranked: list[str], relevant: set[str]) -> dict[str, float]:
+def metrics(ranked: list[str], relevant: set[str], grades: dict[str, int] | None = None) -> dict[str, float]:
     out: dict[str, float] = {}
     for k in KS:
         top = ranked[:k]
@@ -54,8 +54,11 @@ def metrics(ranked: list[str], relevant: set[str]) -> dict[str, float]:
             rr = 1.0 / i
             break
     out["mrr@10"] = rr
-    dcg = sum(1.0 / math.log2(i + 1) for i, c in enumerate(ranked[:10], 1) if c in relevant)
-    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, min(len(relevant), 10) + 1))
+    # Graded gains (2 = answers it, 1 = helps) when a human labelled them, else binary.
+    gain = {c: float((grades or {}).get(c, 1)) for c in relevant}
+    dcg = sum((2 ** gain[c] - 1) / math.log2(i + 1) for i, c in enumerate(ranked[:10], 1) if c in gain)
+    ideal = sorted(gain.values(), reverse=True)[:10]
+    idcg = sum((2 ** g - 1) / math.log2(i + 1) for i, g in enumerate(ideal, 1))
     out["ndcg@10"] = dcg / idcg if idcg else 0.0
     return out
 
@@ -68,7 +71,7 @@ def bootstrap(values: list[float], n: int = 2000, seed: int = 7) -> tuple[float,
 
 async def rank_all(q: dict, user_id: str, svc, pg, emb) -> dict[str, list[str]]:
     from backend.services.concept_similarity import similar_to_embedding
-    from backend.services.reranker import LexicalOverlapReranker, mmr_select_chunks
+    from backend.services.reranker import mmr_select_chunks
 
     ids = lambda rows: [str(r.get("id")) for r in rows or []]  # noqa: E731
     question = q["question"]
@@ -92,8 +95,18 @@ async def rank_all(q: dict, user_id: str, svc, pg, emb) -> dict[str, list[str]]:
     abl = {"ablate_vkg_no_parent_cap": fuse([("vector", 1.0, v_), ("keyword", 0.85, k_), ("graph", 0.65, g_)], False),
            "ablate_vg": fuse([("vector", 1.0, v_), ("graph", 0.65, g_)], True),
            "ablate_vg_no_parent_cap": fuse([("vector", 1.0, v_), ("graph", 0.65, g_)], False)}
-    rr = LexicalOverlapReranker().rerank(question, vkg["chunks"], top_k=6)
-    top5 = mmr_select_chunks(emb, rr.chunks, k=5)
+    # What chat_graph.get_context_node runs: wide uncapped pool -> cross-encoder (lexical if the model
+    # is missing) -> embeddings for the survivors -> MMR, at most 2 children per parent.
+    from backend.services.reranker import get_reranker
+    from backend.services.retrieval_service import attach_chunk_embeddings
+
+    coarse = await svc.hybrid_search(question, user_id, query_embedding=emb, seed_concept_ids=seeds or None,
+                                     limit=25, candidate_k=25, max_per_parent=0, attach_embeddings=False, pg_client=pg)
+    rr = get_reranker().rerank(question, coarse["chunks"], top_k=8)
+    await attach_chunk_embeddings(pg, user_id, rr.chunks)
+    is_ce = rr.method == "onnx_cross_encoder"
+    top5 = mmr_select_chunks(emb, rr.chunks, k=5, lambda_mult=0.88 if is_ce else 0.72, max_per_parent=2,
+                             prefer_rerank_score=is_ce)
     return {"vector": ids(vec), "keyword": ids(kw), "graph": ids(graph), "rrf_vk": ids(vk["chunks"]),
             "rrf_vkg": ids(vkg["chunks"]), "shipped_top5": ids(top5), **abl, "_seeds": len(seeds)}
 
@@ -104,10 +117,18 @@ async def main() -> None:
     from backend.services.ingestion.embedding_service import EmbeddingService
     from backend.services.retrieval_service import RetrievalService
 
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--golden", help="golden file (default eval/retrieval/golden.<EVAL_RUN>.jsonl)")
+    ap.add_argument("--user-id", help="whose corpus to search (default: the eval user for EVAL_RUN)")
+    args = ap.parse_args()
     tag = _env.run_key("grb").split("-", 1)[-1]
-    golden_path = HERE / f"golden.{tag}.jsonl"
-    golden = [json.loads(l) for l in golden_path.open()]
-    user_id = await _env.eval_user_id("grb")
+    golden_path = Path(args.golden) if args.golden else HERE / f"golden.{tag}.jsonl"
+    if args.golden:
+        tag = golden_path.stem.replace("golden.", "")
+    golden = [json.loads(l) for l in golden_path.open() if json.loads(l).get("relevant_child_ids")]
+    user_id = args.user_id or await _env.eval_user_id("grb")
     pg = await get_postgres_client()
     svc, embedder = RetrievalService(), EmbeddingService()
 
@@ -116,8 +137,9 @@ async def main() -> None:
         emb = await embedder.embed_query(q["question"])
         ranked = await rank_all(q, user_id, svc, pg, emb)
         rel = set(q["relevant_child_ids"])
+        grades = q.get("grades")
         rows.append({"id": q["id"], "type": q["type"], "seeds": ranked.pop("_seeds"),
-                     "scores": {arm: metrics(ranked[arm], rel) for arm in ARMS}})
+                     "scores": {arm: metrics(ranked[arm], rel, grades) for arm in ARMS}})
         if i % 20 == 0:
             print(f"[{i}/{len(golden)}] {time.time() - t0:.0f}s", flush=True)
 
