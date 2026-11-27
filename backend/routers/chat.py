@@ -20,7 +20,7 @@ from backend.db.postgres_client import get_postgres_client
 from backend.models.feed_schemas import ChatMessage, ChatRequest, ChatResponse
 # Refactor: Use new LangGraph workflow instead of legacy agent
 from backend.services.output_guard import StreamingImageGuard, allowed_image_urls
-from backend.graphs.chat_graph import chat_graph, run_chat, ChatState
+from backend.graphs.chat_graph import chat_graph, prefetch_query_embedding, run_chat, ChatState
 from backend.telemetry import elapsed_ms, now, record
 from langchain_core.messages import HumanMessage
 
@@ -937,6 +937,35 @@ async def delete_conversation(
 # (history, RAG, "explain this card"), wrap them with
 # backend.agent_bridge.untrusted.agent_answer_for_prompt / wrap_untrusted first.
 # Not wired yet: today agent text is only shown to the user, never fed to the chat model.
+class PrefetchRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=400)
+    conversation_id: Optional[str] = None
+
+
+@router.post("/prefetch")
+async def prefetch(body: PrefetchRequest, current_user: dict = Depends(get_current_user)):
+    """Warm the query embedding for a draft question while the user is still typing (call it on a
+    ~600 ms typing pause). The real turn then finds the vector in the cache and skips a ~600 ms
+    round trip. Follow-ups are anchored to the conversation's previous question, as the chat does."""
+    previous = None
+    if body.conversation_id:
+        pg_client = await get_postgres_client()
+        rows = await pg_client.execute_query(
+            """
+            SELECT cm.content FROM chat_messages cm
+            JOIN chat_conversations cc ON cc.id = cm.conversation_id
+            WHERE cm.conversation_id = :conversation_id AND cc.user_id = :user_id AND cm.role = 'user'
+            ORDER BY cm.created_at DESC LIMIT 1
+            """,
+            {"conversation_id": body.conversation_id, "user_id": str(current_user["id"])},
+        )
+        previous = rows[0]["content"] if rows else None
+    started = now()
+    warmed = await prefetch_query_embedding(body.text, previous)
+    record("chat.prefetch", elapsed_ms(started), warmed=warmed)
+    return {"warmed": warmed}
+
+
 FEEDBACK_REASONS = ("wrong", "incomplete", "not_my_level", "bad_sources", "too_long", "other")
 
 

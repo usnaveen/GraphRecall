@@ -311,6 +311,21 @@ _EMBED_FAILURE_TTL_S = float(os.getenv("CHAT_EMBED_FAILURE_TTL_S", "30"))
 _EMBED_FAILURES: dict[str, float] = {}
 
 
+async def prefetch_query_embedding(text: str, previous_question: Optional[str] = None) -> bool:
+    """Embed a draft question before it is sent (the app calls this while the user types).
+
+    Query embedding is a ~600 ms round trip to the embedding API and sits on every chat's critical
+    path. Computing it during the typing pause puts it in the embedding cache under the same key
+    analyze_query_node will look up, so the real turn skips it. Returns True when a vector is cached."""
+    from backend.services.query_rewrite import contextualize
+
+    query = (text or "").strip()
+    if len(query) < 8 or _is_trivial_greeting(query):
+        return False
+    retrieval_query = contextualize(query, previous_question, [])
+    return await _embed_query_cached(retrieval_query) is not None
+
+
 async def _embed_query_cached(query: str) -> Optional[list[float]]:
     clean = (query or "").strip()
     if not clean:
