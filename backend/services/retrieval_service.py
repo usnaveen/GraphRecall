@@ -142,24 +142,38 @@ def reciprocal_rank_fusion(
     return fused
 
 
-def dedupe_by_parent(candidates: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
-    """Keep at most one highest-ranked child chunk per `parent_chunk_id`."""
+def dedupe_by_parent(
+    candidates: list[dict[str, Any]],
+    *,
+    limit: int,
+    max_per_parent: int = 1,
+) -> list[dict[str, Any]]:
+    """Keep up to `max_per_parent` highest-ranked child chunks per `parent_chunk_id` (`<=0` = unlimited)."""
     if limit <= 0:
         return []
-    kept: dict[str, dict[str, Any]] = {}
-    order: list[str] = []
+    if max_per_parent <= 0:
+        return [dict(item) for item in candidates[:limit]]
+
+    kept_lists: dict[str, list[dict[str, Any]]] = {}
+    out: list[dict[str, Any]] = []
 
     for item in candidates:
         parent_key = str(item.get("parent_chunk_id") or item.get("id") or "")
         if not parent_key:
             continue
-        if parent_key not in kept:
+        siblings = kept_lists.get(parent_key)
+        if siblings is None:
             copied = dict(item)
             copied["_matched_by"] = list(item.get("_matched_by") or ([item["_source"]] if item.get("_source") else []))
-            kept[parent_key] = copied
-            order.append(parent_key)
+            kept_lists[parent_key] = [copied]
+            out.append(copied)
+        elif len(siblings) < max_per_parent:
+            copied = dict(item)
+            copied["_matched_by"] = list(item.get("_matched_by") or ([item["_source"]] if item.get("_source") else []))
+            siblings.append(copied)
+            out.append(copied)
         else:
-            existing = kept[parent_key]
+            existing = siblings[0]
             existing_sources = existing.setdefault("_matched_by", [])
             for src in item.get("_matched_by") or []:
                 if src not in existing_sources:
@@ -167,8 +181,10 @@ def dedupe_by_parent(candidates: list[dict[str, Any]], *, limit: int) -> list[di
             existing["_source"] = "+".join(existing_sources)
             if not existing.get("images") and item.get("images"):
                 existing["images"] = item["images"]
+        if len(out) >= limit:
+            break
 
-    return [kept[key] for key in order[:limit]]
+    return out[:limit]
 
 
 def _trim_to_word_boundary(text: str, *, trim_left: bool, trim_right: bool) -> str:
@@ -576,26 +592,95 @@ class RetrievalService:
         query_embedding: Optional[list[float]] = None,
         focused_source_ids: Optional[list[str]] = None,
         limit: int = 15,
+        graph_mode: str = "1hop",
+        hub_min_degree: int = 6,
         pg_client: Any = None,
         neo4j_client: Any = None,
     ) -> List[Dict[str, Any]]:
-        """Map seed concepts via `(:NoteSource)-[:EXPLAINS]->(:Concept)` to child chunks."""
+        """Map seed concepts (and optional pruned/unpruned 1-hop neighbors) to child chunks."""
         if not seed_concept_ids:
             return []
 
         neo4j = neo4j_client or await get_neo4j_client()
-        note_rows = await neo4j.execute_query(
-            """
-            MATCH (n:NoteSource {user_id: $user_id})-[:EXPLAINS]->(c:Concept {user_id: $user_id})
-            WHERE c.id IN $concept_ids
-            RETURN n.id AS note_id, count(DISTINCT c) AS concept_hits
-            ORDER BY concept_hits DESC
-            LIMIT 10
-            """,
-            {"user_id": user_id, "concept_ids": seed_concept_ids},
-        )
-        note_hits: dict[str, int] = {
-            str(r["note_id"]): int(r.get("concept_hits") or 1)
+        if graph_mode == "hub_pruned_2hop":
+            # LEANN High-Degree-Preserving Pruning: retain structural typed edges unconditionally
+            # and keep weak RELATED_TO edges only when they route through high-degree hub concepts.
+            note_rows = await neo4j.execute_query(
+                """
+                OPTIONAL MATCH (n0:NoteSource {user_id: $user_id})-[:EXPLAINS]->(seed:Concept {user_id: $user_id})
+                WHERE seed.id IN $concept_ids
+                WITH collect(DISTINCT {nid: n0.id, w: 1.0}) AS direct_hits
+                OPTIONAL MATCH (seed:Concept {user_id: $user_id})-[r:PREREQUISITE_OF|SUBTOPIC_OF|BUILDS_ON|PART_OF|USES|APPLIES_TO|RELATED_TO]-(nbr:Concept {user_id: $user_id})
+                WHERE seed.id IN $concept_ids AND NOT nbr.id IN $concept_ids
+                WITH direct_hits, nbr, type(r) AS rel_type, coalesce(r.strength, 0.5) AS strength,
+                     CASE
+                         WHEN nbr IS NULL THEN 0
+                         ELSE COUNT { (nbr)-[:RELATED_TO|PREREQUISITE_OF|SUBTOPIC_OF|BUILDS_ON|PART_OF|USES|APPLIES_TO]-(:Concept {user_id: $user_id}) }
+                     END AS deg
+                WITH direct_hits, nbr,
+                     CASE WHEN rel_type <> 'RELATED_TO' THEN 0.60 ELSE 0.35 END AS hop_w,
+                     strength, deg
+                WHERE nbr IS NULL OR rel_type <> 'RELATED_TO' OR deg >= $hub_min_degree
+                ORDER BY hop_w * strength * log(2.0 + deg) DESC
+                WITH direct_hits, collect(DISTINCT CASE WHEN nbr IS NOT NULL THEN {nid: nbr.id, w: hop_w} END)[0..12] AS nbr_items
+                WITH direct_hits, [x IN nbr_items WHERE x IS NOT NULL] AS filtered_nbrs
+                WITH direct_hits, CASE WHEN size(filtered_nbrs) = 0 THEN [null] ELSE filtered_nbrs END AS safe_nbrs
+                UNWIND safe_nbrs AS nb
+                OPTIONAL MATCH (n1:NoteSource {user_id: $user_id})-[:EXPLAINS]->(nbr_c:Concept {user_id: $user_id})
+                WHERE nb IS NOT NULL AND nbr_c.id = nb.nid
+                WITH direct_hits, collect(DISTINCT CASE WHEN nb IS NOT NULL AND n1 IS NOT NULL THEN {nid: n1.id, w: nb.w} END) AS hop_hits
+                WITH direct_hits + hop_hits AS all_hits
+                UNWIND all_hits AS h
+                WITH h WHERE h IS NOT NULL AND h.nid IS NOT NULL
+                RETURN h.nid AS note_id, sum(h.w) AS concept_hits
+                ORDER BY concept_hits DESC
+                LIMIT 12
+                """,
+                {
+                    "user_id": user_id,
+                    "concept_ids": seed_concept_ids,
+                    "hub_min_degree": hub_min_degree,
+                },
+            )
+        elif graph_mode == "naive_2hop":
+            note_rows = await neo4j.execute_query(
+                """
+                OPTIONAL MATCH (n0:NoteSource {user_id: $user_id})-[:EXPLAINS]->(seed:Concept {user_id: $user_id})
+                WHERE seed.id IN $concept_ids
+                WITH collect(DISTINCT {nid: n0.id, w: 1.0}) AS direct_hits
+                OPTIONAL MATCH (seed:Concept {user_id: $user_id})-[r]-(nbr:Concept {user_id: $user_id})
+                WHERE seed.id IN $concept_ids AND NOT nbr.id IN $concept_ids
+                WITH direct_hits, nbr, coalesce(r.strength, 0.5) AS strength
+                ORDER BY strength DESC
+                WITH direct_hits, collect(DISTINCT nbr.id)[0..12] AS nbr_ids
+                WITH direct_hits, [x IN nbr_ids WHERE x IS NOT NULL] AS filtered_nbrs
+                WITH direct_hits, CASE WHEN size(filtered_nbrs) = 0 THEN [null] ELSE filtered_nbrs END AS safe_nbrs
+                UNWIND safe_nbrs AS nb_id
+                OPTIONAL MATCH (n1:NoteSource {user_id: $user_id})-[:EXPLAINS]->(nbr_c:Concept {user_id: $user_id})
+                WHERE nb_id IS NOT NULL AND nbr_c.id = nb_id
+                WITH direct_hits, collect(DISTINCT CASE WHEN nb_id IS NOT NULL AND n1 IS NOT NULL THEN {nid: n1.id, w: 0.45} END) AS hop_hits
+                WITH direct_hits + hop_hits AS all_hits
+                UNWIND all_hits AS h
+                WITH h WHERE h IS NOT NULL AND h.nid IS NOT NULL
+                RETURN h.nid AS note_id, sum(h.w) AS concept_hits
+                ORDER BY concept_hits DESC
+                LIMIT 12
+                """,
+                {"user_id": user_id, "concept_ids": seed_concept_ids},
+            )
+        else:
+            note_rows = await neo4j.execute_query(
+                """
+                MATCH (n:NoteSource {user_id: $user_id})-[:EXPLAINS]->(c:Concept {user_id: $user_id})
+                WHERE c.id IN $concept_ids
+                RETURN n.id AS note_id, count(DISTINCT c) AS concept_hits
+                ORDER BY concept_hits DESC
+                LIMIT 10
+                """,
+                {"user_id": user_id, "concept_ids": seed_concept_ids},
+            )
+        note_hits: dict[str, float] = {
+            str(r["note_id"]): float(r.get("concept_hits") or 1.0)
             for r in (note_rows or [])
             if r.get("note_id")
         }

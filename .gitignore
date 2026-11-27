@@ -112,6 +112,8 @@ DerivedData/
 /.venv/
 eval/graphrag/questions*.json
 eval/graphrag/results/*.partial.jsonl
+eval/retrieval/artifacts/
+eval/retrieval/golden.*.jsonl
 
 # Anki revlogs (research licence, no redistribution)
 eval/scheduler/data/

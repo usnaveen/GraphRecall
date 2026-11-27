@@ -236,3 +236,91 @@ def test_order_lost_in_middle() -> None:
         "c2",
         "c1",
     ]
+
+
+def test_wordpiece_tokenizer_dynamic_batching_and_truncation(tmp_path) -> None:
+    from backend.services.reranker import _WordPieceTokenizer
+
+    vocab_tokens = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "hello", "world", "cafe", "note", "##s", ",", "?"]
+    vocab_file = tmp_path / "vocab.txt"
+    vocab_file.write_text("\n".join(vocab_tokens) + "\n", encoding="utf-8")
+
+    tok = _WordPieceTokenizer(vocab_file)
+    ids, mask, types = tok.encode_pair("Café?", "Hello, notes " + "world " * 20, max_length=12)
+    assert len(ids) == 12
+    assert ids[0] == tok.cls_id
+    assert ids.count(tok.sep_id) == 2
+    assert types[0] == 0 and types[-1] == 1
+    assert mask == [1] * 12
+
+    b_ids, b_mask, b_types = tok.encode_batch(
+        [("hello", "world"), ("hello world", "notes world")],
+        max_length=16,
+    )
+    # Longest sequence in this batch ([CLS] hello world [SEP] note ##s world [SEP] -> 8) sets width.
+    assert b_ids.shape == (2, 8)
+    assert b_mask[0, -1] == 0 and b_ids[0, -1] == tok.pad_id
+    assert b_types.shape == (2, 8)
+
+
+def test_onnx_cross_encoder_reranker_fallback_and_blend(tmp_path) -> None:
+    import numpy as np
+    from backend.services.reranker import OnnxCrossEncoderReranker
+
+    chunks = [
+        {"id": "c1", "parent_chunk_id": "p1", "title": "Intro", "child_content": "General text", "_rrf_score": 0.05},
+        {"id": "c2", "parent_chunk_id": "p1", "title": "Target", "child_content": "HNSW pruning bridges", "_rrf_score": 0.02},
+    ]
+    snapshot = [dict(c) for c in chunks]
+
+    # Missing model falls back deterministically to LexicalOverlapReranker.
+    missing = OnnxCrossEncoderReranker(model_path=tmp_path / "none.onnx", vocab_path=tmp_path / "none.txt")
+    fb = missing.rerank("HNSW pruning", chunks, top_k=2)
+    assert fb.used_fallback is True
+    assert fb.method == "lexical_overlap"
+    assert fb.chunks[0]["id"] == "c2"
+
+    class FakeInput:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class FakeTokenizer:
+        def encode_batch(self, pairs, *, max_length: int = 256):
+            n = len(pairs)
+            return (
+                np.ones((n, 4), dtype=np.int64),
+                np.ones((n, 4), dtype=np.int64),
+                np.zeros((n, 4), dtype=np.int64),
+            )
+
+    class FakeSession:
+        def get_inputs(self):
+            return [FakeInput("input_ids"), FakeInput("attention_mask"), FakeInput("token_type_ids")]
+
+        def run(self, _outputs, inputs):
+            assert inputs["input_ids"].shape[0] == 2
+            return [np.array([[-1.5], [2.2]], dtype=np.float32)]
+
+    ce = OnnxCrossEncoderReranker(
+        rrf_blend_weight=0.2,
+        session=FakeSession(),
+        tokenizer=FakeTokenizer(),  # type: ignore[arg-type]
+    )
+    res = ce.rerank("HNSW pruning", chunks, top_k=2)
+    assert res.used_fallback is False
+    assert res.method == "onnx_cross_encoder"
+    assert [c["id"] for c in res.chunks] == ["c2", "c1"]
+    assert "ce_logit" in res.chunks[0] and "ce_prob" in res.chunks[0]
+    assert chunks == snapshot
+
+
+def test_mmr_max_per_parent_and_prefer_rerank_score() -> None:
+    q_emb = [1.0, 0.0]
+    chunks = [
+        {"id": "c1a", "parent_chunk_id": "p1", "content": "alpha one", "embedding": [0.4, 0.9165], "rerank_score": 4.2},
+        {"id": "c1b", "parent_chunk_id": "p1", "content": "alpha two", "embedding": [0.99, 0.141], "rerank_score": 2.5},
+        {"id": "c2", "parent_chunk_id": "p2", "content": "beta decoy", "embedding": [1.0, 0.0], "rerank_score": -3.0},
+    ]
+    # max_per_parent=2 retains both p1 chunks; prefer_rerank_score=True trusts negative/positive CE logits over decoy cosine.
+    selected = mmr_select_chunks(q_emb, chunks, k=3, lambda_mult=0.78, max_per_parent=2, prefer_rerank_score=True)
+    assert [c["id"] for c in selected[:2]] == ["c1a", "c1b"]

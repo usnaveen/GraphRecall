@@ -297,3 +297,46 @@ async def test_real_postgres_keyword_search_and_tenant_isolation(scratch_db) -> 
     assert out["stats"]["keyword"] == 1
     assert [str(c["id"]) for c in out["chunks"]] == [str(c_a)]
     assert out["chunks"][0]["_matched_by"] == ["keyword"]
+
+
+def test_dedupe_by_parent_allows_configured_cap() -> None:
+    candidates = [
+        {"id": "c1", "parent_chunk_id": "p1", "content": "one", "_matched_by": ["vector"], "_rrf_score": 0.05},
+        {"id": "c2", "parent_chunk_id": "p1", "content": "two", "_matched_by": ["vector"], "_rrf_score": 0.04},
+        {"id": "c3", "parent_chunk_id": "p1", "content": "three", "_matched_by": ["keyword"], "_rrf_score": 0.03},
+        {"id": "c4", "parent_chunk_id": "p2", "content": "four", "_matched_by": ["vector"], "_rrf_score": 0.02},
+    ]
+    cap2 = dedupe_by_parent(candidates, limit=5, max_per_parent=2)
+    assert [c["id"] for c in cap2] == ["c1", "c2", "c4"]
+    assert "keyword" in cap2[0]["_matched_by"]
+
+    uncapped = dedupe_by_parent(candidates, limit=3, max_per_parent=0)
+    assert [c["id"] for c in uncapped] == ["c1", "c2", "c3"]
+
+
+@pytest.mark.asyncio
+async def test_graph_chunk_search_hub_pruned_2hop_queries_hub_degree() -> None:
+    captured_cypher: list[tuple[str, dict]] = []
+
+    class FakeNeo4j:
+        async def execute_query(self, query: str, params: dict):
+            captured_cypher.append((query, params))
+            return [{"note_id": "n1", "concept_hits": 1.6}]
+
+    class FakePg:
+        async def execute_query(self, sql: str, params: dict):
+            return [{"id": "c1", "note_id": "n1", "parent_chunk_id": "p1", "child_content": "evidence", "parent_content": "evidence", "similarity": 0.88}]
+
+    rows = await RetrievalService()._graph_chunk_search(
+        user_id="00000000-0000-0000-0000-000000000001",
+        seed_concept_ids=["s1"],
+        graph_mode="hub_pruned_2hop",
+        hub_min_degree=6,
+        pg_client=FakePg(),
+        neo4j_client=FakeNeo4j(),
+    )
+    assert len(captured_cypher) == 1
+    cypher, params = captured_cypher[0]
+    assert "rel_type <> 'RELATED_TO' OR deg >= $hub_min_degree" in cypher
+    assert params["hub_min_degree"] == 6
+    assert len(rows) == 1 and rows[0]["_source"] == "graph"

@@ -16,10 +16,14 @@ from __future__ import annotations
 import math
 import re
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional, Protocol, Sequence, runtime_checkable
+
+import numpy as np
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _PRIOR_SCORE_KEYS = ("rrf_score", "_rrf_score", "similarity", "_score", "score")
@@ -67,8 +71,17 @@ def _tokenize(text: str, *, drop_stopwords: bool = False) -> list[str]:
     return tokens
 
 
-def _chunk_text(chunk: dict[str, Any]) -> str:
+def _chunk_text(chunk: dict[str, Any], *, prefer_child: bool = False) -> str:
     title = str(chunk.get("title") or "").strip()
+    if prefer_child:
+        body = str(
+            chunk.get("child_content")
+            or chunk.get("window_content")
+            or chunk.get("content")
+            or chunk.get("parent_content")
+            or ""
+        ).strip()
+        return " ".join(p for p in (title, body) if p)
     body = str(
         chunk.get("window_content")
         or chunk.get("content")
@@ -330,6 +343,285 @@ class CrossEncoderReranker:
             executor.shutdown(wait=False, cancel_futures=True)
 
 
+def _is_cjk_char(cp: int) -> bool:
+    return (
+        (0x4E00 <= cp <= 0x9FFF)
+        or (0x3400 <= cp <= 0x4DBF)
+        or (0x20000 <= cp <= 0x2A6DF)
+        or (0x2A700 <= cp <= 0x2B73F)
+        or (0x2B740 <= cp <= 0x2B81F)
+        or (0x2B820 <= cp <= 0x2CEAF)
+        or (0xF900 <= cp <= 0xFAFF)
+        or (0x2F800 <= cp <= 0x2FA1F)
+    )
+
+
+def _is_bert_punctuation(char: str) -> bool:
+    cp = ord(char)
+    if (33 <= cp <= 47) or (58 <= cp <= 64) or (91 <= cp <= 96) or (123 <= cp <= 126):
+        return True
+    return unicodedata.category(char).startswith("P")
+
+
+class _WordPieceTokenizer:
+    """Zero-dependency BERT uncased WordPiece tokenizer matching HuggingFace `BertTokenizer`."""
+
+    def __init__(self, vocab_path: str | Path, *, max_input_chars_per_word: int = 100) -> None:
+        vocab: dict[str, int] = {}
+        with Path(vocab_path).open("r", encoding="utf-8") as fh:
+            for idx, line in enumerate(fh):
+                token = line.rstrip("\r\n")
+                if token:
+                    vocab[token] = idx
+        self.vocab = vocab
+        self.pad_id = vocab.get("[PAD]", 0)
+        self.unk_id = vocab.get("[UNK]", 100)
+        self.cls_id = vocab.get("[CLS]", 101)
+        self.sep_id = vocab.get("[SEP]", 102)
+        self.max_input_chars_per_word = max_input_chars_per_word
+
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        out: list[str] = []
+        for ch in text or "":
+            cp = ord(ch)
+            if cp == 0 or cp == 0xFFFD:
+                continue
+            cat = unicodedata.category(ch)
+            if ch in ("\t", "\n", "\r") or cat == "Zs" or ch.isspace():
+                out.append(" ")
+            elif cat in ("Cc", "Cf"):
+                continue
+            elif _is_cjk_char(cp):
+                out.extend((" ", ch, " "))
+            else:
+                out.append(ch)
+        return "".join(out)
+
+    @staticmethod
+    def _strip_accents(token: str) -> str:
+        return "".join(
+            ch for ch in unicodedata.normalize("NFD", token) if unicodedata.category(ch) != "Mn"
+        )
+
+    def _basic_tokenize(self, text: str) -> list[str]:
+        cleaned = self._clean_text(text)
+        out: list[str] = []
+        for raw_tok in cleaned.strip().split():
+            tok = self._strip_accents(raw_tok.lower())
+            cur: list[str] = []
+            for ch in tok:
+                if _is_bert_punctuation(ch):
+                    if cur:
+                        out.append("".join(cur))
+                        cur = []
+                    out.append(ch)
+                else:
+                    cur.append(ch)
+            if cur:
+                out.append("".join(cur))
+        return out
+
+    def tokenize_ids(self, text: str) -> list[int]:
+        ids: list[int] = []
+        for word in self._basic_tokenize(text):
+            if len(word) > self.max_input_chars_per_word:
+                ids.append(self.unk_id)
+                continue
+            start = 0
+            sub_ids: list[int] = []
+            is_bad = False
+            n = len(word)
+            while start < n:
+                end = n
+                cur_id: Optional[int] = None
+                while start < end:
+                    substr = word[start:end]
+                    if start > 0:
+                        substr = "##" + substr
+                    tid = self.vocab.get(substr)
+                    if tid is not None:
+                        cur_id = tid
+                        break
+                    end -= 1
+                if cur_id is None:
+                    is_bad = True
+                    break
+                sub_ids.append(cur_id)
+                start = end
+            if is_bad:
+                ids.append(self.unk_id)
+            else:
+                ids.extend(sub_ids)
+        return ids
+
+    def encode_pair(self, query: str, doc: str, *, max_length: int = 256) -> tuple[list[int], list[int], list[int]]:
+        q_ids = self.tokenize_ids(query)
+        d_ids = self.tokenize_ids(doc)
+        # Preserve query tokens while truncating longer passage from the tail.
+        max_q = max(1, max_length - 4)
+        if len(q_ids) > max_q:
+            q_ids = q_ids[:max_q]
+        max_d = max(0, max_length - 3 - len(q_ids))
+        if len(d_ids) > max_d:
+            d_ids = d_ids[:max_d]
+        input_ids = [self.cls_id, *q_ids, self.sep_id, *d_ids, self.sep_id]
+        token_type_ids = [0] * (len(q_ids) + 2) + [1] * (len(d_ids) + 1)
+        attention_mask = [1] * len(input_ids)
+        return input_ids, attention_mask, token_type_ids
+
+    def encode_batch(
+        self,
+        pairs: Sequence[tuple[str, str]],
+        *,
+        max_length: int = 256,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """LEANN-style dynamic batching: pad only to the longest sequence in this batch."""
+        encoded = [self.encode_pair(q, d, max_length=max_length) for q, d in pairs]
+        batch_len = max((len(ids) for ids, _, _ in encoded), default=1)
+        batch_size = len(encoded)
+        input_ids = np.full((batch_size, batch_len), self.pad_id, dtype=np.int64)
+        attention_mask = np.zeros((batch_size, batch_len), dtype=np.int64)
+        token_type_ids = np.zeros((batch_size, batch_len), dtype=np.int64)
+        for row_idx, (ids, mask, types) in enumerate(encoded):
+            seq_len = len(ids)
+            input_ids[row_idx, :seq_len] = ids
+            attention_mask[row_idx, :seq_len] = mask
+            token_type_ids[row_idx, :seq_len] = types
+        return input_ids, attention_mask, token_type_ids
+
+
+def _sigmoid(x: float) -> float:
+    if x >= 0:
+        z = math.exp(-x)
+        return 1.0 / (1.0 + z)
+    z = math.exp(x)
+    return z / (1.0 + z)
+
+
+DEFAULT_ONNX_MODEL = Path(__file__).resolve().parents[2] / "eval" / "retrieval" / "artifacts" / "ms-marco-MiniLM-L6-v2.onnx"
+DEFAULT_ONNX_VOCAB = Path(__file__).resolve().parents[2] / "eval" / "retrieval" / "artifacts" / "vocab.txt"
+
+
+class OnnxCrossEncoderReranker:
+    """Zero-torch ONNXRuntime cross-encoder with LEANN-style dynamic batching and lexical fallback."""
+
+    def __init__(
+        self,
+        model_path: str | Path = DEFAULT_ONNX_MODEL,
+        vocab_path: str | Path = DEFAULT_ONNX_VOCAB,
+        *,
+        max_length: int = 256,
+        use_child_text: bool = True,
+        rrf_blend_weight: float = 0.0,
+        fallback: Optional[Reranker] = None,
+        session: Any = None,
+        tokenizer: Optional[_WordPieceTokenizer] = None,
+    ) -> None:
+        self.model_path = Path(model_path)
+        self.vocab_path = Path(vocab_path)
+        self.max_length = int(max_length)
+        self.use_child_text = bool(use_child_text)
+        self.rrf_blend_weight = min(1.0, max(0.0, float(rrf_blend_weight)))
+        self.fallback: Reranker = fallback if fallback is not None else LexicalOverlapReranker()
+        self._session: Any = session
+        self._tokenizer: Optional[_WordPieceTokenizer] = tokenizer
+
+    def _get_runtime(self) -> tuple[Any, _WordPieceTokenizer]:
+        if self._tokenizer is None:
+            if not self.vocab_path.exists():
+                raise FileNotFoundError(f"Tokenizer vocab not found: {self.vocab_path}")
+            self._tokenizer = _WordPieceTokenizer(self.vocab_path)
+        if self._session is None:
+            if not self.model_path.exists():
+                raise FileNotFoundError(f"ONNX model not found: {self.model_path}")
+            import onnxruntime as ort
+
+            opts = ort.SessionOptions()
+            opts.inter_op_num_threads = 1
+            opts.intra_op_num_threads = 4
+            self._session = ort.InferenceSession(
+                str(self.model_path),
+                sess_options=opts,
+                providers=["CPUExecutionProvider"],
+            )
+        return self._session, self._tokenizer
+
+    def rerank(
+        self,
+        query: str,
+        chunks: list[dict[str, Any]],
+        top_k: int = 6,
+    ) -> RerankResult:
+        t0 = time.perf_counter()
+        if not chunks or top_k <= 0:
+            return RerankResult(
+                chunks=[],
+                method="onnx_cross_encoder",
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                used_fallback=False,
+            )
+
+        try:
+            session, tokenizer = self._get_runtime()
+            pairs = [(query, _chunk_text(c, prefer_child=self.use_child_text)) for c in chunks]
+            input_ids, attention_mask, token_type_ids = tokenizer.encode_batch(
+                pairs, max_length=self.max_length
+            )
+            ort_inputs: dict[str, Any] = {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+            }
+            input_names = {inp.name for inp in session.get_inputs()}
+            if "token_type_ids" in input_names:
+                ort_inputs["token_type_ids"] = token_type_ids
+            outputs = session.run(None, ort_inputs)
+            logits = np.asarray(outputs[0], dtype=np.float64).reshape(-1)
+            if len(logits) != len(chunks):
+                raise ValueError("ONNX CrossEncoder returned mismatched score count")
+
+            prior_scores = [_extract_prior_score(c) for c in chunks]
+            max_prior = max(prior_scores) if prior_scores else 0.0
+            min_prior = min(prior_scores) if prior_scores else 0.0
+
+            ranked: list[tuple[float, int, dict[str, Any]]] = []
+            for idx, (chunk, logit) in enumerate(zip(chunks, logits)):
+                ce_logit = float(logit)
+                ce_prob = _sigmoid(ce_logit)
+                if self.rrf_blend_weight > 0.0:
+                    if max_prior > min_prior:
+                        prior_norm = (prior_scores[idx] - min_prior) / (max_prior - min_prior)
+                    elif max_prior > 0.0:
+                        prior_norm = 1.0
+                    else:
+                        prior_norm = 0.0
+                    score = (1.0 - self.rrf_blend_weight) * ce_prob + self.rrf_blend_weight * prior_norm
+                else:
+                    score = ce_logit
+
+                copied = dict(chunk)
+                copied["ce_logit"] = round(ce_logit, 6)
+                copied["ce_prob"] = round(ce_prob, 6)
+                copied["rerank_score"] = round(score, 6)
+                ranked.append((score, -idx, copied))
+
+            ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            return RerankResult(
+                chunks=[item[2] for item in ranked[:top_k]],
+                method="onnx_cross_encoder",
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                used_fallback=False,
+            )
+        except Exception:
+            fb = self.fallback.rerank(query, chunks, top_k=top_k)
+            return RerankResult(
+                chunks=fb.chunks,
+                method=fb.method,
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                used_fallback=True,
+            )
+
+
 def _best_chunk_score(chunk: dict[str, Any]) -> float:
     for key in ("rerank_score", *_PRIOR_SCORE_KEYS):
         val = chunk.get(key)
@@ -346,27 +638,46 @@ def mmr_select_chunks(
     chunks: list[dict[str, Any]],
     k: int = 6,
     lambda_mult: float = 0.72,
+    *,
+    max_per_parent: Optional[int] = 1,
+    prefer_rerank_score: bool = False,
 ) -> list[dict[str, Any]]:
     """Select up to k diverse chunks using Maximal Marginal Relevance (MMR).
 
-    Deduplicates by `parent_chunk_id` (falling back to `id` / `note_id`) first so
-    duplicate parent chunks never crowd out diversity. Uses cosine similarity when
-    embeddings are present, otherwise falls back to token Jaccard similarity.
+    Deduplicates up to `max_per_parent` child chunks per `parent_chunk_id` (default 1;
+    pass `None` or `<= 0` for unlimited) keeping highest-scored representatives.
+    Uses cosine similarity when embeddings are present, otherwise token Jaccard similarity.
     """
     if not chunks or k <= 0:
         return []
 
     lam = min(1.0, max(0.0, float(lambda_mult)))
 
-    # Parent-level deduplication keeping highest-scored representative per parent.
-    deduped_map: dict[str, tuple[int, dict[str, Any]]] = {}
-    for idx, chunk in enumerate(chunks):
-        pkey = _parent_dedupe_key(chunk, idx)
-        existing = deduped_map.get(pkey)
-        if existing is None or _best_chunk_score(chunk) > _best_chunk_score(existing[1]):
-            deduped_map[pkey] = (idx, dict(chunk))
+    # Parent-level cap preserving highest-scored representatives per parent.
+    cap = None if (max_per_parent is None or max_per_parent <= 0) else int(max_per_parent)
+    if cap == 1:
+        deduped_map: dict[str, tuple[int, dict[str, Any]]] = {}
+        for idx, chunk in enumerate(chunks):
+            pkey = _parent_dedupe_key(chunk, idx)
+            existing = deduped_map.get(pkey)
+            if existing is None or _best_chunk_score(chunk) > _best_chunk_score(existing[1]):
+                deduped_map[pkey] = (idx, dict(chunk))
+        candidates = [pair[1] for pair in sorted(deduped_map.values(), key=lambda p: p[0])]
+    elif cap is not None:
+        by_parent: dict[str, list[tuple[int, float, dict[str, Any]]]] = {}
+        for idx, chunk in enumerate(chunks):
+            pkey = _parent_dedupe_key(chunk, idx)
+            by_parent.setdefault(pkey, []).append((idx, _best_chunk_score(chunk), dict(chunk)))
+        kept_entries: list[tuple[int, dict[str, Any]]] = []
+        for entries in by_parent.values():
+            entries.sort(key=lambda e: (-e[1], e[0]))
+            for idx, _, item in entries[:cap]:
+                kept_entries.append((idx, item))
+        kept_entries.sort(key=lambda pair: pair[0])
+        candidates = [item for _, item in kept_entries]
+    else:
+        candidates = [dict(c) for c in chunks]
 
-    candidates = [pair[1] for pair in sorted(deduped_map.values(), key=lambda p: p[0])]
     if len(candidates) <= 1:
         return candidates[:k]
 
@@ -376,13 +687,21 @@ def mmr_select_chunks(
         any(c.get(key) is not None for key in ("rerank_score", *_PRIOR_SCORE_KEYS))
         for c in candidates
     )
+    has_rerank_score = prefer_rerank_score and any(c.get("rerank_score") is not None for c in candidates)
     max_s = max(raw_scores) if raw_scores else 0.0
     min_s = min(raw_scores) if raw_scores else 0.0
 
     rel_scores: list[float] = []
     for idx, c in enumerate(candidates):
         c_emb = c.get("embedding")
-        if query_embedding is not None and c_emb is not None:
+        if has_rerank_score:
+            if max_s > min_s:
+                rel_scores.append((raw_scores[idx] - min_s) / (max_s - min_s))
+            elif max_s > 0.0:
+                rel_scores.append(1.0)
+            else:
+                rel_scores.append(0.5)
+        elif query_embedding is not None and c_emb is not None:
             rel_scores.append(_cosine_similarity(query_embedding, c_emb))
         elif has_any_score:
             if max_s > min_s:
