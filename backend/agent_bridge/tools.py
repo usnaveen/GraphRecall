@@ -110,6 +110,7 @@ class FrontierArgs(_Args):
     query: str = Field(..., min_length=1, max_length=400)
     concept_names: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=30)
     max_hops: int = Field(2, ge=1, le=3)
+    max_items: int = Field(12, ge=1, le=30)
 
 
 class RecordExposureArgs(_Args):
@@ -273,6 +274,7 @@ async def _frontier(p: AgentPrincipal, s: BridgeServices, a: FrontierArgs) -> di
         a.query,
         concept_names=a.concept_names,
         max_hops=a.max_hops,
+        max_items=a.max_items,
     )
 
 
@@ -497,8 +499,11 @@ TOOLS: dict[str, ToolSpec] = {t.name: t for t in [
              "The user's education, courses with grades and topics, projects with skills, and a knowledge "
              "summary by status and domain. Never includes resume text or note bodies.", BlueprintArgs, _blueprint),
     ToolSpec("get_knowledge_frontier", SCOPE_READ_KNOWLEDGE,
-             "Given a question/topic and optional concept names, returns anchors (strong), frontier (shaky), "
-             "gaps (unexposed), misconceptions, provenance, resume claims at risk, and a cacheable profile prefix hash.",
+             "Before explaining something (a paper, a topic), call this with the user's question and the key "
+             "concepts it involves in concept_names (extract them yourself; include new ones). Returns teaching_plan: "
+             "ordered steps (teach or refresh, foundations first, with reasons) and concepts to assume, plus the "
+             "ranked anchors (strong), frontier (shaky), gaps (unseen), seen_untested, misconceptions, provenance, "
+             "resume claims at risk, and a cacheable profile prefix hash.",
              FrontierArgs, _frontier),
     ToolSpec("record_exposure", SCOPE_WRITE_FEED,
              "Record that the user encountered or discussed a concept in an external agent session, updating "
@@ -561,6 +566,7 @@ def audit_counts(name: str, data: Any) -> dict:
         out["anchors_count"] = len(data.get("anchors") or [])
         out["frontier_count"] = len(data.get("frontier") or [])
         out["gaps_count"] = len(data.get("gaps") or [])
+        out["plan_steps"] = len((data.get("teaching_plan") or {}).get("steps") or [])
     if name == "record_exposure":
         out["matched_existing"] = bool(data.get("matched_existing"))
     return out

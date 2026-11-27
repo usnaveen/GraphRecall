@@ -8,6 +8,7 @@ leaves GraphRecall and goes to an external agent.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -42,11 +43,55 @@ def _concept_view(c: dict, mastery: Optional[float] = None) -> dict:
     }
 
 
+NAMED_MATCH_MIN_SCORE = 0.87
+
+
+def _teaching_plan(needs: list[dict], anchors: list[dict], max_items: int) -> dict[str, Any]:
+    """Order what to cover: foundations first (furthest prerequisites), then what was asked.
+
+    Each step says whether to teach it from scratch (never seen) or refresh it (shaky,
+    or studied but never tested), and why. Strong concepts become things to assume."""
+    def reason(e: dict) -> str:
+        why = {"unexposed": "no sign they have met it",
+               "shaky": f"shaky when tested ({round((e['mastery'] or 0) * 100)}%)",
+               "seen": "studied but never tested"}.get(e["status"], e["status"])
+        if e["role"] == "prerequisite" and e["needed_for"]:
+            return f"needed for {', '.join(e['needed_for'][:2])}; {why}"
+        return f"asked about; {why}"
+
+    # A prerequisite earns a step when the evidence says the user needs it: shaky when tested,
+    # or never met. "Studied but never tested" is weak evidence, so only the nearest count.
+    keep = [e for e in needs
+            if e["role"] == "requested" or e["status"] in ("shaky", "unexposed") or e["hops"] <= 1]
+    chosen = sorted(keep, key=lambda e: -e["priority"])[:max_items]       # the budget goes by priority
+    ordered = sorted(chosen, key=lambda e: (e["role"] == "requested", -e["hops"], -e["priority"]))
+    steps = [{"concept": e["concept_name"] or e["name"],
+              "action": "teach" if e["status"] == "unexposed" else "refresh",
+              "role": e["role"], "reason": reason(e)} for e in ordered]
+    return {
+        "steps": steps,
+        "assume": [e["concept_name"] or e["name"] for e in anchors[:8]],
+        "note": "Teach steps in order; skip re-explaining the assumed concepts.",
+    }
+
+
 class KnowledgeService:
-    def __init__(self, pg_client: Any, neo4j_client: Any):
+    def __init__(self, pg_client: Any, neo4j_client: Any, similar: Optional[Any] = None):
         self.pg = pg_client
         self.neo4j = neo4j_client
         self.sr = SpacedRepetitionService(pg_client)
+        # Meaning-based concept search, `similar(user_id, text, limit=...) -> [{"id", "name", "score"}]`
+        # (backend.services.concept_similarity.similar_to_text in production). None = spelling only.
+        self.similar = similar
+
+    async def _similar(self, user_id: str, text: str, limit: int, **kw: Any) -> list[dict]:
+        if self.similar is None or not (text or "").strip():
+            return []
+        try:
+            return list(await self.similar(user_id, text, limit=limit, **kw) or [])
+        except Exception as e:  # meaning search is an enhancement; spelling matches still stand
+            logger.warning("knowledge_frontier.similar_failed", error=str(e))
+            return []
 
     async def _mastery_map(self, user_id: str, concept_ids: Optional[list[str]] = None) -> dict:
         if concept_ids is not None and not concept_ids:
@@ -239,8 +284,13 @@ class KnowledgeService:
         query: str,
         concept_names: Optional[list[str]] = None,
         max_hops: int = 2,
+        max_items: int = 12,
     ) -> dict[str, Any]:
-        """Return a prompt-cache-friendly profile prefix hash + per-query knowledge frontier."""
+        """What the user knows about a request, and what to teach first.
+
+        Matches the request to the user's concepts, walks their prerequisites, rates
+        each on the user's evidence, and returns a short ordered teaching plan plus the
+        ranked buckets behind it and a prompt-cache-friendly profile prefix hash."""
         from backend.services import knowledge_map as km
         from backend.services.graph_hierarchy import load_concept_provenance
 
@@ -258,33 +308,71 @@ class KnowledgeService:
             json.dumps(stable_prefix, sort_keys=True).encode("utf-8")
         ).hexdigest()
 
-        # Resolve candidate names from explicit list + query tokens/substrings
-        requested_names = [n.strip() for n in (concept_names or []) if n and n.strip()]
-        query_lower = (query or "").strip().lower()
+        # 1. Seeds: the concepts this request is about, matched to the user's own.
+        #    Named concepts match by spelling, then by meaning. The free-text query adds
+        #    only concepts whose whole name appears in it, plus a few by meaning. Word
+        #    fragments don't count: "all" in "Attention Is All You Need" used to pull in
+        #    every "...Parallelism" concept.
+        by_id = {c["id"]: c for c in all_concepts}
+        requested_names = list(dict.fromkeys(n.strip() for n in (concept_names or []) if n and n.strip()))
         seed_concepts: dict[str, dict] = {}
+        matched_by: dict[str, str] = {}
+        seed_map: list[dict] = []
         unmatched_names: list[str] = []
+
+        def _seed(c: dict, how: str) -> None:
+            if c["id"] not in seed_concepts:
+                seed_concepts[c["id"]] = c
+                matched_by[c["id"]] = how
 
         for name in requested_names:
             hit = km.match_concept(name, all_concepts)
             if hit:
-                seed_concepts[hit["id"]] = hit
+                _seed(hit, "named")
             else:
                 unmatched_names.append(name)
+        if unmatched_names:
+            # A named concept must be the same thing, not a relative: with gemini-embedding-001 a
+            # concept scores ~0.88-0.91 against itself, while "Layer Normalization" vs "Root Mean
+            # Square Normalization" scores 0.85. Below the bar it stays a gap to teach.
+            found = await asyncio.gather(*(self._similar(user_id, n, limit=1, min_score=NAMED_MATCH_MIN_SCORE)
+                                           for n in unmatched_names))
+            still: list[str] = []
+            for name, hits in zip(unmatched_names, found):
+                hit = by_id.get(hits[0]["id"]) if hits else None
+                if hit:
+                    _seed(hit, "named_by_meaning")
+                    seed_map.append({"requested": name, "matched": hit["name"], "score": hits[0].get("score")})
+                else:
+                    still.append(name)
+            unmatched_names = still
 
-        query_terms = [t for t in re.findall(r"[a-z0-9+#-]{3,}", query_lower)]
+        query_key = f" {km.skill_key(query)} "
         for c in all_concepts:
-            cname = (c.get("name") or "").lower()
-            if cname and (cname in query_lower or any(t in cname for t in query_terms)):
-                seed_concepts[c["id"]] = c
+            k = c.get("_key") or ""
+            if len(k) >= 3 and f" {k} " in query_key:
+                _seed(c, "in_query")
+        for hit in await self._similar(user_id, query, limit=5):
+            if hit.get("id") in by_id:
+                _seed(by_id[hit["id"]], "query_meaning")
 
         seed_ids = list(seed_concepts.keys())[:15]
-        neighbor_concepts: dict[str, dict] = dict(seed_concepts)
+
+        # 2. Prerequisites: walk PREREQUISITE_OF links backwards from the seeds, so the
+        #    agent gets what the request builds on, not just whatever is nearby.
+        neighbor_concepts: dict[str, dict] = {cid: seed_concepts[cid] for cid in seed_ids}
+        role: dict[str, dict] = {cid: {"role": "requested", "hops": 0, "needed_for": []} for cid in seed_ids}
         if seed_ids:
             rel_rows = await self.neo4j.execute_query(
                 f"""
-                MATCH (s:Concept {{user_id: $user_id}})-[r*1..{max_hops}]-(n:Concept {{user_id: $user_id}})
-                WHERE s.id IN $seed_ids AND n.id <> s.id
-                RETURN DISTINCT n.id AS id, n.name AS name, n.domain AS domain, n.definition AS definition
+                MATCH path = (p:Concept {{user_id: $user_id}})-[:PREREQUISITE_OF*1..{max_hops}]->(s:Concept {{user_id: $user_id}})
+                WHERE s.id IN $seed_ids AND NOT p.id IN $seed_ids
+                  AND all(x IN nodes(path) WHERE x.user_id = $user_id)
+                WITH p, s, min(length(path)) AS h
+                RETURN p.id AS id, p.name AS name, p.domain AS domain, p.definition AS definition,
+                       min(h) AS hops, collect(DISTINCT s.name) AS needed_for,
+                       size([(p)-[:PREREQUISITE_OF]->(:Concept) | 1]) AS fanout
+                ORDER BY hops ASC, size(needed_for) DESC
                 LIMIT 40
                 """,
                 {"user_id": user_id, "seed_ids": seed_ids},
@@ -294,6 +382,9 @@ class KnowledgeService:
                 if cid and cid not in neighbor_concepts:
                     k = km.skill_key(r.get("name") or "")
                     neighbor_concepts[cid] = {**dict(r), "_key": k, "_words": set(k.split())}
+                    role[cid] = {"role": "prerequisite", "hops": int(r.get("hops") or 1),
+                                 "needed_for": list(r.get("needed_for") or [])[:3],
+                                 "fanout": int(r.get("fanout") or 0)}
 
         assess_names = [c["name"] for c in neighbor_concepts.values() if c.get("name")] + unmatched_names
         assess_names = list(dict.fromkeys(assess_names))[:60]
@@ -314,6 +405,13 @@ class KnowledgeService:
         assessed_ids: list[str] = []
         shaky_or_gap_keys: set[str] = set()
         for a in assessments:
+            r = role.get(a.concept_id) or {"role": "requested", "hops": 0, "needed_for": []}
+            # How much this matters for the request (prerequisites fade with distance),
+            # times how much the user needs it (1 = never seen; 0 = solid and certain).
+            # Umbrella concepts that many things depend on ("Neural Network") matter less to any
+            # one request than a specific prerequisite ("Scaled Dot-Product Attention").
+            relevance = 0.7 ** r["hops"] / (1.0 + 0.1 * r.get("fanout", 0))
+            need = 1.0 if a.status == "unexposed" else 1.0 - (a.mastery or 0.0) * (a.confidence or 0.0)
             entry = {
                 "name": a.name,
                 "concept_id": a.concept_id,
@@ -323,6 +421,11 @@ class KnowledgeService:
                 "mastery": a.mastery,
                 "confidence": a.confidence,
                 "basis": a.basis,
+                "role": r["role"],
+                "hops": r["hops"],
+                "needed_for": r["needed_for"],
+                "matched_by": matched_by.get(a.concept_id) if a.concept_id else None,
+                "priority": round(relevance * need, 3),
             }
             if a.concept_id:
                 assessed_ids.append(a.concept_id)
@@ -391,15 +494,22 @@ class KnowledgeService:
             for sk in raw_skills:
                 sname = (sk.get("name") if isinstance(sk, dict) else str(sk)) or ""
                 skey = km.skill_key(sname)
-                if skey and (skey in shaky_or_gap_keys or any(t in sname.lower() for t in query_terms)):
+                if skey and (skey in shaky_or_gap_keys or f" {skey} " in query_key):
                     resume_claims_at_risk.append({"skill": sname, "section": sk.get("section") if isinstance(sk, dict) else None})
         except Exception:
             pass
+
+        by_priority = lambda e: -e["priority"]
+        anchors.sort(key=lambda e: (e["hops"], -(e["mastery"] or 0)))
+        for bucket in (frontier, gaps, seen_untested):
+            bucket.sort(key=by_priority)
 
         return {
             "query": query,
             "profile_prefix_hash": profile_prefix_hash,
             "stable_profile_summary": stable_prefix,
+            "teaching_plan": _teaching_plan(frontier + gaps + seen_untested, anchors, max_items),
+            "matched_by_meaning": seed_map,
             "anchors": anchors[:12],
             "frontier": frontier[:12],
             "gaps": gaps[:12],

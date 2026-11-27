@@ -284,6 +284,7 @@ async def default_services() -> BridgeServices:
     from backend.agent_bridge.webhook import notifier_from_env
     from backend.db.neo4j_client import get_neo4j_client
     from backend.db.postgres_client import get_postgres_client
+    from backend.services.concept_similarity import similar_to_text
 
     class _LazyNeo4j:
         """Connect to Neo4j only when a knowledge tool actually needs it (auth and the
@@ -294,7 +295,7 @@ async def default_services() -> BridgeServices:
 
     pg = await get_postgres_client()
     return BridgeServices(repo=PostgresBridgeRepository(pg),
-                          knowledge=KnowledgeService(pg, _LazyNeo4j()),
+                          knowledge=KnowledgeService(pg, _LazyNeo4j(), similar=similar_to_text),
                           notifier=notifier_from_env(), limiter=limiter_from_env(pg))
 
 
