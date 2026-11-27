@@ -109,6 +109,10 @@ struct ProfileView: View {
         }
         .task {
             consumeProfileRoute()
+            // UI-QA: `GR_OPEN=resume` opens the Resume page, for screenshots.
+            if ProcessInfo.processInfo.environment["GR_OPEN"] == "resume", path.isEmpty {
+                path.append(ProfileNavRoute.resume)
+            }
             await refresh()
         }
         .onChange(of: router.pendingProfileRoute) { _, _ in consumeProfileRoute() }

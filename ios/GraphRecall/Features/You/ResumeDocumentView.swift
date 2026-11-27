@@ -79,6 +79,24 @@ enum ResumeStrength: CaseIterable, Identifiable {
 
     var color: Color { Color(uiColor: uiColor) }
 
+    var tone: GRTone {
+        switch self {
+        case .strong: return .success
+        case .okay: return .amber
+        case .weak: return .danger
+        case .untested: return .neutral
+        }
+    }
+
+    var explanation: String {
+        switch self {
+        case .strong: return "held up when tested"
+        case .okay: return "partly right when tested"
+        case .weak: return "slipped when tested"
+        case .untested: return "claimed or studied, not tested yet"
+        }
+    }
+
     /// Marker colour on the page: the mastery itself when tested, so 0.45 and 0.65 look different.
     static func markerColor(for skill: ResumeSkill) -> UIColor {
         let strength = ResumeStrength(skill)
@@ -253,7 +271,7 @@ struct ResumeStrengthLegend: View {
 
     var body: some View {
         GRFlowLayout(spacing: 10) {
-            ForEach(ResumeStrength.allCases) { band in
+            ForEach(ResumeStrength.allCases.filter { band in skills.contains { ResumeStrength($0) == band } }) { band in
                 let n = skills.filter { ResumeStrength($0) == band }.count
                 HStack(spacing: 5) {
                     RoundedRectangle(cornerRadius: 3).fill(band.color.opacity(0.85)).frame(width: 14, height: 10)
@@ -293,5 +311,29 @@ struct ResumeDocumentViewer: View {
                 }
             }
         }
+    }
+}
+
+/// The summary bar: one segment per band, in the PDF marks' colours.
+struct ResumeStrengthBar: View {
+    let counts: [ResumeStrength: Int]
+    let total: Int
+
+    var body: some View {
+        GeometryReader { geo in
+            HStack(spacing: 2) {
+                ForEach(ResumeStrength.allCases.filter { (counts[$0] ?? 0) > 0 }) { band in
+                    Capsule()
+                        .fill(band.color)
+                        .frame(width: max(4, geo.size.width * CGFloat(counts[band] ?? 0) / CGFloat(max(total, 1)) - 2))
+                }
+            }
+        }
+        .frame(height: 10)
+        .clipShape(Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ResumeStrength.allCases.compactMap { b in
+            (counts[b] ?? 0) > 0 ? "\(b.title) \(counts[b] ?? 0)" : nil
+        }.joined(separator: ", "))
     }
 }

@@ -13,9 +13,26 @@ final class ResumeViewModel {
     var isLoading = false
     var isUploading = false
     var errorMessage: String?
-    var focus: KnowledgeStatus?
+    /// Filter for the skill list: one of the same bands the PDF highlights use.
+    var focus: ResumeStrength?
 
-    var skills: [ResumeSkill] { overview?.skills ?? [] }
+    var skills: [ResumeSkill] {
+        let real = overview?.skills ?? []
+        return ProcessInfo.processInfo.environment["GR_RESUME_REFERENCE"] == "1" ? Self.referenceColours(real) : real
+    }
+
+    /// UI-QA (`GR_RESUME_REFERENCE=1`): display-only colours for a reference screenshot. Most skills
+    /// show as strong, some as getting there, a few as weak. Nothing is written to the server.
+    private static func referenceColours(_ skills: [ResumeSkill]) -> [ResumeSkill] {
+        skills.enumerated().map { index, skill in
+            let bucket = index % 7
+            let (status, mastery): (KnowledgeStatus, Double) =
+                bucket == 3 ? (.shaky, 0.55) : bucket == 6 ? (.shaky, 0.25) : (.strong, 0.85)
+            return ResumeSkill(name: skill.name, key: skill.key, section: skill.section, status: status,
+                               mastery: mastery, basis: skill.basis, conceptId: skill.conceptId,
+                               selfRating: skill.selfRating, spans: skill.spans)
+        }
+    }
 
     /// The original document, when this phone imported the current resume.
     var documentURL: URL? { ResumeFileStore.existingURL(for: overview?.id) }
@@ -28,8 +45,9 @@ final class ResumeViewModel {
         return doc.pageCount > 1 ? ratio * 0.85 : ratio
     }
 
-    func counts() -> [KnowledgeStatus: Int] {
-        Dictionary(uniqueKeysWithValues: KnowledgeStatus.allCases.map { s in (s, skills.filter { $0.status == s }.count) })
+    /// Skills per band, in the same bands (and colours) as the marks on the PDF.
+    func counts() -> [ResumeStrength: Int] {
+        Dictionary(uniqueKeysWithValues: ResumeStrength.allCases.map { b in (b, skills.filter { ResumeStrength($0) == b }.count) })
     }
 
     func load() async {
@@ -81,7 +99,7 @@ final class ResumeViewModel {
         guard let text = overview?.text else { return AttributedString() }
         var attr = AttributedString(text)
         attr.foregroundColor = GRColor.textSecondary
-        for skill in skills where focus == nil || skill.status == focus {
+        for skill in skills where focus == nil || ResumeStrength(skill) == focus {
             for span in skill.spans where span.count == 2 {
                 // Spans are Python code-point offsets, i.e. Unicode scalar offsets (not Characters).
                 let scalars = text.unicodeScalars
@@ -208,13 +226,14 @@ struct ResumeView: View {
                     Spacer()
                     Text("\(model.skills.count) skills").font(GRType.caption.weight(.semibold)).foregroundStyle(GRColor.textSecondary)
                 }
-                KnowledgeStatusBar(counts: counts, height: 10)
+                ResumeStrengthBar(counts: counts, total: model.skills.count)
                 GRFlowLayout(spacing: 6) {
-                    ForEach(KnowledgeStatus.allCases) { s in
-                        GRChip(title: "\(s.shortTitle) \(counts[s] ?? 0)",
-                               style: model.focus == s ? .selected : .tinted(s == .strong ? .success : s == .shaky ? .amber : s == .seen ? .cyan : .neutral),
+                    // Only bands that have skills: a "0" chip says nothing.
+                    ForEach(ResumeStrength.allCases.filter { (counts[$0] ?? 0) > 0 }) { band in
+                        GRChip(title: "\(band.title) \(counts[band] ?? 0)",
+                               style: model.focus == band ? .selected : .tinted(band.tone),
                                compact: true) {
-                            withAnimation(.easeOut(duration: 0.2)) { model.focus = model.focus == s ? nil : s }
+                            withAnimation(.easeOut(duration: 0.2)) { model.focus = model.focus == band ? nil : band }
                         }
                     }
                 }
@@ -224,12 +243,12 @@ struct ResumeView: View {
 
     private var skillGroups: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ForEach(KnowledgeStatus.allCases) { s in
-                let group = model.skills.filter { $0.status == s }
+            ForEach(ResumeStrength.allCases) { s in
+                let group = model.skills.filter { ResumeStrength($0) == s }
                 if !group.isEmpty && (model.focus == nil || model.focus == s) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 6) {
-                            KnowledgeStatusDot(status: s, size: 8)
+                            Circle().fill(s.color).frame(width: 8, height: 8)
                             Text(s.title.uppercased()).font(GRType.micro).foregroundStyle(s.color)
                             Text("· \(s.explanation)").font(GRType.micro).foregroundStyle(GRColor.textTertiary).lineLimit(1)
                         }
@@ -240,7 +259,7 @@ struct ResumeView: View {
                                 } label: {
                                     Text(skill.name)
                                         .font(GRType.caption.weight(.semibold))
-                                        .foregroundStyle(s == .unexposed ? GRColor.textPrimary : s.color)
+                                        .foregroundStyle(s == .untested ? GRColor.textPrimary : s.color)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
                                         .background(s.color.opacity(0.15), in: Capsule())
