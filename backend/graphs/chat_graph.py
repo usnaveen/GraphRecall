@@ -274,6 +274,12 @@ When a <learner_state> block is present it says how well this user knows the con
 Only when an <available_figures> block is present, embed the relevant ones with their exact ![caption](url) syntax. Without that block, do not mention images, figures or diagrams unless the user asked for them, and never add a note that none were available."""
 
 
+def _chat_model_name() -> str:
+    from backend.config.llm import DEFAULT_CHAT_MODEL
+
+    return DEFAULT_CHAT_MODEL
+
+
 def _answer_cache_tag() -> str:
     """Short hash of everything that shapes a cached answer besides the notes: the system prompt
     and the chat model. Changing either moves cached answers out of reach, so a better prompt or
@@ -1227,6 +1233,10 @@ async def generate_response_node(state: ChatState) -> dict:
         metadata = {
             "intent": intent,
             "entities": state.get("entities", []),
+            # Which prompt + model wrote this answer, so quality changes can be traced to a prompt edit.
+            "prompt_version": _answer_cache_tag(),
+            "model": _chat_model_name(),
+            "learner_state_used": bool(learner_rows),
             "documents_retrieved": len(packed_rag),
             "nodes_retrieved": len(graph_concepts),
             "images_attached": sum(len(n.get("images", [])) for n in packed_rag),

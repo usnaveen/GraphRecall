@@ -15,3 +15,10 @@ def test_keeps_names_and_summary_only():
 
 def test_empty_inputs():
     assert message_meta([], {}) == {"related_concepts": [], "retrieval": {"intent": None, "documents": None, "concepts": None, "entities": []}}
+
+
+def test_generation_provenance_is_kept():
+    meta = message_meta([], {"prompt_version": "a1b2c3d4e5f6", "model": "gemini-x", "learner_state_used": True,
+                             "rerank_stats": {"method": "onnx_cross_encoder"}, "grounding": {"reason": "semantic_match"}})
+    assert meta["generation"] == {"prompt_version": "a1b2c3d4e5f6", "model": "gemini-x", "learner_state_used": True,
+                                  "reranker": "onnx_cross_encoder", "grounding": "semantic_match"}

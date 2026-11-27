@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from backend.services.query_rewriter import rewrite_followup_query
+from backend.services.query_rewrite import contextualize
 from backend.services.reranker import (
     LexicalOverlapReranker,
     mmr_select_chunks,
@@ -438,8 +438,9 @@ async def evaluate_benchmark() -> dict[str, Any]:
     per_query: list[dict[str, Any]] = []
 
     for item in queries:
-        rewritten = await rewrite_followup_query(item["query"], item["history"])
-        effective_query = rewritten.rewritten_query
+        # The same follow-up rewriter the chat runs (backend/services/query_rewrite.py).
+        prior_user = [t["content"] for t in item["history"] if t.get("role") == "user"]
+        effective_query = contextualize(item["query"], prior_user[-1] if prior_user else None, [])
         q_emb = _deterministic_embed(effective_query)
 
         # Vector leg
@@ -506,7 +507,7 @@ async def evaluate_benchmark() -> dict[str, Any]:
         per_query.append(
             {
                 "id": item["id"],
-                "rewrite_method": rewritten.method,
+                "rewrite_method": "contextualize" if effective_query != item["query"] else "unchanged",
                 "effective_query": effective_query,
                 "hit@5": hit,
                 "rank": rank,

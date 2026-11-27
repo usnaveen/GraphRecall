@@ -36,7 +36,7 @@ def message_meta(related_concepts: list, metadata: dict) -> dict:
         if isinstance(name, str) and name.strip() and name not in names:
             names.append(name.strip())
     md = metadata or {}
-    return {
+    out = {
         "related_concepts": names[:12],
         "retrieval": {
             "intent": md.get("intent"),
@@ -45,6 +45,18 @@ def message_meta(related_concepts: list, metadata: dict) -> dict:
             "entities": [e for e in (md.get("entities") or []) if isinstance(e, str)][:8],
         },
     }
+    # Which prompt version, model and reranker produced the answer, and why the guard decided as it
+    # did: what you need to trace a quality change back to a release.
+    generation = {
+        "prompt_version": md.get("prompt_version"),
+        "model": md.get("model"),
+        "learner_state_used": md.get("learner_state_used"),
+        "reranker": (md.get("rerank_stats") or {}).get("method"),
+        "grounding": (md.get("grounding") or {}).get("reason"),
+    }
+    if any(v is not None for v in generation.values()):
+        out["generation"] = generation
+    return out
 
 router = APIRouter(prefix="/api/chat", tags=["Chat Assistant"])
 
