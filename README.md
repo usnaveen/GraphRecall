@@ -20,9 +20,9 @@ an assistant that knows what you know, and context for every AI agent you use.
 [![Gemini](https://img.shields.io/badge/Gemini-Flash%20Lite-8E75B2?style=flat-square&logo=googlegemini&logoColor=white)](https://ai.google.dev)
 [![MCP](https://img.shields.io/badge/MCP-15%20tools-B6FF2E?style=flat-square)](backend/agent_bridge/)
 
-### Watch the two-minute film
+### Watch the demo
 
-<a href="https://graphrecall.online/#film"><img src="docs/media/film-poster.jpg" width="720" alt="Play the GraphRecall film: from anything you drop in, to a graph, to a daily feed, to an AI agent that knows what you know"></a>
+<a href="https://graphrecall.online/#film"><img src="docs/media/film-poster.jpg" width="720" alt="Play the GraphRecall demo: from anything you drop in, to a graph, to a daily feed, to an AI agent that knows what you know"></a>
 
 </div>
 
