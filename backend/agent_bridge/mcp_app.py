@@ -32,7 +32,8 @@ from backend.agent_bridge.auth import authenticate_agent_key
 from backend.agent_bridge.limits import RateLimiter
 from backend.agent_bridge.serialization import to_jsonable
 from backend.agent_bridge.keys import AgentPrincipal
-from backend.agent_bridge.tools import TOOLS, BridgeServices, call_tool
+from backend.agent_bridge import tasks as agent_tasks
+from backend.agent_bridge.tools import TASK_TOOLS, TOOLS, BridgeServices, call_tool
 
 logger = structlog.get_logger()
 
@@ -44,7 +45,8 @@ INSTRUCTIONS = (
     "-> claim_question -> submit_answer to answer questions their in-app assistant handed off. "
     "Search these tools whenever the user asks you to explain or teach something (to pitch it at "
     "what they know), to quiz or review them, or to find reading for them. Skills on this server "
-    "(teach-at-my-level, quiz-due-reviews, answer-app-questions, curate-my-feed) give the full steps."
+    "(teach-at-my-level, quiz-due-reviews, answer-app-questions, curate-my-feed, save-learning-session) "
+    "give the full steps. save_learning_session and ingest_link run as background tasks."
 )
 
 _current_principal: contextvars.ContextVar[Optional[AgentPrincipal]] = contextvars.ContextVar(
@@ -71,7 +73,7 @@ def _tool_annotations(types: Any, scope: str) -> Any:
         readOnlyHint=is_read,
         destructiveHint=False,
         idempotentHint=is_read,
-        openWorldHint=False,
+        openWorldHint=scope == "write:ingest",  # ingest tools fetch arbitrary web pages
     )
 
 
@@ -143,15 +145,70 @@ def add_skills_extension(server: Any, types: Any) -> None:
     server.extensions[skills_mod.EXTENSION_ID] = {}
 
 
+def client_supports_tasks(ctx: Any) -> bool:
+    """Did this request's client declare io.modelcontextprotocol/tasks? (Never send a task otherwise.)"""
+    caps = getattr(getattr(ctx, "session", None), "client_capabilities", None)
+    return agent_tasks.EXTENSION_ID in ((getattr(caps, "extensions", None) or {}) if caps else {})
+
+
+class _TaskParams(BaseModel):
+    model_config = {"extra": "allow"}
+    taskId: str
+
+
+def add_tasks_extension(server: Any, services_factory: ServicesFactory) -> None:
+    """Advertise io.modelcontextprotocol/tasks and serve tasks/get, tasks/cancel, tasks/update."""
+    from mcp.shared.exceptions import MCPError
+
+    async def _guard(ctx: Any, params: _TaskParams) -> tuple[Any, AgentPrincipal]:
+        if not client_supports_tasks(ctx):
+            raise MCPError(-32021, "Missing required client capability",
+                           {"requiredCapabilities": {"extensions": {agent_tasks.EXTENSION_ID: {}}}})
+        principal = _principal_from_request(getattr(ctx, "request", None)) or _current_principal.get()
+        if principal is None:
+            raise MCPError(-32602, "Failed to retrieve task: Task not found")
+        return await services_factory(), principal
+
+    async def tasks_get(ctx: Any, params: _TaskParams) -> dict:
+        services, principal = await _guard(ctx, params)
+        try:
+            row = await agent_tasks.get(services.tasks, principal.user_id, params.taskId)
+        except agent_tasks.TaskNotFound:
+            raise MCPError(-32602, "Failed to retrieve task: Task not found")
+        return agent_tasks.wire(row, result_type="complete")
+
+    async def tasks_cancel(ctx: Any, params: _TaskParams) -> dict:
+        services, principal = await _guard(ctx, params)
+        try:
+            await agent_tasks.cancel(services.tasks, principal.user_id, params.taskId)
+        except agent_tasks.TaskNotFound:
+            raise MCPError(-32602, "Failed to cancel task: Task not found")
+        return {"resultType": "complete"}
+
+    async def tasks_update(ctx: Any, params: _TaskParams) -> dict:
+        # These tasks never ask for input, so there is never an outstanding key: acknowledge and ignore.
+        services, principal = await _guard(ctx, params)
+        try:
+            await agent_tasks.get(services.tasks, principal.user_id, params.taskId)
+        except agent_tasks.TaskNotFound:
+            raise MCPError(-32602, "Failed to update task: Task not found")
+        return {"resultType": "complete"}
+
+    server.add_request_handler("tasks/get", _TaskParams, tasks_get)
+    server.add_request_handler("tasks/cancel", _TaskParams, tasks_cancel)
+    server.add_request_handler("tasks/update", _TaskParams, tasks_update)
+    server.extensions[agent_tasks.EXTENSION_ID] = {}
+
+
 def build_lowlevel_server(services_factory: ServicesFactory) -> Any:
     import mcp.types as types
     from mcp.server.lowlevel import Server
 
-    async def _run(principal: Optional[AgentPrincipal], name: str, args: Optional[dict]):
+    async def _run(principal: Optional[AgentPrincipal], name: str, args: Optional[dict], services: Any = None):
         if principal is None:  # should be impossible behind the ASGI auth wrapper
             result: dict = {"ok": False, "error": {"code": "unauthorized", "message": "No agent key"}}
         else:
-            services = await services_factory()
+            services = services or await services_factory()
             result = await call_tool(name, principal, services, args or {})
         text = json.dumps(to_jsonable(result))
         return result, [types.TextContent(type="text", text=text)]
@@ -162,7 +219,12 @@ def build_lowlevel_server(services_factory: ServicesFactory) -> Any:
 
         async def on_call_tool(ctx: Any, params: Any) -> Any:
             principal = _principal_from_request(ctx.request) or _current_principal.get()
-            result, content = await _run(principal, params.name, params.arguments)
+            services = await services_factory() if principal is not None else None
+            result, content = await _run(principal, params.name, params.arguments, services)
+            if params.name in TASK_TOOLS and result.get("ok") and client_supports_tasks(ctx):
+                # The job is already running and its row is written: answer with the task itself.
+                row = await agent_tasks.get(services.tasks, principal.user_id, result["data"]["task_id"])
+                return agent_tasks.wire(row, result_type="task")
             return types.CallToolResult(content=content, is_error=not result.get("ok"))
 
         server = Server(SERVER_NAME, instructions=INSTRUCTIONS,
@@ -170,6 +232,7 @@ def build_lowlevel_server(services_factory: ServicesFactory) -> Any:
                         on_list_resources=_skill_resources_list(types),
                         on_read_resource=_skill_resource_read(types))
         add_skills_extension(server, types)
+        add_tasks_extension(server, services_factory)
         return server
 
     # mcp 1.x
@@ -359,7 +422,8 @@ async def default_services() -> BridgeServices:
     pg = await get_postgres_client()
     return BridgeServices(repo=PostgresBridgeRepository(pg),
                           knowledge=KnowledgeService(pg, _LazyNeo4j(), similar=similar_to_text),
-                          notifier=notifier_from_env(), limiter=limiter_from_env(pg))
+                          notifier=notifier_from_env(), limiter=limiter_from_env(pg),
+                          tasks=agent_tasks.PostgresTaskStore(pg))
 
 
 def main(argv: Optional[list[str]] = None) -> int:

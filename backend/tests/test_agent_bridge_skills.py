@@ -12,13 +12,13 @@ from backend.agent_bridge import skills
 from backend.agent_bridge.keys import AgentPrincipal
 
 READ = {"read:knowledge"}
-ALL = {"read:knowledge", "write:feed", "bridge:answer"}
+ALL = {"read:knowledge", "write:feed", "bridge:answer", "write:ingest"}
 
 
 def test_every_skill_loads_and_matches_its_directory():
     loaded = skills.all_skills()
     assert {s.name for s in loaded} == {"teach-at-my-level", "quiz-due-reviews", "answer-app-questions",
-                                        "curate-my-feed"}
+                                        "curate-my-feed", "save-learning-session"}
     for s in loaded:
         assert s.frontmatter["name"] == s.name
         assert 1 <= len(s.frontmatter["description"]) <= 1024

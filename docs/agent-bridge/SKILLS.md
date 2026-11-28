@@ -17,6 +17,7 @@ rather than leaving the claim to expire".
 | `quiz-due-reviews` | `read:knowledge` | A chat quiz on `list_due_reviews`, one recall question at a time. It says plainly that a chat quiz doesn't move the review schedule. |
 | `answer-app-questions` | `bridge:answer`, `read:knowledge` | The `list_pending_questions` → `claim_question` → research → `submit_answer` loop. Submits an `error` when it can't answer. |
 | `curate-my-feed` | `read:knowledge`, `write:feed` | Aims at the user's frontier, then `propose_feed_items` with idempotency keys, an optional `schedule_daily_digest`, and `suggest_for_later`. |
+| `save-learning-session` | `read:knowledge`, `write:ingest` | Distils the conversation into topic, learned, struggled (with why), key details and resources; previews it, then calls `save_learning_session`, which runs as a background task ([TASKS.md](TASKS.md)). |
 
 The files live in `backend/agent_bridge/skill_files/<name>/SKILL.md`. Each one's frontmatter
 `metadata.graphrecall-scopes` lists the scopes it needs. **A key only lists, gets or reads the
