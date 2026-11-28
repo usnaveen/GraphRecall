@@ -562,6 +562,71 @@ struct SaveMessageResponse: Decodable, Sendable {
     }
 }
 
+// MARK: - Answer feedback & typing-pause prefetch
+
+enum ChatFeedbackRating: String, Codable, Sendable {
+    case up
+    case down
+}
+
+enum ChatFeedbackReason: String, CaseIterable, Codable, Sendable {
+    case wrong
+    case incomplete
+    case notMyLevel = "not_my_level"
+    case badSources = "bad_sources"
+    case tooLong = "too_long"
+    case other
+
+    var label: String {
+        switch self {
+        case .wrong: return "Factually wrong"
+        case .incomplete: return "Incomplete answer"
+        case .notMyLevel: return "Not my level"
+        case .badSources: return "Bad or missing sources"
+        case .tooLong: return "Too long"
+        case .other: return "Other"
+        }
+    }
+}
+
+struct ChatFeedbackRequestBody: Encodable, Sendable {
+    let rating: ChatFeedbackRating
+    let reason: ChatFeedbackReason?
+    let comment: String?
+}
+
+struct ChatFeedbackRecord: Decodable, Sendable, Hashable {
+    let rating: ChatFeedbackRating
+    let reason: ChatFeedbackReason?
+    let comment: String?
+    let at: String?
+}
+
+struct ChatFeedbackResponse: Decodable, Sendable {
+    let status: String
+    let messageId: String?
+    let feedback: ChatFeedbackRecord?
+
+    enum CodingKeys: String, CodingKey {
+        case status, feedback
+        case messageId = "message_id"
+    }
+}
+
+struct ChatPrefetchRequestBody: Encodable, Sendable {
+    let text: String
+    let conversationId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case conversationId = "conversation_id"
+    }
+}
+
+struct ChatPrefetchResponse: Decodable, Sendable {
+    let warmed: Bool
+}
+
 enum ChatLocalFeedFactory {
     /// Offline / stub path when `serverId` is missing — DemoFeedSeed-style local card.
     static func makeLocalCard(
