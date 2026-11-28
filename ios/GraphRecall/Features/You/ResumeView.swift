@@ -67,18 +67,31 @@ final class ResumeViewModel {
         isUploading = true
         defer { isUploading = false }
         // PDF text extraction can take a while on long files: keep it off the main actor.
-        // Kept to show the original pages with their highlights; it never leaves the phone.
+        // Kept to show the original pages with their highlights. It's only sent to the server when it has no
+        // text layer (a scan), to be read with OCR; the server doesn't store it.
         let original = try? Data(contentsOf: url)
         let extracted: String? = await Task.detached(priority: .userInitiated) {
             guard let doc = PDFDocument(url: url) else { return nil }
             return (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }.joined(separator: "\n")
         }.value
-        guard let text = extracted else {
+        guard var text = extracted else {
             errorMessage = "That file couldn't be opened as a PDF."
             return
         }
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).count < 50, let original {
+            // A scanned or image-only PDF: the server reads it with OCR and returns the text. It keeps
+            // nothing from that call; only the text is saved, as with any other resume.
+            do {
+                text = try await APIClient.shared.extractDocumentText(
+                    data: original, filename: url.lastPathComponent, mimeType: "application/pdf"
+                ).markdown
+            } catch {
+                errorMessage = "Couldn't read that scanned PDF: \(error.localizedDescription)"
+                return
+            }
+        }
         guard text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 50 else {
-            errorMessage = "No selectable text in that PDF. Export it from your editor as a text PDF."
+            errorMessage = "No readable text in that PDF."
             return
         }
         do {
