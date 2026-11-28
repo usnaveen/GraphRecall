@@ -598,6 +598,7 @@ def _render_consent_html(
         "read:knowledge": ("Read Knowledge Snapshot", "Check which concepts are strong, shaky, seen, or new—never raw note bodies or resume text."),
         "write:feed": ("Propose Feed Items", "Stage reading and review cards into your Agent Inbox for your approval."),
         "bridge:answer": ("Answer Delegated Questions", "Claim and answer questions you explicitly hand off from the Assistant."),
+        "write:ingest": ("Add to Your Knowledge Graph", "Import links and learning-session notes straight into your graph, without an approval step."),
     }
     scope_rows = []
     for sc in sorted(ALL_SCOPES):

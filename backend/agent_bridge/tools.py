@@ -19,6 +19,7 @@ from backend.agent_bridge.keys import (
     SCOPE_BRIDGE_ANSWER,
     SCOPE_READ_KNOWLEDGE,
     SCOPE_WRITE_FEED,
+    SCOPE_WRITE_INGEST,
     AgentPrincipal,
     ScopeError,
     require_scope,
@@ -32,6 +33,8 @@ from backend.agent_bridge.repository import (
     LimitExceededError,
 )
 from backend.agent_bridge.serialization import iso, to_jsonable
+from backend.agent_bridge import tasks as agent_tasks
+from backend.agent_bridge.tasks import InMemoryTaskStore, TaskStore
 from backend.agent_bridge.webhook import Notifier, NullNotifier
 
 logger = structlog.get_logger()
@@ -53,10 +56,13 @@ class BridgeServices:
     knowledge: KnowledgeService
     notifier: Notifier = NullNotifier()
     limiter: RateLimiter = None  # type: ignore[assignment]
+    tasks: TaskStore = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         if self.limiter is None:
             self.limiter = InMemoryRateLimiter()
+        if self.tasks is None:
+            self.tasks = InMemoryTaskStore()
 
 
 Handler = Callable[[AgentPrincipal, BridgeServices, dict], Awaitable[Any]]
@@ -229,9 +235,97 @@ class SubmitArgs(_Args):
                                  description="Set instead of an answer if you could not answer")
 
 
+class IngestLinkArgs(_Args):
+    url: str = Field(..., max_length=2048, description="An article, blog post, paper page or YouTube video (http/https)")
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, v: str) -> str:
+        return _check_url(v)  # type: ignore[return-value]
+
+
+class SessionResource(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    url: str = Field(..., max_length=2048)
+    title: Optional[str] = Field(None, max_length=300)
+    note: Optional[str] = Field(None, max_length=500, description="What it was used for in the session")
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, v: str) -> str:
+        return _check_url(v)  # type: ignore[return-value]
+
+
+class Struggle(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    concept: str = Field(..., min_length=1, max_length=160)
+    why: Optional[str] = Field(None, max_length=600, description="What was hard about it, in a sentence")
+
+
+class LearningSessionArgs(_Args):
+    topic: str = Field(..., min_length=1, max_length=200, description="What the session was about")
+    summary_markdown: str = Field("", max_length=20000,
+                                  description="The key details worth keeping, in your own words (markdown)")
+    learned: list[Annotated[str, Field(min_length=1, max_length=160)]] = Field(
+        default_factory=list, max_length=30, description="Concepts the user now understands")
+    struggled: list[Struggle] = Field(default_factory=list, max_length=30)
+    resources: list[SessionResource] = Field(default_factory=list, max_length=15,
+                                             description="Articles, papers and videos used in the session")
+    transcript: Optional[str] = Field(None, max_length=200000,
+                                      description="Optional raw conversation; prefer summary_markdown. Over 30k chars is cut")
+
+    @model_validator(mode="after")
+    def _something(self) -> "LearningSessionArgs":
+        if not (self.summary_markdown.strip() or self.learned or self.struggled or self.resources):
+            raise ValueError("Send at least one of summary_markdown, learned, struggled or resources")
+        return self
+
+
+class TaskStatusArgs(_Args):
+    task_id: str = Field(..., min_length=1, max_length=128)
+
+
 # ---------------------------------------------------------------------------
 # Handlers
 # ---------------------------------------------------------------------------
+
+
+async def _start_task(p: AgentPrincipal, s: BridgeServices, tool: str, first: str, work: Any) -> dict:
+    try:
+        row = await agent_tasks.start(s.tasks, user_id=p.user_id, key_id=p.key_id, tool=tool, work=work,
+                                      first_message=first)
+    except agent_tasks.TooManyTasks as e:
+        raise ToolError("too_many_tasks", str(e))
+    return {**agent_tasks.status_view(row),
+            "note": "Running in the background. Poll get_ingest_status with task_id until status is completed."}
+
+
+async def _ingest_link(p: AgentPrincipal, s: BridgeServices, a: IngestLinkArgs) -> dict:
+    from backend.agent_bridge import ingest_jobs
+
+    return await _start_task(p, s, "ingest_link", f"Queued {a.url}",
+                             lambda progress: ingest_jobs.run_ingest_link(p.user_id, a.url, progress))
+
+
+async def _save_session(p: AgentPrincipal, s: BridgeServices, a: LearningSessionArgs) -> dict:
+    from backend.agent_bridge import ingest_jobs
+
+    def work(progress: Any) -> Any:
+        return ingest_jobs.run_learning_session(
+            p.user_id, s.knowledge, agent_name="via MCP", topic=a.topic.strip(), summary=a.summary_markdown,
+            learned=[c.strip() for c in a.learned], struggled=[x.model_dump() for x in a.struggled],
+            resources=[r.model_dump() for r in a.resources], transcript=a.transcript, progress=progress)
+    return await _start_task(p, s, "save_learning_session",
+                             f"Queued: session note + {len(a.resources)} resources", work)
+
+
+async def _ingest_status(p: AgentPrincipal, s: BridgeServices, a: TaskStatusArgs) -> dict:
+    try:
+        return agent_tasks.status_view(await agent_tasks.get(s.tasks, p.user_id, a.task_id))
+    except agent_tasks.TaskNotFound:
+        raise ToolError("not_found", "No such import (it may have expired)")
 
 
 def _today() -> date:
@@ -541,7 +635,26 @@ TOOLS: dict[str, ToolSpec] = {t.name: t for t in [
     ToolSpec("submit_answer", SCOPE_BRIDGE_ANSWER,
              "Answer a claimed question (markdown + citations), or report an error.",
              SubmitArgs, _submit),
+    ToolSpec("ingest_link", SCOPE_WRITE_INGEST,
+             "Import one article, blog post, paper page or YouTube video into the user's knowledge graph "
+             "(concepts, flashcards, search), as the app's Import link / Import video do. A video is read from "
+             "its captions, or watched by Gemini when it has none. Runs in the background: returns a task (or a "
+             "task_id to poll with get_ingest_status) and finishes in about 20-60 s, longer for a video without "
+             "captions. Duplicates are detected.", IngestLinkArgs, _ingest_link),
+    ToolSpec("save_learning_session", SCOPE_WRITE_INGEST,
+             "At the end of a learning session, save it into the user's knowledge graph: the topic, a summary of "
+             "the key details, concepts they learned, concepts they struggled with (and why), and the articles, "
+             "papers and YouTube videos used. Writes one session note, imports each resource, and records the struggles "
+             "so the app reviews them sooner. Runs in the background for minutes: returns a task (or a task_id "
+             "to poll with get_ingest_status). Ask the user before calling.",
+             LearningSessionArgs, _save_session),
+    ToolSpec("get_ingest_status", SCOPE_WRITE_INGEST,
+             "Status of an ingest_link or save_learning_session import: working, completed (with what was "
+             "imported), failed or cancelled. For clients that don't poll MCP tasks themselves.",
+             TaskStatusArgs, _ingest_status),
 ]}
+
+TASK_TOOLS = frozenset({"ingest_link", "save_learning_session"})
 
 
 def audit_counts(name: str, data: Any) -> dict:
@@ -579,6 +692,8 @@ def _audit_target(name: str, data: Any) -> Optional[str]:
         return data["question"].get("id")
     if name == "schedule_daily_digest":
         return (data.get("digest") or {}).get("id")
+    if name in ("ingest_link", "save_learning_session"):
+        return data.get("task_id")
     return None
 
 

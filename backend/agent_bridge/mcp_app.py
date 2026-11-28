@@ -24,12 +24,16 @@ from typing import Any, Callable, Optional
 
 import structlog
 
+from pydantic import BaseModel
+
 from backend.agent_bridge import bridge_enabled, limits
+from backend.agent_bridge import skills as skills_mod
 from backend.agent_bridge.auth import authenticate_agent_key
 from backend.agent_bridge.limits import RateLimiter
 from backend.agent_bridge.serialization import to_jsonable
 from backend.agent_bridge.keys import AgentPrincipal
-from backend.agent_bridge.tools import TOOLS, BridgeServices, call_tool
+from backend.agent_bridge import tasks as agent_tasks
+from backend.agent_bridge.tools import TASK_TOOLS, TOOLS, BridgeServices, call_tool
 
 logger = structlog.get_logger()
 
@@ -38,7 +42,11 @@ INSTRUCTIONS = (
     "GraphRecall is the user's personal knowledge graph and spaced-repetition app. "
     "Use read tools to learn what they know and what is due; propose_feed_items to add "
     "curated cards (they stay pending until the user approves); and list_pending_questions "
-    "-> claim_question -> submit_answer to answer questions their in-app assistant handed off."
+    "-> claim_question -> submit_answer to answer questions their in-app assistant handed off. "
+    "Search these tools whenever the user asks you to explain or teach something (to pitch it at "
+    "what they know), to quiz or review them, or to find reading for them. Skills on this server "
+    "(teach-at-my-level, quiz-due-reviews, answer-app-questions, curate-my-feed, save-learning-session) "
+    "give the full steps. save_learning_session and ingest_link run as background tasks."
 )
 
 _current_principal: contextvars.ContextVar[Optional[AgentPrincipal]] = contextvars.ContextVar(
@@ -65,7 +73,7 @@ def _tool_annotations(types: Any, scope: str) -> Any:
         readOnlyHint=is_read,
         destructiveHint=False,
         idempotentHint=is_read,
-        openWorldHint=False,
+        openWorldHint=scope == "write:ingest",  # ingest tools fetch arbitrary web pages
     )
 
 
@@ -84,15 +92,123 @@ def _tool_list(types: Any) -> list:
     return out
 
 
+def _ctx_scopes(ctx: Any) -> frozenset[str]:
+    principal = _principal_from_request(getattr(ctx, "request", None)) or _current_principal.get()
+    return frozenset(principal.scopes) if principal is not None else frozenset()
+
+
+def _invalid(uri: str) -> Exception:
+    from mcp.shared.exceptions import MCPError
+
+    return MCPError(-32602, f"Unknown resource: {uri}")
+
+
+def _skill_resources_list(types: Any) -> Callable:
+    """resources/list: the SKILL.md of each skill this key can run (skills are the only resources)."""
+    async def on_list_resources(ctx: Any, params: Any) -> Any:
+        return types.ListResourcesResult(resources=[
+            types.Resource(uri=s.uri, name=s.name, description=s.frontmatter.get("description"),
+                           mimeType="text/markdown")
+            for s in skills_mod.visible(_ctx_scopes(ctx))])
+    return on_list_resources
+
+
+def _skill_resource_read(types: Any) -> Callable:
+    async def on_read_resource(ctx: Any, params: Any) -> Any:
+        uri = str(params.uri)
+        try:
+            text, mime = skills_mod.read_file(uri, _ctx_scopes(ctx))
+        except skills_mod.SkillNotFound:
+            raise _invalid(uri)
+        return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, mimeType=mime, text=text)])
+    return on_read_resource
+
+
+class _SkillGetParams(BaseModel):
+    model_config = {"extra": "allow"}
+    uri: str
+
+
+def add_skills_extension(server: Any, types: Any) -> None:
+    """Advertise io.modelcontextprotocol/skills and serve skills/list + skills/get (mcp 2.x lowlevel)."""
+    async def skills_list(ctx: Any, params: Any) -> dict:
+        return skills_mod.list_result(_ctx_scopes(ctx))
+
+    async def skills_get(ctx: Any, params: Any) -> dict:
+        try:
+            return skills_mod.get_result(params.uri, _ctx_scopes(ctx))
+        except skills_mod.SkillNotFound:
+            raise _invalid(params.uri)
+
+    server.add_request_handler("skills/list", types.PaginatedRequestParams, skills_list)
+    server.add_request_handler("skills/get", _SkillGetParams, skills_get)
+    server.extensions[skills_mod.EXTENSION_ID] = {}
+
+
+def client_supports_tasks(ctx: Any) -> bool:
+    """Did this request's client declare io.modelcontextprotocol/tasks? (Never send a task otherwise.)"""
+    caps = getattr(getattr(ctx, "session", None), "client_capabilities", None)
+    return agent_tasks.EXTENSION_ID in ((getattr(caps, "extensions", None) or {}) if caps else {})
+
+
+class _TaskParams(BaseModel):
+    model_config = {"extra": "allow"}
+    taskId: str
+
+
+def add_tasks_extension(server: Any, services_factory: ServicesFactory) -> None:
+    """Advertise io.modelcontextprotocol/tasks and serve tasks/get, tasks/cancel, tasks/update."""
+    from mcp.shared.exceptions import MCPError
+
+    async def _guard(ctx: Any, params: _TaskParams) -> tuple[Any, AgentPrincipal]:
+        if not client_supports_tasks(ctx):
+            raise MCPError(-32021, "Missing required client capability",
+                           {"requiredCapabilities": {"extensions": {agent_tasks.EXTENSION_ID: {}}}})
+        principal = _principal_from_request(getattr(ctx, "request", None)) or _current_principal.get()
+        if principal is None:
+            raise MCPError(-32602, "Failed to retrieve task: Task not found")
+        return await services_factory(), principal
+
+    async def tasks_get(ctx: Any, params: _TaskParams) -> dict:
+        services, principal = await _guard(ctx, params)
+        try:
+            row = await agent_tasks.get(services.tasks, principal.user_id, params.taskId)
+        except agent_tasks.TaskNotFound:
+            raise MCPError(-32602, "Failed to retrieve task: Task not found")
+        return agent_tasks.wire(row, result_type="complete")
+
+    async def tasks_cancel(ctx: Any, params: _TaskParams) -> dict:
+        services, principal = await _guard(ctx, params)
+        try:
+            await agent_tasks.cancel(services.tasks, principal.user_id, params.taskId)
+        except agent_tasks.TaskNotFound:
+            raise MCPError(-32602, "Failed to cancel task: Task not found")
+        return {"resultType": "complete"}
+
+    async def tasks_update(ctx: Any, params: _TaskParams) -> dict:
+        # These tasks never ask for input, so there is never an outstanding key: acknowledge and ignore.
+        services, principal = await _guard(ctx, params)
+        try:
+            await agent_tasks.get(services.tasks, principal.user_id, params.taskId)
+        except agent_tasks.TaskNotFound:
+            raise MCPError(-32602, "Failed to update task: Task not found")
+        return {"resultType": "complete"}
+
+    server.add_request_handler("tasks/get", _TaskParams, tasks_get)
+    server.add_request_handler("tasks/cancel", _TaskParams, tasks_cancel)
+    server.add_request_handler("tasks/update", _TaskParams, tasks_update)
+    server.extensions[agent_tasks.EXTENSION_ID] = {}
+
+
 def build_lowlevel_server(services_factory: ServicesFactory) -> Any:
     import mcp.types as types
     from mcp.server.lowlevel import Server
 
-    async def _run(principal: Optional[AgentPrincipal], name: str, args: Optional[dict]):
+    async def _run(principal: Optional[AgentPrincipal], name: str, args: Optional[dict], services: Any = None):
         if principal is None:  # should be impossible behind the ASGI auth wrapper
             result: dict = {"ok": False, "error": {"code": "unauthorized", "message": "No agent key"}}
         else:
-            services = await services_factory()
+            services = services or await services_factory()
             result = await call_tool(name, principal, services, args or {})
         text = json.dumps(to_jsonable(result))
         return result, [types.TextContent(type="text", text=text)]
@@ -103,11 +219,21 @@ def build_lowlevel_server(services_factory: ServicesFactory) -> Any:
 
         async def on_call_tool(ctx: Any, params: Any) -> Any:
             principal = _principal_from_request(ctx.request) or _current_principal.get()
-            result, content = await _run(principal, params.name, params.arguments)
+            services = await services_factory() if principal is not None else None
+            result, content = await _run(principal, params.name, params.arguments, services)
+            if params.name in TASK_TOOLS and result.get("ok") and client_supports_tasks(ctx):
+                # The job is already running and its row is written: answer with the task itself.
+                row = await agent_tasks.get(services.tasks, principal.user_id, result["data"]["task_id"])
+                return agent_tasks.wire(row, result_type="task")
             return types.CallToolResult(content=content, is_error=not result.get("ok"))
 
-        return Server(SERVER_NAME, instructions=INSTRUCTIONS,
-                      on_list_tools=on_list_tools, on_call_tool=on_call_tool)
+        server = Server(SERVER_NAME, instructions=INSTRUCTIONS,
+                        on_list_tools=on_list_tools, on_call_tool=on_call_tool,
+                        on_list_resources=_skill_resources_list(types),
+                        on_read_resource=_skill_resource_read(types))
+        add_skills_extension(server, types)
+        add_tasks_extension(server, services_factory)
+        return server
 
     # mcp 1.x
     server = Server(SERVER_NAME, instructions=INSTRUCTIONS)  # pragma: no cover
@@ -296,7 +422,8 @@ async def default_services() -> BridgeServices:
     pg = await get_postgres_client()
     return BridgeServices(repo=PostgresBridgeRepository(pg),
                           knowledge=KnowledgeService(pg, _LazyNeo4j(), similar=similar_to_text),
-                          notifier=notifier_from_env(), limiter=limiter_from_env(pg))
+                          notifier=notifier_from_env(), limiter=limiter_from_env(pg),
+                          tasks=agent_tasks.PostgresTaskStore(pg))
 
 
 def main(argv: Optional[list[str]] = None) -> int:

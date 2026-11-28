@@ -20,9 +20,10 @@ KEY_PREFIX = "grk"
 SCOPE_READ_KNOWLEDGE = "read:knowledge"
 SCOPE_WRITE_FEED = "write:feed"
 SCOPE_BRIDGE_ANSWER = "bridge:answer"
+SCOPE_WRITE_INGEST = "write:ingest"  # add links and learning sessions straight into the graph
 
 ALL_SCOPES: frozenset[str] = frozenset(
-    {SCOPE_READ_KNOWLEDGE, SCOPE_WRITE_FEED, SCOPE_BRIDGE_ANSWER}
+    {SCOPE_READ_KNOWLEDGE, SCOPE_WRITE_FEED, SCOPE_BRIDGE_ANSWER, SCOPE_WRITE_INGEST}
 )
 # Least privilege: a new key can only read the knowledge map unless the user turns on more.
 DEFAULT_SCOPES: tuple[str, ...] = (SCOPE_READ_KNOWLEDGE,)

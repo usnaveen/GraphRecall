@@ -350,6 +350,7 @@ enum AgentScope: String, CaseIterable, Sendable, Identifiable {
     case readKnowledge = "read:knowledge"
     case writeFeed = "write:feed"
     case bridgeAnswer = "bridge:answer"
+    case writeIngest = "write:ingest"
 
     var id: String { rawValue }
 
@@ -358,6 +359,7 @@ enum AgentScope: String, CaseIterable, Sendable, Identifiable {
         case .readKnowledge: return "Read what you know"
         case .writeFeed: return "Suggest feed cards"
         case .bridgeAnswer: return "Answer your questions"
+        case .writeIngest: return "Add to your graph"
         }
     }
 
@@ -366,6 +368,7 @@ enum AgentScope: String, CaseIterable, Sendable, Identifiable {
         case .readKnowledge: return "Concepts, mastery, due reviews and recent activity"
         case .writeFeed: return "Cards wait in your inbox until you approve them"
         case .bridgeAnswer: return "Pick up questions you hand off from chat"
+        case .writeIngest: return "Import links and learning sessions straight in, no approval step"
         }
     }
 }
