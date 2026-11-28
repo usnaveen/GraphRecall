@@ -24,7 +24,10 @@ from typing import Any, Callable, Optional
 
 import structlog
 
+from pydantic import BaseModel
+
 from backend.agent_bridge import bridge_enabled, limits
+from backend.agent_bridge import skills as skills_mod
 from backend.agent_bridge.auth import authenticate_agent_key
 from backend.agent_bridge.limits import RateLimiter
 from backend.agent_bridge.serialization import to_jsonable
@@ -38,7 +41,10 @@ INSTRUCTIONS = (
     "GraphRecall is the user's personal knowledge graph and spaced-repetition app. "
     "Use read tools to learn what they know and what is due; propose_feed_items to add "
     "curated cards (they stay pending until the user approves); and list_pending_questions "
-    "-> claim_question -> submit_answer to answer questions their in-app assistant handed off."
+    "-> claim_question -> submit_answer to answer questions their in-app assistant handed off. "
+    "Search these tools whenever the user asks you to explain or teach something (to pitch it at "
+    "what they know), to quiz or review them, or to find reading for them. Skills on this server "
+    "(teach-at-my-level, quiz-due-reviews, answer-app-questions, curate-my-feed) give the full steps."
 )
 
 _current_principal: contextvars.ContextVar[Optional[AgentPrincipal]] = contextvars.ContextVar(
@@ -84,6 +90,59 @@ def _tool_list(types: Any) -> list:
     return out
 
 
+def _ctx_scopes(ctx: Any) -> frozenset[str]:
+    principal = _principal_from_request(getattr(ctx, "request", None)) or _current_principal.get()
+    return frozenset(principal.scopes) if principal is not None else frozenset()
+
+
+def _invalid(uri: str) -> Exception:
+    from mcp.shared.exceptions import MCPError
+
+    return MCPError(-32602, f"Unknown resource: {uri}")
+
+
+def _skill_resources_list(types: Any) -> Callable:
+    """resources/list: the SKILL.md of each skill this key can run (skills are the only resources)."""
+    async def on_list_resources(ctx: Any, params: Any) -> Any:
+        return types.ListResourcesResult(resources=[
+            types.Resource(uri=s.uri, name=s.name, description=s.frontmatter.get("description"),
+                           mimeType="text/markdown")
+            for s in skills_mod.visible(_ctx_scopes(ctx))])
+    return on_list_resources
+
+
+def _skill_resource_read(types: Any) -> Callable:
+    async def on_read_resource(ctx: Any, params: Any) -> Any:
+        uri = str(params.uri)
+        try:
+            text, mime = skills_mod.read_file(uri, _ctx_scopes(ctx))
+        except skills_mod.SkillNotFound:
+            raise _invalid(uri)
+        return types.ReadResourceResult(contents=[types.TextResourceContents(uri=uri, mimeType=mime, text=text)])
+    return on_read_resource
+
+
+class _SkillGetParams(BaseModel):
+    model_config = {"extra": "allow"}
+    uri: str
+
+
+def add_skills_extension(server: Any, types: Any) -> None:
+    """Advertise io.modelcontextprotocol/skills and serve skills/list + skills/get (mcp 2.x lowlevel)."""
+    async def skills_list(ctx: Any, params: Any) -> dict:
+        return skills_mod.list_result(_ctx_scopes(ctx))
+
+    async def skills_get(ctx: Any, params: Any) -> dict:
+        try:
+            return skills_mod.get_result(params.uri, _ctx_scopes(ctx))
+        except skills_mod.SkillNotFound:
+            raise _invalid(params.uri)
+
+    server.add_request_handler("skills/list", types.PaginatedRequestParams, skills_list)
+    server.add_request_handler("skills/get", _SkillGetParams, skills_get)
+    server.extensions[skills_mod.EXTENSION_ID] = {}
+
+
 def build_lowlevel_server(services_factory: ServicesFactory) -> Any:
     import mcp.types as types
     from mcp.server.lowlevel import Server
@@ -106,8 +165,12 @@ def build_lowlevel_server(services_factory: ServicesFactory) -> Any:
             result, content = await _run(principal, params.name, params.arguments)
             return types.CallToolResult(content=content, is_error=not result.get("ok"))
 
-        return Server(SERVER_NAME, instructions=INSTRUCTIONS,
-                      on_list_tools=on_list_tools, on_call_tool=on_call_tool)
+        server = Server(SERVER_NAME, instructions=INSTRUCTIONS,
+                        on_list_tools=on_list_tools, on_call_tool=on_call_tool,
+                        on_list_resources=_skill_resources_list(types),
+                        on_read_resource=_skill_resource_read(types))
+        add_skills_extension(server, types)
+        return server
 
     # mcp 1.x
     server = Server(SERVER_NAME, instructions=INSTRUCTIONS)  # pragma: no cover
