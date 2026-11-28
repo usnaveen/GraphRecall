@@ -120,6 +120,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("LangGraph checkpointer unavailable", error=str(e))
 
+    from backend.services.ingestion.document_reader import ocr_model_ready
+
+    if not ocr_model_ready():
+        logger.warning("OCR model missing: scanned PDFs and images can't be ingested "
+                       "(run python -m backend.scripts.fetch_ocr_model)")
+
     lag_monitor = asyncio.create_task(telemetry.monitor_event_loop())
 
     # Mounted sub-apps do not get lifespan events, so run the MCP session manager here.

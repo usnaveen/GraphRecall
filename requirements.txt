@@ -30,6 +30,7 @@ youtube-transcript-api>=1.2  # YouTube captions for /ingest/youtube (MIT)
 networkx>=3.0
 uuid
 numpy>=1.26  # intent router inference (backend/services/intent_router)
+liteparse==2.21.4  # documents read on the server: PDF text layer + OCRia-nano OCR (backend/services/ingestion/document_reader.py); model via backend/scripts/fetch_ocr_model.py
 onnxruntime>=1.20  # cross-encoder reranker (backend/services/reranker.py); model via backend/scripts/fetch_reranker.py
 # Tracing (off unless OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_TRACES_EXPORTER=console is set; backend/tracing.py)
 opentelemetry-api>=1.27
