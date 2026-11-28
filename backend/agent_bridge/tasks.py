@@ -48,6 +48,11 @@ class TooManyTasks(Exception):
     pass
 
 
+class Cancelled(Exception):
+    """Raised by progress() at a unit boundary once cancellation was requested. The message says
+    what was already saved; the job stops cleanly instead of being killed mid-write."""
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -196,9 +201,17 @@ async def start(store: TaskStore, *, user_id: str, key_id: Optional[str], tool: 
     row = await store.create(task_id, user_id, key_id, tool, first_message)
 
     async def progress(msg: str) -> None:
+        """Called by the job between units of work: report progress, or stop if asked to."""
+        try:
+            current = await store.get(user_id, task_id)
+        except Exception as e:  # progress is best effort
+            logger.warning("agent_tasks: progress read failed", task_id=task_id, error=str(e))
+            current = None
+        if current and current.get("cancel_requested"):
+            raise Cancelled("Cancelled")
         try:
             await store.update(task_id, status_message=msg[:500])
-        except Exception as e:  # progress is best effort
+        except Exception as e:
             logger.warning("agent_tasks: progress write failed", task_id=task_id, error=str(e))
 
     async def run() -> None:
@@ -206,10 +219,12 @@ async def start(store: TaskStore, *, user_id: str, key_id: Optional[str], tool: 
             result = await asyncio.wait_for(work(progress), timeout=MAX_RUN.total_seconds())
             await store.update(task_id, status="completed", result=result,
                                status_message="Finished" if not result.get("isError") else "Finished with errors")
-        except asyncio.CancelledError:
-            await store.update(task_id, status="cancelled", status_message="Cancelled")
+        except Cancelled as e:
+            await store.update(task_id, status="cancelled", status_message=str(e)[:500] or "Cancelled")
+        except asyncio.CancelledError:  # process shutdown
+            await store.update(task_id, status="cancelled", status_message="Cancelled (server shutting down)")
             raise
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError:  # last resort: this one can interrupt a pipeline step mid-write
             await store.update(task_id, status="failed", status_message="Timed out",
                                error={"code": -32603, "message": f"Timed out after {int(MAX_RUN.total_seconds() // 60)} minutes"})
         except Exception as e:
@@ -224,19 +239,17 @@ async def start(store: TaskStore, *, user_id: str, key_id: Optional[str], tool: 
 
 
 async def cancel(store: TaskStore, user_id: str, task_id: str) -> None:
-    """Cooperative: flag the row and cancel the job if it runs in this process."""
+    """Cooperative: flag the row. A running job sees the flag at its next unit boundary (before the
+    session note, each resource, the evidence) and stops there, so nothing is cut off mid-write; the
+    unit in progress finishes first. With no job running here (restart), it is over now."""
     row = await store.get(user_id, task_id)
     if row is None or _expired(row):
         raise TaskNotFound(task_id)
     if row["status"] in TERMINAL:
         return
     await store.request_cancel(user_id, task_id)
-    job = _JOBS.get(task_id)
-    if job is not None:
-        job.cancel()
-    # Mark it now: a job cancelled before it first ran never reaches its own handler, and an orphaned
-    # one (restart) has nothing running. A finish that races this is ignored (status is no longer working).
-    await store.update(task_id, status="cancelled", status_message="Cancelled")
+    if task_id not in _JOBS:
+        await store.update(task_id, status="cancelled", status_message="Cancelled")
 
 
 def _expired(row: dict) -> bool:

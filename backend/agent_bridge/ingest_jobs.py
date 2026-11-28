@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 
 import structlog
 
-from backend.agent_bridge.tasks import tool_result
+from backend.agent_bridge.tasks import Cancelled, tool_result
 
 logger = structlog.get_logger()
 
@@ -143,11 +143,24 @@ def render_session_note(topic: str, summary: str, learned: list[str], struggled:
 async def run_learning_session(user_id: str, knowledge: Any, *, agent_name: str, topic: str, summary: str,
                                learned: list[str], struggled: list[dict], resources: list[dict],
                                transcript: Optional[str], progress: Progress) -> dict:
+    note: dict[str, Any] = {"status": "skipped"}
+    outcomes: list[dict] = []
+    try:
+        return await _learning_session(user_id, knowledge, agent_name, topic, summary, learned, struggled,
+                                       resources, transcript, progress, note, outcomes)
+    except Cancelled:
+        saved = (["the session note"] if note.get("status") == "imported" else []) + \
+            [f"{sum(1 for o in outcomes if o['status'] == 'imported')} of {len(resources)} resources"]
+        raise Cancelled("Cancelled; already saved: " + ", ".join(saved))
+
+
+async def _learning_session(user_id: str, knowledge: Any, agent_name: str, topic: str, summary: str,
+                            learned: list[str], struggled: list[dict], resources: list[dict],
+                            transcript: Optional[str], progress: Progress, note: dict, outcomes: list) -> dict:
     from backend.graphs.ingestion_graph import run_ingestion
     from backend.services.quota import QuotaExceeded
 
     warnings: list[str] = []
-    note: dict[str, Any] = {"status": "skipped"}
 
     # 1. The session note first, so its concepts exist when the evidence below looks them up.
     await progress("Saving the session note")
@@ -162,15 +175,14 @@ async def run_learning_session(user_id: str, knowledge: Any, *, agent_name: str,
                                        resource_type=SESSION_RESOURCE_TYPE) or {})
         if await _note_saved(user_id, ing.get("note_id")):
             await _after_ingest(user_id, ing, title)
-            note = {"status": "imported", "note_id": ing.get("note_id"), "title": title,
-                    "concepts": _concept_names(ing.get("concepts"))[:50]}
+            note.update(status="imported", note_id=ing.get("note_id"), title=title,
+                        concepts=_concept_names(ing.get("concepts"))[:50])
         else:
-            note = {"status": "error", "title": title, "reason": "the session note couldn't be saved"}
+            note.update(status="error", title=title, reason="the session note couldn't be saved")
     except QuotaExceeded as e:
-        note = {"status": "skipped", "reason": f"daily import limit reached ({e.limit}/day)"}
+        note.update(status="skipped", reason=f"daily import limit reached ({e.limit}/day)")
 
     # 2. Each resource, one at a time (each is a full ingest with LLM extraction).
-    outcomes = []
     for i, r in enumerate(resources, 1):
         await progress(f"Reading {i} of {len(resources)}: {r.get('title') or r['url']}"[:300])
         outcomes.append({**({"title": r["title"]} if r.get("title") else {}), **await import_link(user_id, r["url"])})

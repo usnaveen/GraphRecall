@@ -10,11 +10,17 @@ several minutes, so they run as background jobs, using the MCP Tasks extension
 | `save_learning_session` | Saves a learning session (described below). |
 | `get_ingest_status` | Returns an import's state, for clients that don't track MCP tasks themselves. |
 
-All three need the new key scope **`write:ingest`**. Existing keys don't have it; the user has to
-create a key with it, or approve it on the OAuth consent screen ("Add to Your Knowledge Graph").
-Unlike `write:feed`, nothing waits for approval in the app. Each note is labelled as saved by the
-user's agent, every call is audited, and each import counts against the user's normal daily ingest
-quota.
+All three need the new key scope **`write:ingest`**. Existing keys don't have it. To get one:
+
+- **App:** Settings → Agent → Agent keys → New key, and turn on "Add to your graph". The iOS scope list
+  gained the option in this change.
+- **API:** `POST /api/agent-bridge/keys` with `{"name": "...", "scopes": ["read:knowledge",
+  "write:ingest"]}`.
+- **OAuth connectors:** approve "Add to Your Knowledge Graph" on the consent screen.
+
+Unlike `write:feed`, nothing waits for approval in the app. Every call is audited, and each import
+counts against the user's normal daily ingest quota. The session note says it was saved by the
+user's agent; an article imported by `ingest_link` is an ordinary article note.
 
 ## save_learning_session
 
@@ -67,9 +73,13 @@ show the user a preview before saving.
 - **Client doesn't declare it.** It never gets a task. The same job starts, the normal result
   carries a `task_id`, and the client polls `get_ingest_status`. Such a client calling `tasks/*`
   gets `-32021`.
-- **`tasks/cancel`** stops the job (cooperatively) and acknowledges with `{"resultType":
-  "complete"}`. **`tasks/update`** is acknowledged and ignored, because these jobs never ask for
-  input.
+- **`tasks/cancel`** is acknowledged with `{"resultType": "complete"}` and is cooperative. The
+  job checks the cancel flag between units of work (before the session note, before each resource,
+  before the evidence) and stops there. The unit already running finishes first, so nothing is cut
+  off half-written. The final `statusMessage` says what was already saved, for example "Cancelled;
+  already saved: the session note, 1 of 3 resources". A single `ingest_link` that has already
+  started runs to completion.
+- **`tasks/update`** is acknowledged and ignored, because these jobs never ask for input.
 - **Ids are bound to the user.** Ids are unguessable, and every read checks the owner. An unknown
   id, an expired id and another user's id all return `-32602`.
 - **`failed` means a JSON-RPC-level error.** A job that ran but couldn't import some resources is
@@ -78,11 +88,21 @@ show the user a preview before saving.
   - Results are kept for 24 hours after the longest possible run (30 minutes); that is the `ttlMs`.
   - A job that stops reporting progress for longer than the longest run (a server restart) is
     reported `failed`, with "interrupted".
+  - The 30-minute hard timeout is a last resort. Unlike cancel, it can interrupt a pipeline step
+    mid-write.
   - Each user can have at most 2 imports running at once.
 
-State lives in the `agent_tasks` table (migration `039_agent_tasks.sql`). The work runs as an
+State lives in the `agent_tasks` table (migration `039_agent_tasks.sql`). Production must run
+`python -m backend.db.migrate` before deploying this, or the API refuses to start. The work runs as an
 asyncio task in the API process. Code is in `backend/agent_bridge/tasks.py` (store, runner, wire
 format), `ingest_jobs.py` (the work) and `add_tasks_extension` in `mcp_app.py`.
+
+## Concept links
+
+Claude doesn't send concept maps. The links between concepts come from the normal ingestion
+pipeline: it extracts the session note's concepts, relates them to the user's existing graph, and
+does the same for each resource. Sending explicit links (for example, "A is a prerequisite of B")
+would be a small extension to `save_learning_session` if the pipeline's links prove too loose.
 
 ## Client support
 
@@ -98,6 +118,9 @@ the `get_ingest_status` path.
   seconds, `tasks/get` showed progress, and the job completed in about 30 seconds. It saved the
   session note and the PEP 20 article, skipped the video, and recorded the evidence. Everything it
   created was deleted afterwards, and the key was revoked.
+- Known gap: when storing a note fails, `run_ingestion` still creates the graph node, concepts and
+  flashcards. The job now reports the error, but those leftovers stay (a pipeline bug that predates
+  this change).
 - The first live run found that `notes.resource_type` is CHECK-constrained and doesn't allow
   `learning_session`. `run_ingestion` still returned a `note_id` when storing the note failed. The
   job now uses `chat_conversation` and confirms the note row exists before reporting "imported".

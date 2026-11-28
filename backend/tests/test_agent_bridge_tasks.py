@@ -70,11 +70,17 @@ async def test_exception_is_failed_with_jsonrpc_error_and_tool_error_is_complete
 async def test_cancel_and_foreign_or_unknown_ids():
     store = tasks.InMemoryTaskStore()
 
+    units_done = []
+
     async def forever(progress):
-        await asyncio.sleep(60)
+        for i in range(1000):
+            await progress(f"unit {i}")  # a unit boundary: where cancellation takes effect
+            await asyncio.sleep(0.005)
+            units_done.append(i)  # a unit is never cut off half-way
         return tasks.tool_result({})
 
     row = await tasks.start(store, user_id=U1, key_id=None, tool="t", work=forever, first_message="")
+    await asyncio.sleep(0.03)
     with pytest.raises(tasks.TaskNotFound):
         await tasks.get(store, U2, row["id"])  # another user's id looks unknown
     with pytest.raises(tasks.TaskNotFound):
@@ -82,7 +88,59 @@ async def test_cancel_and_foreign_or_unknown_ids():
     with pytest.raises(tasks.TaskNotFound):
         await tasks.get(store, U1, "grt_nope")
     await tasks.cancel(store, U1, row["id"])
+    done = await _settle(store, U1, row["id"])
+    assert done["status"] == "cancelled" and 0 < len(units_done) < 1000
+
+
+async def test_cancel_before_the_job_runs_and_with_no_job():
+    store = tasks.InMemoryTaskStore()
+
+    async def work(progress):
+        await progress("starting")
+        return tasks.tool_result({"ran": True})
+
+    row = await tasks.start(store, user_id=U1, key_id=None, tool="t", work=work, first_message="")
+    await tasks.cancel(store, U1, row["id"])  # before the job's first step
     assert (await _settle(store, U1, row["id"]))["status"] == "cancelled"
+    await store.create("grt_orphan2", U1, None, "t", None)  # nothing running in this process
+    await tasks.cancel(store, U1, "grt_orphan2")
+    assert (await store.get(U1, "grt_orphan2"))["status"] == "cancelled"
+
+
+async def test_cancelled_session_stops_between_resources_and_says_what_was_saved(monkeypatch):
+    import importlib
+
+    ig = importlib.import_module("backend.graphs.ingestion_graph")
+    imported = []
+
+    async def fake_ingest(**kw):
+        return {"note_id": "n1", "status": "completed"}
+
+    async def fake_link(user_id, url):
+        imported.append(url)
+        return {"url": url, "status": "imported"}
+
+    async def nothing(*a, **k):
+        return None
+
+    async def saved(user_id, note_id):
+        return True
+
+    for name, fn in (("import_link", fake_link), ("_charge", nothing), ("_after_ingest", nothing), ("_note_saved", saved)):
+        monkeypatch.setattr(ingest_jobs, name, fn)
+    monkeypatch.setattr(ig, "run_ingestion", fake_ingest)
+
+    async def progress(msg):
+        if msg.startswith("Reading 2 of"):
+            raise tasks.Cancelled("Cancelled")
+
+    with pytest.raises(tasks.Cancelled) as e:
+        await ingest_jobs.run_learning_session(
+            U1, _Knowledge(set()), agent_name="x", topic="t", summary="s", learned=["a"], struggled=[],
+            resources=[{"url": "https://e.com/1"}, {"url": "https://e.com/2"}, {"url": "https://e.com/3"}],
+            transcript=None, progress=progress)
+    assert imported == ["https://e.com/1"]  # the first finished; nothing after the boundary started
+    assert str(e.value) == "Cancelled; already saved: the session note, 1 of 3 resources"
 
 
 async def test_expired_and_orphaned_tasks():

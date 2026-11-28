@@ -62,8 +62,8 @@ server. On the 1.x code path the bridge serves tools only, as before.
 
 - `backend/tests/test_agent_bridge_skills.py` covers loading, manifests and scope filtering, plus
   an end-to-end run through the official SDK client in-process.
-- Live over HTTP against `/mcp/agent` with temporary keys on the showcase account, both since
-  revoked:
+- Live over HTTP against `/mcp/agent` with temporary keys on the showcase account, since revoked and
+  deleted:
   - A read-only key listed 2 skills and an all-scopes key listed 4.
   - `skills/get` and `resources/read` matched the manifest digest.
   - A read-only request for `curate-my-feed` returned `-32602`.
