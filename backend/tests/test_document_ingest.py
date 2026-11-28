@@ -159,11 +159,11 @@ def ingest(monkeypatch):
 async def test_endpoint_reads_in_background_then_ingests(ingest):
     ingest_v2, calls = ingest
     res = await ingest_v2.ingest_document(file=_upload(_text_pdf(), "paper.pdf", "application/pdf"), title=None,
-                                          skip_review=True, resource_type="document", current_user={"id": "u1"})
+                                          skip_review=True, resource_type="notes", current_user={"id": "u1"})
     assert res.status == "processing" and res.thread_id.startswith("ingest:u1:")
     await asyncio.gather(*calls["tasks"])
     [kw] = calls["ingested"]
-    assert kw["title"] == "paper" and kw["resource_type"] == "document" and "self-attention" in kw["content"]
+    assert kw["title"] == "paper" and kw["resource_type"] == "notes" and "self-attention" in kw["content"]
     result = ingest_v2._zip_ingest_results[res.thread_id]
     assert result["status"] == "completed" and result["document"]["method"] == "native"
 
@@ -171,7 +171,7 @@ async def test_endpoint_reads_in_background_then_ingests(ingest):
 async def test_endpoint_reports_unreadable_document_as_error_result(ingest):
     ingest_v2, calls = ingest
     res = await ingest_v2.ingest_document(file=_upload(b"%PDF-1.4 garbage", "bad.pdf", "application/pdf"),
-                                          title="Bad", skip_review=True, resource_type="document",
+                                          title="Bad", skip_review=True, resource_type="notes",
                                           current_user={"id": "u1"})
     await asyncio.gather(*calls["tasks"])
     assert calls["ingested"] == []
@@ -184,12 +184,16 @@ async def test_endpoint_duplicate_and_bad_type(ingest):
     ingest_v2, calls = ingest
     calls["existing"] = "note-old"
     res = await ingest_v2.ingest_document(file=_upload(_text_pdf(), "paper.pdf", "application/pdf"), title=None,
-                                          skip_review=True, resource_type="document", current_user={"id": "u1"})
+                                          skip_review=True, resource_type="notes", current_user={"id": "u1"})
     assert res.status == "completed_duplicate" and res.note_id == "note-old" and calls["tasks"] == []
     with pytest.raises(HTTPException) as e:
         await ingest_v2.ingest_document(file=_upload(b"x", "a.docx", "application/octet-stream"), title=None,
-                                        skip_review=True, resource_type="document", current_user={"id": "u1"})
+                                        skip_review=True, resource_type="notes", current_user={"id": "u1"})
     assert e.value.status_code == 400
+    with pytest.raises(HTTPException) as e:
+        await ingest_v2.ingest_document(file=_upload(_text_pdf(), "p.pdf", "application/pdf"), title=None,
+                                        skip_review=True, resource_type="document", current_user={"id": "u1"})
+    assert e.value.status_code == 400 and "resource_type" in e.value.detail
 
 
 async def test_extract_endpoint_returns_text_and_stores_nothing(ingest):

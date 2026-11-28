@@ -728,6 +728,11 @@ class DocumentExtractResponse(BaseModel):
     warnings: list[str] = []
 
 
+# notes.resource_type is checked by the `valid_resource_type` constraint (db/init.sql).
+NOTE_RESOURCE_TYPES = {"notes", "lecture_slides", "youtube", "article", "chat_conversation", "documentation",
+                       "research", "book"}
+
+
 def _document_hash(data: bytes) -> str:
     """Notes from an uploaded document are deduplicated per user by the file's bytes."""
     return hashlib.sha256(b"doc:" + hashlib.sha256(data).digest()).hexdigest()
@@ -751,7 +756,7 @@ async def _ingest_document_background(
             user_id=user_id,
             skip_review=skip_review,
             content_hash=_document_hash(data),
-            resource_type=resource_type or "document",
+            resource_type=resource_type or "notes",
             thread_id=thread_id,
         )
         result = dict(result or {})
@@ -784,7 +789,7 @@ async def ingest_document(
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
     skip_review: bool = Form(True),
-    resource_type: Optional[str] = Form("document"),
+    resource_type: Optional[str] = Form("notes"),
     current_user: dict = Depends(require_quota("ingest")),
 ):
     """Ingest a PDF or an image. The server reads it (text layer, OCR for scanned pages) in the background.
@@ -797,6 +802,9 @@ async def ingest_document(
 
     user_id = str(current_user["id"])
     filename = file.filename or "document"
+    resource_type = resource_type or "notes"
+    if resource_type not in NOTE_RESOURCE_TYPES:
+        raise HTTPException(status_code=400, detail=f"resource_type must be one of {sorted(NOTE_RESOURCE_TYPES)}")
     if content_type_for(filename, file.content_type) is None:
         raise HTTPException(status_code=400, detail="Unsupported file type. Send a PDF or an image (PNG, JPEG, WebP, TIFF).")
     data = await file.read(MAX_BYTES + 1)
