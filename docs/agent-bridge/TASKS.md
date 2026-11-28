@@ -6,7 +6,7 @@ several minutes, so they run as background jobs, using the MCP Tasks extension
 
 | Tool | What it does |
 |---|---|
-| `ingest_link` | Imports one article, blog post or paper page, the same way the app's Import link does. |
+| `ingest_link` | Imports one article, blog post, paper page or YouTube video, the same way the app's Import link and Import video do. |
 | `save_learning_session` | Saves a learning session (described below). |
 | `get_ingest_status` | Returns an import's state, for clients that don't track MCP tasks themselves. |
 
@@ -40,9 +40,13 @@ The job then runs these steps:
    details and the resources, and goes through the normal ingestion pipeline (concepts, flashcards,
    search). It is stored as `resource_type = chat_conversation` and titled "<topic> (learning
    session)".
-2. **Imports each resource** one at a time. Duplicates are detected. Video links are listed in the
-   note but skipped for now, because video import is on `feat/youtube-ingest` and not yet on this
-   branch.
+2. **Imports each resource** one at a time. Duplicates are detected.
+   - Articles and papers go through the article importer.
+   - YouTube videos go through `backend/graphs/youtube_graph.import_video`, the same code as the
+     app's `/api/v2/ingest/youtube`. It reads the captions, or has Gemini watch the video when there
+     are none. When neither works, it saves the link alone and reports the video as `link_only`.
+   - Videos on other sites (Vimeo, Loom, Twitch) are listed in the note but skipped, and don't use
+     any quota.
 3. **Records knowledge evidence.** Learned concepts get a 0.65 signal and struggles get 0.25, so the
    app reviews the struggles sooner.
 
@@ -118,6 +122,11 @@ the `get_ingest_status` path.
   seconds, `tasks/get` showed progress, and the job completed in about 30 seconds. It saved the
   session note and the PEP 20 article, skipped the video, and recorded the evidence. Everything it
   created was deleted afterwards, and the key was revoked.
+- A second live run with a YouTube video ("Object-Oriented Programming, Simplified") and a Vimeo
+  link. The video was imported from its automatic captions as a `youtube` note with its source URL,
+  38 chunks and 9 concepts. The Vimeo link was skipped, and the job finished in 55 seconds. The
+  session note, evidence, task, audit rows and key were deleted afterwards. Jordan's per-table
+  counts, Neo4j node count and daily usage match the snapshot taken before the run.
 - Known gap: when storing a note fails, `run_ingestion` still creates the graph node, concepts and
   flashcards. The job now reports the error, but those leftovers stay (a pipeline bug that predates
   this change).

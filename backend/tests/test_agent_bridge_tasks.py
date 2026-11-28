@@ -185,9 +185,54 @@ def test_session_note_and_transcript_cap():
 
 
 def test_video_links_are_detected():
-    assert ingest_jobs.is_video("https://www.youtube.com/watch?v=aircAruvnKk")
-    assert ingest_jobs.is_video("https://youtu.be/aircAruvnKk")
+    for u in ("https://www.youtube.com/watch?v=aircAruvnKk", "https://youtu.be/aircAruvnKk",
+              "https://m.youtube.com/shorts/aircAruvnKk"):
+        assert ingest_jobs.is_youtube(u) and ingest_jobs.is_video(u)
+    assert ingest_jobs.is_video("https://vimeo.com/76979871") and not ingest_jobs.is_youtube("https://vimeo.com/76979871")
     assert not ingest_jobs.is_video("https://lilianweng.github.io/posts/attention/")
+    assert not ingest_jobs.is_youtube("https://notyoutube.com/watch?v=x")
+
+
+@pytest.mark.parametrize("res,expected", [
+    ({"status": "completed", "status_reason": "completed", "note_id": "n9", "concepts": [{"name": "Neuron"}],
+      "transcript_source": "captions"}, "imported"),
+    ({"status": "stored", "status_reason": "no_transcript", "note_id": "n9", "transcript_source": "none"}, "link_only"),
+    ({"status": "completed", "status_reason": "completed_duplicate", "note_id": "n0"}, "duplicate"),
+])
+async def test_youtube_resources_go_through_the_video_importer(monkeypatch, res, expected):
+    import importlib
+
+    yg = importlib.import_module("backend.graphs.youtube_graph")
+    calls = []
+
+    async def fake_video(user_id, url, title=None):
+        calls.append(url)
+        return {"url": "https://www.youtube.com/watch?v=aircAruvnKk", **res}
+
+    async def nothing(*a, **k):
+        return None
+
+    async def saved(user_id, note_id):
+        return True
+
+    monkeypatch.setattr(yg, "import_video", fake_video)
+    monkeypatch.setattr(ingest_jobs, "_charge", nothing)
+    monkeypatch.setattr(ingest_jobs, "_note_saved", saved)
+    out = await ingest_jobs.import_link(U1, "https://youtu.be/aircAruvnKk")
+    assert calls == ["https://youtu.be/aircAruvnKk"] and out["status"] == expected
+    if expected == "imported":
+        assert out["concepts"] == ["Neuron"] and out["transcript_source"] == "captions"
+
+
+async def test_other_video_hosts_are_skipped_without_charging(monkeypatch):
+    charged = []
+
+    async def charge(user_id):
+        charged.append(user_id)
+
+    monkeypatch.setattr(ingest_jobs, "_charge", charge)
+    out = await ingest_jobs.import_link(U1, "https://vimeo.com/76979871")
+    assert out["status"] == "skipped" and "YouTube" in out["reason"] and charged == []
 
 
 class _Knowledge:

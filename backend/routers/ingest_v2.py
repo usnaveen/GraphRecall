@@ -960,25 +960,10 @@ class IngestYoutubeRequest(BaseModel):
 
 
 async def _store_youtube_link(user_id: str, url: str, title: str) -> str:
-    """The old behaviour, kept as the last resort: a note that holds the link and nothing else."""
-    note_id = str(uuid.uuid4())
-    pg_client = await get_postgres_client()
-    await pg_client.execute_update(
-        """
-        INSERT INTO notes (id, user_id, title, content_text, resource_type, source_url, created_at, updated_at)
-        VALUES (:id, :user_id, :title, :content_text, :resource_type, :source_url, :created_at, :created_at)
-        """,
-        {
-            "id": note_id,
-            "user_id": user_id,
-            "title": title,
-            "content_text": f"YouTube link: {url}",
-            "resource_type": "youtube",
-            "source_url": url,
-            "created_at": datetime.now(timezone.utc),
-        },
-    )
-    return note_id
+    """Kept for callers of the old name; the logic lives in backend/graphs/youtube_graph.py."""
+    from backend.graphs.youtube_graph import _store_link_only
+
+    return await _store_link_only(user_id, url, title)
 
 
 @router.post("/ingest/youtube")
@@ -992,75 +977,19 @@ async def ingest_youtube_link(
     missing or YouTube blocks the request. Deduplicated per user by video id. If no transcript can be
     had, the link is stored alone (status "stored") and ``warnings`` says nothing was read.
     Response keeps the old fields (note_id, status, resource_type, url) for older app builds.
+    The work is in ``backend/graphs/youtube_graph.import_video`` (shared with the agent bridge).
     """
-    from backend.graphs.article_graph import _existing_note, url_hash
-    from backend.graphs.ingestion_graph import run_ingestion
+    from backend.graphs.youtube_graph import import_video
     from backend.services.ingestion import youtube as yt
 
-    user_id = str(current_user["id"])
     try:
-        video_id = yt.parse_video_id(request.url)
+        return await import_video(str(current_user["id"]), request.url, request.title)
     except yt.YouTubeError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    url = yt.watch_url(video_id)
-    content_hash = url_hash(url)
-    base = {"resource_type": "youtube", "url": url, "video_id": video_id}
-
-    try:
-        dup = await _existing_note(user_id, content_hash)
-        if dup:
-            return {**base, "note_id": dup, "status": "completed", "status_reason": "completed_duplicate",
-                    "transcript_source": None, "concepts": [], "concept_ids": [],
-                    "warnings": ["already in your library: this video was imported before"]}
-
-        v = await yt.get_transcript(url)
-        title = request.title or v.title or f"YouTube: {url}"
-        if not v.ok:
-            note_id = await _store_youtube_link(user_id, url, title)
-            logger.info("v2/ingest/youtube: link only", note_id=note_id, video_id=video_id)
-            return {**base, "note_id": note_id, "status": "stored", "status_reason": "no_transcript",
-                    "title": title, "transcript_source": "none", "concepts": [], "concept_ids": [],
-                    "warnings": v.warnings}
-
-        ingestion = dict(await run_ingestion(
-            content=yt.render_note(v),
-            title=title,
-            user_id=user_id,
-            skip_review=True,
-            content_hash=content_hash,
-            resource_type="youtube",
-        ) or {})
-        note_id = ingestion.get("note_id")
-        if note_id:
-            pg = await get_postgres_client()
-            await pg.execute_update("UPDATE notes SET source_url = :u WHERE id = :id AND user_id = :uid",
-                                    {"u": url, "id": str(note_id), "uid": user_id})
-        await _schedule_reembed_if_needed(ingestion, user_id)
-        if note_id and ingestion.get("status", "completed") == "completed":
-            await _enqueue_note_ingested_event(user_id, note_id, title, ingestion.get("concepts", []) or [])
-        logger.info("v2/ingest/youtube: ingested", note_id=note_id, video_id=video_id, source=v.source,
-                    chars=len(v.text), concepts=len(ingestion.get("concepts") or []))
-        return {
-            **base,
-            "note_id": note_id,
-            "status": ingestion.get("status", "completed"),
-            "status_reason": ingestion.get("status_reason", "completed"),
-            "next_action": ingestion.get("next_action", "none"),
-            "thread_id": ingestion.get("thread_id", ""),
-            "title": title,
-            "channel": v.channel,
-            "transcript_source": v.source,
-            "language": v.language,
-            "concepts": ingestion.get("concepts", []),
-            "concept_ids": ingestion.get("concept_ids", []),
-            "flashcard_ids": ingestion.get("flashcard_ids", []),
-            "error": ingestion.get("error"),
-            "warnings": list(ingestion.get("warnings") or []) + v.warnings,
-        }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("v2/ingest/youtube: Failed", error=str(e), video_id=video_id)
+        logger.error("v2/ingest/youtube: Failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

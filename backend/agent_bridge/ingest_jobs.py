@@ -33,11 +33,20 @@ TRANSCRIPT_CAP = 30_000
 # notes.resource_type is CHECK-constrained (notes, article, youtube, chat_conversation, ...); a session
 # distilled from a conversation is a chat_conversation, and its title says "(learning session)".
 SESSION_RESOURCE_TYPE = "chat_conversation"
-_VIDEO_HOSTS = re.compile(r"(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com|vimeo\.com)$")
+_YOUTUBE_HOSTS = re.compile(r"(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$")
+_OTHER_VIDEO_HOSTS = re.compile(r"(^|\.)(vimeo\.com|loom\.com|twitch\.tv)$")
+
+
+def _host(url: str) -> str:
+    return (urlparse(url).hostname or "").lower()
+
+
+def is_youtube(url: str) -> bool:
+    return bool(_YOUTUBE_HOSTS.search(_host(url)))
 
 
 def is_video(url: str) -> bool:
-    return bool(_VIDEO_HOSTS.search((urlparse(url).hostname or "").lower()))
+    return is_youtube(url) or bool(_OTHER_VIDEO_HOSTS.search(_host(url)))
 
 
 async def _charge(user_id: str) -> None:
@@ -82,13 +91,15 @@ async def import_link(user_id: str, url: str) -> dict:
     from backend.graphs.article_graph import process_article_url
     from backend.services.quota import QuotaExceeded
 
-    if is_video(url):
+    if is_video(url) and not is_youtube(url):
         return {"url": url, "status": "skipped",
-                "reason": "video import isn't available on this server yet; the link is listed in the session note"}
+                "reason": "only YouTube videos can be imported; the link is listed in the session note"}
     try:
         await _charge(user_id)
     except QuotaExceeded as e:
         return {"url": url, "status": "skipped", "reason": f"daily import limit reached ({e.limit}/day)"}
+    if is_youtube(url):
+        return await import_youtube(user_id, url)
     try:
         res = await process_article_url(url, user_id=user_id)
     except Exception as e:
@@ -108,10 +119,33 @@ async def import_link(user_id: str, url: str) -> dict:
             "concepts": _concept_names(ing.get("concepts"))[:30], "warnings": res.get("warnings") or []}
 
 
+async def import_youtube(user_id: str, url: str) -> dict:
+    """A YouTube resource: captions first, Gemini when captions are missing or blocked, link only last."""
+    from backend.graphs.youtube_graph import import_video
+    from backend.services.ingestion.youtube import YouTubeError
+
+    try:
+        res = await import_video(user_id, url)
+    except YouTubeError as e:
+        return {"url": url, "status": "error", "reason": str(e)}
+    except Exception as e:
+        logger.warning("agent_ingest: video failed", error=str(e))
+        return {"url": url, "status": "error", "reason": "couldn't import this video"}
+    out = {"url": res.get("url") or url, "note_id": res.get("note_id"), "title": res.get("title"),
+           "transcript_source": res.get("transcript_source"), "warnings": res.get("warnings") or []}
+    if res.get("status_reason") == "completed_duplicate":
+        return {**out, "status": "duplicate", "reason": "already in your library"}
+    if res.get("status") == "stored":
+        return {**out, "status": "link_only", "reason": "no transcript could be had; only the link was saved"}
+    if not await _note_saved(user_id, res.get("note_id")):
+        return {**out, "status": "error", "reason": "the note couldn't be saved"}
+    return {**out, "status": "imported", "concepts": _concept_names(res.get("concepts"))[:30]}
+
+
 async def run_ingest_link(user_id: str, url: str, progress: Progress) -> dict:
     await progress(f"Reading {url}")
     out = await import_link(user_id, url)
-    return tool_result(out, is_error=out["status"] in ("error", "skipped"))
+    return tool_result(out, is_error=out["status"] in ("error", "skipped", "link_only"))
 
 
 def render_session_note(topic: str, summary: str, learned: list[str], struggled: list[dict],

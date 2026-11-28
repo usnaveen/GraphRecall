@@ -236,7 +236,7 @@ class SubmitArgs(_Args):
 
 
 class IngestLinkArgs(_Args):
-    url: str = Field(..., max_length=2048, description="An article, blog post or paper page (http/https)")
+    url: str = Field(..., max_length=2048, description="An article, blog post, paper page or YouTube video (http/https)")
 
     @field_validator("url")
     @classmethod
@@ -636,14 +636,15 @@ TOOLS: dict[str, ToolSpec] = {t.name: t for t in [
              "Answer a claimed question (markdown + citations), or report an error.",
              SubmitArgs, _submit),
     ToolSpec("ingest_link", SCOPE_WRITE_INGEST,
-             "Import one article, blog post or paper page into the user's knowledge graph (concepts, flashcards, "
-             "search), as the app's Import link does. Runs in the background: returns a task (or a task_id to "
-             "poll with get_ingest_status) and finishes in about 20-60 s. Duplicates are detected. Videos are not "
-             "supported yet.", IngestLinkArgs, _ingest_link),
+             "Import one article, blog post, paper page or YouTube video into the user's knowledge graph "
+             "(concepts, flashcards, search), as the app's Import link / Import video do. A video is read from "
+             "its captions, or watched by Gemini when it has none. Runs in the background: returns a task (or a "
+             "task_id to poll with get_ingest_status) and finishes in about 20-60 s, longer for a video without "
+             "captions. Duplicates are detected.", IngestLinkArgs, _ingest_link),
     ToolSpec("save_learning_session", SCOPE_WRITE_INGEST,
              "At the end of a learning session, save it into the user's knowledge graph: the topic, a summary of "
              "the key details, concepts they learned, concepts they struggled with (and why), and the articles, "
-             "papers and videos used. Writes one session note, imports each resource, and records the struggles "
+             "papers and YouTube videos used. Writes one session note, imports each resource, and records the struggles "
              "so the app reviews them sooner. Runs in the background for minutes: returns a task (or a task_id "
              "to poll with get_ingest_status). Ask the user before calling.",
              LearningSessionArgs, _save_session),

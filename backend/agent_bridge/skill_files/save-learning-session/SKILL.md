@@ -24,7 +24,8 @@ in the background, so the conversation can carry on.
   and bullets; about 300-1500 words. This is what they'll reread, so make it self-contained.
 - **resources**: every article, paper, doc page and video the session used or that you
   recommended and they opened, as `{url, title, note}`. `note` says what it was for. Only real URLs
-  you saw; never invent one. Videos are listed in the note but not imported yet.
+  you saw; never invent one. YouTube videos are imported too (from captions, or watched by Gemini
+  when there are none); videos on other sites are listed in the note but not imported.
 - **transcript**: leave it out unless the user asks. A distilled summary ingests far better than a
   raw chat, and anything over 30,000 characters is cut.
 
