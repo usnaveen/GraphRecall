@@ -188,7 +188,10 @@ TOOL_DEFS: list[dict[str, Any]] = [
     {
         "name": "ingest_youtube",
         "description": (
-            "Store a YouTube link as a note resource (no heavy processing). "
+            "Import a YouTube video into the knowledge graph: reads its captions (or has Gemini "
+            "transcribe the video when captions are missing or blocked), saves a timestamped "
+            "transcript note and extracts its concepts. Re-importing the same video is a no-op. "
+            "If no transcript can be had, only the link is stored and `warnings` says so. "
             "Maps to POST /api/v2/ingest/youtube"
         ),
         "inputSchema": {

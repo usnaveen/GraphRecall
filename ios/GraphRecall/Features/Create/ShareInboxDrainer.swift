@@ -124,9 +124,10 @@ final class ShareInboxDrainer {
                         title: item.displayTitle,
                         kind: "YouTube",
                         status: yt.status,
-                        detail: "Saved from Share Sheet"
+                        detail: yt.summary
                     ))
-                    showToast(message: "Saved YouTube link to GraphRecall", detail: item.displayTitle, tone: .accent)
+                    showToast(message: yt.wasRead ? "Imported video to GraphRecall" : "Saved YouTube link (no transcript)",
+                              detail: yt.title ?? item.displayTitle, tone: .accent)
                 } else {
                     let resp = try await APIClient.shared.ingestURL(item.content)
                     markSent(id: item.id, title: item.displayTitle, response: resp)

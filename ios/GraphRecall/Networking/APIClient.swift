@@ -247,7 +247,7 @@ actor APIClient {
     }
 
     func ingestYouTube(url: String, title: String? = nil) async throws -> IngestYouTubeResponse {
-        try await post("/api/v2/ingest/youtube", body: IngestYouTubeRequest(url: url, title: title), timeout: 60)
+        try await post("/api/v2/ingest/youtube", body: IngestYouTubeRequest(url: url, title: title), timeout: 300)  // Gemini fallback can take minutes
     }
 
     func ingestChatTranscript(content: String, title: String? = nil) async throws -> IngestResponse {

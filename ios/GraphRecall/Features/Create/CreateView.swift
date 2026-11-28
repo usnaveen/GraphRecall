@@ -148,7 +148,7 @@ final class CreateViewModel {
         if isSubmitting {
             switch mode {
             case .concepts: return "Researching…"
-            case .youtube: return "Saving…"
+            case .youtube: return "Reading transcript…"
             case .file: return selectedFileIsZip ? "Uploading ZIP…" : "Ingesting file…"
             default: return review ? "Extracting concepts…" : "Ingesting…"
             }
@@ -158,7 +158,7 @@ final class CreateViewModel {
         case .concepts: return "Research & add to feed"
         case .text: return "Ingest text"
         case .url: return "Ingest URL"
-        case .youtube: return "Save YouTube link"
+        case .youtube: return "Import video"
         case .chat: return "Ingest transcript"
         case .file: return selectedFileIsZip ? "Upload processed ZIP" : "Ingest file"
         case .scan: return "Ingest scanned text"
@@ -279,9 +279,8 @@ final class CreateViewModel {
                 let url = urlField.trimmingCharacters(in: .whitespacesAndNewlines)
                 let response = try await APIClient.shared.ingestYouTube(url: url, title: optionalTitle)
                 lastYouTube = response
-                let note = response.noteId.map { " · note \($0.prefix(8))…" } ?? ""
-                successMessage = "YouTube link \(response.status)\(note)"
-                RecentImportsStore.shared.add(RecentImport(title: optionalTitle ?? url, kind: mode.title, status: response.status, detail: "Saved as a resource"))
+                successMessage = ([response.summary] + response.warnings).joined(separator: " · ")
+                RecentImportsStore.shared.add(RecentImport(title: optionalTitle ?? response.title ?? url, kind: mode.title, status: response.status, detail: response.summary))
 
             case .chat:
                 let content = bodyText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -564,7 +563,7 @@ struct CreateView: View {
         case .concepts: return "List concepts to learn: we research each one and add cards to your feed"
         case .text: return "Paste notes or markdown — extracted into your graph"
         case .url: return "Ingest an article from a URL (Substack, Medium, blogs)"
-        case .youtube: return "Save a YouTube link as a resource"
+        case .youtube: return "Import a video's transcript into your graph"
         case .chat: return "Paste an LLM chat transcript (Human: / AI:)"
         case .file: return "PDF, markdown, text, or processed-book ZIP"
         case .scan: return "Scan pages or pick photos — text is read on-device"
@@ -703,7 +702,7 @@ struct CreateView: View {
                 .foregroundStyle(GRColor.textPrimary)
             Text(
                 youtube
-                    ? "Stored as a resource and linked — no transcript processing yet."
+                    ? "Reads the captions (or has Gemini transcribe the video) and adds its concepts to your graph."
                     : "Fetches the page, extracts content, and adds it to your graph."
             )
             .font(GRType.caption)

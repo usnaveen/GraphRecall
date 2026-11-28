@@ -80,11 +80,18 @@ struct IngestYouTubeResponse: Codable, Sendable {
     let status: String
     let resourceType: String?
     let url: String?
+    let title: String?
+    /// "captions" | "auto_captions" | "gemini" | "none" (older servers omit it: link stored only).
+    let transcriptSource: String?
+    let conceptIds: [String]
+    let warnings: [String]
 
     enum CodingKeys: String, CodingKey {
-        case status, url
+        case status, url, title, warnings
         case noteId = "note_id"
         case resourceType = "resource_type"
+        case transcriptSource = "transcript_source"
+        case conceptIds = "concept_ids"
     }
 
     init(from decoder: Decoder) throws {
@@ -93,6 +100,22 @@ struct IngestYouTubeResponse: Codable, Sendable {
         status = try c.decodeIfPresent(String.self, forKey: .status) ?? "stored"
         resourceType = try c.decodeIfPresent(String.self, forKey: .resourceType)
         url = try c.decodeIfPresent(String.self, forKey: .url)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        transcriptSource = try c.decodeIfPresent(String.self, forKey: .transcriptSource)
+        conceptIds = (try? c.decodeIfPresent([String].self, forKey: .conceptIds)) ?? []
+        warnings = (try? c.decodeIfPresent([String].self, forKey: .warnings)) ?? []
+    }
+
+    /// True when the transcript was read into the graph, not just the link saved.
+    /// Older servers answer "stored" for every link; new ones only when no transcript could be had.
+    var wasRead: Bool { status != "stored" }
+
+    /// One line for toasts and the import history.
+    var summary: String {
+        guard wasRead else { return "Link saved: no transcript available" }
+        guard let transcriptSource else { return "Already in your library" }  // repeat share: nothing re-read
+        let via = transcriptSource == "gemini" ? "transcribed by Gemini" : "from captions"
+        return conceptIds.isEmpty ? "Transcript imported (\(via))" : "\(conceptIds.count) concepts (\(via))"
     }
 }
 

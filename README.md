@@ -170,7 +170,7 @@ parse → chunk → extract propositions → embed → save chunks → extract c
 - **Merge or create:** each extracted concept is matched against your graph by normalised name and embedding similarity. It either merges into an existing node (adding evidence and links) or becomes a new one. A human-review step is still available but optional.
 - **Communities and subjects:** Louvain community detection groups concepts, a model names each community, and a taxonomy rolls communities up into subjects (`backend/services/graph_hierarchy.py`).
 - **Figures:** cropped from your PDFs and attached to a card only when the caption is genuinely about the concept (`backend/services/concept_figures.py`).
-- **Other sources:** YouTube, articles, Substack and RSS feeds (`substack_sync.py`), forwarded newsletters (`email_ingest.py`), voice dictation streamed into the graph (`dictation_graph.py`) and LeetCode lookups by number (`leetcode.py`).
+- **Other sources:** YouTube videos (captions via `youtube-transcript-api`, Gemini watching the video when captions are missing or blocked; `youtube.py`), articles, Substack and RSS feeds (`substack_sync.py`), forwarded newsletters (`email_ingest.py`), voice dictation streamed into the graph (`dictation_graph.py`) and LeetCode lookups by number (`leetcode.py`).
 
 ---
 
