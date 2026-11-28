@@ -24,6 +24,10 @@ COPY backend ./backend
 # The build fails rather than shipping an image that silently falls back to the lexical reranker.
 RUN python -m backend.scripts.fetch_reranker
 
+# OCR model for scanned PDFs and images (document ingestion). Kept under /app so the app user can read it.
+ENV LITEPARSE_MODEL_DIR=/app/models/liteparse
+RUN python -m backend.scripts.fetch_ocr_model
+
 # Run as a non-root user.
 RUN useradd --create-home --uid 1000 app && chown -R app /app
 USER app

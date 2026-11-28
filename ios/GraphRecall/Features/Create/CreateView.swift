@@ -346,8 +346,38 @@ final class CreateViewModel {
             successMessage = parts.joined(separator: " · ")
             showLibraryLink = true
             RecentImportsStore.shared.add(RecentImport(title: title, kind: mode.title, status: response.status, detail: response.message))
+        } else if CreateFileReader.isServerDocument(fileURL) && !review {
+            // PDFs and images are read on the server: the PDF's text layer, plus OCR for scanned pages.
+            let payload = try CreateFileReader.uploadPayload(for: fileURL)
+            let response = try await APIClient.shared.ingestDocument(
+                data: payload.data,
+                filename: payload.filename,
+                mimeType: payload.mimeType,
+                title: title
+            )
+            lastZip = response
+            if let err = response.error, response.status == "error" {
+                errorMessage = err
+                return
+            }
+            successMessage = response.message.isEmpty ? "Document \(response.status)" : response.message
+            showLibraryLink = true
+            RecentImportsStore.shared.add(RecentImport(title: title, kind: mode.title, status: response.status, detail: response.message))
         } else {
-            let content = try CreateFileReader.extractText(from: fileURL)
+            var content: String
+            if CreateFileReader.isServerDocument(fileURL) {
+                // Review needs the text here first. Use the PDF's own text when it has some; otherwise
+                // (a scan, a photo) ask the server to read it with OCR. Nothing is stored by that call.
+                content = (try? CreateFileReader.extractText(from: fileURL)) ?? ""
+                if content.trimmingCharacters(in: .whitespacesAndNewlines).count < 50 {
+                    let payload = try CreateFileReader.uploadPayload(for: fileURL)
+                    content = try await APIClient.shared.extractDocumentText(
+                        data: payload.data, filename: payload.filename, mimeType: payload.mimeType
+                    ).markdown
+                }
+            } else {
+                content = try CreateFileReader.extractText(from: fileURL)
+            }
             guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 errorMessage = "No extractable text in this file."
                 return
@@ -1275,8 +1305,36 @@ struct CreateView: View {
 }
 
 enum CreateFileReader {
+    /// Files the server reads itself (text layer + OCR): PDFs and images.
+    static let serverDocumentExtensions: Set<String> = ["pdf", "png", "jpg", "jpeg", "heic", "heif", "webp", "tif", "tiff"]
+
+    static func isServerDocument(_ url: URL) -> Bool {
+        serverDocumentExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Bytes to upload for a server-read document. HEIC/HEIF photos are converted to JPEG (the server reads
+    /// PDF, PNG, JPEG, WebP and TIFF).
+    static func uploadPayload(for url: URL) throws -> (data: Data, filename: String, mimeType: String) {
+        let ext = url.pathExtension.lowercased()
+        let data = try Data(contentsOf: url)
+        let base = url.deletingPathExtension().lastPathComponent
+        switch ext {
+        case "pdf": return (data, url.lastPathComponent, "application/pdf")
+        case "png": return (data, url.lastPathComponent, "image/png")
+        case "jpg", "jpeg": return (data, url.lastPathComponent, "image/jpeg")
+        case "webp": return (data, url.lastPathComponent, "image/webp")
+        case "tif", "tiff": return (data, url.lastPathComponent, "image/tiff")
+        default:
+            guard let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.9) else {
+                throw NSError(domain: "CreateFileReader", code: 4,
+                              userInfo: [NSLocalizedDescriptionKey: "Couldn’t read that image."])
+            }
+            return (jpeg, base + ".jpg", "image/jpeg")
+        }
+    }
+
     static var allowedTypes: [UTType] {
-        var types: [UTType] = [.pdf, .plainText, .utf8PlainText, .zip]
+        var types: [UTType] = [.pdf, .image, .plainText, .utf8PlainText, .zip]
         if let md = UTType(filenameExtension: "md") { types.append(md) }
         if let markdown = UTType(filenameExtension: "markdown") { types.append(markdown) }
         return types
@@ -1297,7 +1355,7 @@ enum CreateFileReader {
             throw NSError(
                 domain: "CreateFileReader",
                 code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Unsupported file type .\(ext). Use PDF, Markdown, TXT, or ZIP."]
+                userInfo: [NSLocalizedDescriptionKey: "Unsupported file type .\(ext). Use PDF, an image, Markdown, TXT, or ZIP."]
             )
         }
     }

@@ -714,6 +714,146 @@ async def ingest_processed_zip(
 
 
 # ============================================================================
+# Document ingestion: PDFs and images read on the server, OCR where there's no text layer
+# ============================================================================
+
+from backend.services.ingestion.document_reader import DocumentError, read_document
+
+
+class DocumentExtractResponse(BaseModel):
+    markdown: str
+    pages: int
+    ocr_pages: list[int] = []
+    method: str
+    warnings: list[str] = []
+
+
+# notes.resource_type is checked by the `valid_resource_type` constraint (db/init.sql).
+NOTE_RESOURCE_TYPES = {"notes", "lecture_slides", "youtube", "article", "chat_conversation", "documentation",
+                       "research", "book"}
+
+
+def _document_hash(data: bytes) -> str:
+    """Notes from an uploaded document are deduplicated per user by the file's bytes."""
+    return hashlib.sha256(b"doc:" + hashlib.sha256(data).digest()).hexdigest()
+
+
+async def _ingest_document_background(
+    *, thread_id: str, user_id: str, data: bytes, filename: str, content_type: Optional[str],
+    title: Optional[str], skip_review: bool, resource_type: Optional[str],
+) -> None:
+    try:
+        _append_zip_event(thread_id, "info", "Reading document", filename=filename, bytes=len(data))
+        doc = await read_document(data, filename, content_type)
+        _append_zip_event(thread_id, "info", "Document read", pages=doc.pages, chars=doc.chars,
+                          method=doc.method, ocr_pages=len(doc.ocr_pages))
+        for w in doc.warnings:
+            _append_zip_event(thread_id, "warning", w)
+        resolved_title = title or posixpath.splitext(filename)[0] or "Document"
+        result = await run_ingestion(
+            content=doc.markdown,
+            title=resolved_title,
+            user_id=user_id,
+            skip_review=skip_review,
+            content_hash=_document_hash(data),
+            resource_type=resource_type or "notes",
+            thread_id=thread_id,
+        )
+        result = dict(result or {})
+        result["warnings"] = list(result.get("warnings") or []) + doc.warnings
+        result["document"] = {"pages": doc.pages, "ocr_pages": doc.ocr_pages, "method": doc.method}
+        _zip_ingest_results[thread_id] = result
+        status = result.get("status", "completed")
+        _append_zip_event(thread_id, "info", "Ingestion finished", status=status, note_id=result.get("note_id"),
+                          concepts=len(result.get("concept_ids", []) or []))
+        if status == "completed":
+            await _schedule_community_recompute(user_id, result.get("note_id"))
+            await _enqueue_note_ingested_event(user_id, result.get("note_id"), resolved_title,
+                                               result.get("concepts", []) or [])
+        await _schedule_reembed_if_needed(result, user_id)
+        if status in {"completed", "awaiting_review"} and result.get("note_id"):
+            await _schedule_quiz_scan(user_id, result.get("note_id"), doc.markdown)
+    except DocumentError as e:
+        _zip_ingest_results[thread_id] = {"status": "error", "status_reason": "error_document", "next_action": "none",
+                                          "error": str(e), "thread_id": thread_id}
+        _append_zip_event(thread_id, "error", "Couldn't read the document", error=str(e))
+    except Exception as e:
+        logger.error("v2/ingest/document: Background task failed", thread_id=thread_id, error=str(e))
+        _zip_ingest_results[thread_id] = {"status": "error", "status_reason": "error_runtime", "next_action": "none",
+                                          "error": str(e), "thread_id": thread_id}
+        _append_zip_event(thread_id, "error", "Background ingest failed", error=str(e))
+
+
+@router.post("/ingest/document", response_model=ProcessedZipIngestStartResponse)
+async def ingest_document(
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    skip_review: bool = Form(True),
+    resource_type: Optional[str] = Form("notes"),
+    current_user: dict = Depends(require_quota("ingest")),
+):
+    """Ingest a PDF or an image. The server reads it (text layer, OCR for scanned pages) in the background.
+
+    Returns at once with a ``thread_id``; poll ``GET /ingest/{thread_id}/events`` for progress and the result.
+    A file already imported (same bytes) returns ``completed_duplicate`` with the existing note.
+    """
+    from backend.graphs.article_graph import _existing_note
+    from backend.services.ingestion.document_reader import MAX_BYTES, content_type_for
+
+    user_id = str(current_user["id"])
+    filename = file.filename or "document"
+    resource_type = resource_type or "notes"
+    if resource_type not in NOTE_RESOURCE_TYPES:
+        raise HTTPException(status_code=400, detail=f"resource_type must be one of {sorted(NOTE_RESOURCE_TYPES)}")
+    if content_type_for(filename, file.content_type) is None:
+        raise HTTPException(status_code=400, detail="Unsupported file type. Send a PDF or an image (PNG, JPEG, WebP, TIFF).")
+    data = await file.read(MAX_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=400, detail="The file is empty.")
+    if len(data) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"The limit is {MAX_BYTES // (1024 * 1024)} MB.")
+
+    existing = await _existing_note(user_id, _document_hash(data))
+    if existing:
+        return ProcessedZipIngestStartResponse(
+            status="completed_duplicate", status_reason="completed_duplicate", next_action="none",
+            thread_id="duplicate_skipped", message="Already in your library: this file was imported before.",
+            note_id=existing)
+
+    thread_id = ingest_thread_id(user_id)
+    _zip_ingest_owners[thread_id] = user_id
+    _zip_ingest_events[thread_id] = []
+    _zip_ingest_results.pop(thread_id, None)
+    _append_zip_event(thread_id, "info", "Document queued", filename=filename)
+    asyncio.create_task(_ingest_document_background(
+        thread_id=thread_id, user_id=user_id, data=data, filename=filename, content_type=file.content_type,
+        title=title, skip_review=skip_review, resource_type=resource_type))
+    return ProcessedZipIngestStartResponse(
+        status="processing", status_reason="queued", next_action="none", thread_id=thread_id,
+        message="Reading your document on the server. It will appear in your library when it's done.")
+
+
+@router.post("/ingest/document/extract", response_model=DocumentExtractResponse)
+async def extract_document_text(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Read a PDF or image and return its text (OCR for scanned pages). Nothing is stored.
+
+    Used where the app needs the text itself, e.g. a resume that is a scanned PDF.
+    """
+    from backend.services.ingestion.document_reader import MAX_BYTES
+
+    data = await file.read(MAX_BYTES + 1)
+    try:
+        doc = await read_document(data, file.filename or "document", file.content_type)
+    except DocumentError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return DocumentExtractResponse(markdown=doc.markdown, pages=doc.pages, ocr_pages=doc.ocr_pages,
+                                   method=doc.method, warnings=doc.warnings)
+
+
+# ============================================================================
 # URL Ingestion (Articles/Substack)
 # ============================================================================
 

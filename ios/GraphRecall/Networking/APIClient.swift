@@ -288,6 +288,41 @@ actor APIClient {
         )
     }
 
+    /// A PDF or image, read on the server (text layer, OCR for scanned pages) → `POST /api/v2/ingest/document`.
+    /// Returns at once with a thread id; ingestion runs in the background like the book ZIP import.
+    func ingestDocument(
+        data: Data,
+        filename: String,
+        mimeType: String,
+        title: String? = nil,
+        skipReview: Bool = true
+    ) async throws -> ProcessedZipIngestResponse {
+        var fields: [String: String] = ["skip_review": skipReview ? "true" : "false", "resource_type": "notes"]
+        if let title, !title.isEmpty { fields["title"] = title }
+        return try await postMultipart(
+            "/api/v2/ingest/document",
+            fileFieldName: "file",
+            filename: filename,
+            fileData: data,
+            mimeType: mimeType,
+            fields: fields,
+            timeout: 300
+        )
+    }
+
+    /// Text of a PDF or image, read on the server with OCR where needed. Nothing is stored there.
+    func extractDocumentText(data: Data, filename: String, mimeType: String) async throws -> DocumentExtractResponse {
+        try await postMultipart(
+            "/api/v2/ingest/document/extract",
+            fileFieldName: "file",
+            filename: filename,
+            fileData: data,
+            mimeType: mimeType,
+            fields: [:],
+            timeout: 300
+        )
+    }
+
     // MARK: - Notes / Library
 
     func fetchNotes(resourceType: String? = nil, limit: Int = 50, offset: Int = 0) async throws -> NotesListResponse {

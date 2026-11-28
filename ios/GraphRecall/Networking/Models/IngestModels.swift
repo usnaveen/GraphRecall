@@ -150,3 +150,26 @@ struct IngestStatusResponse: Codable, Sendable {
         error = try c.decodeIfPresent(String.self, forKey: .error)
     }
 }
+
+/// `POST /api/v2/ingest/document/extract`: a document's text, OCR'd where it had no text layer.
+struct DocumentExtractResponse: Codable, Sendable {
+    let markdown: String
+    let pages: Int
+    let ocrPages: [Int]
+    let method: String
+    let warnings: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case markdown, pages, method, warnings
+        case ocrPages = "ocr_pages"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        markdown = try c.decodeIfPresent(String.self, forKey: .markdown) ?? ""
+        pages = try c.decodeIfPresent(Int.self, forKey: .pages) ?? 0
+        ocrPages = try c.decodeIfPresent([Int].self, forKey: .ocrPages) ?? []
+        method = try c.decodeIfPresent(String.self, forKey: .method) ?? "native"
+        warnings = try c.decodeIfPresent([String].self, forKey: .warnings) ?? []
+    }
+}
