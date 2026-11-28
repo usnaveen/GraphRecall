@@ -155,6 +155,12 @@ _MAP_TIMEOUT_S = float(os.getenv("LLM_MAP_TIMEOUT_S", "8"))
 _CHAT_GEN_TIMEOUT_S = float(os.getenv("LLM_CHAT_TIMEOUT_S", "25"))
 _MAX_GLOBAL_MAP_CALLS = max(1, int(os.getenv("CHAT_MAX_MAP_CALLS", "4")))
 _CHAT_RAG_CHAR_BUDGET = max(1000, int(os.getenv("CHAT_RAG_CHAR_BUDGET", "6000")))
+# Fixed-slot graph memory read (services/memory_read.py). The budget is a ceiling for unusually large
+# neighbourhoods, not a target: a 16-slot cap (10 concepts) dropped the prerequisite from the prompt on
+# 4 of 35 prerequisite-benchmark questions (coverage 1.00 -> 0.89), because prerequisites rarely look like
+# the question. Typical contexts are 12-18 concepts, so 40 slots (25 concepts + 15 relationships) keeps them.
+_GRAPH_MEMORY_SLOTS = max(8, int(os.getenv("CHAT_GRAPH_MEMORY_SLOTS", "40")))
+_GRAPH_MEMORY_RELATIONSHIPS = max(0, int(os.getenv("CHAT_GRAPH_MEMORY_RELATIONSHIPS", "15")))
 
 _TRIVIAL_GREETING_RE = re.compile(
     r"^\s*(hi|hello|hey|yo|sup|thanks|thank you|thx|ok|okay|good morning|good afternoon|good evening)[!.?\s]*$",
@@ -1029,6 +1035,8 @@ async def generate_response_node(state: ChatState) -> dict:
         graph_concepts,
         graph_context.get("relationships", []),
         query_embedding=query_embedding,
+        max_slots=_GRAPH_MEMORY_SLOTS,
+        max_relationships=_GRAPH_MEMORY_RELATIONSHIPS,
     )
 
     # Format context

@@ -21,7 +21,7 @@ import os
 import re
 from typing import Any, Iterable, Optional
 
-# [!alt](url) or ![alt](<url> "title")
+# ![alt](url) or ![alt](<url> "title")
 _IMAGE_RE = re.compile(r'!\[([^\]\n]{0,300})\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"\n]*")?\s*\)')
 _HTML_IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _OWN_PREFIXES = ("/api/images/", "/api/figures/")

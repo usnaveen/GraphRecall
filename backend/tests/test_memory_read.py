@@ -114,7 +114,7 @@ def test_generate_response_wires_memory_slots_boundary_guard_and_safety_refusal(
 
         concepts = [
             {"id": f"c{i}", "name": f"Concept {i}", "definition": f"Definition {i} about attention", "hops": 0}
-            for i in range(25)
+            for i in range(60)
         ]
         rels = [
             {"src": f"c{i}", "tgt": f"c{i + 1}", "src_name": f"Concept {i}", "tgt_name": f"Concept {i + 1}", "type": "RELATED_TO"}
@@ -148,7 +148,11 @@ def test_generate_response_wires_memory_slots_boundary_guard_and_safety_refusal(
         prompt_text = captured_prompts[0][1].content
         assert "<system>" not in prompt_text.lower()
         assert "[removed-tag]" in prompt_text
-        assert res["metadata"]["memory_read"]["out_concepts"] + res["metadata"]["memory_read"]["out_relationships"] <= 16
+        from backend.graphs.chat_graph import _GRAPH_MEMORY_SLOTS
+
+        read = res["metadata"]["memory_read"]
+        assert read["out_concepts"] + read["out_relationships"] <= _GRAPH_MEMORY_SLOTS
+        assert read["out_concepts"] < read["in_concepts"]  # the ceiling still bounds an oversized neighbourhood
         assert res["metadata"]["safety"] == {"blocked": True, "reason": "SAFETY"}
         assert "safety filter blocked" in res["messages"][-1].content.lower()
         assert res["sources"] == []

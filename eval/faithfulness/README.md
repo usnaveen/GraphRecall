@@ -1,5 +1,7 @@
 # Independent Faithfulness Evaluation (Local ONNX NLI Judge)
 
+> **Who labelled the calibration set:** the 31 "blind" labels in `calibration_labels.jsonl` were written by Neon (the Gemini agent) before NLI ran, each with a rationale. They are an LLM's labels, not a human's, so the κ below is agreement between two models. A human pass over the same 31 claims is still to do.
+
 Scores claim-level groundedness of generated chat answers without any Gemini / LLM judge calls,
 breaking same-model generator=judge circularity in `eval/graphrag/run_eval.py`.
 

@@ -1,5 +1,7 @@
 # Independent Local NLI Faithfulness Report (`questions_slice.r3`)
 
+> **Who labelled the calibration set:** the 31 "blind" labels in `calibration_labels.jsonl` were written by Neon (the Gemini agent) before NLI ran, each with a rationale. They are an LLM's labels, not a human's, so the κ below is agreement between two models. A human pass over the same 31 claims is still to do.
+
 - **Judge:** `cross-encoder/nli-deberta-v3-xsmall` (`model.int8.onnx`, Apache-2.0, pinned rev `a15087641532`, **zero Gemini/LLM calls**)
 - **Slice:** `eval/graphrag/results/questions_slice.r3.json` (`n=11` questions, `232` unique atomic claims, `6960` `(premise, claim)` NLI inferences)
 - **Aggregation:** SummaC-ZS sentence-pair max over top-30 (1- and 2-sentence) candidates per claim sorted by content-stem overlap; entailment argmax >= 0.50 -> entailed, else contradiction argmax >= 0.70 (gated on stem overlap >= 2) -> contradicted, else neutral
