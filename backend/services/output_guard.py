@@ -21,11 +21,80 @@ import os
 import re
 from typing import Any, Iterable, Optional
 
-# ![alt](url) or ![alt](<url> "title")
+# [!alt](url) or ![alt](<url> "title")
 _IMAGE_RE = re.compile(r'!\[([^\]\n]{0,300})\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"\n]*")?\s*\)')
 _HTML_IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _OWN_PREFIXES = ("/api/images/", "/api/figures/")
 _MAX_PENDING = 2048  # a "partial image" longer than this is not an image; release it neutralised
+
+# Control XML tags used by GraphRecall prompts; untrusted notes/graph entries must not close or spoof them.
+_CONTROL_BOUNDARY_RE = re.compile(
+    r"</?(?:retrieved_context|grounding_notice|learner_state|intent|available_figures|system|assistant|instructions)\b[^>]*>",
+    re.IGNORECASE,
+)
+
+SAFETY_BLOCK_REASONS: frozenset[str] = frozenset({
+    "SAFETY",
+    "PROHIBITED_CONTENT",
+    "RECITATION",
+    "BLOCKLIST",
+    "SPII",
+    "IMAGE_SAFETY",
+})
+
+
+def sanitize_prompt_context(text: str) -> str:
+    """Neutralize spoofed prompt control tags inside untrusted retrieved notes or graph text."""
+    if not text:
+        return ""
+    return _CONTROL_BOUNDARY_RE.sub("[removed-tag]", text)
+
+
+def format_safety_refusal(reason: str) -> str:
+    """User-facing explanation when the upstream LLM refuses due to a safety/policy filter."""
+    norm = (reason or "SAFETY").strip().upper()
+    if norm == "RECITATION":
+        return (
+            "The model stopped generating to avoid reciting copyrighted source text verbatim. "
+            "Try asking for a concept summary or comparing ideas in your own words."
+        )
+    if norm == "SPII":
+        return (
+            "The model blocked this request because sensitive personal information was detected. "
+            "Remove private contact or credential details and try again."
+        )
+    return (
+        "The model's safety filter blocked a response for this query. "
+        "Note-heavy medical or security study topics can occasionally trigger false positives — "
+        "try rephrasing your question or scoping to a specific note."
+    )
+
+
+def extract_safety_block(response: Any) -> Optional[dict[str, Any]]:
+    """Detect upstream safety/recitation/SPII blocks in LangChain/Gemini response_metadata."""
+    meta = getattr(response, "response_metadata", None)
+    if not isinstance(meta, dict):
+        return None
+
+    candidates: list[Any] = [meta.get("finish_reason")]
+    prompt_feedback = meta.get("prompt_feedback")
+    if isinstance(prompt_feedback, dict):
+        candidates.append(prompt_feedback.get("block_reason"))
+    raw_cands = meta.get("candidates")
+    if isinstance(raw_cands, list) and raw_cands and isinstance(raw_cands[0], dict):
+        candidates.append(raw_cands[0].get("finish_reason"))
+
+    for raw in candidates:
+        if raw is None:
+            continue
+        reason = str(raw).strip().upper()
+        if reason in SAFETY_BLOCK_REASONS:
+            return {
+                "blocked": True,
+                "reason": reason,
+                "message": format_safety_refusal(reason),
+            }
+    return None
 
 
 def _storage_prefixes() -> tuple[str, ...]:
